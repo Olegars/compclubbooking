@@ -6,38 +6,104 @@ use App\Http\Controllers\Admin\MapController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Auth\SmsAuthController;
 use App\Http\Controllers\TerminalController;
+use App\Http\Controllers\GizmoController;
+use App\Http\Controllers\Auth\AdminLoginController;
+use App\Http\Controllers\Auth\LogoutController;
+use App\Http\Controllers\BillingController;
+use App\Http\Controllers\Admin\AdminController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-// 1. Публичные страницы
+/*
+|--------------------------------------------------------------------------
+| Публичные маршруты
+|--------------------------------------------------------------------------
+*/
 Route::get('/', [HomeController::class, 'index'])->name('home');
 Route::get('/booking/{slug?}', [ClubController::class, 'show'])->name('booking');
-
-// 2. Страница авторизации (Вьюшка)
-Route::get('/login', function () {
-    return Inertia::render('Auth/Login');
-})->name('login');
-
-// 3. API Логика авторизации
-Route::post('/auth/send-code', [SmsAuthController::class, 'sendCode'])->name('auth.send-code');
-Route::post('/auth/verify-code', [SmsAuthController::class, 'verifyCode'])->name('auth.verify-code');
-Route::post('/logout', [SmsAuthController::class, 'logout'])->name('logout');
-
-// 4. Защищенные маршруты (Только для авторизованных)
-Route::middleware('auth')->group(function () {
-    // Дашборд теперь защищен. Гость сюда не зайдет.
-    Route::get('/auth/dashboard', [ProfileController::class, 'index'])->name('dashboard');
-    Route::get('/auth/profile', [ProfileController::class, 'index'])->name('profile');
-});
 Route::get('/terminal/{slug?}', [TerminalController::class, 'index'])->name('terminal.booking');
-// 5. Админка
-Route::get('/admin/map-builder', function () {
-    return Inertia::render('Admin/MapBuilder', [
-        'clubs' => \App\Models\Club::select('id', 'name')->get()
-    ]);
+
+/*
+|--------------------------------------------------------------------------
+| Авторизация ИГРОКОВ (Users)
+|--------------------------------------------------------------------------
+*/
+Route::middleware('guest')->group(function () {
+    Route::get('/login', fn() => Inertia::render('Auth/Login'))->name('login');
+    Route::post('/auth/send-code', [SmsAuthController::class, 'sendCode'])->name('auth.send-code');
+    Route::post('/auth/verify-code', [SmsAuthController::class, 'verifyCode'])->name('auth.verify-code');
 });
 
-Route::prefix('admin')->group(function () {
+// УНИВЕРСАЛЬНЫЙ ВЫХОД (Оставил только один, правильный, который мы делали)
+Route::post('/logout', [LogoutController::class, 'logout'])->name('logout');
+
+/*
+|--------------------------------------------------------------------------
+| Личный кабинет ИГРОКА
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth')->group(function () {
+
+    // ДОБАВЛЕН РЕДИРЕКТ С ОШИБОЧНОГО ПУТИ НА ПРАВИЛЬНЫЙ
+    Route::redirect('/auth/profile', '/account/dashboard');
+
+    Route::prefix('account')->group(function () {
+        Route::get('/dashboard', [ProfileController::class, 'dashboard'])->name('dashboard');
+        Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+        Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    });
+
+    Route::prefix('api/gizmo')->group(function () {
+        Route::get('/profile', [GizmoController::class, 'getUserProfile']);
+        Route::get('/computers', [GizmoController::class, 'getComputersStatus']);
+        Route::get('/history', [GizmoController::class, 'getTransactionHistory']);
+        Route::post('/start', [GizmoController::class, 'startSession']);
+        Route::post('/stop', [GizmoController::class, 'stopSession']);
+        Route::post('/deposit', [GizmoController::class, 'deposit']);
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Админка (REACTOR Control)
+|--------------------------------------------------------------------------
+*/
+
+// Для неавторизованных админов
+Route::middleware('guest:admin')->prefix('admin')->group(function () {
+    Route::get('/login', [AdminLoginController::class, 'showLoginForm'])->name('admin.login');
+    Route::post('/login', [AdminLoginController::class, 'login']);
+});
+
+// Для авторизованных админов
+Route::middleware(['auth:admin', 'admin'])->prefix('admin')->group(function () {
+
+    // Оставляем это, если админская форма логина жестко завязана на этот роут.
+    // Но кнопка "Выйти" в AdminLayout будет бить в универсальный /logout.
+    Route::post('/logout', [AdminLoginController::class, 'logout'])->name('admin.logout');
+
+    Route::get('/map-builder', function () {
+        return Inertia::render('Admin/MapBuilder', [
+            'clubs' => \App\Models\Club::select('id', 'name')->get()
+        ]);
+    })->name('admin.map-builder');
+
     Route::post('/save-map', [MapController::class, 'save']);
     Route::get('/get-map', [MapController::class, 'getMap']);
+});
+
+Route::middleware('auth')->group(function () {
+    Route::post('/api/billing/topup', [BillingController::class, 'topUp']);
+    Route::post('/api/billing/start-session', [BillingController::class, 'startSession']);
+});
+
+
+Route::prefix('admin')->middleware(['auth'])->group(function () {
+    Route::get('/', [AdminController::class, 'index'])->name('admin.dashboard');
+    Route::get('/search-user', [AdminController::class, 'searchUser']);
+    Route::post('/manual-deposit', [AdminController::class, 'manualDeposit']);
+});
+Route::prefix('admin/fiscal')->middleware(['auth'])->group(function () {
+    Route::get('/', [AdminController::class, 'fiscalMonitor'])->name('admin.fiscal');
+    Route::get('/hardware-status', [AdminController::class, 'getKktHardwareStatus']);
 });

@@ -4,51 +4,59 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Wallet;
+use App\Services\GizmoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
 
 class SmsAuthController extends Controller
 {
-    // 1. Имитация отправки СМС (просто даем фронтенду команду "успех")
-    public function sendCode(Request $request)
+    public function verifyCode(Request $request, GizmoService $gizmo)
     {
-        return response()->json([
-            'message' => 'Код отправлен',
-            'status' => 'success'
+        $request->validate([
+            'phone' => 'required|string',
+            'code' => 'required|string',
         ]);
-    }
-    public function verifyCode(Request $request)
-    {
-        $phone = preg_replace('/[^0-9]/', '', $request->phone);
 
-        // Ищем юзера
-        $user = User::where('phone', $phone)->first();
-
-        // Если новый гость
-        if (!$user) {
-            $pin = (string) random_int(1000, 9999); // Генерируем брутальный 4-значный ПИН
-
-            $user = User::create([
-                'phone' => $phone,
-                'name' => 'GUEST_' . substr($phone, -4),
-                'password' => bcrypt(Str::random(16)), // Системный пароль Laravel (нам не нужен)
-                'gizmo_pin' => $pin, // Сохраняем ПИН для Gizmo
-            ]);
-
-            // TODO: ЗДЕСЬ ДОЛЖЕН БЫТЬ GIZMO API CALL
-            // Gizmo::createUser(['username' => $phone, 'password' => $pin]);
+        // 1. Проверка мастер-кода или кода из кэша
+        if ($request->code !== '0451') {
+            // Здесь должна быть логика проверки реального кода из Redis/Cache
+            return back()->withErrors(['code' => 'Неверный код']);
         }
 
-        Auth::login($user, true);
-        return redirect()->route('dashboard');
-    }
-    public function logout(Request $request)
-    {
-        Auth::logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        // 2. Ищем или создаем пользователя в Laravel
+        $user = User::firstOrCreate(
+            ['phone' => $request->phone],
+            [
+                'name' => 'Stalker_' . substr($request->phone, -4),
+                'email' => $request->phone . '@reactor.club', // Заглушка для email
+                'password' => bcrypt(str_random(16)),
+            ]
+        );
 
-        return redirect('/');
+        // 3. СИНХРОНИЗАЦИЯ С GIZMO
+        if (!$user->gizmo_id) {
+            $gizmoId = $gizmo->createUser([
+                'username' => $user->name,
+                'phone' => $user->phone
+            ]);
+
+            if ($gizmoId) {
+                $user->update(['gizmo_id' => $gizmoId]);
+            }
+        }
+
+        // 4. СОЗДАНИЕ КОШЕЛЬКА (если еще нет)
+        if (!$user->wallet) {
+            Wallet::create([
+                'user_id' => $user->id,
+                'balance' => 0
+            ]);
+        }
+
+        // 5. Авторизуем
+        Auth::login($user, true);
+
+        return redirect()->route('dashboard');
     }
 }

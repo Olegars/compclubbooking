@@ -10,39 +10,41 @@ class ClubController extends Controller
 {
     public function show($slug = null)
     {
-        // 1. Если зашли просто на /booking (без слага)
+        // 1. Редирект, если слаг не указан
         if (!$slug) {
             $firstClub = DB::table('clubs')->first();
 
             if (!$firstClub) {
-                abort(404, 'Клубы не найдены в базе данных. Проверьте сидеры.');
+                abort(404, 'Клубы не найдены в базе данных.');
             }
             return redirect('/booking/' . $firstClub->slug);
         }
 
-        // 2. Ищем клуб по слагу
+        // 2. Ищем клуб
         $club = DB::table('clubs')->where('slug', $slug)->first();
 
         if (!$club) {
             abort(404, 'Клуб с таким адресом не найден.');
         }
 
-        // 3. Получаем компьютеры
+        // 3. Получаем данные
         $computers = DB::table('computers')->where('club_id', $club->id)->get();
-
-        // 4. Извлекаем zoneRects из БД
-        // Декодируем строку JSON в ассоциативный массив
         $mapConfig = json_decode($club->map_config, true);
-
-        // Ищем ключ 'zoneRects'. Если его нет в базе, отдаем пустой массив, чтобы не сломать фронтенд
         $zoneRects = $mapConfig['zoneRects'] ?? [];
 
-        // 5. Рендерим страницу
-        return Inertia::render('BookingView', [
+        // 4. Рендерим страницу (ИСПРАВЛЕН ПУТЬ)
+        // Теперь смотрим в папку resources/js/Pages/Booking/BookingView.vue
+        return Inertia::render('Booking/BookingView', [
             'clubData' => $club,
             'computersList' => $computers,
-            'zonesList' => [],
-            'zoneRectsList' => $zoneRects // Данные теперь летят из базы!
+            'zonesList' => [], // Сюда потом прилетит список зон из Гизмо
+            'zoneRectsList' => $zoneRects,
+            // Добавляем заглушку для gizmo, чтобы фронт не падал при чтении props.gizmo.balance
+            'gizmo' => [
+                'balance' => "0.00",
+                'bonus' => 0,
+                'current_pc' => 'NONE'
+            ]
         ]);
     }
 }

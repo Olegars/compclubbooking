@@ -1,167 +1,121 @@
+<script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+
+const props = defineProps<{
+    isOpen: boolean
+    mode: 'auth' | 'booking'
+    isTerminal?: boolean // true = с кнопками (клуб), false = только клавиатура (сайт)
+    data?: any
+}>()
+
+const emit = defineEmits(['close', 'confirm'])
+const rawPhone = ref('')
+
+const formattedPhone = computed(() => {
+    let val = rawPhone.value
+    let res = '+7 ('
+    for (let i = 0; i < 10; i++) {
+        if (i === 3) res += ') '
+        if (i === 6) res += '-'
+        if (i === 8) res += '-'
+        res += val[i] || '_'
+    }
+    return res
+})
+
+const addDigit = (digit: string | number) => {
+    if (rawPhone.value.length < 10) rawPhone.value += digit.toString()
+}
+
+const backspace = () => {
+    rawPhone.value = rawPhone.value.slice(0, -1)
+}
+
+const clearPhone = () => {
+    rawPhone.value = ''
+}
+
+// Авто-подтверждение
+watch(rawPhone, (newVal) => {
+    if (newVal.length === 10) {
+        setTimeout(() => {
+            emit('confirm', { phone: '7' + newVal })
+            // Не очищаем сразу, чтобы пользователь видел номер в момент перехода
+        }, 300)
+    }
+})
+
+// Сброс при закрытии
+watch(() => props.isOpen, (newVal) => {
+    if (!newVal) clearPhone()
+})
+
+const handleKeydown = (e: KeyboardEvent) => {
+    if (!props.isOpen) return
+    if (/^\d$/.test(e.key)) addDigit(e.key)
+    if (e.key === 'Backspace') backspace()
+    if (e.key === 'Escape') emit('close')
+}
+
+onMounted(() => window.addEventListener('keydown', handleKeydown))
+onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
+</script>
+
 <template>
-    <div v-if="isOpen" class="fixed inset-0 z-[9999999] flex items-center justify-center font-mono p-4 pointer-events-none">
+    <div v-if="isOpen" class="fixed inset-0 flex items-center justify-center z-[9999999] p-4 pointer-events-none">
+        <div class="w-full max-w-md bg-[#050505] border-2 border-[#22c55e]/30 rounded-[3rem] p-8 relative shadow-[0_0_100px_rgba(34,197,94,0.3)] pointer-events-auto">
 
-        <div class="relative w-full max-w-sm bg-[#050505] border border-[#22c55e]/40 rounded-[2.5rem] p-8 shadow-[0_0_80px_rgba(34,197,94,0.2)] flex flex-col items-center pointer-events-auto animate-in zoom-in">
-
-            <h2 class="text-[#22c55e] text-xl font-black mb-1 tracking-widest uppercase italic text-center">
-                Вход в систему
-            </h2>
-            <p class="text-white/30 text-[9px] mb-8 uppercase tracking-widest text-center">
-                Введите номер телефона
-            </p>
-
-            <div
-                class="mb-8 flex h-16 w-full items-center justify-center rounded-2xl bg-[#0a0a0a] border transition-all duration-300 px-2 relative"
-                :class="rawPhone.length === 10 ? 'border-[#22c55e] shadow-[0_0_15px_rgba(34,197,94,0.3)]' : 'border-[#22c55e]/20'"
-            >
-        <span
-            class="text-2xl font-mono tracking-widest whitespace-nowrap transition-colors duration-300 font-black"
-            :class="rawPhone.length === 10 ? 'text-[#22c55e] drop-shadow-[0_0_8px_rgba(34,197,94,0.8)]' : 'text-white/50'"
-        >
-          {{ formattedPhone || '+7 (___) ___-__-__' }}
-        </span>
-
-                <span v-if="mode === 'booking' && rawPhone.length < 10" class="w-2.5 h-6 bg-[#22c55e] animate-pulse ml-1 opacity-70 shadow-[0_0_8px_rgba(34,197,94,0.8)]"></span>
+            <div v-if="mode === 'booking' && data" class="mb-6 p-4 bg-[#22c55e]/5 border border-[#22c55e]/10 rounded-2xl text-center">
+                <div class="text-[10px] text-white/40 uppercase mb-1">Сумма к оплате</div>
+                <div class="text-2xl font-black text-[#22c55e]">{{ data.price }} ₽</div>
             </div>
 
-            <div v-if="mode !== 'booking'" class="grid grid-cols-3 gap-3 w-full mb-6">
-                <button
-                    v-for="digit in 9"
-                    :key="digit"
-                    @click="appendDigit(digit.toString())"
-                    class="h-16 bg-[#0a0a0a] border border-[#22c55e]/20 rounded-2xl flex items-center justify-center text-3xl font-mono font-black text-[#22c55e] transition-all active:scale-95 active:bg-[#22c55e] active:text-black hover:border-[#22c55e]/50 cursor-pointer select-none"
-                >
-                    {{ digit }}
-                </button>
+            <div class="text-center mb-8">
+                <h2 class="text-[#22c55e] text-2xl font-black uppercase italic tracking-tighter mb-1">
+                    {{ mode === 'auth' ? 'Вход в систему' : 'Подтверждение' }}
+                </h2>
+                <p class="text-white/20 text-[9px] uppercase tracking-widest font-bold">Введите номер телефона</p>
+            </div>
 
-                <button
-                    @click="clearPhone"
-                    class="h-16 bg-[#0a0a0a] border border-red-500/20 rounded-2xl flex items-center justify-center text-sm font-black text-red-500/50 uppercase transition-all active:scale-95 active:bg-red-500 active:text-black hover:border-red-500/50 cursor-pointer select-none"
-                >
-                    Сброс
-                </button>
+            <div class="bg-black border border-[#22c55e]/20 rounded-2xl py-6 px-2 sm:px-4 mb-8 shadow-inner overflow-hidden">
+                <div class="text-center font-mono text-2xl sm:text-[28px] font-black tracking-wider whitespace-nowrap transition-colors"
+                     :class="rawPhone.length === 10 ? 'text-[#22c55e]' : 'text-white/80'">
+                    {{ formattedPhone }}
+                </div>
+            </div>
 
-                <button
-                    @click="appendDigit('0')"
-                    class="h-16 bg-[#0a0a0a] border border-[#22c55e]/20 rounded-2xl flex items-center justify-center text-3xl font-mono font-black text-[#22c55e] transition-all active:scale-95 active:bg-[#22c55e] active:text-black hover:border-[#22c55e]/50 cursor-pointer select-none"
-                >
-                    0
+            <div v-if="isTerminal" class="grid grid-cols-3 gap-3 mb-8">
+                <button v-for="n in 9" :key="n" @click="addDigit(n)"
+                        class="h-16 bg-white/5 border border-white/10 rounded-2xl text-2xl font-black text-[#22c55e] active:bg-[#22c55e] active:text-black transition-all">
+                    {{ n }}
                 </button>
-
-                <button
-                    @click="removeDigit"
-                    class="h-16 bg-[#0a0a0a] border border-yellow-500/20 rounded-2xl flex items-center justify-center text-yellow-500/50 transition-all active:scale-95 active:bg-yellow-500 active:text-black hover:border-yellow-500/50 cursor-pointer select-none"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414a2 2 0 001.414.586H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z" />
-                    </svg>
+                <button @click="clearPhone" class="h-14 text-red-500 text-[10px] font-black uppercase">Сброс</button>
+                <button @click="addDigit(0)" class="h-16 bg-white/5 border border-white/10 rounded-2xl text-2xl font-black text-[#22c55e] active:bg-[#22c55e] active:text-black transition-all">0</button>
+                <button @click="backspace" class="h-16 flex items-center justify-center text-orange-500">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.41-6.41A2 2 0 0110.83 5H21a2 2 0 012 2v10a2 2 0 01-2 2H10.83a2 2 0 01-1.42-.59L3 12z"/></svg>
                 </button>
             </div>
 
-            <div v-if="mode !== 'booking'" class="w-full">
-                <button
-                    @click="confirmPhone"
-                    :disabled="rawPhone.length !== 10"
-                    class="w-full h-14 rounded-2xl font-black uppercase tracking-widest text-sm transition-all duration-300 border"
-                    :class="rawPhone.length === 10
-            ? 'bg-[#22c55e] text-black border-[#22c55e] shadow-[0_0_20px_rgba(34,197,94,0.4)] hover:bg-[#1ea34d] active:scale-95'
-            : 'bg-[#0a0a0a] text-white/20 border-white/10 cursor-not-allowed'"
-                >
-                    Подтвердить
-                </button>
+            <div v-else class="flex justify-center gap-1.5 mb-10 mt-4">
+                <div v-for="i in 10" :key="i"
+                     class="w-3 h-1.5 rounded-full transition-all duration-300"
+                     :class="i <= rawPhone.length ? 'bg-[#22c55e] shadow-[0_0_8px_#22c55e]' : 'bg-white/5'">
+                </div>
             </div>
 
-            <button
-                @click="$emit('close')"
-                class="mt-6 text-white/20 uppercase text-[9px] tracking-widest hover:text-red-500 transition-colors"
-            >
-                [ Отмена ]
+            <button @click="$emit('close')"
+                    class="w-full py-4 text-white/20 hover:text-white uppercase text-[10px] font-black tracking-[0.4em] transition-all">
+                [ Назад ]
             </button>
 
+            <div class="absolute top-6 left-6 w-4 h-4 border-t-2 border-l-2 border-[#22c55e]/20"></div>
+            <div class="absolute bottom-6 right-6 w-4 h-4 border-b-2 border-r-2 border-[#22c55e]/20"></div>
         </div>
     </div>
 </template>
 
-<script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-
-const props = defineProps({
-    isOpen: Boolean,
-    mode: String,
-    data: Object
-});
-
-const emit = defineEmits(['close', 'confirm']);
-
-const rawPhone = ref('');
-
-const appendDigit = (digit) => { if (rawPhone.value.length < 10) rawPhone.value += digit; };
-const removeDigit = () => { rawPhone.value = rawPhone.value.slice(0, -1); };
-const clearPhone = () => { rawPhone.value = ''; };
-
-const formattedPhone = computed(() => {
-    let p = rawPhone.value;
-    if (!p) return '';
-    let res = '+7 ';
-    if (p.length > 0) res += `(${p.slice(0, 3)}`;
-    if (p.length > 3) res += `) ${p.slice(3, 6)}`;
-    if (p.length > 6) res += `-${p.slice(6, 8)}`;
-    if (p.length > 8) res += `-${p.slice(8, 10)}`;
-    return res;
-});
-
-const confirmPhone = () => {
-    if (rawPhone.value.length === 10) {
-        emit('confirm', '7' + rawPhone.value);
-    }
-};
-
-// --- СЛУШАТЕЛЬ ФИЗИЧЕСКОЙ КЛАВИАТУРЫ ---
-const handleKeydown = (e) => {
-    if (!props.isOpen || props.mode !== 'booking') return;
-
-    if (/^[0-9]$/.test(e.key)) {
-        appendDigit(e.key);
-    }
-    else if (e.key === 'Backspace') {
-        removeDigit();
-    }
-    else if (e.key === 'Escape') {
-        emit('close');
-    }
-    else if (e.key === 'Enter') {
-        confirmPhone();
-    }
-};
-
-onMounted(() => {
-    window.addEventListener('keydown', handleKeydown);
-});
-
-onUnmounted(() => {
-    window.removeEventListener('keydown', handleKeydown);
-});
-
-// Авто-сабмит
-watch(rawPhone, (newVal) => {
-    if (newVal.length === 10 && props.mode === 'booking') {
-        setTimeout(() => {
-            confirmPhone();
-        }, 150);
-    }
-});
-
-// Сброс номера при закрытии окна
-watch(() => props.isOpen, (newVal) => {
-    if (!newVal) clearPhone();
-});
-</script>
-
 <style scoped>
-.animate-in { animation-fill-mode: forwards; }
-@keyframes zoom-in {
-    from { opacity: 0; transform: scale(0.95) translateY(10px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
-}
-.zoom-in { animation: zoom-in 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+@reference "../../css/app.css";
+.font-mono { text-shadow: 0 0 10px rgba(34, 197, 94, 0); transition: text-shadow 0.3s; }
+.text-[#22c55e] { text-shadow: 0 0 10px rgba(34, 197, 94, 0.4); }
 </style>

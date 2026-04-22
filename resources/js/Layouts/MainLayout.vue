@@ -19,16 +19,25 @@ const isSmsModalOpen = ref(false)
 const authPhone = ref('')
 const smsModalRef = ref<InstanceType<typeof SmsModal> | null>(null)
 
-const handlePhoneConfirm = async (payload: any) => {
-    authPhone.value = payload.phone
-    isPhoneModalOpen.value = false
+const handleLogout = () => {
+    if (confirm('Завершить сеанс в Sector 0451?')) {
+        router.post(route('logout'))
+    }
+}
 
+const handlePhoneConfirm = async (payload: any) => {
+    // Поддержка как объекта, так и просто строки
+    authPhone.value = payload.phone || payload
+
+    // Пытаемся отправить код
     try {
         await window.axios.post('/auth/send-code', { phone: authPhone.value })
     } catch (e) {
         console.error('Ошибка API СМС')
     } finally {
-        setTimeout(() => { isSmsModalOpen.value = true }, 300)
+        // МГНОВЕННОЕ переключение окон (без моргания фона)
+        isPhoneModalOpen.value = false
+        isSmsModalOpen.value = true
     }
 }
 
@@ -36,7 +45,8 @@ const handleSmsVerify = (code: string) => {
     // Мастер-код REACTOR для тестов
     if (code === '0451') {
         isSmsModalOpen.value = false
-        router.visit('/auth/dashboard')
+        // ИСПРАВЛЕНО НА ПРАВИЛЬНЫЙ РОУТ, ЧТОБЫ НЕ БЫЛО 404
+        router.visit('/account/dashboard')
         return
     }
 
@@ -107,9 +117,12 @@ onMounted(() => {
                     </Link>
 
                     <template v-if="isAuthenticated">
-                        <Link href="/auth/dashboard" class="nav-btn group" :class="{ 'active': $page.url.startsWith('/auth') }">
+                        <Link href="/account/dashboard" class="nav-btn group" :class="{ 'active': $page.url.startsWith('/account') }">
                             <span class="relative z-10">Кабинет</span>
                         </Link>
+                        <button @click="handleLogout" class="nav-btn group !border-red-500/30 !text-red-500 hover:!bg-red-500 hover:!text-white transition-all">
+                            <span class="relative z-10">Выйти</span>
+                        </button>
                     </template>
                     <template v-else>
                         <button @click="isPhoneModalOpen = true" class="nav-btn group !border-[#22c55e]/30 !text-[#22c55e] hover:!bg-[#22c55e] hover:!text-black transition-all">
@@ -149,7 +162,7 @@ onMounted(() => {
                             <span class="text-[#22c55e] text-2xl font-mono ml-1">₽</span>
                         </span>
                     </div>
-                    <Link href="/auth/dashboard" class="ml-auto w-12 h-12 rounded-2xl bg-white/5 border border-white/10 text-[#22c55e] flex items-center justify-center hover:bg-[#22c55e] hover:text-black transition-all group">
+                    <Link href="/account/dashboard" class="ml-auto w-12 h-12 rounded-2xl bg-white/5 border border-white/10 text-[#22c55e] flex items-center justify-center hover:bg-[#22c55e] hover:text-black transition-all group">
                         <svg class="w-5 h-5 group-hover:scale-125 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                     </Link>
                 </div>

@@ -35,4 +35,15 @@ class User extends Authenticatable
         'password',
         'phone', // <-- ОБЯЗАТЕЛЬНО ДОБАВИТЬ ЭТУ СТРОКУ
     ];
+    public function wallet() {
+        return $this->hasOne(Wallet::class);
+    }
+
+    /**
+     * Связь с транзакциями (один ко многим)
+     */
+    public function transactions()
+    {
+        return $this->hasMany(Transaction::class);
+    }
 }

@@ -1,31 +1,48 @@
 <?php
+
 namespace App\Http\Controllers;
 
-use App\Services\GizmoService;
-use Inertia\Inertia;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
 
 class ProfileController extends Controller
 {
-    protected $gizmoService; // 1. Объявляем свойство
-
-    public function __construct(GizmoService $gizmoService) // 2. Внедряем сервис
+    public function dashboard()
     {
-        $this->gizmoService = $gizmoService;
-    }
+        $user = Auth::user();
 
-    // app/Http/Controllers/ProfileController.php
-    public function index()
-    {
-        return Inertia::render('Profile/Dashboard', [
+        // Получаем кошелек или создаем его, если вдруг он не создался при реге
+        $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id], ['balance' => 0]);
+
+        // Берем 5 последних транзакций
+        $transactions = $user->transactions()
+            ->latest()
+            ->take(5)
+            ->get()
+            ->map(function($t) {
+                return [
+                    'id' => $t->id,
+                    'amount' => (float)$t->amount,
+                    'type' => $t->type,
+                    'description' => $t->description,
+                    'date' => $t->created_at->format('d.m / H:i'),
+                ];
+            });
+
+        return Inertia::render('User/Dashboard', [
             'user' => [
-                'id' => Auth::id(),
-                'name' => Auth::user()->name,
-                'phone' => Auth::user()->phone,
-                'gizmo_pin' => Auth::user()->gizmo_pin, // Передаем ПИН
+                'id' => $user->id,
+                'name' => $user->name,
+                'phone' => $user->phone,
             ],
-            // ... gizmo data
+            'gizmo' => [
+                'balance' => (float)$wallet->balance,
+                'spent_total' => (float)abs($user->transactions()->where('amount', '<', 0)->sum('amount')),
+            ],
+            'transactions' => $transactions // ПЕРЕДАЕМ ИСТОРИЮ
         ]);
     }
 
+    // ... остальные методы (edit, update) остаются как были
 }

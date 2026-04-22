@@ -4,6 +4,7 @@ import vue from '@vitejs/plugin-vue';
 import tailwindcss from '@tailwindcss/vite'; // 1. Импортируем плагин
 import path from 'path';
 
+
 export default defineConfig({
     plugins: [
         tailwindcss(), // 2. Добавляем в начало списка плагинов
