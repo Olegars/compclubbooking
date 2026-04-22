@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+/* Указываем Tailwind, где искать классы */
+@source "../../views/**/*.blade.php";
+@source "../**/*.vue";
+
+@font-face {
+    font-family: 'BomberEscort';
+    src: url('../fonts/Bomber-Escort-Expanded-400.otf') format('opentype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@theme {
+    --font-bomber: "BomberEscort", sans-serif;
+    --color-reactor: #22c55e;
+    --color-bg-dark: #020202;
+}
+
+@layer base {
+    body {
+        @apply bg-[#020202] text-white antialiased font-mono;
+    }
+}
+
+@layer utilities {
+    .text-glow { text-shadow: 0 0 15px rgba(34, 197, 94, 0.5); }
+    .border-glow { box-shadow: 0 0 20px rgba(34, 197, 94, 0.1); }
+    .crt-overlay {
+        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%),
+        linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 0, 0.03));
+        background-size: 100% 3px, 2px 100%;
+    }
+}
