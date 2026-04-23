@@ -18,45 +18,36 @@ class SmsAuthController extends Controller
             'code' => 'required|string',
         ]);
 
-        // 1. Проверка мастер-кода или кода из кэша
         if ($request->code !== '0451') {
-            // Здесь должна быть логика проверки реального кода из Redis/Cache
             return back()->withErrors(['code' => 'Неверный код']);
         }
 
-        // 2. Ищем или создаем пользователя в Laravel
-        $user = User::firstOrCreate(
-            ['phone' => $request->phone],
-            [
-                'name' => 'Stalker_' . substr($request->phone, -4),
-                'email' => $request->phone . '@reactor.club', // Заглушка для email
-                'password' => bcrypt(str_random(16)),
-            ]
-        );
+        // Ищем юзера. Если не нашли - создаем с рандомной аватаркой
+        $user = User::where('phone', $request->phone)->first();
 
-        // 3. СИНХРОНИЗАЦИЯ С GIZMO
+        if (!$user) {
+            $user = User::create([
+                'phone' => $request->phone,
+                'name' => 'Stalker_' . substr($request->phone, -4),
+                'email' => $request->phone . '@reactor.club',
+                'password' => bcrypt(str_random(16)),
+                'avatar' => 'avatar_' . rand(1, 10) . '.png', // Рандом от 1 до 10
+            ]);
+        }
+
         if (!$user->gizmo_id) {
             $gizmoId = $gizmo->createUser([
                 'username' => $user->name,
                 'phone' => $user->phone
             ]);
-
-            if ($gizmoId) {
-                $user->update(['gizmo_id' => $gizmoId]);
-            }
+            if ($gizmoId) { $user->update(['gizmo_id' => $gizmoId]); }
         }
 
-        // 4. СОЗДАНИЕ КОШЕЛЬКА (если еще нет)
         if (!$user->wallet) {
-            Wallet::create([
-                'user_id' => $user->id,
-                'balance' => 0
-            ]);
+            Wallet::create(['user_id' => $user->id, 'balance' => 0]);
         }
 
-        // 5. Авторизуем
         Auth::login($user, true);
-
         return redirect()->route('dashboard');
     }
 }

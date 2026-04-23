@@ -11,6 +11,8 @@ use App\Http\Controllers\Auth\AdminLoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\BookingController;
+use App\Http\Controllers\ShopController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -106,4 +108,19 @@ Route::prefix('admin')->middleware(['auth'])->group(function () {
 Route::prefix('admin/fiscal')->middleware(['auth'])->group(function () {
     Route::get('/', [AdminController::class, 'fiscalMonitor'])->name('admin.fiscal');
     Route::get('/hardware-status', [AdminController::class, 'getKktHardwareStatus']);
+});
+
+
+Route::prefix('api')->middleware(['auth'])->group(function () {
+    Route::post('/booking/reserve', [BookingController::class, 'reserve']);
+});
+
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/shop', function () {
+        return inertia('User/Shop'); // Путь к Shop.vue
+    })->name('shop');
+
+    Route::get('/api/shop/products', [ShopController::class, 'getProducts']);
+    Route::post('/api/shop/checkout', [ShopController::class, 'checkout']);
 });

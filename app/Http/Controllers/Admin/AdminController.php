@@ -58,47 +58,62 @@ class AdminController extends Controller
     /**
      * Подарочное время (Лояльность)
      */
-    public function giftTime(Request $request)
-    {
+    // app/Http/Controllers/Admin/AdminController.php
+
+    public function giftTime(Request $request, GizmoService $gizmo) {
+        $request->validate([
+            'user_id' => 'required|exists:users,id',
+            'minutes' => 'required|integer|min:1|max:20', // Жесткий лимит 20 мин
+            'reason' => 'required|string',
+            'pc_id' => 'required'
+        ]);
+
         $admin = auth()->user();
         $minutes = $request->minutes;
 
-        // 1. Защита: не более 20 минут за раз
-        if ($minutes > 20) {
-            return response()->json(['message' => 'Превышен разовый лимит (max 20 мин)'], 403);
-        }
-
-        // 2. Защита: лимит админа на смену (например, 120 минут)
-        $alreadyGiftedToday = GiftLog::where('admin_id', $admin->id)
+        // 1. ПРОВЕРКА: Лимит админа на смену (допустим, 120 минут суммарно)
+        $adminDailyUsed = GiftLog::where('admin_id', $admin->id)
             ->whereDate('created_at', today())
             ->sum('minutes');
 
-        if ($alreadyGiftedToday + $minutes > 120) {
-            return response()->json(['message' => 'Твой дневной фонд исчерпан'], 403);
+        if ($adminDailyUsed + $minutes > 120) {
+            return response()->json([
+                'message' => 'Твой лимит исправлений на сегодня исчерпан (120 мин).'
+            ], 403);
         }
 
-        // 3. Защита: лимит на конкретного юзера (чтобы не кормить друга по 20 мин весь день)
-        $userGiftsToday = GiftLog::where('user_id', $request->user_id)
+        // 2. ПРОВЕРКА: Лимит на одного игрока (чтобы не кормить друга)
+        $userDailyReceived = GiftLog::where('user_id', $request->user_id)
             ->whereDate('created_at', today())
             ->sum('minutes');
 
-        if ($userGiftsToday + $minutes > 40) {
-            return response()->json(['message' => 'Этот пользователь уже получил максимум подарков сегодня'], 403);
+        if ($userDailyReceived + $minutes > 40) {
+            return response()->json([
+                'message' => 'Этот игрок сегодня уже получил максимум бонусов (40 мин).'
+            ], 403);
         }
 
-        return DB::transaction(function () use ($request, $admin, $minutes) {
-            // Создаем лог для истории и аудита
+        // 3. ПРОВЕДЕНИЕ ОПЕРАЦИИ
+        return DB::transaction(function () use ($request, $admin, $minutes, $gizmo) {
+            // Логируем для истории
             GiftLog::create([
                 'admin_id' => $admin->id,
                 'user_id' => $request->user_id,
                 'minutes' => $minutes,
-                'reason' => $request->reason
+                'reason' => $request->reason,
+                'pc_name' => $request->pc_id
             ]);
 
-            // Команда в Gizmo через наш сервис
-            // ... (вызов GizmoService)
+            // Отправляем команду в Gizmo
+            $success = $gizmo->startSession(
+                User::find($request->user_id)->gizmo_id,
+                $request->pc_id,
+                $minutes
+            );
 
-            return response()->json(['status' => 'ok']);
+            if (!$success) throw new \Exception("Gizmo API не ответил");
+
+            return response()->json(['status' => 'success', 'remaining_fund' => 120 - ($adminDailyUsed + $minutes)]);
         });
     }
 

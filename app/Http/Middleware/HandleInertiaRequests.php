@@ -22,8 +22,8 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'gizmo' => [
-                // Если юзер есть — берем из базы/API, если нет — отдаем нули
-                'balance' => $request->user() ? $request->user()->balance : 0,
+                // Обращаемся к балансу через кошелек (wallet)
+                'balance' => $request->user()?->wallet?->balance ?? 0,
                 'bonus' => 0,
                 'current_pc' => 'NONE',
                 'spent_time' => 0

@@ -33,7 +33,8 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
-        'phone', // <-- ОБЯЗАТЕЛЬНО ДОБАВИТЬ ЭТУ СТРОКУ
+        'phone',
+        'avatar'
     ];
     public function wallet() {
         return $this->hasOne(Wallet::class);

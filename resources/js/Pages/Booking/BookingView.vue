@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
+import { router } from '@inertiajs/vue3'
+import axios from 'axios' // ДОБАВЛЕН AXIOS
 
 import MainLayout from '@/Layouts/MainLayout.vue'
 import TerminalLayout from '@/Layouts/TerminalLayout.vue'
@@ -11,7 +13,7 @@ import PaymentModal from '@/Components/PaymentModal.vue'
 import ZoneInfoModal from '@/Components/ZoneInfoModal.vue'
 import TariffsModal from '@/Components/TariffsModal.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
     clubData: {
         id: number;
         name: string;
@@ -22,12 +24,12 @@ const props = defineProps<{
     zonesList: any[];
     zoneRectsList: any[];
     isTerminal?: boolean;
-}>()
+}>(), {
+    isTerminal: false
+})
 
 const layout = computed(() => props.isTerminal ? TerminalLayout : MainLayout)
 
-// --- ФИКС ОШИБКИ "wall is null" ---
-// Чистим конфиг от битых данных (null) перед отрисовкой
 const cleanMapConfig = computed(() => {
     try {
         let config = typeof props.clubData.map_config === 'string'
@@ -36,7 +38,6 @@ const cleanMapConfig = computed(() => {
 
         if (!config) return { walls: [], zoneRects: [], labels: [] };
 
-        // Очистка: убираем null и элементы без необходимых данных
         return {
             ...config,
             walls: Array.isArray(config.walls) ? config.walls.filter((w: any) => w && w.d) : [],
@@ -49,7 +50,6 @@ const cleanMapConfig = computed(() => {
     }
 });
 
-// === ЛОГИКА БРОНИРОВАНИЯ ===
 const occupiedIds = computed(() =>
     props.computersList
         .filter(pc => pc.status !== 'available')
@@ -66,7 +66,6 @@ const handleSeatError = () => {
     errorTimer = setTimeout(() => { seatError.value = false }, 1500)
 }
 
-// Состояния модалок
 const showOverlay = ref(false)
 const showConfirmModal = ref(false)
 const showSmsModal = ref(false)
@@ -80,7 +79,6 @@ const selectedDate = ref(new Date().toDateString())
 const bookingMode = ref('hourly')
 const selectedPackage = ref<any>(null)
 
-// Определение данных ПК
 const getComputerData = (id: string | number) => {
     const pc = props.computersList.find(c => c.id.toString() === id.toString());
     if (!pc) return { zoneName: 'STANDARD', pcName: id, price: 250 };
@@ -89,7 +87,6 @@ const getComputerData = (id: string | number) => {
     const pcX = Number(pc.x);
     const pcY = Number(pc.y);
 
-    // Берем зоны из нашего очищенного конфига
     const rects = cleanMapConfig.value.zoneRects || [];
     for (const z of rects) {
         if (pcX >= z.x && pcX <= z.x + z.w && pcY >= z.y && pcY <= z.y + z.h) {
@@ -117,7 +114,6 @@ const selectedPlacesText = computed(() =>
         }).join(', ')
 )
 
-// Логика времени
 const timeSteps = Array.from({ length: 96 }, (_, i) => i * 0.25)
 const formatTimeLabel = (h: number) => {
     const hours = Math.floor(h).toString().padStart(2, '0')
@@ -145,7 +141,6 @@ const duration = computed(() => {
     return d === 0 ? 24 : d
 })
 
-const isNextDay = computed(() => (startH.value + duration.value) >= 24)
 const startDateLabel = computed(() => new Date(selectedDate.value).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).toUpperCase())
 
 const totalAmount = computed(() => {
@@ -158,13 +153,47 @@ const closeAllModals = () => {
     showInfoModal.value = false; showTariffsModal.value = false; showOverlay.value = false;
 }
 
-const handleConfirmBooking = (payload: any) => {
-    userPhone.value = payload.phone || payload
+// === БОЕВАЯ ЛОГИКА БРОНИРОВАНИЯ ===
+const isProcessing = ref(false)
+
+const handleConfirmBooking = async (payload: any) => {
     showConfirmModal.value = false
-    setTimeout(() => { showSmsModal.value = true }, 200)
+
+    if (props.isTerminal) {
+        userPhone.value = payload.phone || payload || ''
+        setTimeout(() => { showSmsModal.value = true }, 200)
+    } else {
+        // Запрос к бэкенду на списание и бронь
+        isProcessing.value = true
+        try {
+            await axios.post('/api/booking/reserve', {
+                pc_ids: selectedIds.value,
+                price: totalAmount.value,
+                date: selectedDate.value,
+                start_h: startH.value,
+                duration: duration.value
+            })
+
+            // Если деньги списались, показываем окно успеха
+            setTimeout(() => { showSuccessModal.value = true }, 200)
+        } catch (error: any) {
+            console.error('Сбой транзакции:', error)
+            alert(error.response?.data?.message || 'Ошибка транзакции. Убедитесь, что на балансе достаточно средств.')
+            closeAllModals()
+        } finally {
+            isProcessing.value = false
+        }
+    }
 }
 
-const handleFinalClose = () => { closeAllModals(); selectedIds.value = [] }
+const handleFinalClose = () => {
+    closeAllModals()
+    selectedIds.value = []
+
+    if (!props.isTerminal) {
+        router.visit('/account/dashboard') // Твой путь к кабинету
+    }
+}
 
 const bookingDataForModal = computed(() => ({
     pcNumber: selectedPlacesText.value,
@@ -307,10 +336,11 @@ onUnmounted(() => closeAllModals())
 
                 <div class="pt-4 shrink-0">
                     <button @click="selectedIds.length && (showOverlay=true, showConfirmModal=true)"
-                            :class="['group w-full p-1 bg-[#22c55e] rounded-[2.5rem] transition-all active:scale-95', !selectedIds.length ? 'opacity-30 grayscale cursor-not-allowed' : 'cursor-pointer shadow-[0_10px_30px_rgba(34,197,94,0.2)]']">
+                            :disabled="isProcessing"
+                            :class="['group w-full p-1 bg-[#22c55e] rounded-[2.5rem] transition-all active:scale-95', !selectedIds.length || isProcessing ? 'opacity-30 grayscale cursor-not-allowed' : 'cursor-pointer shadow-[0_10px_30px_rgba(34,197,94,0.2)]']">
                         <div class="bg-[#0a0a0a] rounded-[2.3rem] p-7 flex justify-between items-center border border-white/10 group-hover:bg-transparent transition-all">
                             <span class="font-black uppercase text-sm text-white group-hover:text-black italic tracking-widest">
-                                {{ isTerminal ? 'ОПЛАТИТЬ И ИГРАТЬ' : 'Подтвердить' }}
+                                {{ isProcessing ? 'Связь...' : (isTerminal ? 'ОПЛАТИТЬ И ИГРАТЬ' : 'Подтвердить') }}
                             </span>
                             <div class="flex flex-col items-end text-[#22c55e] group-hover:text-black leading-none font-black italic">
                                 <div class="text-5xl tracking-tighter leading-none">{{ totalAmount.toFixed(0) }}</div>

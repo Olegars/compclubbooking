@@ -32,16 +32,16 @@ class ClubController extends Controller
         $mapConfig = json_decode($club->map_config, true);
         $zoneRects = $mapConfig['zoneRects'] ?? [];
 
-        // 4. Рендерим страницу (ИСПРАВЛЕН ПУТЬ)
-        // Теперь смотрим в папку resources/js/Pages/Booking/BookingView.vue
+        // 4. Рендерим страницу (ИСПРАВЛЕННЫЙ БЛОК GIZMO)
         return Inertia::render('Booking/BookingView', [
             'clubData' => $club,
             'computersList' => $computers,
-            'zonesList' => [], // Сюда потом прилетит список зон из Гизмо
+            'zonesList' => [],
             'zoneRectsList' => $zoneRects,
-            // Добавляем заглушку для gizmo, чтобы фронт не падал при чтении props.gizmo.balance
-            'gizmo' => [
-                'balance' => "0.00",
+
+            // Отдаем РЕАЛЬНЫЙ кошелек, если авторизован. Если нет - отдаем нули.
+            'gizmo' => auth()->check() && auth()->user()->wallet ? auth()->user()->wallet : [
+                'balance' => 0,
                 'bonus' => 0,
                 'current_pc' => 'NONE'
             ]
