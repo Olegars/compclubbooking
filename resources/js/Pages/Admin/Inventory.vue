@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { Head } from '@inertiajs/vue3'
 import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
@@ -8,6 +9,8 @@ const products = ref<any[]>([])
 const categories = ['Все', 'Напитки', 'Снэки', 'Еда']
 const activeCategory = ref('Все')
 const isLoading = ref(true)
+const scannedId = ref<number | null>(null) // Для эффекта вспышки при сканировании
+const lastScannedName = ref('') // Для системного уведомления
 
 // Модалка и Форма
 const isModalOpen = ref(false)
@@ -20,231 +23,243 @@ const form = ref({
     name: '',
     category: 'Снэки',
     price: 100,
+    stock: 0,
+    barcode: '',
     image: null as File | null,
     current_image_url: ''
 })
 
-// --- ЗАГРУЗКА ТОВАРОВ ---
-const fetchProducts = async () => {
-    isLoading.value = true
-    try {
-        // Забираем товары по API (можно использовать тот же роут, что и для магазина)
-        const { data } = await axios.get('/api/shop/products')
-        products.value = data
-    } catch (e) {
-        console.error('Ошибка загрузки склада:', e)
-    } finally {
-        isLoading.value = false
+// --- ЛОГИКА СКАНЕРА (AUTO-INCREMENT) ---
+let barcodeBuffer = ''
+let lastKeyTime = Date.now()
+
+const handleGlobalKeyDown = async (e: KeyboardEvent) => {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+
+    const currentTime = Date.now()
+    if (currentTime - lastKeyTime > 50) barcodeBuffer = ''
+    lastKeyTime = currentTime
+
+    if (e.key === 'Enter') {
+        if (barcodeBuffer.length > 5) {
+            await processAutoStock(barcodeBuffer)
+        }
+        barcodeBuffer = ''
+    } else if (e.key !== 'Shift') {
+        barcodeBuffer += e.key
     }
 }
 
-const filteredProducts = computed(() => {
-    if (activeCategory.value === 'Все') return products.value
-    return products.value.filter(p => p.category === activeCategory.value)
-})
+const processAutoStock = async (code: string) => {
+    try {
+        // 1. Ищем товар
+        const { data } = await axios.get('/admin/api/inventory/find-barcode', { params: { code } })
 
-// --- УПРАВЛЕНИЕ ФОРМОЙ ---
+        // 2. СРАЗУ ДЕЛАЕМ +1 (Optimistic UI)
+        await quickUpdateStock(data.id, 1)
+
+        // 3. Визуальный фидбек
+        lastScannedName.value = data.name
+        scannedId.value = data.id
+
+        // Скроллим к позиции
+        document.getElementById(`product-${data.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+        // Очищаем подсветку через 2 сек
+        setTimeout(() => {
+            scannedId.value = null
+            lastScannedName.value = ''
+        }, 2000)
+
+    } catch (e: any) {
+        // Если товара нет — предлагаем создать
+        if (confirm(`Объект [${code}] не опознан. Зарегистрировать новую единицу в базе?`)) {
+            openModal()
+            form.value.barcode = code
+        }
+    }
+}
+
+// --- СТАНДАРТНОЕ УПРАВЛЕНИЕ ---
+const fetchProducts = async () => {
+    isLoading.value = true
+    try {
+        const { data } = await axios.get('/api/shop/products')
+        products.value = data
+    } catch (e) { console.error('Warehouse Link Lost') }
+    finally { isLoading.value = false }
+}
+
+const quickUpdateStock = async (id: number, amount: number) => {
+    const idx = products.value.findIndex(p => p.id === id)
+    if (idx === -1) return
+    const product = products.value[idx]
+    const oldStock = Number(product.stock)
+
+    if (oldStock + amount < 0) return
+
+    product.stock = oldStock + amount // Мгновенное обновление
+    try {
+        await axios.post('/admin/api/inventory/update-stock', { id, amount })
+    } catch (e) { product.stock = oldStock }
+}
+
 const openModal = (product: any = null) => {
     if (product) {
         form.value = {
-            id: product.id,
-            name: product.name,
-            category: product.category,
-            price: Math.floor(product.price),
-            image: null,
-            current_image_url: product.image || '/images/shop/default.png'
+            id: product.id, name: product.name, category: product.category,
+            price: Math.floor(product.price), stock: Number(product.stock),
+            barcode: product.barcode || '', image: null, current_image_url: product.image || ''
         }
-        imagePreview.value = product.image || '/images/shop/default.png'
+        imagePreview.value = product.image
     } else {
-        form.value = { id: null, name: '', category: 'Снэки', price: 100, image: null, current_image_url: '' }
+        form.value = { id: null, name: '', category: 'Снэки', price: 100, stock: 0, barcode: '', image: null, current_image_url: '' }
         imagePreview.value = null
     }
     isModalOpen.value = true
 }
 
-const closeModal = () => {
-    isModalOpen.value = false
-    setTimeout(() => {
-        form.value = { id: null, name: '', category: 'Снэки', price: 100, image: null, current_image_url: '' }
-        imagePreview.value = null
-        if (fileInput.value) fileInput.value.value = ''
-    }, 300)
-}
-
-// --- ОБРАБОТКА ИЗОБРАЖЕНИЯ ---
-const handleImageUpload = (e: Event) => {
-    const target = e.target as HTMLInputElement
-    if (target.files && target.files[0]) {
-        const file = target.files[0]
-        form.value.image = file
-        // Создаем временную ссылку для предпросмотра
-        imagePreview.value = URL.createObjectURL(file)
-    }
-}
-
-const triggerFileInput = () => {
-    if (fileInput.value) fileInput.value.click()
-}
-
-const handleImageError = (e: Event) => {
-    const target = e.target as HTMLImageElement;
-    target.src = '/images/shop/default.png';
-}
-
-// --- СОХРАНЕНИЕ В БАЗУ (FormData) ---
 const saveProduct = async () => {
-    if (!form.value.name || !form.value.price) return alert('Заполните название и цену')
-
     isProcessing.value = true
     const formData = new FormData()
-    formData.append('name', form.value.name)
-    formData.append('category', form.value.category)
-    formData.append('price', form.value.price.toString())
-
-    // Если выбрали новый файл, прикрепляем его
-    if (form.value.image) {
-        formData.append('image', form.value.image)
-    }
-    if (form.value.id) {
-        formData.append('id', form.value.id.toString())
-    }
-
+    Object.entries(form.value).forEach(([key, val]) => { if (val !== null) formData.append(key, val as any) })
     try {
-        // Отправляем POST запрос. Laravel должен принять файл, сохранить в public и вернуть обновленный список или объект
-        await axios.post('/admin/api/inventory/save', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-        })
+        await axios.post('/admin/api/inventory/save', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
         await fetchProducts()
-        closeModal()
-    } catch (e: any) {
-        alert(e.response?.data?.message || 'Ошибка сохранения товара')
-    } finally {
-        isProcessing.value = false
-    }
+        isModalOpen.value = false
+    } catch (e) { alert('Sync Error') }
+    finally { isProcessing.value = false }
 }
 
-// --- УДАЛЕНИЕ ---
-const deleteProduct = async (id: number) => {
-    if (!confirm('ВНИМАНИЕ: Безвозвратно удалить позицию со склада?')) return
-    try {
-        await axios.delete(`/admin/api/inventory/delete/${id}`)
-        await fetchProducts()
-    } catch (e) {
-        alert('Ошибка удаления')
-    }
-}
+onMounted(() => {
+    fetchProducts()
+    window.addEventListener('keydown', handleGlobalKeyDown)
+})
+onUnmounted(() => window.removeEventListener('keydown', handleGlobalKeyDown))
 
-onMounted(fetchProducts)
+const filteredProducts = computed(() => {
+    if (activeCategory.value === 'Все') return products.value
+    return products.value.filter(p => p.category === activeCategory.value)
+})
 </script>
 
 <template>
+    <Head title="LOGISTICS // AUTO-SCAN" />
     <AdminLayout>
-        <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
+        <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 relative">
 
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-xl">
-                <div>
-                    <h1 class="text-3xl font-black uppercase italic text-cyan-500 tracking-tighter">Склад Маркета</h1>
-                    <p class="text-white/30 text-[10px] uppercase tracking-[0.4em] font-black mt-1 italic">Управление товарной матрицей</p>
+            <Transition name="slide">
+                <div v-if="lastScannedName" class="fixed top-24 right-10 z-[100] bg-cyan-500 text-black px-8 py-4 rounded-2xl font-black uppercase italic shadow-[0_0_50px_rgba(6,182,212,0.5)] flex items-center gap-4 border-2 border-white/20">
+                    <span class="text-2xl">⚡</span>
+                    <div>
+                        <div class="text-[10px] leading-none opacity-70">UNIT IDENTIFIED</div>
+                        <div>{{ lastScannedName }} +1 шт</div>
+                    </div>
+                </div>
+            </Transition>
+
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+                <div class="absolute inset-0 bg-gradient-to-r from-cyan-500/5 to-transparent pointer-events-none"></div>
+                <div class="relative z-10">
+                    <h1 class="text-4xl font-black uppercase italic text-cyan-500 tracking-tighter">Reactor <span class="text-white">Warehouse</span></h1>
+                    <div class="flex items-center gap-3 mt-2">
+                        <div class="w-2 h-2 bg-cyan-500 rounded-full animate-pulse shadow-[0_0_10px_#06b6d4]"></div>
+                        <p class="text-white/30 text-[10px] uppercase tracking-[0.4em] font-black italic">Auto-Plus Mode: ACTIVE</p>
+                    </div>
                 </div>
 
-                <div class="flex flex-wrap items-center gap-4">
-                    <div class="flex gap-2 p-1 bg-white/5 rounded-2xl border border-white/5">
-                        <button v-for="cat in categories" :key="cat"
-                                @click="activeCategory = cat"
+                <div class="flex flex-wrap items-center gap-4 relative z-10">
+                    <div class="flex gap-2 p-1.5 bg-white/5 rounded-2xl border border-white/5 backdrop-blur-md">
+                        <button v-for="cat in categories" :key="cat" @click="activeCategory = cat"
                                 class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
-                                :class="activeCategory === cat ? 'bg-cyan-500 text-black shadow-[0_0_15px_rgba(6,182,212,0.3)]' : 'text-white/40 hover:text-white'">
+                                :class="activeCategory === cat ? 'bg-cyan-500 text-black shadow-[0_0_20px_rgba(6,182,212,0.4)]' : 'text-white/40 hover:text-white'">
                             {{ cat }}
                         </button>
                     </div>
-                    <button @click="openModal()" class="px-6 py-3 bg-cyan-500 hover:bg-cyan-400 text-black font-black uppercase tracking-widest rounded-2xl transition-all shadow-[0_0_20px_rgba(6,182,212,0.2)] active:scale-95 italic text-xs">
-                        + Добавить товар
+                    <button @click="openModal()" class="px-8 py-4 bg-cyan-500 hover:bg-cyan-400 text-black font-black uppercase rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.2)] transition-all italic text-xs">
+                        + Manual Add
                     </button>
                 </div>
             </div>
 
-            <div v-if="isLoading" class="flex justify-center py-20">
-                <div class="w-12 h-12 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
+            <div v-if="isLoading" class="flex justify-center py-40">
+                <div class="w-16 h-16 border-4 border-cyan-500/10 border-t-cyan-500 rounded-full animate-spin"></div>
             </div>
 
-            <div v-else-if="filteredProducts.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div v-for="item in filteredProducts" :key="item.id"
-                     class="bg-[#050505] border border-white/5 rounded-[2.5rem] p-6 group hover:border-cyan-500/30 transition-all flex flex-col shadow-lg relative overflow-hidden">
+            <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                <div v-for="item in filteredProducts" :key="item.id" :id="`product-${item.id}`"
+                     class="bg-[#050505] border rounded-[3rem] p-8 group transition-all duration-500 flex flex-col relative overflow-hidden"
+                     :class="[
+                        item.stock <= 5 ? 'border-red-500/40 bg-red-900/5' : 'border-white/5',
+                        scannedId === item.id ? 'ring-4 ring-cyan-500 border-cyan-500 scale-[1.03] z-20 shadow-[0_0_60px_rgba(6,182,212,0.4)] bg-cyan-500/5' : ''
+                     ]">
 
-                    <div class="aspect-square bg-white/5 rounded-[2rem] mb-6 flex items-center justify-center border border-white/5 relative overflow-hidden group-hover:bg-cyan-500/5 transition-colors">
-                        <img :src="item.image || '/images/shop/default.png'" @error="handleImageError"
-                             class="w-3/4 h-3/4 object-contain transition-transform duration-500 group-hover:scale-110 drop-shadow-2xl" />
+                    <div v-if="scannedId === item.id" class="absolute inset-0 bg-cyan-500/10 animate-pulse pointer-events-none"></div>
+
+                    <div class="aspect-square bg-white/5 rounded-[2.5rem] mb-6 flex items-center justify-center border border-white/5 relative overflow-hidden group-hover:bg-cyan-500/5 transition-all">
+                        <img :src="item.image || '/images/shop/default.png'" class="w-3/4 h-3/4 object-contain transition-transform duration-700 group-hover:scale-110" />
+                        <div class="absolute top-5 right-5 px-4 py-1.5 bg-black/80 backdrop-blur-xl rounded-full border border-white/10 flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full" :class="item.stock <= 5 ? 'bg-red-500 animate-ping' : 'bg-cyan-500'"></span>
+                            <span class="text-[11px] font-black text-white italic">{{ item.stock }} <span class="opacity-30">шт</span></span>
+                        </div>
                     </div>
 
-                    <div class="flex justify-between items-start mb-2">
-                        <div class="text-sm font-black text-white uppercase italic tracking-tight pr-4">{{ item.name }}</div>
-                        <div class="text-xl font-black text-cyan-500 italic shrink-0">{{ Math.floor(item.price) }}<span class="text-[10px] ml-0.5">₽</span></div>
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="text-base font-black text-white uppercase italic tracking-tighter leading-tight">{{ item.name }}</div>
+                        <div class="text-2xl font-black text-cyan-500 italic tracking-tighter">{{ Math.floor(item.price) }}₽</div>
                     </div>
 
-                    <div class="text-[9px] text-white/30 uppercase font-black tracking-widest mb-6">{{ item.category }}</div>
+                    <div class="grid grid-cols-3 gap-2 mb-8 p-1.5 bg-white/5 rounded-2xl border border-white/5">
+                        <button @click="quickUpdateStock(item.id, -1)" class="py-3 bg-black/40 hover:bg-red-500 hover:text-black rounded-xl text-[11px] font-black transition-all border border-white/5">-1</button>
+                        <button @click="quickUpdateStock(item.id, 1)" class="py-3 bg-black/40 hover:bg-cyan-500 hover:text-black rounded-xl text-[11px] font-black transition-all border border-white/5">+1</button>
+                        <button @click="quickUpdateStock(item.id, 10)" class="py-3 bg-cyan-500/10 hover:bg-cyan-500 hover:text-black text-cyan-500 rounded-xl text-[11px] font-black transition-all border border-cyan-500/20">+10</button>
+                    </div>
 
-                    <div class="mt-auto grid grid-cols-2 gap-2 opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0">
-                        <button @click="openModal(item)" class="py-3 bg-white/5 border border-white/10 hover:border-cyan-500/50 hover:text-cyan-500 rounded-xl text-[10px] font-black uppercase text-white/50 transition-all">
-                            Изменить
-                        </button>
-                        <button @click="deleteProduct(item.id)" class="py-3 bg-red-500/5 border border-red-500/20 hover:bg-red-500 hover:text-black rounded-xl text-[10px] font-black uppercase text-red-500 transition-all">
-                            Удалить
-                        </button>
+                    <div class="mt-auto flex gap-3">
+                        <button @click="openModal(item)" class="flex-1 py-4 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase text-white/30 hover:text-white transition-all">Изменить</button>
+                        <button @click="deleteProduct(item.id)" class="px-5 py-4 bg-red-500/5 border border-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-black transition-all">🗑️</button>
                     </div>
                 </div>
-            </div>
-
-            <div v-else class="py-32 text-center border border-dashed border-white/5 rounded-[3rem] bg-black/50">
-                <p class="text-white/20 uppercase font-black italic tracking-[0.5em]">Пустой отсек склада</p>
             </div>
         </div>
 
         <Teleport to="body">
-            <div v-if="isModalOpen" class="fixed inset-0 z-[9999999] flex items-center justify-center p-4">
-                <div class="absolute inset-0 bg-black/95 backdrop-blur-md" @click="closeModal"></div>
-                <div class="relative w-full max-w-lg bg-[#050505] border-2 border-cyan-500/30 rounded-[3rem] p-10 shadow-[0_0_100px_rgba(6,182,212,0.15)] animate-in zoom-in duration-300 overflow-hidden">
-
-                    <h2 class="text-cyan-500 text-2xl font-black uppercase italic mb-8">
-                        {{ form.id ? 'Редактировать товар' : 'Новая позиция' }}
-                    </h2>
-
+            <div v-if="isModalOpen" class="fixed inset-0 z-[9999999] flex items-center justify-center p-6">
+                <div class="absolute inset-0 bg-black/95 backdrop-blur-2xl" @click="isModalOpen = false"></div>
+                <div class="relative w-full max-w-xl bg-[#050505] border-2 border-cyan-500/30 rounded-[3.5rem] p-12 shadow-[0_0_120px_rgba(6,182,212,0.2)] animate-in zoom-in duration-300">
+                    <h2 class="text-cyan-500 text-3xl font-black uppercase italic mb-10 tracking-tighter">{{ form.id ? 'Core: Update Unit' : 'Core: Register Unit' }}</h2>
                     <div class="space-y-6">
-                        <div class="flex gap-6 items-center">
-                            <div @click="triggerFileInput"
-                                 class="w-32 h-32 rounded-[2rem] bg-black border-2 border-dashed border-white/20 hover:border-cyan-500 flex flex-col items-center justify-center cursor-pointer relative overflow-hidden group transition-all shrink-0">
-                                <img v-if="imagePreview" :src="imagePreview" @error="handleImageError" class="w-full h-full object-contain absolute inset-0 p-2 z-10 bg-black/50 backdrop-blur-sm" />
-                                <svg class="w-8 h-8 text-white/20 group-hover:text-cyan-500 transition-colors z-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                                <span class="text-[9px] uppercase font-black tracking-widest text-white/20 group-hover:text-cyan-500 mt-2 z-20">Фото</span>
-                                <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="handleImageUpload">
+                        <div class="grid grid-cols-2 gap-6">
+                            <div>
+                                <label class="text-[10px] text-white/30 uppercase font-black mb-2 block italic">Маркировка</label>
+                                <input v-model="form.name" type="text" class="w-full bg-black border border-white/10 rounded-2xl px-5 py-4 text-white font-bold focus:border-cyan-500 outline-none" />
                             </div>
-
-                            <div class="flex-1 space-y-4">
-                                <div>
-                                    <label class="text-[10px] text-white/30 uppercase font-black tracking-widest mb-1.5 block">Название</label>
-                                    <input v-model="form.name" type="text" placeholder="Энергетик Flash 0.5" class="w-full bg-black border border-white/10 focus:border-cyan-500 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all placeholder:text-white/20" />
-                                </div>
-                                <div>
-                                    <label class="text-[10px] text-white/30 uppercase font-black tracking-widest mb-1.5 block">Категория</label>
-                                    <select v-model="form.category" class="w-full bg-black border border-white/10 focus:border-cyan-500 rounded-xl px-4 py-3 text-white font-bold outline-none appearance-none">
-                                        <option value="Снэки">Снэки</option>
-                                        <option value="Напитки">Напитки</option>
-                                        <option value="Еда">Еда</option>
-                                    </select>
-                                </div>
+                            <div>
+                                <label class="text-[10px] text-white/30 uppercase font-black mb-2 block italic">Barcode Data</label>
+                                <input v-model="form.barcode" type="text" placeholder="Scan now..." class="w-full bg-black border border-cyan-500/50 rounded-2xl px-5 py-4 text-cyan-500 font-bold focus:border-cyan-500 outline-none" />
                             </div>
                         </div>
-
-                        <div>
-                            <label class="text-[10px] text-white/30 uppercase font-black tracking-widest mb-1.5 block">Цена (РУБ)</label>
-                            <input v-model.number="form.price" type="number" class="w-full bg-black border border-white/10 focus:border-cyan-500 rounded-xl px-4 py-4 text-3xl font-black italic text-cyan-500 outline-none transition-all" />
+                        <div class="grid grid-cols-3 gap-6">
+                            <div>
+                                <label class="text-[10px] text-white/30 uppercase font-black mb-2 block italic">Сектор</label>
+                                <select v-model="form.category" class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold outline-none">
+                                    <option v-for="c in categories.slice(1)" :key="c" :value="c">{{ c }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-white/30 uppercase font-black mb-2 block italic">Цена</label>
+                                <input v-model.number="form.price" type="number" class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold" />
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-white/30 uppercase font-black mb-2 block italic">Остаток</label>
+                                <input v-model.number="form.stock" type="number" class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold" />
+                            </div>
                         </div>
                     </div>
-
-                    <div class="mt-10 flex gap-4">
-                        <button @click="closeModal" class="flex-1 py-4 border border-white/10 text-white/40 hover:text-white uppercase text-[10px] font-black tracking-widest rounded-2xl transition-all">
-                            Отмена
-                        </button>
-                        <button @click="saveProduct" :disabled="isProcessing" class="flex-[2] py-4 bg-cyan-500 hover:bg-cyan-400 text-black uppercase text-[12px] font-black italic tracking-widest rounded-2xl transition-all shadow-[0_0_20px_rgba(6,182,212,0.2)] disabled:opacity-50">
-                            {{ isProcessing ? 'Запись...' : 'Сохранить' }}
+                    <div class="mt-12 flex gap-4">
+                        <button @click="isModalOpen = false" class="flex-1 py-5 border border-white/10 text-white/30 uppercase font-black rounded-2xl hover:text-white transition-all">Abort</button>
+                        <button @click="saveProduct" :disabled="isProcessing" class="flex-[2] py-5 bg-cyan-500 hover:bg-cyan-400 text-black uppercase font-black italic rounded-2xl shadow-[0_10px_30px_rgba(6,182,212,0.3)]">
+                            Confirm Sync
                         </button>
                     </div>
                 </div>
@@ -255,7 +270,14 @@ onMounted(fetchProducts)
 
 <style scoped>
 @reference "../../../css/app.css";
-.animate-in { animation: fade-in 0.3s ease-out forwards; }
-@keyframes fade-in { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
-@keyframes zoom-in { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+.animate-in { animation: zoom-in 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes zoom-in { from { opacity: 0; transform: scale(0.95) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+/* Анимация уведомления */
+.slide-enter-active, .slide-leave-active { transition: all 0.5s ease; }
+.slide-enter-from { transform: translateX(100%); opacity: 0; }
+.slide-leave-to { transform: translateX(100%); opacity: 0; }
+
+input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; }
 </style>

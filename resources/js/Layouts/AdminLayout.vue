@@ -1,21 +1,60 @@
 <script setup lang="ts">
 import { Link, usePage, router } from '@inertiajs/vue3'
-import { computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import axios from 'axios'
 
 const page = usePage()
 
-// Получаем данные админа из глобальной шины
-const admin = computed(() => page.props.auth?.user || { name: 'Admin', role: 'Operator' })
+// --- ДАННЫЕ АДМИНА ---
+const admin = computed(() => page.props.auth?.user || { name: 'Admin', role: 'operator' })
+
+// --- ЛОГИКА СИГНАЛИЗАЦИИ ---
+const pendingCount = ref(0)
+const checkTimer = ref<any>(null)
+const audioRef = ref<HTMLAudioElement | null>(null)
+
+const checkOrders = async () => {
+    try {
+        const { data } = await axios.get('/admin/api/check-orders')
+        // Если новых заказов стало больше — играем звук
+        if (data.count > pendingCount.value) {
+            playAlarm()
+        }
+        pendingCount.value = data.count
+    } catch (e) {
+        console.error('Ошибка мониторинга заказов')
+    }
+}
+
+const playAlarm = () => {
+    if (audioRef.value) {
+        audioRef.value.currentTime = 0
+        audioRef.value.play().catch(() => {
+            console.log('Браузер заблокировал звук до первого клика админа')
+        })
+    }
+}
 
 const handleLogout = () => {
     if (confirm('ВНИМАНИЕ: Выйти из панели управления REACTOR?')) {
         router.post('/logout')
     }
 }
+
+onMounted(() => {
+    checkOrders()
+    checkTimer.value = setInterval(checkOrders, 10000) // Проверка каждые 10 сек
+})
+
+onUnmounted(() => {
+    if (checkTimer.value) clearInterval(checkTimer.value)
+})
 </script>
 
 <template>
     <div class="min-h-screen bg-[#020202] text-slate-300 font-mono flex">
+
+        <audio ref="audioRef" src="/sounds/order-alarm.mp3" preload="auto"></audio>
 
         <aside class="w-72 border-r border-white/10 bg-[#050505] flex flex-col shrink-0 shadow-2xl z-50 relative">
 
@@ -31,38 +70,59 @@ const handleLogout = () => {
 
             <nav class="flex-1 p-6 space-y-2 overflow-y-auto custom-scrollbar">
 
-                <div class="text-[10px] uppercase text-white/20 px-4 mb-3 mt-2 tracking-widest font-black italic">
-                    Операции
-                </div>
+                <div class="nav-section-title">Операции</div>
 
                 <Link href="/admin/dashboard" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/dashboard') }">
-                    <span class="text-lg drop-shadow-md">⚡</span>
+                    <span class="nav-icon">⚡</span>
                     <span>Дашбоард</span>
                 </Link>
 
-                <Link href="/admin/orders" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/orders') }">
-                    <span class="text-lg drop-shadow-md">🍔</span>
+                <Link href="/admin/orders" class="admin-nav-link relative" :class="{ 'active': $page.url.startsWith('/admin/orders') }">
+                    <span class="nav-icon">🍔</span>
                     <span>Очередь заказов</span>
+                    <span v-if="pendingCount > 0" class="absolute right-4 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
                 </Link>
 
                 <Link href="/admin/inventory" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/inventory') }">
-                    <span class="text-lg drop-shadow-md">📦</span>
+                    <span class="nav-icon">📦</span>
                     <span>Склад Маркета</span>
                 </Link>
 
-                <div class="text-[10px] uppercase text-white/20 px-4 mt-8 mb-3 tracking-widest font-black italic">
-                    Конфигурация
-                </div>
+                <div class="nav-section-title mt-8">Протоколы</div>
+
+                <Link href="/admin/shifts/transfer" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/shifts/transfer') }">
+                    <span class="nav-icon">🔄</span>
+                    <span>Пересменка</span>
+                </Link>
+
+                <template v-if="admin.role === 'supervisor'">
+                    <Link href="/admin/shifts/history" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/shifts/history') }">
+                        <span class="nav-icon">📜</span>
+                        <span>Архив смен</span>
+                    </Link>
+                </template>
+
+                <div class="nav-section-title mt-8">Конфигурация</div>
 
                 <Link href="/admin/map-builder" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/map-builder') }">
-                    <span class="text-lg drop-shadow-md">🗺️</span>
+                    <span class="nav-icon">🗺️</span>
                     <span>Редактор карты</span>
                 </Link>
 
                 <Link href="/admin/bonus-logs" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/bonus-logs') }">
-                    <span class="text-lg drop-shadow-md">🛡️</span>
+                    <span class="nav-icon">🛡️</span>
                     <span>Реестр бонусов</span>
                 </Link>
+
+                <template v-if="admin.role === 'supervisor'">
+                    <div class="nav-section-title mt-8 text-red-500/50">Надзор</div>
+
+                    <Link href="/admin/incidents" class="admin-nav-link border-l-2 border-transparent"
+                          :class="{ 'active !border-red-500/30 !bg-red-500/10 !text-red-500': $page.url.startsWith('/admin/incidents') }">
+                        <span class="nav-icon">🚨</span>
+                        <span>Реестр инцидентов</span>
+                    </Link>
+                </template>
 
             </nav>
 
@@ -76,7 +136,7 @@ const handleLogout = () => {
                             {{ admin.name }}
                         </div>
                         <div class="text-[9px] text-[#22c55e] uppercase font-bold tracking-tighter opacity-60">
-                            {{ admin.role || 'Operator' }}
+                            {{ admin.role }}
                         </div>
                     </div>
                 </div>
@@ -89,6 +149,7 @@ const handleLogout = () => {
         </aside>
 
         <main class="flex-1 flex flex-col overflow-hidden relative">
+
             <div class="absolute inset-0 pointer-events-none z-[100] opacity-[0.015] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(34,197,94,0.06),rgba(0,0,0,0.02),rgba(0,0,0,0.06))] bg-[length:100%_4px,3px_100%]"></div>
 
             <header class="h-16 border-b border-white/5 bg-black/40 backdrop-blur-md flex items-center px-10 justify-between shrink-0 relative z-20">
@@ -99,6 +160,12 @@ const handleLogout = () => {
                 </div>
 
                 <div class="flex items-center gap-6">
+                    <Link href="/admin/orders" v-if="pendingCount > 0"
+                          class="flex items-center gap-3 bg-red-500 text-black px-5 py-1.5 rounded-full animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.4)] hover:scale-105 transition-transform cursor-pointer">
+                        <span class="text-sm">⚠️</span>
+                        <span class="text-[10px] font-black uppercase italic tracking-tighter">Новые заказы: {{ pendingCount }}</span>
+                    </Link>
+
                     <div class="flex items-center gap-2 px-3 py-1 bg-[#22c55e]/5 border border-[#22c55e]/20 rounded-full">
                         <span class="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse"></span>
                         <span class="text-[9px] uppercase font-black text-[#22c55e] tracking-tighter">Core Online</span>
@@ -116,12 +183,22 @@ const handleLogout = () => {
 <style scoped>
 @reference "../../css/app.css";
 
-/* Стили для ссылок навигации */
+/* Стили для заголовков секций меню */
+.nav-section-title {
+    @apply text-[10px] uppercase text-white/20 px-4 mb-3 tracking-widest font-black italic;
+}
+
+/* Стили для иконок в меню */
+.nav-icon {
+    @apply text-lg drop-shadow-md;
+}
+
+/* Базовый стиль ссылки */
 .admin-nav-link {
     @apply flex items-center gap-3 px-4 py-3.5 rounded-xl text-white/40 hover:text-white hover:bg-white/5 transition-all font-black uppercase tracking-widest text-[10px];
 }
 
-/* Активное состояние ссылки */
+/* Активное состояние (Зеленое по умолчанию) */
 .admin-nav-link.active {
     @apply bg-[#22c55e]/10 text-white border border-[#22c55e]/30 shadow-[0_0_20px_rgba(34,197,94,0.1)];
 }
@@ -139,5 +216,14 @@ const handleLogout = () => {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: rgba(34, 197, 94, 0.2);
+}
+
+/* Анимация пульсации для сигналки */
+@keyframes pulse-red {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.02); }
+}
+.animate-pulse-custom {
+    animation: pulse-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 </style>

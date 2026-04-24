@@ -21,6 +21,7 @@ use App\Http\Controllers\Auth\LogoutController;
 // Контроллеры Админки
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\MapController;
+use App\Http\Controllers\Admin\ShiftController; // <-- ВАЖНО: Добавили импорт!
 
 /*
 |--------------------------------------------------------------------------
@@ -33,7 +34,7 @@ Route::get('/terminal/{slug?}', [TerminalController::class, 'index'])->name('ter
 
 /*
 |--------------------------------------------------------------------------
-| АВТОРИЗАЦИЯ ИГРОКОВ (SMS / Users)
+| АВТОРИЗАЦИЯ ИГРОКОВ (SMS)
 |--------------------------------------------------------------------------
 */
 Route::middleware('guest')->group(function () {
@@ -42,83 +43,78 @@ Route::middleware('guest')->group(function () {
     Route::post('/auth/verify-code', [SmsAuthController::class, 'verifyCode'])->name('auth.verify-code');
 });
 
-// Универсальный выход (сработает для всех)
 Route::post('/logout', [LogoutController::class, 'logout'])->name('logout');
 
 /*
 |--------------------------------------------------------------------------
-| ЛИЧНЫЙ КАБИНЕТ ИГРОКА (Auth Guard: Web)
+| ЛИЧНЫЙ КАБИНЕТ ИГРОКА (Guard: Web)
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth'])->group(function () {
-
-    // Редирект со старых путей
     Route::redirect('/auth/profile', '/account/dashboard');
 
-    // Кабинет и профиль
     Route::prefix('account')->group(function () {
         Route::get('/dashboard', [ProfileController::class, 'dashboard'])->name('dashboard');
         Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     });
 
-    // Магазин (Reactor Market)
-    Route::get('/shop', fn() => inertia('User/Shop'))->name('shop');
+    Route::get('/shop', [ShopController::class, 'index'])->name('shop');
     Route::prefix('api/shop')->group(function () {
         Route::get('/products', [ShopController::class, 'getProducts']);
         Route::post('/checkout', [ShopController::class, 'checkout']);
     });
 
-    // Бронирование и Биллинг
     Route::post('/api/booking/reserve', [BookingController::class, 'reserve']);
     Route::post('/api/billing/topup', [BillingController::class, 'topUp']);
     Route::post('/api/billing/start-session', [BillingController::class, 'startSession']);
-
-    // Интеграция с Gizmo API
-    Route::prefix('api/gizmo')->group(function () {
-        Route::get('/profile', [GizmoController::class, 'getUserProfile']);
-        Route::get('/computers', [GizmoController::class, 'getComputersStatus']);
-        Route::get('/history', [GizmoController::class, 'getTransactionHistory']);
-        Route::post('/start', [GizmoController::class, 'startSession']);
-        Route::post('/stop', [GizmoController::class, 'stopSession']);
-        Route::post('/deposit', [GizmoController::class, 'deposit']);
-    });
 });
 
 /*
 |--------------------------------------------------------------------------
-| АДМИНКА (REACTOR CONTROL — Auth Guard: Admin)
+| АДМИНКА (REACTOR CONTROL — Guard: Admin)
 |--------------------------------------------------------------------------
 */
 
-// Логин для админов (Email + Password)
+// Логин админов
 Route::middleware('guest:admin')->prefix('admin')->group(function () {
     Route::get('/login', [AdminLoginController::class, 'showLoginForm'])->name('admin.login');
     Route::post('/login', [AdminLoginController::class, 'login']);
 });
 
-// Защищенные роуты админки
-// Защищенные роуты админки
-Route::middleware(['auth:admin', 'admin'])->prefix('admin')->group(function () {
+// Защищенные роуты (Всё должно быть ВНУТРИ этой группы)
+Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 
-    // 1. ДАШБОАРД (Мониторинг и выдача бонусов)
+    // 1. ДАШБОАРД
     Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
     Route::post('/give-bonus', [AdminController::class, 'giveBonus']);
-    Route::get('/search-user', [AdminController::class, 'searchUser']); // Поиск для дашбоарда
+    Route::get('/search-user', [AdminController::class, 'searchUser']);
 
-    // 2. ОЧЕРЕДЬ ЗАКАЗОВ
+    // 2. ЗАКАЗЫ
     Route::get('/orders', [AdminController::class, 'orders'])->name('admin.orders');
     Route::post('/orders/{id}/status', [AdminController::class, 'updateOrderStatus']);
 
-    // 3. СКЛАД МАРКЕТА (Инвентарь)
+    // 3. СКЛАД (Inventory)
     Route::get('/inventory', [AdminController::class, 'inventory'])->name('admin.inventory');
-    Route::post('/api/inventory/save', [AdminController::class, 'saveProduct']);
-    Route::delete('/api/inventory/delete/{id}', [AdminController::class, 'deleteProduct']);
 
-    // 4. РЕЕСТР БОНУСОВ (Логи компенсаций)
+    // API Склада
+    Route::prefix('api/inventory')->group(function () {
+        Route::post('/save', [AdminController::class, 'saveProduct']);
+        Route::delete('/delete/{id}', [AdminController::class, 'deleteProduct']);
+        Route::post('/update-stock', [AdminController::class, 'updateStock']);
+        Route::get('/find-barcode', [AdminController::class, 'findByBarcode']);
+    });
+
+    // 4. СМЕНЫ (Протоколы)
+    Route::get('/shifts/transfer', [ShiftController::class, 'transferPage'])->name('admin.shift.transfer');
+    Route::post('/api/shifts/complete', [ShiftController::class, 'completeTransfer']);
+    Route::get('/shifts/history', [ShiftController::class, 'history'])->name('admin.shift.history');
+
+    // 5. ЛОГИ И ИНЦИДЕНТЫ
     Route::get('/bonus-logs', [AdminController::class, 'bonusLogs'])->name('admin.bonus-logs');
+    Route::get('/incidents', [AdminController::class, 'incidents'])->name('admin.incidents');
 
-    // 5. РЕДАКТОР КАРТЫ
+    // 6. КАРТА
     Route::get('/map-builder', function () {
         return Inertia::render('Admin/MapBuilder', [
             'clubs' => \App\Models\Club::select('id', 'name')->get()
@@ -127,14 +123,12 @@ Route::middleware(['auth:admin', 'admin'])->prefix('admin')->group(function () {
     Route::post('/save-map', [MapController::class, 'save']);
     Route::get('/get-map', [MapController::class, 'getMap']);
 
-    // 6. ФИСКАЛЬНЫЙ МОНИТОР
-    Route::prefix('fiscal')->group(function () {
-        Route::get('/', [AdminController::class, 'fiscalMonitor'])->name('admin.fiscal');
-        Route::get('/hardware-status', [AdminController::class, 'getKktHardwareStatus']);
+    // 7. СИСТЕМНЫЕ API
+    Route::prefix('api')->group(function () {
+        Route::get('/pc-statuses', [AdminController::class, 'getPcStatuses']);
+        Route::get('/check-orders', [AdminController::class, 'checkNewOrders']);
+        Route::post('/incidents/{id}/resolve', [AdminController::class, 'resolveIncident']);
     });
 
-    // ВЫХОД
     Route::post('/logout', [AdminLoginController::class, 'logout'])->name('admin.logout');
 });
-Route::get('/orders', [AdminController::class, 'orders'])->name('admin.orders');
-Route::post('/orders/{id}/status', [AdminController::class, 'updateOrderStatus']);

@@ -20,12 +20,22 @@ class AdminController extends Controller
     // ==========================================
     public function dashboard()
     {
-        // Отдаем страницу Дашбоарда с базовой статистикой
+        // Получаем ID первого клуба (или текущего активного)
+        $clubId = DB::table('clubs')->first()->id ?? 1;
+
+        // Загружаем реальные ПК из базы
+        $computers = DB::table('computers')
+            ->where('club_id', $clubId)
+            ->select('id', 'name', 'status') // Предполагаем, что колонка status есть (available/busy)
+            ->orderBy('name', 'asc')
+            ->get();
+
         return Inertia::render('Admin/Dashboard', [
+            'computers' => $computers,
             'stats' => [
-                'TOTAL_REVENUE' => 0, // Заглушка, потом привяжем к кассе
-                'ACTIVE_SESSIONS' => 0,
-                'NEW_USERS_TODAY' => User::whereDate('created_at', today())->count()
+                'TOTAL_REVENUE' => DB::table('orders')->where('status', 'delivered')->sum('price') ?? 0,
+                'ACTIVE_SESSIONS' => $computers->where('status', 'busy')->count(),
+                'NEW_USERS_TODAY' => DB::table('users')->whereDate('created_at', today())->count()
             ]
         ]);
     }
@@ -199,5 +209,60 @@ class AdminController extends Controller
 
         // Inertia 'back()' автоматически перезагрузит данные на странице без полного рефреша
         return back();
+    }
+    public function getPcStatuses()
+    {
+        // Возвращаем только ID и статус всех ПК клуба
+        $statuses = DB::table('computers')
+            ->select('id', 'status')
+            ->get();
+
+        return response()->json($statuses);
+    }
+    public function checkNewOrders()
+    {
+        // Считаем только те, что еще не приняты (статус pending)
+        $count = DB::table('orders')->where('status', 'pending')->count();
+
+        return response()->json(['count' => $count]);
+    }
+    // resources/app/Http/Controllers/Admin/AdminController.php
+
+    public function updateStock(Request $request)
+    {
+        // Важно: integer позволяет принимать отрицательные числа (например, -1)
+        $request->validate([
+            'id' => 'required|exists:products,id',
+            'amount' => 'required|integer',
+        ]);
+
+        $product = DB::table('products')->where('id', $request->id);
+        $current = $product->first();
+
+        // Проверка на уход в минус
+        if (($current->stock + $request->amount) < 0) {
+            return response()->json(['message' => 'Недостаточно товара на складе'], 422);
+        }
+
+        // Используем increment, он отлично понимает отрицательные числа (добавляет -1)
+        $product->increment('stock', (int)$request->amount);
+
+        return response()->json([
+            'status' => 'success',
+            'new_stock' => $current->stock + $request->amount
+        ]);
+    }
+    public function findByBarcode(Request $request)
+    {
+        $request->validate(['code' => 'required|string']);
+
+        // Ищем товар по штрих-коду
+        $product = \App\Models\Product::where('barcode', $request->code)->first();
+
+        if (!$product) {
+            return response()->json(['message' => 'Объект не опознан. Код отсутствует в базе.'], 404);
+        }
+
+        return response()->json($product);
     }
 }
