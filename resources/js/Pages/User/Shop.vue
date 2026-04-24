@@ -5,13 +5,13 @@ import axios from 'axios'
 import MainLayout from '@/Layouts/MainLayout.vue'
 
 const page = usePage()
-const products = ref([])
+const products = ref<any[]>([])
 const categories = ['Все', 'Напитки', 'Снэки', 'Еда']
 const activeCategory = ref('Все')
 
 // Состояния для модалок
 const isProcessing = ref(false)
-const confirmData = ref({ show: false, product: null })
+const confirmData = ref<any>({ show: false, product: null })
 const successData = ref({ show: false, message: '' })
 const errorData = ref({ show: false, text: '' })
 
@@ -30,7 +30,7 @@ const filteredProducts = computed(() => {
 })
 
 // Открыть подтверждение
-const askConfirm = (product) => {
+const askConfirm = (product: any) => {
     confirmData.value = { show: true, product }
 }
 
@@ -50,15 +50,21 @@ const executePurchase = async () => {
 
         // Обновляем баланс в шапке (Inertia reload)
         router.reload({ only: ['gizmo', 'transactions', 'orders'] })
-    } catch (e) {
+    } catch (e: any) {
         showError(e.response?.data?.message || 'Ошибка при оформлении заказа')
     } finally {
         isProcessing.value = false
     }
 }
 
-const showError = (text) => {
+const showError = (text: string) => {
     errorData.value = { show: true, text }
+}
+
+// Перехватчик битых картинок
+const handleImageError = (e: Event) => {
+    const target = e.target as HTMLImageElement;
+    target.src = '/images/shop/default.png';
 }
 
 onMounted(fetchProducts)
@@ -92,6 +98,7 @@ onMounted(fetchProducts)
 
                     <div class="aspect-square bg-gradient-to-br from-white/5 to-transparent rounded-[2rem] mb-6 flex items-center justify-center overflow-hidden border border-white/5 relative">
                         <img :src="item.image || '/images/shop/default.png'"
+                             @error="handleImageError"
                              class="w-3/4 h-3/4 object-contain group-hover:scale-110 transition-transform duration-500" />
                         <div class="absolute inset-0 bg-[#22c55e]/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     </div>

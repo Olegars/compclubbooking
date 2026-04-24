@@ -4,12 +4,12 @@ import { computed } from 'vue'
 
 const page = usePage()
 
-// Получаем данные админа из пропсов Auth
+// Получаем данные админа из глобальной шины
 const admin = computed(() => page.props.auth?.user || { name: 'Admin', role: 'Operator' })
 
 const handleLogout = () => {
-    if (confirm('Выйти из панели управления REACTOR?')) {
-        router.post(route('logout'))
+    if (confirm('ВНИМАНИЕ: Выйти из панели управления REACTOR?')) {
+        router.post('/logout')
     }
 }
 </script>
@@ -17,10 +17,11 @@ const handleLogout = () => {
 <template>
     <div class="min-h-screen bg-[#020202] text-slate-300 font-mono flex">
 
-        <aside class="w-72 border-r border-white/10 bg-[#050505] flex flex-col shrink-0 shadow-2xl z-50">
+        <aside class="w-72 border-r border-white/10 bg-[#050505] flex flex-col shrink-0 shadow-2xl z-50 relative">
+
             <div class="p-8 border-b border-white/10 bg-black/50">
                 <div class="text-[#22c55e] font-black italic text-2xl tracking-tighter flex items-center gap-2">
-                    <div class="w-3 h-3 bg-[#22c55e] rounded-full animate-pulse"></div>
+                    <div class="w-3 h-3 bg-[#22c55e] rounded-full animate-pulse shadow-[0_0_10px_#22c55e]"></div>
                     REACTOR <span class="text-white opacity-40 font-light">CTRL</span>
                 </div>
                 <div class="text-[9px] text-white/20 uppercase mt-2 tracking-[0.4em] font-bold">
@@ -28,29 +29,41 @@ const handleLogout = () => {
                 </div>
             </div>
 
-            <nav class="flex-1 p-6 space-y-3 overflow-y-auto custom-scrollbar">
-                <div class="text-[10px] uppercase text-white/20 px-4 mb-4 tracking-widest font-black italic">
+            <nav class="flex-1 p-6 space-y-2 overflow-y-auto custom-scrollbar">
+
+                <div class="text-[10px] uppercase text-white/20 px-4 mb-3 mt-2 tracking-widest font-black italic">
+                    Операции
+                </div>
+
+                <Link href="/admin/dashboard" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/dashboard') }">
+                    <span class="text-lg drop-shadow-md">⚡</span>
+                    <span>Дашбоард</span>
+                </Link>
+
+                <Link href="/admin/orders" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/orders') }">
+                    <span class="text-lg drop-shadow-md">🍔</span>
+                    <span>Очередь заказов</span>
+                </Link>
+
+                <Link href="/admin/inventory" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/inventory') }">
+                    <span class="text-lg drop-shadow-md">📦</span>
+                    <span>Склад Маркета</span>
+                </Link>
+
+                <div class="text-[10px] uppercase text-white/20 px-4 mt-8 mb-3 tracking-widest font-black italic">
                     Конфигурация
                 </div>
 
-                <Link :href="route('admin.map-builder')" class="admin-nav-link" :class="{ 'active': $page.url.includes('map-builder') }">
-                    <span class="text-lg">🗺️</span>
+                <Link href="/admin/map-builder" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/map-builder') }">
+                    <span class="text-lg drop-shadow-md">🗺️</span>
                     <span>Редактор карты</span>
                 </Link>
 
-                <div class="text-[10px] uppercase text-white/20 px-4 mt-8 mb-4 tracking-widest font-black italic">
-                    Управление
-                </div>
+                <Link href="/admin/bonus-logs" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/bonus-logs') }">
+                    <span class="text-lg drop-shadow-md">🛡️</span>
+                    <span>Реестр бонусов</span>
+                </Link>
 
-                <button class="admin-nav-link w-full text-left opacity-30 cursor-not-allowed grayscale">
-                    <span class="text-lg">💻</span> Компьютеры
-                </button>
-                <button class="admin-nav-link w-full text-left opacity-30 cursor-not-allowed grayscale">
-                    <span class="text-lg">📊</span> Статистика
-                </button>
-                <button class="admin-nav-link w-full text-left opacity-30 cursor-not-allowed grayscale">
-                    <span class="text-lg">👥</span> Клиенты
-                </button>
             </nav>
 
             <div class="p-6 border-t border-white/10 bg-black/40">
@@ -63,24 +76,22 @@ const handleLogout = () => {
                             {{ admin.name }}
                         </div>
                         <div class="text-[9px] text-[#22c55e] uppercase font-bold tracking-tighter opacity-60">
-                            {{ admin.role || 'Superuser' }}
+                            {{ admin.role || 'Operator' }}
                         </div>
                     </div>
                 </div>
 
-                <button
-                    @click="handleLogout"
-                    class="w-full py-3 border border-red-500/20 text-red-500 text-[10px] font-black uppercase rounded-xl hover:bg-red-500/10 hover:border-red-500/40 transition-all tracking-widest"
-                >
+                <button @click="handleLogout"
+                        class="w-full py-3 border border-red-500/20 text-red-500 text-[10px] font-black uppercase rounded-xl hover:bg-red-500/10 hover:border-red-500/40 transition-all tracking-widest active:scale-95">
                     Завершить сессию
                 </button>
             </div>
         </aside>
 
         <main class="flex-1 flex flex-col overflow-hidden relative">
-            <div class="absolute inset-0 pointer-events-none z-[100] opacity-[0.015] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,0,0.06))] bg-[length:100%_4px,3px_100%]"></div>
+            <div class="absolute inset-0 pointer-events-none z-[100] opacity-[0.015] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(34,197,94,0.06),rgba(0,0,0,0.02),rgba(0,0,0,0.06))] bg-[length:100%_4px,3px_100%]"></div>
 
-            <header class="h-16 border-b border-white/5 bg-black/40 backdrop-blur-md flex items-center px-10 justify-between shrink-0">
+            <header class="h-16 border-b border-white/5 bg-black/40 backdrop-blur-md flex items-center px-10 justify-between shrink-0 relative z-20">
                 <div class="flex items-center gap-4">
                     <div class="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold">
                         Location: <span class="text-[#22c55e] ml-1">{{ $page.url }}</span>
@@ -95,7 +106,7 @@ const handleLogout = () => {
                 </div>
             </header>
 
-            <div class="flex-1 overflow-auto relative custom-scrollbar">
+            <div class="flex-1 overflow-auto relative custom-scrollbar z-10">
                 <slot />
             </div>
         </main>
@@ -103,11 +114,21 @@ const handleLogout = () => {
 </template>
 
 <style scoped>
-/* Подключаем референс Tailwind v4 */
 @reference "../../css/app.css";
 
+/* Стили для ссылок навигации */
+.admin-nav-link {
+    @apply flex items-center gap-3 px-4 py-3.5 rounded-xl text-white/40 hover:text-white hover:bg-white/5 transition-all font-black uppercase tracking-widest text-[10px];
+}
+
+/* Активное состояние ссылки */
+.admin-nav-link.active {
+    @apply bg-[#22c55e]/10 text-white border border-[#22c55e]/30 shadow-[0_0_20px_rgba(34,197,94,0.1)];
+}
+
+/* Кастомный скроллбар */
 .custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
+    width: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
     background: rgba(0,0,0,0.2);

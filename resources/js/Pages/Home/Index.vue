@@ -18,44 +18,7 @@ defineProps<{
 
 <template>
     <MainLayout>
-        <div class="w-full max-w-[1400px] animate-in fade-in slide-in-from-bottom-8 duration-1000">
-
-            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-8 mb-12 border-b border-white/10 pb-8">
-
-                <div class="flex gap-12">
-                    <div>
-                        <div class="text-[10px] uppercase text-[#22c55e] tracking-[0.3em] mb-2 flex items-center gap-2">
-                            <span class="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse"></span>
-                            System Status
-                        </div>
-                        <div class="font-mono text-xs text-white/50 space-y-1">
-                            <p>CONNECTION: <span class="text-white">SECURE</span></p>
-                            <p>LATENCY: <span class="text-white">12ms</span></p>
-                            <p>ACTIVE NODES: <span class="text-white">124/150</span></p>
-                        </div>
-                    </div>
-
-                    <div class="hidden md:block border-l border-white/10 pl-12">
-                        <div class="text-[10px] uppercase text-white/30 tracking-[0.3em] mb-2">Operator</div>
-                        <div class="font-bold text-sm tracking-widest uppercase text-white">GUEST_0451</div>
-                        <div class="text-[10px] text-[#22c55e] mt-1 font-mono">Level: Authorized</div>
-                    </div>
-                </div>
-
-                <div class="bg-black/50 border border-white/10 p-6 rounded-3xl flex items-center gap-8 backdrop-blur-md min-w-[320px]">
-                    <div>
-                        <span class="block text-[10px] uppercase text-white/30 tracking-[0.2em] mb-1">Account Balance</span>
-                        <span class="text-4xl font-black italic tracking-tighter text-white">
-                            {{ userBalance.toFixed(2) }} <span class="text-[#22c55e] text-2xl">₽</span>
-                        </span>
-                    </div>
-                    <button class="ml-auto w-12 h-12 rounded-2xl bg-white/5 border border-white/10 text-[#22c55e] flex items-center justify-center hover:bg-[#22c55e] hover:text-black transition-all group">
-                        <svg class="w-5 h-5 group-hover:scale-125 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
+        <div class="w-full max-w-[1400px] animate-in fade-in slide-in-from-bottom-8 duration-1000 pt-4">
 
             <div class="flex items-center gap-4 mb-8">
                 <h2 class="text-2xl font-black italic uppercase tracking-widest text-white/80">Available Zones</h2>
@@ -124,5 +87,6 @@ defineProps<{
 /* Убираем стандартные стили ссылок браузера */
 a {
     text-decoration: none;
+
 }
 </style>

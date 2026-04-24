@@ -13,15 +13,15 @@ const emit = defineEmits(['close', 'confirm'])
 const rawPhone = ref('')
 const page = usePage()
 
-// Проверяем, авторизован ли пользователь (Inertia Props)
+// Проверяем, авторизован ли пользователь
 const isLoggedIn = computed(() => !!(page.props.auth?.user || page.props.user))
 
 // ЛОГИКА: Нужен ли телефон?
 const requiresPhone = computed(() => {
-    if (props.isTerminal) return true // На терминале всегда просим телефон
-    if (props.mode === 'auth') return true // При входе в систему просим телефон
-    if (props.mode === 'booking' && isLoggedIn.value) return false // Если залогинен и бронирует -> ТЕЛЕФОН НЕ НУЖЕН
-    return true // Гость при бронировании вводит телефон
+    if (props.isTerminal) return true
+    if (props.mode === 'auth') return true
+    if (props.mode === 'booking' && isLoggedIn.value) return false
+    return true
 })
 
 const formattedPhone = computed(() => {
@@ -50,16 +50,13 @@ const clearPhone = () => {
     rawPhone.value = ''
 }
 
-// Авто-подтверждение (только если вводим телефон)
-watch(rawPhone, (newVal) => {
-    if (requiresPhone.value && newVal.length === 10) {
-        setTimeout(() => {
-            emit('confirm', { phone: '7' + newVal })
-        }, 300)
+// --- РУЧНОЙ КОНТРОЛЬ ВМЕСТО АВТО-САБМИТА ---
+const submitPhone = () => {
+    if (rawPhone.value.length === 10) {
+        emit('confirm', { phone: '7' + rawPhone.value })
     }
-})
+}
 
-// Прямое подтверждение (кнопка "Оплатить и Играть")
 const confirmWithoutPhone = () => {
     emit('confirm', { status: 'confirmed' })
 }
@@ -73,6 +70,7 @@ const handleKeydown = (e: KeyboardEvent) => {
     if (!props.isOpen || !requiresPhone.value) return
     if (/^\d$/.test(e.key)) addDigit(e.key)
     if (e.key === 'Backspace') backspace()
+    if (e.key === 'Enter') submitPhone() // <-- Теперь можно подтвердить по Enter
     if (e.key === 'Escape') emit('close')
 }
 
@@ -100,10 +98,17 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
             </div>
 
             <template v-if="requiresPhone">
-                <div class="bg-black border border-[#22c55e]/20 rounded-2xl py-6 px-2 sm:px-4 mb-8 shadow-inner overflow-hidden">
+                <div class="bg-black border border-[#22c55e]/20 rounded-2xl py-6 px-2 sm:px-4 mb-6 shadow-inner overflow-hidden">
                     <div class="text-center font-mono text-2xl sm:text-[28px] font-black tracking-wider whitespace-nowrap transition-colors"
                          :class="rawPhone.length === 10 ? 'text-[#22c55e]' : 'text-white/80'">
                         {{ formattedPhone }}
+                    </div>
+                </div>
+
+                <div v-if="!isTerminal" class="flex justify-center gap-1.5 mb-8">
+                    <div v-for="i in 10" :key="i"
+                         class="w-3 h-1.5 rounded-full transition-all duration-300"
+                         :class="i <= rawPhone.length ? 'bg-[#22c55e] shadow-[0_0_8px_#22c55e]' : 'bg-white/5'">
                     </div>
                 </div>
 
@@ -119,12 +124,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
                     </button>
                 </div>
 
-                <div v-else class="flex justify-center gap-1.5 mb-10 mt-4">
-                    <div v-for="i in 10" :key="i"
-                         class="w-3 h-1.5 rounded-full transition-all duration-300"
-                         :class="i <= rawPhone.length ? 'bg-[#22c55e] shadow-[0_0_8px_#22c55e]' : 'bg-white/5'">
-                    </div>
-                </div>
+                <button v-if="rawPhone.length === 10" @click="submitPhone"
+                        class="w-full py-5 mb-4 bg-[#22c55e] hover:bg-[#2ae06d] rounded-2xl text-black font-black uppercase tracking-widest active:scale-95 transition-all shadow-[0_0_20px_rgba(34,197,94,0.3)] italic animate-in zoom-in duration-300">
+                    Отправить SMS код
+                </button>
             </template>
 
             <template v-else>
@@ -135,7 +138,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
             </template>
 
             <button @click="$emit('close')"
-                    class="w-full py-4 text-white/20 hover:text-white uppercase text-[10px] font-black tracking-[0.4em] transition-all mt-2">
+                    class="w-full py-4 text-white/20 hover:text-white uppercase text-[10px] font-black tracking-[0.4em] transition-all">
                 [ Отмена ]
             </button>
 
@@ -149,4 +152,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 @reference "../../css/app.css";
 .font-mono { text-shadow: 0 0 10px rgba(34, 197, 94, 0); transition: text-shadow 0.3s; }
 .text-[#22c55e] { text-shadow: 0 0 10px rgba(34, 197, 94, 0.4); }
+
+/* Плавное появление кнопки */
+.animate-in { animation: zoom-in 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes zoom-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
 </style>

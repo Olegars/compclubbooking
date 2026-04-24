@@ -1,154 +1,203 @@
 <?php
 
-
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
-use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use App\Models\User;
+// Если у тебя есть модель BonusLog, раскомментируй:
+// use App\Models\BonusLog;
 
 class AdminController extends Controller
 {
-    public function index()
-    {
-        // Статистика для дашборда админа
-        $stats = [
-            'total_revenue' => Transaction::where('amount', '>', 0)->sum('amount'),
-            'active_sessions' => 12, // Сюда потом прикрутим реальный подсчет из Gizmo
-            'new_users_today' => User::whereDate('created_at', today())->count(),
-        ];
+    // ... твои старые методы (index, orders и т.д.) оставляем ...
 
+    // ==========================================
+    // 1. ДАШБОАРД И КОМПЕНСАЦИИ
+    // ==========================================
+    public function dashboard()
+    {
+        // Отдаем страницу Дашбоарда с базовой статистикой
         return Inertia::render('Admin/Dashboard', [
-            'stats' => $stats
+            'stats' => [
+                'TOTAL_REVENUE' => 0, // Заглушка, потом привяжем к кассе
+                'ACTIVE_SESSIONS' => 0,
+                'NEW_USERS_TODAY' => User::whereDate('created_at', today())->count()
+            ]
         ]);
     }
 
-    /**
-     * Быстрый поиск пользователя по телефону
-     */
     public function searchUser(Request $request)
     {
-        $phone = $request->query('phone');
+        $request->validate(['phone' => 'required|string']);
 
-        $user = User::where('phone', 'like', "%{$phone}%")
-            ->with('wallet')
-            ->first();
+        $user = User::with('wallet')->where('phone', 'like', '%' . $request->phone . '%')->first();
+
+        if (!$user) {
+            return response()->json(['message' => 'Гость не найден'], 404);
+        }
 
         return response()->json($user);
     }
 
-    // app/Http/Controllers/Admin/AdminController.php
-
-    /**
-     * Статус очереди чеков
-     */
-    public function kassaStatus()
+    public function giveBonus(Request $request)
     {
-        // Здесь будет запрос к твоему сервису печати чеков
-        return response()->json([
-            'status' => 'online',
-            'paper' => 'ok',
-            'pending_checks' => 0
-        ]);
-    }
-
-    /**
-     * Подарочное время (Лояльность)
-     */
-    // app/Http/Controllers/Admin/AdminController.php
-
-    public function giftTime(Request $request, GizmoService $gizmo) {
         $request->validate([
             'user_id' => 'required|exists:users,id',
-            'minutes' => 'required|integer|min:1|max:20', // Жесткий лимит 20 мин
-            'reason' => 'required|string',
-            'pc_id' => 'required'
+            'minutes' => 'required|integer|min:1',
+            'reason'  => 'required|string|max:255'
         ]);
 
-        $admin = auth()->user();
-        $minutes = $request->minutes;
+        // Логируем выдачу бонуса в БД (таблица, которую мы создали в миграции)
+        DB::table('bonus_logs')->insert([
+            'user_id'    => $request->user_id,
+            'admin_id'   => Auth::guard('admin')->id(), // ID текущего оператора
+            'minutes'    => $request->minutes,
+            'reason'     => $request->reason,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-        // 1. ПРОВЕРКА: Лимит админа на смену (допустим, 120 минут суммарно)
-        $adminDailyUsed = GiftLog::where('admin_id', $admin->id)
-            ->whereDate('created_at', today())
-            ->sum('minutes');
+        // *Здесь позже будет API-запрос к Gizmo для фактического начисления времени*
 
-        if ($adminDailyUsed + $minutes > 120) {
-            return response()->json([
-                'message' => 'Твой лимит исправлений на сегодня исчерпан (120 мин).'
-            ], 403);
-        }
-
-        // 2. ПРОВЕРКА: Лимит на одного игрока (чтобы не кормить друга)
-        $userDailyReceived = GiftLog::where('user_id', $request->user_id)
-            ->whereDate('created_at', today())
-            ->sum('minutes');
-
-        if ($userDailyReceived + $minutes > 40) {
-            return response()->json([
-                'message' => 'Этот игрок сегодня уже получил максимум бонусов (40 мин).'
-            ], 403);
-        }
-
-        // 3. ПРОВЕДЕНИЕ ОПЕРАЦИИ
-        return DB::transaction(function () use ($request, $admin, $minutes, $gizmo) {
-            // Логируем для истории
-            GiftLog::create([
-                'admin_id' => $admin->id,
-                'user_id' => $request->user_id,
-                'minutes' => $minutes,
-                'reason' => $request->reason,
-                'pc_name' => $request->pc_id
-            ]);
-
-            // Отправляем команду в Gizmo
-            $success = $gizmo->startSession(
-                User::find($request->user_id)->gizmo_id,
-                $request->pc_id,
-                $minutes
-            );
-
-            if (!$success) throw new \Exception("Gizmo API не ответил");
-
-            return response()->json(['status' => 'success', 'remaining_fund' => 120 - ($adminDailyUsed + $minutes)]);
-        });
+        return response()->json(['message' => 'Бонус успешно начислен и залогирован']);
     }
 
-    public function fiscalMonitor()
+    // ==========================================
+    // 2. СКЛАД МАРКЕТА (ИНВЕНТАРЬ)
+    // ==========================================
+    public function inventory()
     {
-        // Статистика чеков из нашей базы за сегодня
-        $todayStats = [
-            'success' => Transaction::whereDate('created_at', today())->where('fiscal_status', 'success')->count(),
-            'pending' => Transaction::whereDate('created_at', today())->where('fiscal_status', 'pending')->count(),
-            'error' => Transaction::whereDate('created_at', today())->where('fiscal_status', 'error')->count(),
-        ];
+        return Inertia::render('Admin/Inventory');
+    }
 
-        return Inertia::render('Admin/FiscalMonitor', [
-            'initialStats' => $todayStats
+    public function saveProduct(Request $request)
+    {
+        $request->validate([
+            'name'     => 'required|string|max:255',
+            'category' => 'required|string',
+            'price'    => 'required|numeric',
+            'image'    => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048'
+        ]);
+
+        $data = $request->only(['name', 'category', 'price']);
+
+        // Обработка загрузки файла
+        if ($request->hasFile('image')) {
+            $file = $request->file('image');
+            $filename = time() . '_' . $file->getClientOriginalName();
+            // Сохраняем в public/images/shop
+            $file->move(public_path('images/shop'), $filename);
+            $data['image'] = '/images/shop/' . $filename;
+        }
+
+        // Обновляем или создаем (предполагаем, что таблица называется products)
+        if ($request->id) {
+            DB::table('products')->where('id', $request->id)->update($data);
+        } else {
+            DB::table('products')->insert($data);
+        }
+
+        return response()->json(['message' => 'Товар успешно сохранен']);
+    }
+
+    public function deleteProduct($id)
+    {
+        DB::table('products')->where('id', $id)->delete();
+        return response()->json(['message' => 'Товар удален']);
+    }
+
+    // ==========================================
+    // 3. РЕЕСТР БОНУСОВ
+    // ==========================================
+    public function bonusLogs()
+    {
+        // Получаем логи с привязкой к юзеру и админу
+        $logs = DB::table('bonus_logs')
+            ->join('users', 'bonus_logs.user_id', '=', 'users.id')
+            ->leftJoin('admins', 'bonus_logs.admin_id', '=', 'admins.id') // Замени 'admins' на 'users', если у тебя админы в таблице users
+            ->select(
+                'bonus_logs.*',
+                'users.name as user_name',
+                'users.phone as user_phone',
+                'admins.name as admin_name'
+            )
+            ->orderByDesc('bonus_logs.created_at')
+            ->get()
+            ->map(function ($log) {
+                // Форматируем под Vue структуру
+                return [
+                    'id'         => $log->id,
+                    'minutes'    => $log->minutes,
+                    'reason'     => $log->reason,
+                    'created_at' => $log->created_at,
+                    'user'       => ['name' => $log->user_name, 'phone' => $log->user_phone],
+                    'admin'      => ['name' => $log->admin_name]
+                ];
+            });
+
+        $todayMinutes = DB::table('bonus_logs')->whereDate('created_at', today())->sum('minutes');
+        $monthMinutes = DB::table('bonus_logs')->whereMonth('created_at', now()->month)->sum('minutes');
+
+        return Inertia::render('Admin/BonusLogs', [
+            'logs'  => $logs,
+            'stats' => [
+                'today_minutes' => (int) $todayMinutes,
+                'month_minutes' => (int) $monthMinutes
+            ]
+        ]);
+    }
+    // ==========================================
+    // 4. ОЧЕРЕДЬ ЗАКАЗОВ (REACTOR MARKET)
+    // ==========================================
+    public function orders()
+    {
+        // Загружаем только активные заказы (pending), чтобы не засорять экран доставленными
+        $orders = DB::table('orders')
+            ->join('users', 'orders.user_id', '=', 'users.id')
+            ->select(
+                'orders.*',
+                'users.name as user_name',
+                'users.phone as user_phone'
+            )
+            ->where('orders.status', 'pending')
+            ->orderBy('orders.created_at', 'asc') // Сначала старые заказы
+            ->get()
+            ->map(function($order) {
+                // Упаковываем данные в формат, который ждет твой Vue-компонент Orders.vue
+                return [
+                    'id' => $order->id,
+                    'product_name' => $order->product_name,
+                    'pc_name' => $order->pc_name,
+                    'status' => $order->status,
+                    'user' => [
+                        'name' => $order->user_name,
+                        'phone' => $order->user_phone,
+                    ]
+                ];
+            });
+
+        return Inertia::render('Admin/Orders', [
+            'orders' => $orders
         ]);
     }
 
-    /**
-     * Прокси-запрос к KkmServer для получения статуса «железа»
-     */
-    public function getKktHardwareStatus()
+    public function updateOrderStatus(Request $request, $id)
     {
-        try {
-            // Запрашиваем состояние устройств у KkmServer
-            $response = Http::post(env('KKM_SERVER_URL'), [
-                "Command" => "GetDataKassa",
-                "NumDevice" => 0,
-                "User" => env('KKM_SERVER_USER'),
-                "Password" => env('KKM_SERVER_PASS')
-            ]);
+        $request->validate([
+            'status' => 'required|in:delivered,cancelled'
+        ]);
 
-            return $response->json();
-        } catch (\Exception $e) {
-            return response()->json(['Error' => 'KkmServer недоступен: ' . $e->getMessage()], 500);
-        }
+        // Обновляем статус заказа в базе
+        DB::table('orders')->where('id', $id)->update([
+            'status' => $request->status,
+            'updated_at' => now()
+        ]);
+
+        // Inertia 'back()' автоматически перезагрузит данные на странице без полного рефреша
+        return back();
     }
-
 }

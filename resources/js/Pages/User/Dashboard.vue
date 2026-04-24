@@ -45,7 +45,7 @@ const fetchActiveSession = async () => {
     }
 }
 
-// --- АКТИВНЫЕ ЗАКАЗЫ ИЗ МАГАЗИНА (Новое!) ---
+// --- АКТИВНЫЕ ЗАКАЗЫ ИЗ МАГАЗИНА ---
 const activeOrders = computed(() => {
     const orders = page.props.orders || [];
     return orders.filter((o: any) => o.status === 'pending' || o.status === 'cooking');
@@ -298,19 +298,30 @@ onUnmounted(() => {
 
             <div v-if="isTopUpInputOpen" class="fixed inset-0 flex items-center justify-center z-[9999900] p-4">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-2xl" @click="isTopUpInputOpen = false"></div>
-                <div class="relative w-full max-w-md bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3rem] p-10 shadow-[0_0_100px_rgba(34,197,94,0.2)] text-center">
-                    <h2 class="text-[#22c55e] text-3xl font-black uppercase italic mb-10">Reactor Pay</h2>
-                    <input v-model="topUpAmount" type="number" class="w-full bg-black border-2 border-white/5 rounded-[2rem] py-8 text-5xl font-black text-center text-white mb-10 outline-none focus:border-[#22c55e] transition-all" />
-                    <button @click="proceedToPayment" class="w-full py-6 bg-[#22c55e] hover:bg-[#2ae06d] rounded-[2rem] text-black font-black uppercase tracking-widest shadow-[0_0_30px_rgba(34,197,94,0.3)] italic">Подтвердить</button>
+                <div class="relative w-full max-w-md bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3rem] p-10 shadow-[0_0_100px_rgba(34,197,94,0.2)] text-center animate-in zoom-in duration-300">
+                    <h2 class="text-[#22c55e] text-3xl font-black uppercase italic mb-8">Reactor Pay</h2>
+
+                    <div class="grid grid-cols-3 gap-3 mb-6">
+                        <button v-for="amount in [100, 300, 500, 1000, 2000, 5000]" :key="amount"
+                                @click="topUpAmount = amount"
+                                class="py-3 bg-white/5 border border-white/10 rounded-xl text-white font-black hover:bg-[#22c55e]/20 hover:border-[#22c55e]/50 hover:text-[#22c55e] transition-all active:scale-95"
+                                :class="topUpAmount === amount ? 'bg-[#22c55e]/20 border-[#22c55e]/50 !text-[#22c55e] shadow-[0_0_15px_rgba(34,197,94,0.2)]' : ''">
+                            {{ amount }}
+                        </button>
+                    </div>
+
+                    <input v-model="topUpAmount" type="number" class="no-spinners w-full bg-black border-2 border-white/5 rounded-[2rem] py-6 text-5xl font-black text-center text-white mb-8 outline-none focus:border-[#22c55e] transition-all" />
+
+                    <button @click="proceedToPayment" class="w-full py-6 bg-[#22c55e] hover:bg-[#2ae06d] rounded-[2rem] text-black font-black uppercase tracking-widest shadow-[0_0_30px_rgba(34,197,94,0.3)] italic active:scale-95 transition-all">Подтвердить</button>
                 </div>
             </div>
 
             <div v-if="isQuickStartOpen" class="fixed inset-0 flex items-center justify-center z-[9999900] p-4">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-2xl" @click="isQuickStartOpen = false"></div>
-                <div class="relative w-full max-w-md bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3rem] p-10 shadow-[0_0_100px_rgba(34,197,94,0.2)] text-center">
+                <div class="relative w-full max-w-md bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3rem] p-10 shadow-[0_0_100px_rgba(34,197,94,0.2)] text-center animate-in zoom-in duration-300">
                     <h2 class="text-[#22c55e] text-3xl font-black uppercase italic mb-8">Выбор терминала</h2>
-                    <input v-model="quickStartPc" type="number" placeholder="№ ПК" class="w-full bg-black border-2 border-white/5 rounded-[2rem] py-8 text-6xl font-black text-center text-[#22c55e] mb-10 outline-none" />
-                    <button @click="proceedToQuickStart" class="w-full py-6 bg-[#22c55e] hover:bg-[#2ae06d] rounded-[2rem] text-black font-black uppercase italic tracking-widest shadow-[0_0_30px_rgba(34,197,94,0.3)]">Активировать</button>
+                    <input v-model="quickStartPc" type="number" placeholder="№ ПК" class="no-spinners w-full bg-black border-2 border-white/5 rounded-[2rem] py-8 text-6xl font-black text-center text-[#22c55e] mb-10 outline-none" />
+                    <button @click="proceedToQuickStart" class="w-full py-6 bg-[#22c55e] hover:bg-[#2ae06d] rounded-[2rem] text-black font-black uppercase italic tracking-widest shadow-[0_0_30px_rgba(34,197,94,0.3)] active:scale-95 transition-all">Активировать</button>
                 </div>
             </div>
 
@@ -321,7 +332,16 @@ onUnmounted(() => {
 
 <style scoped>
 @reference "../../../css/app.css";
-.animate-in { animation: zoom-in 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+.animate-in { animation: zoom-in 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes zoom-in { from { opacity: 0; transform: scale(0.95) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Блокируем стрелки во всех инпутах с классом no-spinners */
+.no-spinners::-webkit-outer-spin-button,
+.no-spinners::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.no-spinners {
+    -moz-appearance: textfield;
+}
 </style>

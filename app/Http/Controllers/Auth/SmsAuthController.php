@@ -11,6 +11,27 @@ use Illuminate\Support\Facades\Auth;
 
 class SmsAuthController extends Controller
 {
+    // === НОВЫЙ МЕТОД: ОТПРАВКА КОДА ===
+    public function sendCode(Request $request)
+    {
+        $request->validate([
+            'phone' => 'required|string',
+        ]);
+
+        // Здесь в будущем будет реальная интеграция с SMS-шлюзом (например, sms.ru или twilio)
+        // Пример: SmsGateway::send($request->phone, 'Код доступа в Sector 0451: 0451');
+
+        // Пока просто пишем в лог сервера, что был запрос
+        \Illuminate\Support\Facades\Log::info('[Sector 0451] Запрос СМС кода для номера: ' . $request->phone);
+
+        // Возвращаем успешный JSON-ответ, чтобы фронтенд открыл модалку ввода кода
+        return response()->json([
+            'success' => true,
+            'message' => 'Код отправлен'
+        ]);
+    }
+
+    // === СТАРЫЙ МЕТОД: ПРОВЕРКА КОДА ===
     public function verifyCode(Request $request, GizmoService $gizmo)
     {
         $request->validate([
@@ -18,36 +39,52 @@ class SmsAuthController extends Controller
             'code' => 'required|string',
         ]);
 
+        // Твой секретный код для тестов
         if ($request->code !== '0451') {
-            return back()->withErrors(['code' => 'Неверный код']);
+            return back()->withErrors(['code' => 'Неверный код доступа']);
         }
 
-        // Ищем юзера. Если не нашли - создаем с рандомной аватаркой
-        $user = User::where('phone', $request->phone)->first();
+        $user = \App\Models\User::where('phone', $request->phone)->first();
 
+        // --- СОЗДАНИЕ ЮЗЕРА (БРОНЕБОЙНЫЙ МЕТОД) ---
         if (!$user) {
-            $user = User::create([
-                'phone' => $request->phone,
-                'name' => 'Stalker_' . substr($request->phone, -4),
-                'email' => $request->phone . '@reactor.club',
-                'password' => bcrypt(str_random(16)),
-                'avatar' => 'avatar_' . rand(1, 10) . '.png', // Рандом от 1 до 10
-            ]);
+            // Используем прямое назначение свойств, чтобы обойти блокировку $fillable
+            $user = new \App\Models\User();
+            $user->phone = $request->phone;
+            $user->name = 'Stalker_' . substr($request->phone, -4);
+            $user->email = $request->phone . '@reactor.club';
+            $user->password = bcrypt(\Illuminate\Support\Str::random(16));
+            $user->avatar = 'avatar_' . rand(1, 10) . '.png';
+            $user->save(); // Жестко пишем в БД
         }
 
+        // --- ПРИВЯЗКА К GIZMO ---
         if (!$user->gizmo_id) {
             $gizmoId = $gizmo->createUser([
                 'username' => $user->name,
                 'phone' => $user->phone
             ]);
-            if ($gizmoId) { $user->update(['gizmo_id' => $gizmoId]); }
+            if ($gizmoId) {
+                $user->gizmo_id = $gizmoId;
+                $user->save();
+            }
         }
 
-        if (!$user->wallet) {
-            Wallet::create(['user_id' => $user->id, 'balance' => 0]);
+        // --- СОЗДАНИЕ КОШЕЛЬКА ---
+        // Проверяем наличие кошелька. Используем first() чтобы точно знать, есть ли запись в БД
+        $wallet = \App\Models\Wallet::where('user_id', $user->id)->first();
+        if (!$wallet) {
+            $newWallet = new \App\Models\Wallet();
+            $newWallet->user_id = $user->id;
+            $newWallet->balance = 0;
+            $newWallet->save();
         }
 
-        Auth::login($user, true);
-        return redirect()->route('dashboard');
+        // --- ЛОГИКА ВХОДА ---
+        \Illuminate\Support\Facades\Auth::guard('web')->login($user, true);
+        $request->session()->regenerate();
+
+        // Жестко редиректим в личный кабинет
+        return inertia()->location(route('dashboard'));
     }
 }
