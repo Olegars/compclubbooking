@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { router } from '@inertiajs/vue3'
-import axios from 'axios' // ДОБАВЛЕН AXIOS
+import axios from 'axios'
 
 import MainLayout from '@/Layouts/MainLayout.vue'
 import TerminalLayout from '@/Layouts/TerminalLayout.vue'
@@ -30,14 +30,13 @@ const props = withDefaults(defineProps<{
 
 const layout = computed(() => props.isTerminal ? TerminalLayout : MainLayout)
 
+// --- ПАРСИНГ КАРТЫ ---
 const cleanMapConfig = computed(() => {
     try {
         let config = typeof props.clubData.map_config === 'string'
             ? JSON.parse(props.clubData.map_config)
             : props.clubData.map_config;
-
         if (!config) return { walls: [], zoneRects: [], labels: [] };
-
         return {
             ...config,
             walls: Array.isArray(config.walls) ? config.walls.filter((w: any) => w && w.d) : [],
@@ -45,17 +44,14 @@ const cleanMapConfig = computed(() => {
             labels: Array.isArray(config.labels) ? config.labels.filter((l: any) => l && l.content) : []
         };
     } catch (e) {
-        console.error("REACTOR Map Parse Error:", e);
         return { walls: [], zoneRects: [], labels: [] };
     }
 });
 
+// --- ВЫБОР МЕСТ ---
 const occupiedIds = computed(() =>
-    props.computersList
-        .filter(pc => pc.status !== 'available')
-        .map(pc => pc.id.toString())
+    props.computersList.filter(pc => pc.status !== 'available').map(pc => pc.id.toString())
 )
-
 const selectedIds = ref<string[]>([])
 const seatError = ref(false)
 let errorTimer: ReturnType<typeof setTimeout> | null = null
@@ -66,53 +62,23 @@ const handleSeatError = () => {
     errorTimer = setTimeout(() => { seatError.value = false }, 1500)
 }
 
+// --- СОСТОЯНИЕ МОДАЛОК ---
 const showOverlay = ref(false)
 const showConfirmModal = ref(false)
 const showSmsModal = ref(false)
+const showAgeWarning = ref(false) // Ночное предупреждение
 const showSuccessModal = ref(false)
 const showInfoModal = ref(false)
 const showTariffsModal = ref(false)
+
 const selectedZoneForInfo = ref('PRO')
 const userPhone = ref('')
+const isProcessing = ref(false)
 
+// --- ВРЕМЯ И ТАРИФЫ ---
 const selectedDate = ref(new Date().toDateString())
 const bookingMode = ref('hourly')
 const selectedPackage = ref<any>(null)
-
-const getComputerData = (id: string | number) => {
-    const pc = props.computersList.find(c => c.id.toString() === id.toString());
-    if (!pc) return { zoneName: 'STANDARD', pcName: id, price: 250 };
-
-    let zoneName = 'STANDARD';
-    const pcX = Number(pc.x);
-    const pcY = Number(pc.y);
-
-    const rects = cleanMapConfig.value.zoneRects || [];
-    for (const z of rects) {
-        if (pcX >= z.x && pcX <= z.x + z.w && pcY >= z.y && pcY <= z.y + z.h) {
-            if (z.c === '#fbbf24') zoneName = 'VIP';
-            if (z.c === '#ef4444') zoneName = 'BOOTCAMP';
-            if (z.c === '#3b82f6') zoneName = 'PRO';
-            if (z.c === '#a855f7') zoneName = 'STREAM';
-            break;
-        }
-    }
-
-    return {
-        zoneName,
-        pcName: pc.name,
-        price: pc.price || (zoneName === 'PRO' ? 400 : 250)
-    };
-}
-
-const selectedPlacesText = computed(() =>
-    selectedIds.value.length === 0
-        ? 'не выбрано'
-        : selectedIds.value.map(id => {
-            const data = getComputerData(id);
-            return `${data.zoneName} №${data.pcName}`;
-        }).join(', ')
-)
 
 const timeSteps = Array.from({ length: 96 }, (_, i) => i * 0.25)
 const formatTimeLabel = (h: number) => {
@@ -141,29 +107,76 @@ const duration = computed(() => {
     return d === 0 ? 24 : d
 })
 
-const startDateLabel = computed(() => new Date(selectedDate.value).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).toUpperCase())
+// --- ЛОГИКА ВОЗРАСТНОГО КОНТРОЛЯ ---
+const checkAgeRestriction = () => {
+    const nightStart = 22; // 22:00
+    const nightEnd = 6;    // 06:00
+    const start = startH.value;
+    const end = endH.value;
+
+    // Проверяем, заходит ли бронь в ночное время (22:00 - 06:00)
+    const isNight = start >= nightStart || start < nightEnd || end > nightStart || end <= nightEnd || duration.value > 12;
+
+    if (isNight) {
+        showAgeWarning.value = true;
+        showOverlay.value = true;
+    } else {
+        showConfirmModal.value = true;
+        showOverlay.value = true;
+    }
+}
+
+const handleAgeConfirm = () => {
+    showAgeWarning.value = false;
+    showConfirmModal.value = true;
+}
+
+// --- ДАННЫЕ ДЛЯ МОДАЛКИ ---
+const getComputerData = (id: string | number) => {
+    const pc = props.computersList.find(c => c.id.toString() === id.toString());
+    if (!pc) return { zoneName: 'STANDARD', pcName: id, price: 250 };
+    let zoneName = 'STANDARD';
+    const pcX = Number(pc.x); const pcY = Number(pc.y);
+    const rects = cleanMapConfig.value.zoneRects || [];
+    for (const z of rects) {
+        if (pcX >= z.x && pcX <= z.x + z.w && pcY >= z.y && pcY <= z.y + z.h) {
+            if (z.c === '#fbbf24') zoneName = 'VIP';
+            if (z.c === '#ef4444') zoneName = 'BOOTCAMP';
+            if (z.c === '#3b82f6') zoneName = 'PRO';
+            if (z.c === '#a855f7') zoneName = 'STREAM';
+            break;
+        }
+    }
+    return { zoneName, pcName: pc.name, price: pc.price || 250 };
+}
+
+const selectedPlacesText = computed(() =>
+    selectedIds.value.length === 0 ? 'не выбрано' : selectedIds.value.map(id => {
+        const data = getComputerData(id);
+        return `${data.zoneName} №${data.pcName}`;
+    }).join(', ')
+)
 
 const totalAmount = computed(() => {
     const base = selectedIds.value.reduce((acc, id) => acc + getComputerData(id).price, 0)
     return base * duration.value * (selectedPackage.value ? selectedPackage.value.discount : 1)
 })
 
-const closeAllModals = () => {
-    showConfirmModal.value = false; showSmsModal.value = false; showSuccessModal.value = false;
-    showInfoModal.value = false; showTariffsModal.value = false; showOverlay.value = false;
-}
+const bookingDataForModal = computed(() => ({
+    pcNumber: selectedPlacesText.value,
+    date: new Date(selectedDate.value).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).toUpperCase(),
+    startTime: formatTimeLabel(startH.value),
+    endTime: formatTimeLabel(endH.value),
+    price: totalAmount.value.toFixed(0)
+}))
 
-// === БОЕВАЯ ЛОГИКА БРОНИРОВАНИЯ ===
-const isProcessing = ref(false)
-
+// --- УПРАВЛЕНИЕ БРОНИРОВАНИЕМ ---
 const handleConfirmBooking = async (payload: any) => {
     showConfirmModal.value = false
-
     if (props.isTerminal) {
         userPhone.value = payload.phone || payload || ''
         setTimeout(() => { showSmsModal.value = true }, 200)
     } else {
-        // Запрос к бэкенду на списание и бронь
         isProcessing.value = true
         try {
             await axios.post('/api/booking/reserve', {
@@ -173,35 +186,24 @@ const handleConfirmBooking = async (payload: any) => {
                 start_h: startH.value,
                 duration: duration.value
             })
-
-            // Если деньги списались, показываем окно успеха
-            setTimeout(() => { showSuccessModal.value = true }, 200)
+            showSuccessModal.value = true
         } catch (error: any) {
-            console.error('Сбой транзакции:', error)
-            alert(error.response?.data?.message || 'Ошибка транзакции. Убедитесь, что на балансе достаточно средств.')
+            alert(error.response?.data?.message || 'Ошибка транзакции.')
             closeAllModals()
-        } finally {
-            isProcessing.value = false
-        }
+        } finally { isProcessing.value = false }
     }
+}
+
+const closeAllModals = () => {
+    showConfirmModal.value = false; showSmsModal.value = false; showSuccessModal.value = false;
+    showInfoModal.value = false; showTariffsModal.value = false; showAgeWarning.value = false;
+    showOverlay.value = false;
 }
 
 const handleFinalClose = () => {
-    closeAllModals()
-    selectedIds.value = []
-
-    if (!props.isTerminal) {
-        router.visit('/account/dashboard') // Твой путь к кабинету
-    }
+    closeAllModals(); selectedIds.value = [];
+    if (!props.isTerminal) router.visit('/account/dashboard');
 }
-
-const bookingDataForModal = computed(() => ({
-    pcNumber: selectedPlacesText.value,
-    date: startDateLabel.value,
-    startTime: formatTimeLabel(startH.value),
-    endTime: formatTimeLabel(endH.value),
-    price: totalAmount.value.toFixed(0)
-}))
 
 const handleWheel = (e: any, type: 'start' | 'end') => {
     if (bookingMode.value === 'packages' && type === 'end') return
@@ -272,9 +274,7 @@ onUnmounted(() => closeAllModals())
             <aside class="w-[460px] p-8 flex flex-col bg-[#050505] rounded-r-[38px] h-full">
 
                 <div class="mb-6 flex justify-between items-end px-2 shrink-0">
-                    <h3 class="text-[#22c55e] text-xl font-black uppercase italic tracking-widest leading-none">
-                        {{ props.clubData.name }}
-                    </h3>
+                    <h3 class="text-[#22c55e] text-xl font-black uppercase italic tracking-widest leading-none">{{ props.clubData.name }}</h3>
                     <div class="font-mono text-[10px] flex items-center gap-1" :class="seatError ? 'text-red-500 animate-pulse' : 'text-[#22c55e]'">
                         ● {{ seatError ? 'ОТКАЗ: ЗАНЯТО' : 'СИСТЕМА АКТИВНА' }}
                     </div>
@@ -287,7 +287,7 @@ onUnmounted(() => closeAllModals())
                             <button v-if="selectedIds.length" @click="selectedIds = []" class="text-red-500 cursor-pointer uppercase">сброс ✕</button>
                         </div>
                         <div class="flex-1 min-h-0 w-full overflow-hidden relative">
-                            <div v-fit-text class="absolute inset-0 font-black italic font-mono transition-colors leading-tight break-words flex items-start"
+                            <div v-fit-text class="absolute inset-0 font-black italic font-mono leading-tight break-words flex items-start"
                                  :class="selectedIds.length ? 'text-white uppercase' : 'text-white/20'">
                                 {{ selectedPlacesText }}
                             </div>
@@ -305,15 +305,13 @@ onUnmounted(() => closeAllModals())
                         </div>
                     </div>
 
-                    <div class="mb-6 shrink-0">
-                        <div class="grid grid-cols-2 gap-2 p-1 bg-white/5 rounded-2xl border border-white/5 mb-3">
-                            <button @click="bookingMode='hourly'; selectedPackage=null" :class="['py-3 rounded-xl text-[10px] font-black uppercase', bookingMode==='hourly' ? 'bg-[#22c55e] text-black shadow-lg' : 'text-white/40']">ПОЧАСОВОЙ</button>
-                            <button @click="bookingMode='packages'" :class="['py-3 rounded-xl text-[10px] font-black uppercase', bookingMode==='packages' ? 'bg-[#22c55e] text-black shadow-lg' : 'text-white/40']">ПАКЕТЫ</button>
-                        </div>
+                    <div class="grid grid-cols-2 gap-2 p-1 bg-white/5 rounded-2xl border border-white/5 mb-6">
+                        <button @click="bookingMode='hourly'" :class="['py-3 rounded-xl text-[10px] font-black uppercase', bookingMode==='hourly' ? 'bg-[#22c55e] text-black shadow-lg' : 'text-white/40']">ПОЧАСОВОЙ</button>
+                        <button @click="bookingMode='packages'" :class="['py-3 rounded-xl text-[10px] font-black uppercase', bookingMode==='packages' ? 'bg-[#22c55e] text-black shadow-lg' : 'text-white/40']">ПАКЕТЫ</button>
                     </div>
 
                     <div class="bg-black border border-white/10 rounded-[40px] p-6 mb-6 relative overflow-hidden min-h-[240px] flex flex-col justify-center shrink-0">
-                        <div class="flex justify-between items-center relative z-20 h-[60px] px-2 mb-6">
+                        <div class="flex justify-between items-center h-[60px] px-2 mb-6">
                             <div class="flex-1 h-full wheel-container touch-none" @wheel.prevent="handleWheel($event, 'start')">
                                 <div class="wheel-strip" :style="{ transform: `translateY(-${getIndexByTime(startH) * 60}px)` }">
                                     <div v-for="s in timeSteps" :key="'s'+s" class="time-cell">{{ formatTimeLabel(s) }}</div>
@@ -326,8 +324,7 @@ onUnmounted(() => closeAllModals())
                                 </div>
                             </div>
                         </div>
-
-                        <div class="flex justify-center items-baseline gap-2 relative z-40 font-black text-[#22c55e]">
+                        <div class="flex justify-center items-baseline gap-2 font-black text-[#22c55e]">
                             <span class="text-white/40 uppercase tracking-widest text-[10px] mr-2 italic">Длительность:</span>
                             <span class="text-5xl font-mono leading-none">{{ Math.floor(duration) }}</span><span class="text-xl">ч</span>
                         </div>
@@ -335,7 +332,7 @@ onUnmounted(() => closeAllModals())
                 </div>
 
                 <div class="pt-4 shrink-0">
-                    <button @click="selectedIds.length && (showOverlay=true, showConfirmModal=true)"
+                    <button @click="selectedIds.length && checkAgeRestriction()"
                             :disabled="isProcessing"
                             :class="['group w-full p-1 bg-[#22c55e] rounded-[2.5rem] transition-all active:scale-95', !selectedIds.length || isProcessing ? 'opacity-30 grayscale cursor-not-allowed' : 'cursor-pointer shadow-[0_10px_30px_rgba(34,197,94,0.2)]']">
                         <div class="bg-[#0a0a0a] rounded-[2.3rem] p-7 flex justify-between items-center border border-white/10 group-hover:bg-transparent transition-all">
@@ -354,24 +351,25 @@ onUnmounted(() => closeAllModals())
             <Teleport to="body">
                 <div v-if="showOverlay" class="fixed inset-0 bg-black/95 backdrop-blur-xl z-[9999990]" @click="closeAllModals"></div>
 
-                <ConfirmModal
-                    v-if="showConfirmModal"
-                    :isOpen="showConfirmModal"
-                    :mode="isTerminal ? 'auth' : 'booking'"
-                    :data="bookingDataForModal"
-                    @close="closeAllModals"
-                    @confirm="handleConfirmBooking"
-                />
+                <div v-if="showAgeWarning"
+                     class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] bg-[#050505] border-2 border-yellow-500/50 rounded-[40px] p-10 z-[9999995] shadow-[0_0_100px_rgba(234,179,8,0.2)] select-none">
+                    <div class="flex items-center gap-4 mb-6">
+                        <div class="w-12 h-12 rounded-full bg-yellow-500/10 flex items-center justify-center text-yellow-500 text-2xl animate-pulse">⚠️</div>
+                        <h2 class="text-yellow-500 text-2xl font-black uppercase italic tracking-tighter leading-none">Внимание: Ночной протокол</h2>
+                    </div>
+                    <p class="text-white/80 text-sm leading-relaxed mb-8 font-medium italic">
+                        Посещение клуба гражданами младше <span class="text-yellow-500 font-bold">16 лет</span>
+                        в период с <span class="text-white font-bold">22:00 до 06:00</span> запрещено без сопровождения взрослых.
+                        <br><br>Вам уже исполнилось 16 лет?
+                    </p>
+                    <div class="flex gap-4">
+                        <button @click="closeAllModals" class="flex-1 py-4 rounded-2xl border border-white/10 text-white/40 uppercase text-[10px] font-black tracking-widest hover:text-white transition-all">Нет</button>
+                        <button @click="handleAgeConfirm" class="flex-[2] py-4 bg-yellow-500 hover:bg-yellow-400 text-black uppercase text-[12px] font-black italic tracking-widest rounded-2xl transition-all shadow-[0_0_20px_rgba(234,179,8,0.2)] active:scale-95">Да, мне есть 16</button>
+                    </div>
+                </div>
 
-                <SmsModal
-                    v-if="showSmsModal"
-                    :is-open="showSmsModal"
-                    :phone="userPhone"
-                    :is-terminal="isTerminal"
-                    @close="showSmsModal = false"
-                    @verify="() => { showSmsModal = false; showSuccessModal = true }"
-                />
-
+                <ConfirmModal v-if="showConfirmModal" :isOpen="showConfirmModal" :mode="isTerminal ? 'auth' : 'booking'" :data="bookingDataForModal" @close="closeAllModals" @confirm="handleConfirmBooking" />
+                <SmsModal v-if="showSmsModal" :is-open="showSmsModal" :phone="userPhone" :is-terminal="isTerminal" @close="showSmsModal = false" @verify="() => { showSmsModal = false; showSuccessModal = true }" />
                 <PaymentModal v-if="showSuccessModal" :isOpen="showSuccessModal" mode="booking" :data="bookingDataForModal" @close="handleFinalClose" />
                 <ZoneInfoModal v-if="showInfoModal" :isOpen="showInfoModal" :zoneId="selectedZoneForInfo" @close="closeAllModals" />
                 <TariffsModal v-if="showTariffsModal" :isOpen="showTariffsModal" @close="closeAllModals" />
@@ -385,4 +383,7 @@ onUnmounted(() => closeAllModals())
 .wheel-container { overflow: hidden; height: 60px; position: relative; display: flex; justify-content: center; z-index: 20; }
 .wheel-strip { display: flex; flex-direction: column; align-items: center; transition: transform 0.5s cubic-bezier(0.23, 1, 0.32, 1); will-change: transform; width: 100%; }
 .time-cell { height: 60px; min-height: 60px; display: flex; align-items: center; justify-content: center; font-size: 2.8rem; font-weight: 900; color: #22c55e; font-family: ui-monospace, monospace; text-shadow: 0 0 10px rgba(34, 197, 94, 0.4); }
+
+.animate-in { animation: zoom-in 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes zoom-in { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 </style>

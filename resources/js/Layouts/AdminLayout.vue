@@ -6,7 +6,8 @@ import axios from 'axios'
 const page = usePage()
 
 // --- ДАННЫЕ АДМИНА ---
-const admin = computed(() => page.props.auth?.user || { name: 'Admin', role: 'operator' })
+// Теперь мы четко забираем данные из admin_user
+const admin = computed(() => page.props.admin_user || { name: 'Admin', role: 'admin' })
 
 // --- ЛОГИКА СИГНАЛИЗАЦИИ ---
 const pendingCount = ref(0)
@@ -37,7 +38,7 @@ const playAlarm = () => {
 
 const handleLogout = () => {
     if (confirm('ВНИМАНИЕ: Выйти из панели управления REACTOR?')) {
-        router.post('/logout')
+        router.post('/admin/logout') // <-- Вот здесь нужно было добавить /admin/
     }
 }
 
@@ -83,10 +84,12 @@ onUnmounted(() => {
                     <span v-if="pendingCount > 0" class="absolute right-4 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
                 </Link>
 
-                <Link href="/admin/inventory" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/inventory') }">
-                    <span class="nav-icon">📦</span>
-                    <span>Склад Маркета</span>
-                </Link>
+                <template v-if="admin.role === 'supervisor' || admin.role === 'owner'">
+                    <Link href="/admin/inventory" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/inventory') }">
+                        <span class="nav-icon">📦</span>
+                        <span>Склад Маркета</span>
+                    </Link>
+                </template>
 
                 <div class="nav-section-title mt-8">Протоколы</div>
 
@@ -95,7 +98,7 @@ onUnmounted(() => {
                     <span>Пересменка</span>
                 </Link>
 
-                <template v-if="admin.role === 'supervisor'">
+                <template v-if="admin.role === 'supervisor' || admin.role === 'owner'">
                     <Link href="/admin/shifts/history" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/shifts/history') }">
                         <span class="nav-icon">📜</span>
                         <span>Архив смен</span>
@@ -109,12 +112,14 @@ onUnmounted(() => {
                     <span>Редактор карты</span>
                 </Link>
 
-                <Link href="/admin/bonus-logs" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/bonus-logs') }">
-                    <span class="nav-icon">🛡️</span>
-                    <span>Реестр бонусов</span>
-                </Link>
+                <template v-if="admin.role === 'supervisor' || admin.role === 'owner'">
+                    <Link href="/admin/bonus-logs" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/bonus-logs') || $page.url.startsWith('/admin/bonuses') }">
+                        <span class="nav-icon">🛡️</span>
+                        <span>Реестр бонусов</span>
+                    </Link>
+                </template>
 
-                <template v-if="admin.role === 'supervisor'">
+                <template v-if="admin.role === 'supervisor' || admin.role === 'owner'">
                     <div class="nav-section-title mt-8 text-red-500/50">Надзор</div>
 
                     <Link href="/admin/incidents" class="admin-nav-link border-l-2 border-transparent"
@@ -124,19 +129,37 @@ onUnmounted(() => {
                     </Link>
                 </template>
 
+                <template v-if="admin.role === 'owner'">
+                    <div class="nav-section-title mt-8 text-purple-500/50">Дирекция</div>
+
+                    <Link href="/admin/taxes" class="admin-nav-link border-l-2 border-transparent"
+                          :class="{ 'active !border-purple-500/30 !bg-purple-500/10 !text-purple-500': $page.url.startsWith('/admin/taxes') }">
+                        <span class="nav-icon">📊</span>
+                        <span>Налоговый движок</span>
+                    </Link>
+
+                    <Link href="/admin/staff" class="admin-nav-link border-l-2 border-transparent"
+                          :class="{ 'active !border-purple-500/30 !bg-purple-500/10 !text-purple-500': $page.url.startsWith('/admin/staff') }">
+                        <span class="nav-icon">👥</span>
+                        <span>Управление штатом</span>
+                    </Link>
+                </template>
+
             </nav>
 
             <div class="p-6 border-t border-white/10 bg-black/40">
                 <div class="flex items-center gap-4 mb-6 px-2">
-                    <div class="w-10 h-10 rounded-xl bg-[#22c55e]/10 border border-[#22c55e]/30 text-[#22c55e] flex items-center justify-center font-black text-sm uppercase shadow-[0_0_15px_rgba(34,197,94,0.1)]">
+                    <div class="w-10 h-10 rounded-xl bg-[#22c55e]/10 border border-[#22c55e]/30 text-[#22c55e] flex items-center justify-center font-black text-sm uppercase shadow-[0_0_15px_rgba(34,197,94,0.1)]"
+                         :class="{ '!bg-purple-500/10 !border-purple-500/30 !text-purple-500 !shadow-[0_0_15px_rgba(168,85,247,0.2)]': admin.role === 'owner' }">
                         {{ admin.name.charAt(0) }}
                     </div>
                     <div class="overflow-hidden">
                         <div class="text-xs font-black text-white truncate uppercase italic tracking-tight">
                             {{ admin.name }}
                         </div>
-                        <div class="text-[9px] text-[#22c55e] uppercase font-bold tracking-tighter opacity-60">
-                            {{ admin.role }}
+                        <div class="text-[9px] uppercase font-bold tracking-tighter opacity-60"
+                             :class="admin.role === 'owner' ? 'text-purple-500' : 'text-[#22c55e]'">
+                            Level: {{ admin.role }}
                         </div>
                     </div>
                 </div>

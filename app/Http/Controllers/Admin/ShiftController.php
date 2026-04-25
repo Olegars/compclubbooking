@@ -58,4 +58,15 @@ class ShiftController extends Controller
             return redirect()->route('admin.dashboard');
         });
     }
+    public function history()
+    {
+        // Пока передаем пустой массив, чтобы не словить ошибку базы данных,
+        // если таблицы shifts у нас еще нет или она пустая.
+        // Позже здесь будет что-то вроде: Shift::with('admin')->orderByDesc('closed_at')->get();
+        $shifts = [];
+
+        return \Inertia\Inertia::render('Admin/ShiftHistory', [
+            'shifts' => $shifts
+        ]);
+    }
 }

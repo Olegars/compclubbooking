@@ -9,11 +9,10 @@ use App\Models\Booking;
 use Inertia\Inertia;
 use App\Models\Order;
 use Carbon\Carbon;
+use App\Models\ReviewClaim; // 1. ДОБАВЛЕН ИМПОРТ МОДЕЛИ ОТЗЫВОВ
 
 class ProfileController extends Controller
 {
-
-
     public function dashboard()
     {
         $user = Auth::user();
@@ -22,7 +21,7 @@ class ProfileController extends Controller
 
         $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id], ['balance' => 0]);
 
-        // 1. Получаем активные заказы (pending или cooking)
+        // Получаем активные заказы (pending или cooking)
         $activeOrders = Order::where('user_id', $user->id)
             ->whereIn('status', ['pending', 'cooking'])
             ->latest()
@@ -57,12 +56,18 @@ class ProfileController extends Controller
             })
             ->values();
 
+        // 2. ПОЛУЧАЕМ ПОСЛЕДНЮЮ ЗАЯВКУ НА БОНУС
+        $latestReview = ReviewClaim::where('user_id', $user->id)
+            ->latest()
+            ->first();
+
+        // ОБРАТИ ВНИМАНИЕ: путь User/Dashboard, как у тебя в коде
         return Inertia::render('User/Dashboard', [
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'phone' => $user->phone,
-                'avatar' => $user->avatar, // Добавь это, если хочешь чтобы аватарка обновлялась
+                'avatar' => $user->avatar,
             ],
             'gizmo' => [
                 'balance' => (float)$wallet->balance,
@@ -70,7 +75,8 @@ class ProfileController extends Controller
             ],
             'transactions' => $transactions,
             'active_bookings' => $activeBookings,
-            'orders' => $activeOrders // ВОТ ЭТО ОЖИВИТ КАРТОЧКУ НА ДАШБОРДЕ
+            'orders' => $activeOrders,
+            'latest_review' => $latestReview, // 3. ПЕРЕДАЕМ НА ФРОНТЕНД
         ]);
     }
 }

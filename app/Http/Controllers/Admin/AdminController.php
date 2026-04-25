@@ -265,4 +265,13 @@ class AdminController extends Controller
 
         return response()->json($product);
     }
+    public function incidents()
+    {
+        // Пока передаем пустой массив, чтобы Vue не ругался на отсутствие данных.
+        // Позже мы подключим сюда базу данных (модель Incident).
+        return \Inertia\Inertia::render('Admin/Incidents', [
+            'incidents' => []
+        ]);
+    }
 }
+

@@ -22,13 +22,12 @@ watch(() => page.props.gizmo, (newVal: any) => {
     }
 }, { deep: true })
 
-// --- МОНИТОРИНГ СЕССИИ И АВТООБНОВЛЕНИЕ ---
+// --- МОНИТОРИНГ СЕССИИ ---
 const activeSession = ref({ isActive: false, pcName: '—', timeLeft: '00:00', zone: '—' })
 let pollingInterval: ReturnType<typeof setInterval> | null = null
 
 const fetchDashboardData = async () => {
     try {
-        // 1. Проверяем сессию Gizmo
         const { data } = await axios.get('/api/gizmo/profile')
         if (data && data.active_session) {
             activeSession.value = {
@@ -40,13 +39,10 @@ const fetchDashboardData = async () => {
         } else {
             activeSession.value.isActive = false
         }
-
-        // 2. Синхронизируем состояние заказов и баланса (чтобы выполненные заказы исчезали)
         router.reload({
-            only: ['orders', 'transactions', 'active_bookings', 'gizmo'],
+            only: ['orders', 'transactions', 'active_bookings', 'gizmo', 'latest_review'],
             preserveScroll: true
         })
-
     } catch (e) {
         console.error('REACTOR Core Link Offline')
     }
@@ -76,8 +72,6 @@ const activeBookings = computed(() => {
             const cleanDateStr = String(booking.date).split('T')[0];
             let y=0, m=0, d=0;
             if (cleanDateStr.includes('-')) [y, m, d] = cleanDateStr.split('-').map(Number);
-            else if (cleanDateStr.includes('.')) [d, m, y] = cleanDateStr.split('.').map(Number);
-
             const startTs = new Date(y, m - 1, d, 0, 0, 0).getTime() + (Number(booking.start_time) * 3600000);
             const endTs = startTs + (Number(booking.duration) * 3600000);
             return { ...booking, _endTs: endTs, _startTs: startTs };
@@ -89,8 +83,10 @@ const activeBookings = computed(() => {
 const customError = ref({ show: false, text: '' })
 const isTopUpInputOpen = ref(false)
 const isQuickStartOpen = ref(false)
+const isReviewModalOpen = ref(false)
 const isPaymentProcessing = ref(false)
 const topUpAmount = ref(500)
+const reviewText = ref('')
 const quickStartPc = ref('')
 const quickStartMinutes = ref(60)
 const quickStartCost = computed(() => (quickStartMinutes.value / 60) * 100)
@@ -99,6 +95,18 @@ const paymentData = ref<any>({})
 const showError = (text: string) => {
     customError.value = { show: true, text }
     isPaymentProcessing.value = false
+}
+
+const submitReviewClaim = async () => {
+    if (reviewText.value.length < 10) return showError('Текст отзыва слишком короткий.')
+    try {
+        await axios.post('/api/bonuses/review', { text: reviewText.value })
+        isReviewModalOpen.value = false
+        reviewText.value = ''
+        router.reload({ only: ['latest_review'] }) // Обновляем статус без перезагрузки
+    } catch (e: any) {
+        showError(e.response?.data?.message || 'Ошибка отправки отзыва')
+    }
 }
 
 const handleMarketClick = (e: Event) => {
@@ -159,7 +167,7 @@ onUnmounted(() => {
 
 <template>
     <MainLayout>
-        <div class="max-w-6xl mx-auto w-full grid grid-cols-1 md:grid-cols-3 gap-8 animate-in zoom-in duration-500 font-mono pb-20">
+        <div class="max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-3 gap-8 animate-in zoom-in duration-500 font-mono pb-20 px-4">
 
             <div class="md:col-span-2 space-y-8">
 
@@ -177,17 +185,19 @@ onUnmounted(() => {
                         <button @click="isQuickStartOpen = true" class="px-8 py-5 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-2xl text-xs tracking-widest hover:bg-[#22c55e]/10 transition-all active:scale-95">СЕСТЬ ЗА ПК</button>
                         <Link href="/booking" class="px-8 py-5 bg-white/5 border border-white/10 text-white font-black rounded-2xl text-xs tracking-widest hover:bg-white/10 transition-all active:scale-95">БРОНЬ</Link>
 
+                        <button @click="isReviewModalOpen = true"
+                                :disabled="page.props.latest_review?.status === 'pending' || page.props.latest_review?.status === 'approved'"
+                                :class="[
+                                    'px-8 py-5 border font-black rounded-2xl text-xs tracking-widest transition-all flex items-center gap-2 active:scale-95',
+                                    (page.props.latest_review?.status === 'pending' || page.props.latest_review?.status === 'approved')
+                                        ? 'opacity-30 grayscale cursor-not-allowed border-white/10 text-white/40'
+                                        : 'bg-white/5 border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10'
+                                ]">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            {{ page.props.latest_review?.status === 'pending' ? 'ОТЗЫВ НА ПРОВЕРКЕ' : 'БОНУС ЗА ОТЗЫВ' }}
+                        </button>
+
                         <div class="relative group/market">
-                            <div v-if="!activeSession.isActive"
-                                 class="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 w-64 p-4 bg-[#050505] border border-red-500/50 rounded-2xl shadow-[0_0_30px_rgba(239,68,68,0.2)] opacity-0 group-hover/market:opacity-100 pointer-events-none transition-all duration-300 translate-y-2 group-hover/market:translate-y-0 z-50">
-                                <div class="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-[#050505]"></div>
-                                <div class="flex items-start gap-3">
-                                    <div class="w-8 h-8 shrink-0 bg-red-500/10 rounded-lg border border-red-500/30 flex items-center justify-center">
-                                        <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                                    </div>
-                                    <div class="text-[9px] uppercase font-black tracking-widest text-red-500 italic leading-relaxed">Заказ в магазине доступен только во время сеанса</div>
-                                </div>
-                            </div>
                             <Link href="/shop" @click="handleMarketClick"
                                   :class="['px-8 py-5 rounded-2xl text-xs tracking-widest transition-all flex items-center gap-2 active:scale-95 font-black border',
                                            activeSession.isActive ? 'bg-white/5 border-[#22c55e]/50 text-[#22c55e] hover:bg-[#22c55e]/10' : 'bg-white/5 border-white/5 text-white/20 cursor-default grayscale']">
@@ -200,7 +210,7 @@ onUnmounted(() => {
 
                 <div v-if="activeOrders.length > 0" class="space-y-4">
                     <div v-for="order in activeOrders" :key="order.id"
-                         class="bg-[#0a0a0a] border border-orange-500/30 rounded-[2.5rem] p-6 flex items-center justify-between relative overflow-hidden shadow-[0_10px_30px_rgba(249,115,22,0.1)]">
+                         class="bg-[#0a0a0a] border border-orange-500/30 rounded-[2.5rem] p-6 flex items-center justify-between relative shadow-[0_10px_30px_rgba(249,115,22,0.1)]">
                         <div class="flex items-center gap-5 z-10 relative">
                             <div class="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
                                 <svg class="w-6 h-6 text-orange-500 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
@@ -211,7 +221,6 @@ onUnmounted(() => {
                             </div>
                         </div>
                         <div class="px-5 py-2 bg-orange-500/10 border border-orange-500/20 rounded-full text-[10px] font-black text-orange-500 uppercase tracking-[0.2em] z-10">В ОЧЕРЕДИ</div>
-                        <div class="absolute inset-y-0 right-0 w-48 bg-gradient-to-l from-orange-500/5 to-transparent"></div>
                     </div>
                 </div>
 
@@ -220,7 +229,7 @@ onUnmounted(() => {
                          class="bg-[#0a0a0a] border border-[#3b82f6]/40 rounded-[2.5rem] p-8 relative overflow-hidden shadow-[0_0_40px_rgba(59,130,246,0.1)]">
                         <div class="flex items-center gap-3 mb-6 relative z-10">
                             <span class="w-3 h-3 rounded-full bg-[#3b82f6] animate-pulse shadow-[0_0_10px_#3b82f6]"></span>
-                            <span class="text-[10px] uppercase text-[#3b82f6] tracking-[0.4em] font-black italic">Узел зарезервирован</span>
+                            <span class="text-[10px] uppercase text-[#3b82f6] tracking-[0.4em] font-black italic">Зарезервировано</span>
                         </div>
                         <div class="grid grid-cols-2 md:grid-cols-3 gap-8 relative z-10">
                             <div>
@@ -228,44 +237,40 @@ onUnmounted(() => {
                                 <div class="text-3xl font-black text-white italic tracking-tighter">ПК №{{ typeof booking.pc_ids === 'string' ? JSON.parse(booking.pc_ids).join(', ') : booking.pc_ids }}</div>
                             </div>
                             <div>
-                                <span class="block text-[10px] text-white/30 uppercase font-black mb-2 italic tracking-widest">Интервал</span>
+                                <span class="block text-[10px] text-white/30 uppercase font-black mb-2 italic tracking-widest">Время</span>
                                 <div class="text-lg font-mono font-black text-white bg-white/5 px-4 py-2 rounded-xl border border-white/10 inline-block">
                                     {{ Math.floor(booking.start_time) }}:00 — {{ Math.floor(Number(booking.start_time) + Number(booking.duration)) }}:00
                                 </div>
                             </div>
                             <div class="md:text-right">
-                                <span class="block text-[10px] text-white/30 uppercase font-black mb-2 italic tracking-widest">До активации</span>
-                                <div class="text-3xl font-mono font-black italic tracking-tighter" :class="getCountdown(booking.date, booking.start_time).urgent ? 'text-red-500 animate-pulse' : 'text-[#3b82f6]'">
+                                <span class="block text-[10px] text-white/30 uppercase font-black mb-2 italic tracking-widest">До старта</span>
+                                <div class="text-3xl font-mono font-black italic tracking-tighter text-[#3b82f6]">
                                     {{ getCountdown(booking.date, booking.start_time).text }}
                                 </div>
                             </div>
-                        </div>
-                        <div class="absolute bottom-0 right-0 p-8 opacity-5">
-                            <svg class="w-24 h-24 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                         </div>
                     </div>
                 </div>
 
                 <div v-if="activeSession.isActive || activeBookings.length === 0"
-                     class="bg-[#0a0a0a] border border-white/5 rounded-[3rem] p-10 flex justify-between items-center relative transition-all duration-1000"
-                     :class="{'border-[#22c55e]/50 shadow-[0_0_50px_rgba(34,197,94,0.15)] bg-gradient-to-br from-black via-black to-[#22c55e]/5': activeSession.isActive}">
-                    <div class="z-10">
-                        <span class="text-[10px] uppercase text-white/30 tracking-[0.4em] font-black italic">Статус текущего узла</span>
+                     class="bg-[#0a0a0a] border border-white/5 rounded-[3rem] p-10 flex justify-between items-center relative transition-all"
+                     :class="{'border-[#22c55e]/50 shadow-[0_0_50px_rgba(34,197,94,0.15)] bg-gradient-to-br from-black to-[#22c55e]/5': activeSession.isActive}">
+                    <div>
+                        <span class="text-[10px] uppercase text-white/30 tracking-[0.4em] font-black italic">Текущий узел</span>
                         <div class="mt-4 text-4xl font-black uppercase italic tracking-tighter" :class="activeSession.isActive ? 'text-[#22c55e]' : 'text-white/40'">
                             {{ activeSession.isActive ? `ПК №${activeSession.pcName}` : 'Нет активных сессий' }}
                         </div>
-                        <div v-if="activeSession.isActive" class="mt-4 inline-flex items-center px-4 py-2 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[10px] font-black text-[#22c55e] uppercase tracking-[0.3em] italic">{{ activeSession.zone }}</div>
                     </div>
-                    <div v-if="activeSession.isActive" class="text-right z-10">
-                        <div class="text-6xl font-mono font-black text-[#22c55e] tracking-tighter animate-pulse drop-shadow-[0_0_15px_rgba(34,197,94,0.4)]">
+                    <div v-if="activeSession.isActive" class="text-right">
+                        <div class="text-6xl font-mono font-black text-[#22c55e] tracking-tighter animate-pulse">
                             {{ activeSession.timeLeft }}
                         </div>
-                        <span class="text-[10px] text-white/20 uppercase tracking-[0.3em] font-black italic block mt-2">Остаточное время</span>
+                        <span class="text-[10px] text-white/20 uppercase font-black italic block mt-2">Осталось</span>
                     </div>
                 </div>
 
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[3rem] p-10 shadow-xl">
-                    <span class="text-[10px] uppercase text-white/40 tracking-[0.4em] font-black italic block mb-10">Лог финансовых операций</span>
+                    <span class="text-[10px] uppercase text-white/40 tracking-[0.4em] font-black italic block mb-10">Лог транзакций</span>
                     <div v-if="transactions.length > 0" class="space-y-6">
                         <div v-for="tx in transactions" :key="tx.id" class="flex items-center justify-between group">
                             <div class="flex items-center gap-6">
@@ -284,45 +289,69 @@ onUnmounted(() => {
                             </div>
                         </div>
                     </div>
-                    <div v-else class="py-20 text-center border border-dashed border-white/5 rounded-[2.5rem] text-white/10 uppercase text-[10px] font-black tracking-[0.5em] italic">Данные транзакций отсутствуют</div>
                 </div>
             </div>
 
             <div class="space-y-8">
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[3rem] p-10 flex flex-col items-center text-center shadow-2xl relative overflow-hidden group">
                     <div class="absolute inset-0 bg-gradient-to-b from-[#22c55e]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-
                     <div class="w-32 h-32 rounded-full border-2 border-[#22c55e] p-2 mb-6 shadow-[0_0_30px_rgba(34,197,94,0.3)] overflow-hidden relative z-10">
                         <div class="w-full h-full rounded-full bg-black flex items-center justify-center text-5xl font-black text-[#22c55e] italic overflow-hidden">
                             <img v-if="user?.avatar" :src="`/images/avatars/${user.avatar}`" class="w-full h-full object-cover" />
                             <span v-else>{{ user?.name?.[0] }}</span>
                         </div>
                     </div>
-
-                    <div class="relative z-10">
+                    <div class="relative z-10 w-full text-center">
                         <h3 class="text-3xl font-black uppercase italic tracking-tighter text-white">{{ user?.name }}</h3>
-                        <div class="mt-3 px-4 py-1.5 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[10px] text-[#22c55e] font-black tracking-[0.3em] uppercase italic">Ранг: Сталкер</div>
+                        <div class="mt-3 inline-block px-4 py-1.5 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[10px] text-[#22c55e] font-black tracking-[0.3em] uppercase italic">Ранг: Сталкер</div>
 
-                        <div class="mt-10 w-full space-y-3">
-                            <div class="w-full h-2 bg-white/5 rounded-full overflow-hidden border border-white/5">
-                                <div class="w-2/3 h-full bg-[#22c55e] shadow-[0_0_20px_#22c55e]"></div>
+                        <div class="mt-10 w-full space-y-6 text-left">
+
+                            <div v-if="page.props.latest_review" class="p-4 bg-white/5 border rounded-2xl transition-all"
+                                 :class="{
+                                     'border-yellow-500/30 bg-yellow-500/5': page.props.latest_review.status === 'pending',
+                                     'border-[#22c55e]/30 bg-[#22c55e]/5': page.props.latest_review.status === 'approved',
+                                     'border-red-500/30 bg-red-500/5': page.props.latest_review.status === 'rejected'
+                                 }">
+                                <div class="text-[8px] uppercase font-black tracking-[0.2em] mb-1"
+                                     :class="page.props.latest_review.status === 'pending' ? 'text-yellow-500' : (page.props.latest_review.status === 'approved' ? 'text-[#22c55e]' : 'text-red-500')">
+                                    Модерация отзыва
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-[10px] text-white font-black uppercase italic">
+                                        {{
+                                            page.props.latest_review.status === 'pending' ? 'Ожидает подтверждения' :
+                                                (page.props.latest_review.status === 'approved' ? 'Бонус зачислен' : 'Отклонено модератором')
+                                        }}
+                                    </span>
+                                    <span v-if="page.props.latest_review.status === 'pending'" class="flex h-2 w-2 relative">
+                                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                                        <span class="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+                                    </span>
+                                </div>
                             </div>
-                            <div class="flex justify-between text-[10px] text-white/20 uppercase font-black italic tracking-widest">
-                                <span>Lvl 11</span>
-                                <span>2450 / 3000 XP</span>
+
+                            <div class="space-y-3">
+                                <div class="w-full h-2 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                                    <div class="w-2/3 h-full bg-[#22c55e] shadow-[0_0_20px_#22c55e]"></div>
+                                </div>
+                                <div class="flex justify-between text-[10px] text-white/20 uppercase font-black italic">
+                                    <span>Lvl 11</span>
+                                    <span>2450 / 3000 XP</span>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <nav class="flex flex-col gap-4 relative z-10">
+                <nav class="flex flex-col gap-4">
                     <Link href="/account/profile" class="p-6 bg-[#0a0a0a] border border-white/5 rounded-[2rem] flex items-center justify-between hover:bg-white/5 transition-all group shadow-xl">
-                        <span class="text-xs font-black uppercase tracking-[0.2em] text-white/40 group-hover:text-white transition-colors italic">Параметры системы</span>
+                        <span class="text-xs font-black uppercase tracking-[0.2em] text-white/40 group-hover:text-white transition-colors italic">Параметры профиля</span>
                         <svg class="w-6 h-6 text-[#22c55e] group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
                     </Link>
                     <button class="p-6 bg-[#0a0a0a] border border-white/5 rounded-[2rem] flex items-center justify-between hover:bg-red-500/10 hover:border-red-500/20 transition-all group active:scale-95 shadow-xl">
-                        <span class="text-xs font-black uppercase tracking-[0.2em] text-white/40 group-hover:text-red-500 transition-colors italic">Завершить все сеансы</span>
-                        <svg class="w-6 h-6 text-red-500 group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        <span class="text-xs font-black uppercase tracking-[0.2em] text-white/40 group-hover:text-red-500 transition-colors italic">Выход из системы</span>
+                        <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
                     </button>
                 </nav>
             </div>
@@ -332,12 +361,12 @@ onUnmounted(() => {
             <div v-if="customError.show" class="fixed inset-0 flex items-center justify-center z-[9999999] p-6">
                 <div class="absolute inset-0 bg-black/90 backdrop-blur-xl" @click="customError.show = false"></div>
                 <div class="relative w-full max-w-md bg-[#050505] border-2 border-red-500/30 rounded-[3.5rem] p-12 text-center animate-in zoom-in duration-300">
-                    <div class="w-20 h-20 bg-red-500/10 border border-red-500/30 rounded-full flex items-center justify-center mx-auto mb-8 shadow-[0_0_30px_rgba(239,68,68,0.2)]">
+                    <div class="w-20 h-20 bg-red-500/10 border border-red-500/30 rounded-full flex items-center justify-center mx-auto mb-8">
                         <svg class="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
                     </div>
                     <h2 class="text-red-500 text-3xl font-black uppercase italic mb-4 tracking-tighter">Ошибка протокола</h2>
-                    <p class="text-white/60 text-sm font-mono mb-10 leading-relaxed">{{ customError.text }}</p>
-                    <button @click="customError.show = false" class="w-full py-6 bg-red-500/20 hover:bg-red-500 border border-red-500/50 hover:text-black rounded-2xl text-red-500 font-black uppercase transition-all italic tracking-widest shadow-xl">Принять</button>
+                    <p class="text-white/60 text-sm mb-10">{{ customError.text }}</p>
+                    <button @click="customError.show = false" class="w-full py-6 bg-red-500/20 text-red-500 rounded-2xl font-black uppercase italic tracking-widest">Принять</button>
                 </div>
             </div>
 
@@ -348,13 +377,13 @@ onUnmounted(() => {
                     <div class="grid grid-cols-3 gap-3 mb-8">
                         <button v-for="amount in [100, 500, 1000, 2000, 3000, 5000]" :key="amount"
                                 @click="topUpAmount = amount"
-                                class="py-4 bg-white/5 border border-white/10 rounded-2xl text-white font-black hover:bg-[#22c55e]/20 hover:border-[#22c55e]/50 hover:text-[#22c55e] transition-all"
-                                :class="topUpAmount === amount ? 'bg-[#22c55e]/20 border-[#22c55e]/50 !text-[#22c55e] shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''">
+                                class="py-4 bg-white/5 border border-white/10 rounded-2xl text-white font-black hover:bg-[#22c55e]/20"
+                                :class="topUpAmount === amount ? 'bg-[#22c55e]/20 border-[#22c55e]/50 !text-[#22c55e]' : ''">
                             {{ amount }}
                         </button>
                     </div>
-                    <input v-model="topUpAmount" type="number" class="no-spinners w-full bg-black border-2 border-white/5 rounded-[2.5rem] py-8 text-6xl font-black text-center text-white mb-10 outline-none focus:border-[#22c55e] transition-all shadow-inner" />
-                    <button @click="proceedToPayment" class="w-full py-7 bg-[#22c55e] hover:bg-[#2ae06d] rounded-[2.5rem] text-black font-black uppercase tracking-[0.3em] shadow-[0_15px_40px_rgba(34,197,94,0.4)] italic active:scale-95 transition-all">Подтвердить платеж</button>
+                    <input v-model="topUpAmount" type="number" class="no-spinners w-full bg-black border-2 border-white/5 rounded-[2.5rem] py-8 text-6xl font-black text-center text-white mb-10 outline-none" />
+                    <button @click="proceedToPayment" class="w-full py-7 bg-[#22c55e] text-black font-black uppercase tracking-[0.3em] rounded-[2.5rem] italic">Подтвердить</button>
                 </div>
             </div>
 
@@ -362,9 +391,20 @@ onUnmounted(() => {
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-2xl" @click="isQuickStartOpen = false"></div>
                 <div class="relative w-full max-w-md bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3.5rem] p-12 shadow-[0_0_120px_rgba(34,197,94,0.2)] text-center animate-in zoom-in duration-300">
                     <h2 class="text-[#22c55e] text-4xl font-black uppercase italic mb-4 tracking-tighter">Связь с узлом</h2>
-                    <p class="text-white/30 text-[10px] uppercase font-black tracking-widest mb-10">Введите номер терминала для активации</p>
                     <input v-model="quickStartPc" type="number" placeholder="№ ПК" class="no-spinners w-full bg-black border-2 border-white/5 rounded-[2.5rem] py-10 text-7xl font-black text-center text-[#22c55e] mb-12 outline-none shadow-inner" />
-                    <button @click="proceedToQuickStart" class="w-full py-7 bg-[#22c55e] hover:bg-[#2ae06d] rounded-[2.5rem] text-black font-black uppercase italic tracking-[0.3em] shadow-[0_15px_40px_rgba(34,197,94,0.4)] active:scale-95 transition-all">Вход в систему</button>
+                    <button @click="proceedToQuickStart" class="w-full py-7 bg-[#22c55e] text-black font-black uppercase italic tracking-[0.3em] rounded-[2.5rem]">Вход в систему</button>
+                </div>
+            </div>
+
+            <div v-if="isReviewModalOpen" class="fixed inset-0 flex items-center justify-center z-[9999900] p-6">
+                <div class="absolute inset-0 bg-black/95 backdrop-blur-2xl" @click="isReviewModalOpen = false"></div>
+                <div class="relative w-full max-w-lg bg-[#0a0a0a] border border-yellow-500/30 rounded-[3.5rem] p-12 shadow-[0_0_120px_rgba(234,179,8,0.2)] animate-in zoom-in duration-300">
+                    <h2 class="text-yellow-500 text-4xl font-black uppercase italic mb-6 tracking-tighter text-center">Reputation</h2>
+                    <p class="text-white/60 text-xs font-mono mb-8 text-center italic uppercase tracking-widest">
+                        Вставьте текст вашего отзыва с Яндекс.Карт для получения <span class="text-yellow-500">100 бонусов</span>.
+                    </p>
+                    <textarea v-model="reviewText" placeholder="Вставьте текст отзыва..." class="w-full h-40 bg-black border-2 border-white/5 rounded-[2rem] p-6 text-white text-sm outline-none focus:border-yellow-500/50 resize-none mb-8"></textarea>
+                    <button @click="submitReviewClaim" class="w-full py-6 bg-yellow-500 rounded-[2.5rem] text-black font-black uppercase tracking-[0.3em] italic">Отправить на проверку</button>
                 </div>
             </div>
 
@@ -375,24 +415,8 @@ onUnmounted(() => {
 
 <style scoped>
 @reference "../../../css/app.css";
-
 .animate-in { animation: zoom-in 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-@keyframes zoom-in {
-    from { opacity: 0; transform: scale(0.95) translateY(30px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-.no-spinners::-webkit-outer-spin-button,
-.no-spinners::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-}
-.no-spinners {
-    -moz-appearance: textfield;
-}
-
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(34, 197, 94, 0.1); border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(34, 197, 94, 0.3); }
+@keyframes zoom-in { from { opacity: 0; transform: scale(0.95) translateY(30px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+.no-spinners::-webkit-outer-spin-button, .no-spinners::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.no-spinners { -moz-appearance: textfield; }
 </style>

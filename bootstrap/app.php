@@ -15,7 +15,6 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
 
         // === ПОДКЛЮЧЕНИЕ ГЛОБАЛЬНОЙ ШИНЫ INERTIA ===
-        // Вот эта команда заставит Laravel отдавать данные юзера на ВСЕ страницы
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
@@ -31,17 +30,16 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // 2. Куда редиректить УЖЕ АВТОРИЗОВАННЫХ (чтобы не видели форму входа)
         $middleware->redirectUsersTo(function (Request $request) {
-            // Если залогинен админ — на его панель
             if (Auth::guard('admin')->check()) {
                 return route('admin.dashboard');
             }
-            // В остальных случаях (игрок) — на дашборд
             return route('dashboard');
         });
 
-        // 3. Алиасы для посредников
+        // 3. Алиасы для посредников (Всё в одном массиве!)
         $middleware->alias([
             'admin' => \App\Http\Middleware\AdminMiddleware::class,
+            'role'  => \App\Http\Middleware\CheckRole::class,
         ]);
 
     })

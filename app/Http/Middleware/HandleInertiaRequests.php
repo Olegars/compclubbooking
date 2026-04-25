@@ -4,7 +4,7 @@ namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
 use Inertia\Middleware;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -17,20 +17,17 @@ class HandleInertiaRequests extends Middleware
 
     public function share(Request $request): array
     {
-        // Убрали dd(). Теперь мы просто склеиваем стандартные ошибки Inertia
-        // с твоими кастомными данными (auth и gizmo) и отправляем их во Vue.
         return array_merge(parent::share($request), [
-
-            // 1. Глобальная авторизация
+            // Игроки
             'auth' => [
-                'user' => $request->user(),
+                'user' => Auth::guard('web')->user(),
             ],
-
-            // 2. Глобальный баланс Gizmo
+            // Баланс Gizmo
             'gizmo' => [
-                'balance' => $request->user() && $request->user()->wallet ? $request->user()->wallet->balance : 0,
+                'balance' => Auth::guard('web')->user()?->wallet?->balance ?? 0,
             ],
-
+            // ПЕРСОНАЛ (Тот самый Boss)
+            'admin_user' => Auth::guard('admin')->user(),
         ]);
     }
 }

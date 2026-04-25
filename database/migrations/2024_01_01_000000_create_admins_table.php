@@ -1,5 +1,4 @@
 <?php
-// database/migrations/2024_01_01_000000_create_admins_table.php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -12,7 +11,19 @@ return new class extends Migration {
             $table->string('name');
             $table->string('email')->unique();
             $table->string('password');
-            $table->string('role')->default('operator'); // operator, manager, owner
+
+            // --- НАШИ НОВЫЕ ПОЛЯ ---
+
+            // 1. Обновленная строгая роль
+            $table->enum('role', ['admin', 'supervisor', 'owner'])->default('admin');
+
+            // 2. Зарплатная часть
+            $table->boolean('is_official_employee')->default(false);
+            $table->decimal('base_rate', 10, 2)->nullable();
+            $table->enum('pay_type', ['shift', 'monthly'])->nullable();
+
+            // ------------------------
+
             $table->rememberToken();
             $table->timestamps();
         });
