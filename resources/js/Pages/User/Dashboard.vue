@@ -51,7 +51,8 @@ const fetchDashboardData = async () => {
 // --- ФИЛЬТРЫ ДАННЫХ ---
 const activeOrders = computed(() => {
     const orders = (page.props.orders as any[]) || [];
-    return orders.filter(o => o.status === 'pending' || o.status === 'cooking');
+    // Подхватываем все активные статусы
+    return orders.filter(o => ['pending', 'cooking', 'new', 'waiting'].includes(o.status));
 });
 
 const transactions = computed(() => {
@@ -79,6 +80,50 @@ const activeBookings = computed(() => {
     }).filter(b => nowTs < b._endTs).sort((a, b) => b.id - a.id);
 });
 
+// --- ЛОГИКА ИСПРАВЛЕНИЙ (ФИКСЫ) ---
+
+const formatPcNumber = (pcIds: any) => {
+    // Если в базе реально NULL или пусто
+    if (pcIds === null || pcIds === undefined || pcIds === '' || pcIds === '[]') {
+        return 'НЕ УКАЗАН';
+    }
+
+    try {
+        // Если это JSON строка типа "[2]"
+        if (typeof pcIds === 'string' && (pcIds.includes('[') || pcIds.includes('{'))) {
+            const parsed = JSON.parse(pcIds);
+            const val = Array.isArray(parsed) ? parsed[0] : parsed;
+            return val || 'НЕ УКАЗАН';
+        }
+        // Если это просто число или строка
+        return String(pcIds).replace(/[\[\]"\s]/g, '');
+    } catch (e) {
+        // Если произошла ошибка парсинга, выводим как есть
+        return String(pcIds);
+    }
+}
+
+const getCountdown = (dateStr: string, startH: any) => {
+    try {
+        const cleanDateStr = String(dateStr).split('T')[0];
+        let y=0, m=0, d=0;
+        if (cleanDateStr.includes('-')) [y, m, d] = cleanDateStr.split('-').map(Number);
+        const target = new Date(y, m - 1, d, 0, 0, 0).getTime() + (Number(startH) * 3600000);
+        const diff = target - currentTime.value;
+        if (diff <= 0) return { text: 'СЕАНС НАЧАТ', urgent: true };
+        const hh = Math.floor(diff / 3600000);
+        const mm = Math.floor((diff % 3600000) / 60000);
+        const ss = Math.floor((diff % 60000) / 1000);
+        if (hh === 0 && mm === 0) return { text: `${ss}сек`, urgent: true };
+        return { text: hh > 0 ? `${hh}ч ${mm}м` : `${mm}м`, urgent: hh === 0 && mm < 30 };
+    } catch (e) { return { text: '—', urgent: false }; }
+}
+
+const isMarketAvailable = computed(() => {
+    const timeToStartReached = activeBookings.value.some(b => currentTime.value >= b._startTs);
+    return activeSession.value.isActive || timeToStartReached;
+});
+
 // --- ЛОГИКА ОШИБОК И ПЛАТЕЖЕЙ ---
 const customError = ref({ show: false, text: '' })
 const isTopUpInputOpen = ref(false)
@@ -103,16 +148,18 @@ const submitReviewClaim = async () => {
         await axios.post('/api/bonuses/review', { text: reviewText.value })
         isReviewModalOpen.value = false
         reviewText.value = ''
-        router.reload({ only: ['latest_review'] }) // Обновляем статус без перезагрузки
+        router.reload({ only: ['latest_review'] })
     } catch (e: any) {
         showError(e.response?.data?.message || 'Ошибка отправки отзыва')
     }
 }
 
 const handleMarketClick = (e: Event) => {
-    if (!activeSession.value.isActive) {
-        e.preventDefault();
-        showError('Заказ в магазине доступен только во время активного сеанса.');
+    e.preventDefault();
+    if (!isMarketAvailable.value) {
+        showError('Заказ доступен только во время активного сеанса.');
+    } else {
+        router.get('/shop');
     }
 }
 
@@ -139,20 +186,6 @@ const proceedToQuickStart = async () => {
     } catch (e: any) { showError('Ошибка запуска сессии') }
 }
 
-const getCountdown = (dateStr: string, startH: any) => {
-    try {
-        const cleanDateStr = String(dateStr).split('T')[0];
-        let y=0, m=0, d=0;
-        if (cleanDateStr.includes('-')) [y, m, d] = cleanDateStr.split('-').map(Number);
-        const target = new Date(y, m - 1, d, 0, 0, 0).getTime() + (Number(startH) * 3600000);
-        const diff = target - currentTime.value;
-        if (diff <= 0) return { text: 'СЕАНС НАЧАТ', urgent: true };
-        const hh = Math.floor(diff / 3600000);
-        const mm = Math.floor((diff % 3600000) / 60000);
-        return { text: hh > 0 ? `${hh}ч ${mm}м` : `${mm}м`, urgent: hh === 0 && mm < 30 };
-    } catch (e) { return { text: '—', urgent: false }; }
-}
-
 onMounted(() => {
     fetchDashboardData()
     pollingInterval = setInterval(fetchDashboardData, 15000)
@@ -167,7 +200,7 @@ onUnmounted(() => {
 
 <template>
     <MainLayout>
-        <div class="max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-3 gap-8 animate-in zoom-in duration-500 font-mono pb-20 px-4">
+        <div class="max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-3 gap-8 animate-in zoom-in duration-500 font-mono pb-20 px-4 text-white">
 
             <div class="md:col-span-2 space-y-8">
 
@@ -187,24 +220,20 @@ onUnmounted(() => {
 
                         <button @click="isReviewModalOpen = true"
                                 :disabled="page.props.latest_review?.status === 'pending' || page.props.latest_review?.status === 'approved'"
-                                :class="[
-                                    'px-8 py-5 border font-black rounded-2xl text-xs tracking-widest transition-all flex items-center gap-2 active:scale-95',
-                                    (page.props.latest_review?.status === 'pending' || page.props.latest_review?.status === 'approved')
-                                        ? 'opacity-30 grayscale cursor-not-allowed border-white/10 text-white/40'
-                                        : 'bg-white/5 border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10'
-                                ]">
+                                :class="['px-8 py-5 border font-black rounded-2xl text-xs tracking-widest transition-all flex items-center gap-2 active:scale-95',
+                                         (page.props.latest_review?.status === 'pending' || page.props.latest_review?.status === 'approved')
+                                         ? 'opacity-30 grayscale cursor-default border-white/10 text-white/40'
+                                         : 'bg-white/5 border-yellow-500/40 text-yellow-500 hover:bg-yellow-500/10']">
                             <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
                             {{ page.props.latest_review?.status === 'pending' ? 'ОТЗЫВ НА ПРОВЕРКЕ' : 'БОНУС ЗА ОТЗЫВ' }}
                         </button>
 
-                        <div class="relative group/market">
-                            <Link href="/shop" @click="handleMarketClick"
-                                  :class="['px-8 py-5 rounded-2xl text-xs tracking-widest transition-all flex items-center gap-2 active:scale-95 font-black border',
-                                           activeSession.isActive ? 'bg-white/5 border-[#22c55e]/50 text-[#22c55e] hover:bg-[#22c55e]/10' : 'bg-white/5 border-white/5 text-white/20 cursor-default grayscale']">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
-                                МАРКЕТ
-                            </Link>
-                        </div>
+                        <button @click="handleMarketClick"
+                                :class="['px-8 py-5 rounded-2xl text-xs tracking-widest transition-all flex items-center gap-2 font-black border active:scale-95',
+                                         isMarketAvailable ? 'bg-white/5 border-[#22c55e]/50 text-[#22c55e] hover:bg-[#22c55e]/10 cursor-pointer' : 'bg-white/5 border-white/5 text-white/20 cursor-default grayscale']">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
+                            МАРКЕТ
+                        </button>
                     </div>
                 </div>
 
@@ -228,13 +257,13 @@ onUnmounted(() => {
                     <div v-for="booking in activeBookings" :key="booking.id"
                          class="bg-[#0a0a0a] border border-[#3b82f6]/40 rounded-[2.5rem] p-8 relative overflow-hidden shadow-[0_0_40px_rgba(59,130,246,0.1)]">
                         <div class="flex items-center gap-3 mb-6 relative z-10">
-                            <span class="w-3 h-3 rounded-full bg-[#3b82f6] animate-pulse shadow-[0_0_10px_#3b82f6]"></span>
+                            <span class="w-3 h-3 rounded-full bg-[#3b82f6] animate-pulse"></span>
                             <span class="text-[10px] uppercase text-[#3b82f6] tracking-[0.4em] font-black italic">Зарезервировано</span>
                         </div>
                         <div class="grid grid-cols-2 md:grid-cols-3 gap-8 relative z-10">
                             <div>
                                 <span class="block text-[10px] text-white/30 uppercase font-black mb-2 italic tracking-widest">Объект</span>
-                                <div class="text-3xl font-black text-white italic tracking-tighter">ПК №{{ typeof booking.pc_ids === 'string' ? JSON.parse(booking.pc_ids).join(', ') : booking.pc_ids }}</div>
+                                <div class="text-3xl font-black text-white italic tracking-tighter">ПК №{{ formatPcNumber(booking.pc_ids) }}</div>
                             </div>
                             <div>
                                 <span class="block text-[10px] text-white/30 uppercase font-black mb-2 italic tracking-widest">Время</span>
@@ -244,7 +273,8 @@ onUnmounted(() => {
                             </div>
                             <div class="md:text-right">
                                 <span class="block text-[10px] text-white/30 uppercase font-black mb-2 italic tracking-widest">До старта</span>
-                                <div class="text-3xl font-mono font-black italic tracking-tighter text-[#3b82f6]">
+                                <div class="text-3xl font-mono font-black italic tracking-tighter"
+                                     :class="getCountdown(booking.date, booking.start_time).urgent ? 'text-orange-500 animate-pulse' : 'text-[#3b82f6]'">
                                     {{ getCountdown(booking.date, booking.start_time).text }}
                                 </div>
                             </div>
@@ -252,16 +282,15 @@ onUnmounted(() => {
                     </div>
                 </div>
 
-                <div v-if="activeSession.isActive || activeBookings.length === 0"
-                     class="bg-[#0a0a0a] border border-white/5 rounded-[3rem] p-10 flex justify-between items-center relative transition-all"
-                     :class="{'border-[#22c55e]/50 shadow-[0_0_50px_rgba(34,197,94,0.15)] bg-gradient-to-br from-black to-[#22c55e]/5': activeSession.isActive}">
+                <div v-if="activeSession.isActive"
+                     class="bg-[#0a0a0a] border border-[#22c55e]/50 shadow-[0_0_50px_rgba(34,197,94,0.15)] bg-gradient-to-br from-black to-[#22c55e]/5 rounded-[3rem] p-10 flex justify-between items-center relative transition-all">
                     <div>
                         <span class="text-[10px] uppercase text-white/30 tracking-[0.4em] font-black italic">Текущий узел</span>
-                        <div class="mt-4 text-4xl font-black uppercase italic tracking-tighter" :class="activeSession.isActive ? 'text-[#22c55e]' : 'text-white/40'">
-                            {{ activeSession.isActive ? `ПК №${activeSession.pcName}` : 'Нет активных сессий' }}
+                        <div class="mt-4 text-4xl font-black uppercase italic tracking-tighter text-[#22c55e]">
+                            ПК №{{ activeSession.pcName }}
                         </div>
                     </div>
-                    <div v-if="activeSession.isActive" class="text-right">
+                    <div class="text-right">
                         <div class="text-6xl font-mono font-black text-[#22c55e] tracking-tighter animate-pulse">
                             {{ activeSession.timeLeft }}
                         </div>
@@ -274,8 +303,8 @@ onUnmounted(() => {
                     <div v-if="transactions.length > 0" class="space-y-6">
                         <div v-for="tx in transactions" :key="tx.id" class="flex items-center justify-between group">
                             <div class="flex items-center gap-6">
-                                <div class="w-12 h-12 rounded-2xl flex items-center justify-center border transition-all"
-                                     :class="tx.amount > 0 ? 'bg-[#22c55e]/5 border-[#22c55e]/20 text-[#22c55e]' : 'bg-white/5 border-white/10 text-white/20 group-hover:text-white/40'">
+                                <div class="w-12 h-12 rounded-2xl flex items-center justify-center border"
+                                     :class="tx.amount > 0 ? 'bg-[#22c55e]/5 border-[#22c55e]/20 text-[#22c55e]' : 'bg-white/5 border-white/10 text-white/20'">
                                     <svg v-if="tx.amount > 0" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 6v12m6-6H6"/></svg>
                                     <svg v-else class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M18 12H6"/></svg>
                                 </div>
@@ -294,51 +323,32 @@ onUnmounted(() => {
 
             <div class="space-y-8">
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[3rem] p-10 flex flex-col items-center text-center shadow-2xl relative overflow-hidden group">
-                    <div class="absolute inset-0 bg-gradient-to-b from-[#22c55e]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div class="w-32 h-32 rounded-full border-2 border-[#22c55e] p-2 mb-6 shadow-[0_0_30px_rgba(34,197,94,0.3)] overflow-hidden relative z-10">
-                        <div class="w-full h-full rounded-full bg-black flex items-center justify-center text-5xl font-black text-[#22c55e] italic overflow-hidden">
+
+                    <div class="relative w-32 h-32 mb-6">
+                        <div class="absolute inset-0 bg-[#22c55e]/10 rounded-full blur-xl"></div>
+                        <div class="w-full h-full rounded-full bg-black flex items-center justify-center text-5xl font-black text-[#22c55e] italic overflow-hidden relative z-10 border-2 border-[#22c55e]/30 shadow-[0_0_30px_rgba(34,197,94,0.15)]">
                             <img v-if="user?.avatar" :src="`/images/avatars/${user.avatar}`" class="w-full h-full object-cover" />
                             <span v-else>{{ user?.name?.[0] }}</span>
                         </div>
                     </div>
+
                     <div class="relative z-10 w-full text-center">
                         <h3 class="text-3xl font-black uppercase italic tracking-tighter text-white">{{ user?.name }}</h3>
-                        <div class="mt-3 inline-block px-4 py-1.5 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[10px] text-[#22c55e] font-black tracking-[0.3em] uppercase italic">Ранг: Сталкер</div>
 
-                        <div class="mt-10 w-full space-y-6 text-left">
+                        <div class="mt-4 inline-flex items-center gap-3 px-5 py-2 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[10px] text-[#22c55e] font-black tracking-[0.3em] uppercase italic">
+                            <span>Ранг: Сталкер</span>
+                        </div>
+                    </div>
 
-                            <div v-if="page.props.latest_review" class="p-4 bg-white/5 border rounded-2xl transition-all"
-                                 :class="{
-                                     'border-yellow-500/30 bg-yellow-500/5': page.props.latest_review.status === 'pending',
-                                     'border-[#22c55e]/30 bg-[#22c55e]/5': page.props.latest_review.status === 'approved',
-                                     'border-red-500/30 bg-red-500/5': page.props.latest_review.status === 'rejected'
-                                 }">
-                                <div class="text-[8px] uppercase font-black tracking-[0.2em] mb-1"
-                                     :class="page.props.latest_review.status === 'pending' ? 'text-yellow-500' : (page.props.latest_review.status === 'approved' ? 'text-[#22c55e]' : 'text-red-500')">
-                                    Модерация отзыва
-                                </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-[10px] text-white font-black uppercase italic">
-                                        {{
-                                            page.props.latest_review.status === 'pending' ? 'Ожидает подтверждения' :
-                                                (page.props.latest_review.status === 'approved' ? 'Бонус зачислен' : 'Отклонено модератором')
-                                        }}
-                                    </span>
-                                    <span v-if="page.props.latest_review.status === 'pending'" class="flex h-2 w-2 relative">
-                                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
-                                        <span class="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
-                                    </span>
-                                </div>
-                            </div>
+                    <div class="w-full mt-8 relative">
+                        <div class="flex justify-between items-end mb-2 px-1">
+                            <span class="text-[10px] uppercase font-black text-[#22c55e] tracking-widest italic">Опыт</span>
+                            <span class="text-[10px] font-mono text-white/50">75 / 100</span>
+                        </div>
 
-                            <div class="space-y-3">
-                                <div class="w-full h-2 bg-white/5 rounded-full overflow-hidden border border-white/5">
-                                    <div class="w-2/3 h-full bg-[#22c55e] shadow-[0_0_20px_#22c55e]"></div>
-                                </div>
-                                <div class="flex justify-between text-[10px] text-white/20 uppercase font-black italic">
-                                    <span>Lvl 11</span>
-                                    <span>2450 / 3000 XP</span>
-                                </div>
+                        <div class="h-2 w-full bg-white/5 rounded-full overflow-hidden relative">
+                            <div class="absolute top-0 left-0 h-full bg-[#22c55e] transition-all duration-1000 ease-out shadow-[0_0_10px_#22c55e]"
+                                 style="width: 75%;">
                             </div>
                         </div>
                     </div>
@@ -347,11 +357,11 @@ onUnmounted(() => {
                 <nav class="flex flex-col gap-4">
                     <Link href="/account/profile" class="p-6 bg-[#0a0a0a] border border-white/5 rounded-[2rem] flex items-center justify-between hover:bg-white/5 transition-all group shadow-xl">
                         <span class="text-xs font-black uppercase tracking-[0.2em] text-white/40 group-hover:text-white transition-colors italic">Параметры профиля</span>
-                        <svg class="w-6 h-6 text-[#22c55e] group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+                        <svg class="w-6 h-6 text-[#22c55e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
                     </Link>
-                    <button class="p-6 bg-[#0a0a0a] border border-white/5 rounded-[2rem] flex items-center justify-between hover:bg-red-500/10 hover:border-red-500/20 transition-all group active:scale-95 shadow-xl">
+                    <button @click="router.post('/logout')" class="p-6 bg-[#0a0a0a] border border-white/5 rounded-[2rem] flex items-center justify-between hover:bg-red-500/10 hover:border-red-500/20 transition-all group active:scale-95 shadow-xl">
                         <span class="text-xs font-black uppercase tracking-[0.2em] text-white/40 group-hover:text-red-500 transition-colors italic">Выход из системы</span>
-                        <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                        <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M17 16l4-4m0 0l-4-4m4 4H7"/></svg>
                     </button>
                 </nav>
             </div>
@@ -360,7 +370,7 @@ onUnmounted(() => {
         <Teleport to="body">
             <div v-if="customError.show" class="fixed inset-0 flex items-center justify-center z-[9999999] p-6">
                 <div class="absolute inset-0 bg-black/90 backdrop-blur-xl" @click="customError.show = false"></div>
-                <div class="relative w-full max-w-md bg-[#050505] border-2 border-red-500/30 rounded-[3.5rem] p-12 text-center animate-in zoom-in duration-300">
+                <div class="relative w-full max-w-md bg-[#050505] border-2 border-red-500/30 rounded-[3.5rem] p-12 text-center">
                     <div class="w-20 h-20 bg-red-500/10 border border-red-500/30 rounded-full flex items-center justify-center mx-auto mb-8">
                         <svg class="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
                     </div>
@@ -372,11 +382,10 @@ onUnmounted(() => {
 
             <div v-if="isTopUpInputOpen" class="fixed inset-0 flex items-center justify-center z-[9999900] p-6">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-2xl" @click="isTopUpInputOpen = false"></div>
-                <div class="relative w-full max-w-md bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3.5rem] p-12 shadow-[0_0_120px_rgba(34,197,94,0.2)] text-center animate-in zoom-in duration-300">
+                <div class="relative w-full max-w-md bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3.5rem] p-12 text-center shadow-[0_0_120px_rgba(34,197,94,0.2)]">
                     <h2 class="text-[#22c55e] text-4xl font-black uppercase italic mb-10 tracking-tighter">Reactor Pay</h2>
                     <div class="grid grid-cols-3 gap-3 mb-8">
-                        <button v-for="amount in [100, 500, 1000, 2000, 3000, 5000]" :key="amount"
-                                @click="topUpAmount = amount"
+                        <button v-for="amount in [100, 500, 1000, 2000, 3000, 5000]" :key="amount" @click="topUpAmount = amount"
                                 class="py-4 bg-white/5 border border-white/10 rounded-2xl text-white font-black hover:bg-[#22c55e]/20"
                                 :class="topUpAmount === amount ? 'bg-[#22c55e]/20 border-[#22c55e]/50 !text-[#22c55e]' : ''">
                             {{ amount }}
@@ -389,7 +398,7 @@ onUnmounted(() => {
 
             <div v-if="isQuickStartOpen" class="fixed inset-0 flex items-center justify-center z-[9999900] p-6">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-2xl" @click="isQuickStartOpen = false"></div>
-                <div class="relative w-full max-w-md bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3.5rem] p-12 shadow-[0_0_120px_rgba(34,197,94,0.2)] text-center animate-in zoom-in duration-300">
+                <div class="relative w-full max-w-md bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3.5rem] p-12 text-center shadow-[0_0_120px_rgba(34,197,94,0.2)]">
                     <h2 class="text-[#22c55e] text-4xl font-black uppercase italic mb-4 tracking-tighter">Связь с узлом</h2>
                     <input v-model="quickStartPc" type="number" placeholder="№ ПК" class="no-spinners w-full bg-black border-2 border-white/5 rounded-[2.5rem] py-10 text-7xl font-black text-center text-[#22c55e] mb-12 outline-none shadow-inner" />
                     <button @click="proceedToQuickStart" class="w-full py-7 bg-[#22c55e] text-black font-black uppercase italic tracking-[0.3em] rounded-[2.5rem]">Вход в систему</button>
@@ -398,13 +407,10 @@ onUnmounted(() => {
 
             <div v-if="isReviewModalOpen" class="fixed inset-0 flex items-center justify-center z-[9999900] p-6">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-2xl" @click="isReviewModalOpen = false"></div>
-                <div class="relative w-full max-w-lg bg-[#0a0a0a] border border-yellow-500/30 rounded-[3.5rem] p-12 shadow-[0_0_120px_rgba(234,179,8,0.2)] animate-in zoom-in duration-300">
+                <div class="relative w-full max-w-lg bg-[#0a0a0a] border border-yellow-500/30 rounded-[3.5rem] p-12 shadow-[0_0_120px_rgba(234,179,8,0.2)]">
                     <h2 class="text-yellow-500 text-4xl font-black uppercase italic mb-6 tracking-tighter text-center">Reputation</h2>
-                    <p class="text-white/60 text-xs font-mono mb-8 text-center italic uppercase tracking-widest">
-                        Вставьте текст вашего отзыва с Яндекс.Карт для получения <span class="text-yellow-500">100 бонусов</span>.
-                    </p>
-                    <textarea v-model="reviewText" placeholder="Вставьте текст отзыва..." class="w-full h-40 bg-black border-2 border-white/5 rounded-[2rem] p-6 text-white text-sm outline-none focus:border-yellow-500/50 resize-none mb-8"></textarea>
-                    <button @click="submitReviewClaim" class="w-full py-6 bg-yellow-500 rounded-[2.5rem] text-black font-black uppercase tracking-[0.3em] italic">Отправить на проверку</button>
+                    <textarea v-model="reviewText" placeholder="Вставьте текст отзыва..." class="w-full h-40 bg-black border-2 border-white/5 rounded-[2rem] p-6 text-white text-sm outline-none resize-none mb-8"></textarea>
+                    <button @click="submitReviewClaim" class="w-full py-6 bg-yellow-500 rounded-[2.5rem] text-black font-black uppercase tracking-[0.3em] italic">Отправить</button>
                 </div>
             </div>
 
@@ -412,11 +418,3 @@ onUnmounted(() => {
         </Teleport>
     </MainLayout>
 </template>
-
-<style scoped>
-@reference "../../../css/app.css";
-.animate-in { animation: zoom-in 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-@keyframes zoom-in { from { opacity: 0; transform: scale(0.95) translateY(30px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-.no-spinners::-webkit-outer-spin-button, .no-spinners::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.no-spinners { -moz-appearance: textfield; }
-</style>

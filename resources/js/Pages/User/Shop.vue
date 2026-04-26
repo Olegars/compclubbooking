@@ -31,6 +31,7 @@ const filteredProducts = computed(() => {
 
 // Открыть подтверждение
 const askConfirm = (product: any) => {
+    if (product.stock <= 0) return; // Жесткая защита от клика по отсутствующему товару
     confirmData.value = { show: true, product }
 }
 
@@ -50,6 +51,9 @@ const executePurchase = async () => {
 
         // Обновляем баланс в шапке (Inertia reload)
         router.reload({ only: ['gizmo', 'transactions', 'orders'] })
+
+        // После успешной покупки обновляем список товаров, чтобы актуализировать остатки
+        fetchProducts()
     } catch (e: any) {
         showError(e.response?.data?.message || 'Ошибка при оформлении заказа')
     } finally {
@@ -94,24 +98,38 @@ onMounted(fetchProducts)
 
             <div v-if="filteredProducts.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div v-for="item in filteredProducts" :key="item.id"
-                     class="bg-[#0a0a0a] border border-white/5 rounded-[2.5rem] p-6 group hover:border-[#22c55e]/40 transition-all relative overflow-hidden flex flex-col shadow-xl">
+                     class="bg-[#0a0a0a] border border-white/5 rounded-[2.5rem] p-6 transition-all relative overflow-hidden flex flex-col shadow-xl"
+                     :class="{'opacity-40 grayscale': item.stock <= 0, 'hover:border-[#22c55e]/40 group': item.stock > 0}">
+
+                    <div v-if="item.stock <= 0" class="absolute top-4 left-0 right-0 z-10 flex justify-center">
+                        <span class="bg-red-500/90 text-white text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full backdrop-blur-sm border border-red-400">
+                            Sold Out
+                        </span>
+                    </div>
 
                     <div class="aspect-square bg-gradient-to-br from-white/5 to-transparent rounded-[2rem] mb-6 flex items-center justify-center overflow-hidden border border-white/5 relative">
                         <img :src="item.image || '/images/shop/default.png'"
                              @error="handleImageError"
-                             class="w-3/4 h-3/4 object-contain group-hover:scale-110 transition-transform duration-500" />
-                        <div class="absolute inset-0 bg-[#22c55e]/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                             class="w-3/4 h-3/4 object-contain transition-transform duration-500"
+                             :class="{'group-hover:scale-110': item.stock > 0}" />
+                        <div class="absolute inset-0 bg-[#22c55e]/5 opacity-0 transition-opacity" :class="{'group-hover:opacity-100': item.stock > 0}"></div>
                     </div>
 
                     <div class="text-sm font-black text-white uppercase mb-1 italic tracking-tight">{{ item.name }}</div>
                     <div class="text-[9px] text-[#22c55e]/50 uppercase font-black tracking-widest mb-6">{{ item.category }}</div>
 
                     <div class="mt-auto flex justify-between items-center">
-                        <div class="text-2xl font-black text-white italic tracking-tighter">{{ Math.floor(item.price) }} <span class="text-xs text-[#22c55e] ml-1">₽</span></div>
-                        <button @click="askConfirm(item)"
+                        <div class="text-2xl font-black text-white italic tracking-tighter">
+                            {{ Math.floor(item.price) }} <span class="text-xs text-[#22c55e] ml-1">₽</span>
+                        </div>
+
+                        <button v-if="item.stock > 0" @click="askConfirm(item)"
                                 class="w-12 h-12 bg-[#22c55e]/10 border border-[#22c55e]/20 text-[#22c55e] flex items-center justify-center rounded-2xl hover:bg-[#22c55e] hover:text-black transition-all active:scale-90">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 6v12m6-6H6"/></svg>
                         </button>
+                        <div v-else class="px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-center">
+                            <span class="text-red-500 text-[10px] font-black uppercase tracking-wider">Пусто</span>
+                        </div>
                     </div>
                 </div>
             </div>

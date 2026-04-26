@@ -9,7 +9,7 @@ use App\Models\Booking;
 use Inertia\Inertia;
 use App\Models\Order;
 use Carbon\Carbon;
-use App\Models\ReviewClaim; // 1. ДОБАВЛЕН ИМПОРТ МОДЕЛИ ОТЗЫВОВ
+use App\Models\ReviewClaim;
 
 class ProfileController extends Controller
 {
@@ -17,16 +17,18 @@ class ProfileController extends Controller
     {
         $user = Auth::user();
         $now = now();
-        $today = $now->toDateString();
+        $yesterday = now()->subDay()->toDateString();
 
+        // 1. Кошелек
         $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id], ['balance' => 0]);
 
-        // Получаем активные заказы (pending или cooking)
+        // 2. Активные заказы из магазина (Снаряжение в пути)
         $activeOrders = Order::where('user_id', $user->id)
-            ->whereIn('status', ['pending', 'cooking'])
+            ->whereIn('status', ['pending', 'cooking', 'new', 'waiting'])
             ->latest()
             ->get();
 
+        // 3. Последние транзакции
         $transactions = $user->transactions()
             ->latest()
             ->take(5)
@@ -40,28 +42,38 @@ class ProfileController extends Controller
                 ];
             });
 
-        $yesterday = now()->subDay()->toDateString();
-
+        // 4. Активные бронирования (ИСПРАВЛЕНО)
         $activeBookings = Booking::where('user_id', $user->id)
-            ->where('status', 'active')
+            // Расширяем статусы, чтобы подхватить даже те, что еще не отмечены как 'active' админом
+            ->whereIn('status', ['active', 'paid', 'confirmed', 'new'])
             ->where('date', '>=', $yesterday)
             ->get()
             ->filter(function($booking) use ($now) {
                 $startTime = (float)$booking->start_time;
                 $duration = (float)$booking->duration;
-                $end = \Carbon\Carbon::parse($booking->date)
+
+                // Создаем время окончания брони
+                $end = Carbon::parse($booking->date)
+                    ->startOfDay()
                     ->addMinutes($startTime * 60)
                     ->addHours($duration);
+
+                // Бронь должна закончиться позже, чем "сейчас"
                 return $now->lessThan($end);
+            })
+            ->map(function($booking) {
+                // Гарантируем, что pc_ids дойдет до фронта в понятном виде
+                // Если там строка JSON, оставляем как есть (фронт сам распарсит)
+                return $booking;
             })
             ->values();
 
-        // 2. ПОЛУЧАЕМ ПОСЛЕДНЮЮ ЗАЯВКУ НА БОНУС
+        // 5. Бонусы за отзывы
         $latestReview = ReviewClaim::where('user_id', $user->id)
             ->latest()
             ->first();
 
-        // ОБРАТИ ВНИМАНИЕ: путь User/Dashboard, как у тебя в коде
+        // 6. Рендер интерфейса
         return Inertia::render('User/Dashboard', [
             'user' => [
                 'id' => $user->id,
@@ -76,7 +88,9 @@ class ProfileController extends Controller
             'transactions' => $transactions,
             'active_bookings' => $activeBookings,
             'orders' => $activeOrders,
-            'latest_review' => $latestReview, // 3. ПЕРЕДАЕМ НА ФРОНТЕНД
+            'latest_review' => $latestReview,
+            // Передаем серверное время, чтобы таймеры на фронте не врали
+            'server_time' => $now->toIso8601String(),
         ]);
     }
 }

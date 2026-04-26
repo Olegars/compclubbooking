@@ -12,6 +12,8 @@ import SmsModal from '@/Components/SmsModal.vue'
 import PaymentModal from '@/Components/PaymentModal.vue'
 import ZoneInfoModal from '@/Components/ZoneInfoModal.vue'
 import TariffsModal from '@/Components/TariffsModal.vue'
+// Подключаем наш новый компонент
+import AgeWarningModal from '@/Components/AgeWarningModal.vue'
 
 const props = withDefaults(defineProps<{
     clubData: {
@@ -66,7 +68,7 @@ const handleSeatError = () => {
 const showOverlay = ref(false)
 const showConfirmModal = ref(false)
 const showSmsModal = ref(false)
-const showAgeWarning = ref(false) // Ночное предупреждение
+const showAgeWarning = ref(false)
 const showSuccessModal = ref(false)
 const showInfoModal = ref(false)
 const showTariffsModal = ref(false)
@@ -109,12 +111,11 @@ const duration = computed(() => {
 
 // --- ЛОГИКА ВОЗРАСТНОГО КОНТРОЛЯ ---
 const checkAgeRestriction = () => {
-    const nightStart = 22; // 22:00
-    const nightEnd = 6;    // 06:00
+    const nightStart = 22;
+    const nightEnd = 6;
     const start = startH.value;
     const end = endH.value;
 
-    // Проверяем, заходит ли бронь в ночное время (22:00 - 06:00)
     const isNight = start >= nightStart || start < nightEnd || end > nightStart || end <= nightEnd || duration.value > 12;
 
     if (isNight) {
@@ -351,22 +352,11 @@ onUnmounted(() => closeAllModals())
             <Teleport to="body">
                 <div v-if="showOverlay" class="fixed inset-0 bg-black/95 backdrop-blur-xl z-[9999990]" @click="closeAllModals"></div>
 
-                <div v-if="showAgeWarning"
-                     class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] bg-[#050505] border-2 border-yellow-500/50 rounded-[40px] p-10 z-[9999995] shadow-[0_0_100px_rgba(234,179,8,0.2)] select-none">
-                    <div class="flex items-center gap-4 mb-6">
-                        <div class="w-12 h-12 rounded-full bg-yellow-500/10 flex items-center justify-center text-yellow-500 text-2xl animate-pulse">⚠️</div>
-                        <h2 class="text-yellow-500 text-2xl font-black uppercase italic tracking-tighter leading-none">Внимание: Ночной протокол</h2>
-                    </div>
-                    <p class="text-white/80 text-sm leading-relaxed mb-8 font-medium italic">
-                        Посещение клуба гражданами младше <span class="text-yellow-500 font-bold">16 лет</span>
-                        в период с <span class="text-white font-bold">22:00 до 06:00</span> запрещено без сопровождения взрослых.
-                        <br><br>Вам уже исполнилось 16 лет?
-                    </p>
-                    <div class="flex gap-4">
-                        <button @click="closeAllModals" class="flex-1 py-4 rounded-2xl border border-white/10 text-white/40 uppercase text-[10px] font-black tracking-widest hover:text-white transition-all">Нет</button>
-                        <button @click="handleAgeConfirm" class="flex-[2] py-4 bg-yellow-500 hover:bg-yellow-400 text-black uppercase text-[12px] font-black italic tracking-widest rounded-2xl transition-all shadow-[0_0_20px_rgba(234,179,8,0.2)] active:scale-95">Да, мне есть 16</button>
-                    </div>
-                </div>
+                <AgeWarningModal
+                    :isOpen="showAgeWarning"
+                    @close="closeAllModals"
+                    @confirm="handleAgeConfirm"
+                />
 
                 <ConfirmModal v-if="showConfirmModal" :isOpen="showConfirmModal" :mode="isTerminal ? 'auth' : 'booking'" :data="bookingDataForModal" @close="closeAllModals" @confirm="handleConfirmBooking" />
                 <SmsModal v-if="showSmsModal" :is-open="showSmsModal" :phone="userPhone" :is-terminal="isTerminal" @close="showSmsModal = false" @verify="() => { showSmsModal = false; showSuccessModal = true }" />

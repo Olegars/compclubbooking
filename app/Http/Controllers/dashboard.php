@@ -10,6 +10,7 @@ class AccountController extends Controller
 {
     public function dashboard()
     {
+
         $user = auth()->user();
 
         // Формируем красивые данные для истории

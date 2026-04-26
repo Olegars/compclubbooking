@@ -2,26 +2,28 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
-    /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+        'phone',
+        'avatar',
+        'balance' // Добавь, если используешь локальный баланс
+    ];
+
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
     protected function casts(): array
     {
         return [
@@ -29,22 +31,32 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
-    protected $fillable = [
-        'name',
-        'email',
-        'password',
-        'phone',
-        'avatar'
-    ];
+
+    // Связь с кошельком
     public function wallet() {
         return $this->hasOne(Wallet::class);
     }
 
-    /**
-     * Связь с транзакциями (один ко многим)
-     */
-    public function transactions()
-    {
+    // Связь с транзакциями
+    public function transactions() {
         return $this->hasMany(Transaction::class);
+    }
+
+    // --- НОВЫЕ СВЯЗИ ДЛЯ REACTOR ---
+
+    /**
+     * Ищем активную сессию в Gizmo (через твою таблицу сессий)
+     */
+    public function activeSession() {
+        // Предполагаем, что у тебя есть таблица или модель GizmoSession
+        // и в ней есть поле host_name (номер ПК)
+        return $this->hasOne(GizmoSession::class)->where('is_active', true);
+    }
+
+    /**
+     * Ищем все бронирования пользователя
+     */
+    public function bookings() {
+        return $this->hasMany(Booking::class);
     }
 }

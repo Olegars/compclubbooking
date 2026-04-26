@@ -14,7 +14,7 @@ class BookingController extends Controller
     public function reserve(Request $request)
     {
         $request->validate([
-            'pc_ids'   => 'required|array', // Приходит массив [1, 2, 5]
+            'pc_ids'   => 'required|array',
             'price'    => 'required|numeric',
             'date'     => 'required|string',
             'start_h'  => 'required|numeric',
@@ -24,7 +24,6 @@ class BookingController extends Controller
         $user = auth()->user();
         $totalPrice = $request->price;
 
-        // 1. Проверка баланса
         if ($user->wallet->balance < $totalPrice) {
             return response()->json(['message' => 'Недостаточно средств на балансе.'], 422);
         }
@@ -37,12 +36,11 @@ class BookingController extends Controller
 
                 foreach ($request->pc_ids as $pcId) {
 
-                    // 2. ПРОВЕРКА НА ЗАНЯТОСТЬ (уже по новой структуре)
+                    // 2. ПРОВЕРКА НА ЗАНЯТОСТЬ
                     $isOccupied = Booking::where('computer_id', $pcId)
                         ->where('date', $request->date)
-                        ->where('status', 'active')
+                        ->whereIn('status', ['active', 'paid', 'confirmed']) // Добавил статусы для надежности
                         ->where(function($q) use ($start, $end) {
-                            // Проверяем пересечение отрезков времени
                             $q->whereRaw('start_time < ? AND (start_time + duration) > ?', [$end, $start]);
                         })->exists();
 
@@ -50,18 +48,19 @@ class BookingController extends Controller
                         throw new \Exception("Узел #{$pcId} уже занят на выбранное время.");
                     }
 
-                    // 3. СОЗДАЕМ ЗАПИСЬ (по одной на каждый ПК)
+                    // 3. СОЗДАЕМ ЗАПИСЬ (Записываем и в computer_id, и в pc_ids!)
                     Booking::create([
                         'user_id'     => $user->id,
-                        'computer_id' => $pcId,
+                        'computer_id' => $pcId, // Для внутренней логики занятости
+                        'pc_ids'      => [$pcId], // ДЛЯ ФРОНТЕНДА И ДАШБОРДА (в формате массива)
                         'date'        => $request->date,
                         'start_time'  => $request->start_h,
                         'duration'    => $request->duration,
-                        'price'       => $totalPrice / count($request->pc_ids), // делим общую сумму на кол-во мест
+                        'price'       => $totalPrice / count($request->pc_ids),
                         'status'      => 'active'
                     ]);
 
-                    // 4. МГНОВЕННОЕ ОБНОВЛЕНИЕ СТАТУСА (если бронь на сейчас)
+                    // 4. МГНОВЕННОЕ ОБНОВЛЕНИЕ СТАТУСА
                     $nowH = now()->hour + (now()->minute / 60);
                     if ($request->date === now()->toDateString() && $nowH >= $start && $nowH < $end) {
                         DB::table('computers')->where('id', $pcId)->update(['status' => 'busy']);
@@ -71,7 +70,7 @@ class BookingController extends Controller
                 // 5. СПИСАНИЕ СРЕДСТВ
                 $user->wallet()->decrement('balance', $totalPrice);
 
-                // 6. ТРАНЗАКЦИЯ (одна общая для истории)
+                // 6. ТРАНЗАКЦИЯ
                 Transaction::create([
                     'user_id'     => $user->id,
                     'amount'      => -$totalPrice,
