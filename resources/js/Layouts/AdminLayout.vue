@@ -104,6 +104,10 @@ onUnmounted(() => {
                 <Link href="/admin/map-builder" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/map-builder') }">
                     <span class="nav-icon">🗺️</span> <span>Редактор карты</span>
                 </Link>
+                <Link href="/admin/overlays" class="admin-nav-link border-l-2 border-transparent"
+                      :class="{ 'active !border-cyan-500/30 !bg-cyan-500/10 !text-cyan-400': $page.url.startsWith('/admin/overlays') }">
+                    <span class="nav-icon">🖥️</span> <span>Shell Оверлеи</span>
+                </Link>
                 <Link href="/admin/inventory" class="admin-nav-link" :class="{ 'active': $page.url.startsWith('/admin/inventory') }">
                     <span class="nav-icon">📦</span> <span>Склад</span>
                 </Link>
