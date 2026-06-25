@@ -12,6 +12,7 @@ export default defineConfig({
             input: 'resources/js/app.js',
             refresh: true,
         }),
+
         vue({
             template: {
                 transformAssetUrls: {
@@ -21,6 +22,13 @@ export default defineConfig({
             },
         }),
     ],
+    server: {
+        host: '0.0.0.0', // Слушаем все IP
+        port: 5173,      // Стандартный порт Vite (или твой 22223)
+        hmr: {
+            host: '192.168.222.2' // КРИТИЧНО: Чтобы Laravel генерировал ссылки на этот IP
+        },
+    },
     resolve: {
         alias: {
             '@': path.resolve(__dirname, 'resources/js'),

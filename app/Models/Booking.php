@@ -17,6 +17,7 @@ class Booking extends Model
         'duration',
         'price',
         'status',
+        'pin_code'
     ];
 
     // (Опционально) Связь с юзером, чтобы потом удобно выводить инфу

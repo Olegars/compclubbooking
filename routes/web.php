@@ -16,7 +16,7 @@ use App\Http\Controllers\ChatController;
 use App\Http\Controllers\Api\PromoCodeController;
 use App\Http\Controllers\Api\QueueController;
 
-// --- ДОБАВЛЕНО: ОВЕРЛЕИ SHELL (API для терминала) ---
+// Оверлеи Shell (API для терминалов)
 use App\Http\Controllers\Api\ShellApiController;
 
 // Контроллеры Авторизации
@@ -36,8 +36,6 @@ use App\Http\Controllers\Admin\ZoneController;
 use App\Http\Controllers\Admin\LicenseController;
 use App\Http\Controllers\Admin\TournamentController;
 use App\Http\Controllers\Admin\PromoCodeAdminController;
-
-// --- ДОБАВЛЕНО: ОВЕРЛЕИ SHELL (Контроллер админки) ---
 use App\Http\Controllers\Admin\OverlayAdminController;
 
 /*
@@ -48,17 +46,6 @@ use App\Http\Controllers\Admin\OverlayAdminController;
 Route::get('/', [HomeController::class, 'index'])->name('home');
 Route::get('/booking/{slug?}', [ClubController::class, 'show'])->name('booking');
 Route::get('/terminal/{slug?}', [TerminalController::class, 'index'])->name('terminal.booking');
-
-/*
-|--------------------------------------------------------------------------
-| API ДЛЯ QML-ШЕЛЛА (Терминалы клуба)
-|--------------------------------------------------------------------------
-*/
-// --- ДОБАВЛЕНО: Этот роут будет дергать твой QML-экран каждые N секунд ---
-Route::prefix('api/shell')->group(function () {
-    Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
-});
-
 
 /*
 |--------------------------------------------------------------------------
@@ -73,17 +60,15 @@ Route::middleware('guest')->group(function () {
 
 Route::post('/logout', [LogoutController::class, 'logout'])->name('logout');
 
-
 /*
 |--------------------------------------------------------------------------
-| ОБЩИЕ API (ДОСТУПНЫ И ИГРОКАМ, И АДМИНАМ)
+| ОБЩИЕ API (ИГРОКИ + АДМИНЫ)
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth:web,admin'])->prefix('api/shop')->group(function () {
     Route::get('/products', [ShopController::class, 'getProducts']);
     Route::post('/checkout', [ShopController::class, 'checkout']);
 });
-
 
 /*
 |--------------------------------------------------------------------------
@@ -102,7 +87,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/shop', [ShopController::class, 'index'])->name('shop');
     Route::post('/api/bonuses/review', [BonusController::class, 'submitReview']);
     Route::post('/api/promo/apply', [PromoCodeController::class, 'apply']);
+
+    // --- РОУТЫ СИСТЕМЫ БРОНИРОВАНИЯ ---
+    Route::post('/api/booking/calculate-price', [BookingController::class, 'calculatePrice']);
     Route::post('/api/booking/reserve', [BookingController::class, 'reserve']);
+
     Route::post('/api/billing/topup', [BillingController::class, 'topUp']);
     Route::post('/api/billing/start-session', [BillingController::class, 'startSession']);
     Route::post('/api/admin/call', [ChatController::class, 'callAdmin']);
@@ -128,7 +117,6 @@ Route::middleware(['auth'])->group(function () {
 | АДМИНКА (REACTOR CONTROL — Guard: Admin)
 |--------------------------------------------------------------------------
 */
-
 Route::middleware('guest:admin')->prefix('admin')->group(function () {
     Route::get('/login', [AdminLoginController::class, 'showLoginForm'])->name('admin.login');
     Route::post('/login', [AdminLoginController::class, 'login']);
@@ -136,9 +124,7 @@ Route::middleware('guest:admin')->prefix('admin')->group(function () {
 
 Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 
-    // ==========================================
-    // УРОВЕНЬ 1: ДОСТУПНО ВСЕМ (admin, supervisor, owner)
-    // ==========================================
+    // ГЛАВНОЕ
     Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
     Route::post('/give-bonus', [AdminController::class, 'giveBonus']);
     Route::get('/search-user', [AdminController::class, 'searchUser']);
@@ -149,12 +135,10 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     Route::get('/shifts/history', [ShiftController::class, 'history'])->name('admin.shift.history');
     Route::get('/incidents', [AdminController::class, 'incidents'])->name('admin.incidents');
 
-    // Конфигурация (Карта, Зоны, ОВЕРЛЕИ)
-    Route::get('/map-builder', function () {
-        return Inertia::render('Admin/MapBuilder', [
-            'clubs' => \App\Models\Club::select('id', 'name')->get()
-        ]);
-    })->name('admin.map-builder');
+    // КАРТА И ТАРИФЫ
+    Route::get('/map-builder', fn() => Inertia::render('Admin/MapBuilder', [
+        'clubs' => \App\Models\Club::select('id', 'name')->get()
+    ]))->name('admin.map-builder');
     Route::post('/save-map', [MapController::class, 'save']);
     Route::get('/get-map', [MapController::class, 'getMap']);
 
@@ -167,34 +151,32 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     Route::post('/zones', [ZoneController::class, 'store']);
     Route::delete('/zones/{zone}', [ZoneController::class, 'destroy']);
 
-    // --- ДОБАВЛЕНО: ОВЕРЛЕИ SHELL (Страница админки) ---
+    // ОВЕРЛЕИ (Страница)
     Route::get('/overlays', [OverlayAdminController::class, 'index'])->name('admin.overlays');
 
+    // ЛИЦЕНЗИИ
     Route::get('/licenses', [LicenseController::class, 'index'])->name('admin.licenses');
     Route::post('/licenses/games', [LicenseController::class, 'storeGame']);
     Route::delete('/licenses/games/{game}', [LicenseController::class, 'destroyGame']);
     Route::post('/licenses/games/{game}/accounts', [LicenseController::class, 'storeAccount']);
     Route::delete('/licenses/accounts/{account}', [LicenseController::class, 'destroyAccount']);
 
-    // ==========================================
-    // API Админки
-    // ==========================================
+    // API АДМИНКИ
     Route::prefix('api')->group(function () {
         Route::get('/pc-statuses', [AdminController::class, 'getPcStatuses']);
         Route::get('/check-orders', [AdminController::class, 'checkNewOrders']);
         Route::post('/incidents/{id}/resolve', [AdminController::class, 'resolveIncident']);
 
-        // --- ДОБАВЛЕНО: ОВЕРЛЕИ SHELL (Методы сохранения) ---
+        // --- ОВЕРЛЕИ (Управление и Загрузка) ---
         Route::get('/overlays', [OverlayAdminController::class, 'getOverlays']);
         Route::put('/overlays/{id}', [OverlayAdminController::class, 'updateOverlay']);
-
+        Route::post('/upload-image', [OverlayAdminController::class, 'uploadImage']);
+        Route::post('/upload-video', [OverlayAdminController::class, 'uploadVideo']);
         Route::get('/active-calls', [ChatController::class, 'getActiveCalls']);
         Route::post('/calls/{id}/resolve', [ChatController::class, 'resolveCall']);
     });
 
-    // ==========================================
-    // УРОВЕНЬ 2: СУПЕРВИЗОРЫ И ВЛАДЕЛЕЦ (supervisor, owner)
-    // ==========================================
+    // УРОВЕНЬ: SUPERVISOR+
     Route::middleware(['role:supervisor,owner'])->group(function () {
         Route::get('/inventory', [AdminController::class, 'inventory'])->name('admin.inventory');
         Route::prefix('api/inventory')->group(function () {
@@ -202,6 +184,12 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::delete('/delete/{id}', [AdminController::class, 'deleteProduct']);
             Route::post('/update-stock', [AdminController::class, 'updateStock']);
             Route::get('/find-barcode', [AdminController::class, 'findByBarcode']);
+        });
+
+        Route::prefix('games')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Admin\GameController::class, 'index'])->name('admin.games.index');
+            Route::post('/save', [\App\Http\Controllers\Admin\GameController::class, 'save'])->name('admin.games.save');
+            Route::delete('/delete/{id}', [\App\Http\Controllers\Admin\GameController::class, 'destroy'])->name('admin.games.delete');
         });
 
         Route::get('/bonuses', [BonusController::class, 'index'])->name('admin.bonuses.index');
@@ -213,18 +201,35 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::patch('/tournaments/{tournament}/status', [TournamentController::class, 'updateStatus']);
         Route::delete('/tournaments/{tournament}', [TournamentController::class, 'destroy']);
 
+        // Промокоды
         Route::get('/promocodes', [PromoCodeAdminController::class, 'index'])->name('admin.promocodes.index');
         Route::post('/promocodes', [PromoCodeAdminController::class, 'store']);
         Route::delete('/promocodes/{promoCode}', [PromoCodeAdminController::class, 'destroy']);
     });
 
-    // ==========================================
-    // УРОВЕНЬ 3: ТОЛЬКО ВЛАДЕЛЕЦ (owner)
-    // ==========================================
+    // УРОВЕНЬ: OWNER
     Route::middleware(['role:owner'])->group(function () {
         Route::get('/taxes', [TaxController::class, 'index'])->name('admin.taxes.index');
         Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
     });
 
     Route::post('/logout', [AdminLoginController::class, 'logout'])->name('admin.logout');
+});
+
+/*
+|--------------------------------------------------------------------------
+| API ДЛЯ QML-ШЕЛЛА (Терминалы клуба)
+|--------------------------------------------------------------------------
+*/
+Route::prefix('api/shell')->group(function () {
+    Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
+    Route::post('/login', [ShellApiController::class, 'login']);
+    Route::get('/games', [ShellApiController::class, 'getGames']);
+
+    // --- МАГАЗИН И БАР ДЛЯ ТЕРМИНАЛА ---
+    Route::get('/store/products', [ShellApiController::class, 'getProducts']);
+    Route::post('/store/checkout', [ShellApiController::class, 'checkout']);
+
+    // --- ВЫЗОВ АДМИНА ---
+    Route::post('/admin/call', [ShellApiController::class, 'callAdmin']);
 });

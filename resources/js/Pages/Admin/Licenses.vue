@@ -9,13 +9,16 @@ const props = defineProps({ games: Array })
 const selectedGame = ref(null)
 const showGameModal = ref(false)
 const showAccountModal = ref(false)
+const posterPreview = ref(null)
+const isEditing = ref(false) // Флаг: создание новой игры или изменение старой
 
 // --- ФОРМЫ ---
 const gameForm = useForm({
+    id: null, // Добавлено для отслеживания редактируемой игры
     title: '',
     platform: 'Steam',
     category: '',
-    poster: '',
+    poster: null,
     exe_path: '',
     launch_args: ''
 })
@@ -31,15 +34,60 @@ const selectGame = (game) => {
     selectedGame.value = game
 }
 
+// Открытие модалки для добавления новой игры
+const openCreateModal = () => {
+    isEditing.value = false
+    posterPreview.value = null
+    gameForm.reset()
+    gameForm.id = null
+    gameForm.platform = 'Steam'
+    showGameModal.value = true
+}
+
+// Открытие модалки для ИЗМЕНЕНИЯ существующей игры
+const openEditModal = (game) => {
+    isEditing.value = true
+    gameForm.id = game.id
+    gameForm.title = game.title
+    gameForm.platform = game.platform
+    gameForm.category = game.category || ''
+    gameForm.exe_path = game.exe_path || ''
+    gameForm.launch_args = game.launch_args || ''
+    gameForm.poster = null
+
+    // Если у игры уже есть постер, показываем его в превью
+    posterPreview.value = game.poster
+        ? (game.poster.startsWith('/') || game.poster.startsWith('http') ? game.poster : '/' + game.poster)
+        : null
+
+    showGameModal.value = true
+}
+
+// Обработка выбора файла постера
+const handlePosterChange = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+        gameForm.poster = file
+        posterPreview.value = URL.createObjectURL(file)
+    }
+}
+
 const submitGame = () => {
+    // Если мы редактируем, шлем на тот же эндпоинт добавления/сохранения,
+    // но бэкенд определит изменение по наличию переданного параметра id
     gameForm.post('/admin/licenses/games', {
         preserveScroll: true,
         onSuccess: () => {
             showGameModal.value = false
             gameForm.reset()
-            // Если была выбрана игра, обновляем её данные локально
+            posterPreview.value = null
+
+            // Синхронизируем состояние правой панели с обновленными данными
             if (selectedGame.value) {
                 const updated = props.games.find(g => g.id === selectedGame.value.id)
+                if (updated) selectedGame.value = updated
+            } else if (isEditing.value && gameForm.id) {
+                const updated = props.games.find(g => g.id === gameForm.id)
                 if (updated) selectedGame.value = updated
             }
         }
@@ -109,7 +157,7 @@ const getStatusBadge = (status) => {
         <div class="p-8 min-h-full flex flex-col font-mono text-white animate-in fade-in duration-500">
             <div class="flex justify-between items-center mb-10">
                 <h1 class="text-4xl font-black italic tracking-tighter uppercase text-blue-500">Каталог и Лицензии</h1>
-                <button @click="showGameModal = true" class="px-6 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-xl tracking-widest text-xs uppercase transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] active:scale-95">
+                <button @click="openCreateModal" class="px-6 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-xl tracking-widest text-xs uppercase transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] active:scale-95">
                     + Добавить Игру
                 </button>
             </div>
@@ -123,7 +171,7 @@ const getStatusBadge = (status) => {
                          :class="selectedGame?.id === game.id ? 'border-blue-500 shadow-[0_0_30px_rgba(37,99,235,0.15)] scale-[1.02]' : 'border-white/5 hover:border-white/20 hover:bg-white/[0.02]'">
 
                         <div class="w-20 h-28 rounded-xl overflow-hidden bg-white/5 flex-shrink-0 relative">
-                            <img v-if="game.poster" :src="game.poster" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                            <img v-if="game.poster" :src="game.poster.startsWith('/') || game.poster.startsWith('http') ? game.poster : '/' + game.poster" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                             <div v-else class="w-full h-full flex items-center justify-center text-3xl opacity-20 bg-gradient-to-br from-blue-900/20 to-black">🎮</div>
                         </div>
 
@@ -131,7 +179,7 @@ const getStatusBadge = (status) => {
                             <div>
                                 <div class="flex justify-between items-start">
                                     <div class="text-lg font-black uppercase italic leading-tight">{{ game.title }}</div>
-                                    <button @click.stop="deleteGame(game.id)" class="text-red-500/20 hover:text-red-500 transition-all p-1 rounded-lg hover:bg-red-500/10">
+                                    <button @click.stop="deleteGame(game.id)" class="text-red-500/20 hover:text-red-500 transition-all p-1 rounded-lg hover:bg-red-500/10" title="Удалить игру полностью">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                                     </button>
                                 </div>
@@ -170,7 +218,17 @@ const getStatusBadge = (status) => {
                         <div class="flex justify-between items-end mb-6 relative z-10">
                             <div>
                                 <div class="text-[10px] text-white/30 uppercase tracking-[0.4em] font-black italic mb-2">Реестр доступов</div>
-                                <h2 class="text-3xl font-black uppercase italic">{{ selectedGame.title }}</h2>
+                                <h2 class="text-3xl font-black uppercase italic flex items-center gap-4">
+                                    {{ selectedGame.title }}
+                                    <!-- КНОПКА ИЗМЕНЕНИЯ ИГРЫ -->
+                                    <button @click="openEditModal(selectedGame)" class="p-2 bg-white/5 hover:bg-blue-600/20 text-white/40 hover:text-blue-400 border border-white/5 hover:border-blue-500/30 rounded-xl transition-all" title="Редактировать метаданные">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                    </button>
+                                    <!-- КНОПКА УДАЛЕНИЯ ИГРЫ ИЗ ДЕТАЛКИ -->
+                                    <button @click="deleteGame(selectedGame.id)" class="p-2 bg-white/5 hover:bg-red-600/20 text-white/40 hover:text-red-500 border border-white/5 hover:border-red-500/30 rounded-xl transition-all" title="Удалить игру из базы">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                    </button>
+                                </h2>
                             </div>
                             <button @click="showAccountModal = true" class="px-6 py-3 bg-white/5 hover:bg-white/10 text-white border border-white/10 font-black rounded-xl tracking-widest text-[10px] uppercase transition-all active:scale-95">
                                 + Внести аккаунт
@@ -226,13 +284,18 @@ const getStatusBadge = (status) => {
             </div>
         </div>
 
+        <!-- МОДАЛЬНОЕ ОКНО ДОБАВЛЕНИЯ / РЕДАКТИРОВАНИЯ -->
         <Teleport to="body">
             <div v-if="showGameModal" class="fixed inset-0 flex items-center justify-center z-[9999900] p-6 font-mono">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-md" @click="showGameModal = false"></div>
                 <div class="relative w-full max-w-xl bg-[#0a0a0a] border border-blue-500/30 rounded-[3rem] p-10 shadow-[0_0_100px_rgba(37,99,235,0.15)] animate-in zoom-in-95 duration-200 max-h-[95vh] overflow-y-auto custom-scrollbar">
-                    <h2 class="text-blue-500 text-3xl font-black uppercase italic mb-8 tracking-tighter">Метаданные игры</h2>
+                    <h2 class="text-blue-500 text-3xl font-black uppercase italic mb-8 tracking-tighter">
+                        {{ isEditing ? 'Изменение метаданных' : 'Метаданные игры' }}
+                    </h2>
 
                     <form @submit.prevent="submitGame" class="space-y-6">
+                        <!-- Скрытое ID для бэкенда -->
+                        <input v-model="gameForm.id" type="hidden" />
 
                         <div class="grid grid-cols-2 gap-4">
                             <div>
@@ -247,14 +310,27 @@ const getStatusBadge = (status) => {
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-2 gap-4">
+                        <div class="grid grid-cols-2 gap-4 items-end">
                             <div>
                                 <label class="text-[10px] uppercase text-white/40 tracking-widest font-black italic mb-2 block">Категория</label>
                                 <input v-model="gameForm.category" type="text" placeholder="MOBA / Шутер" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold focus:border-blue-500 outline-none transition-colors" />
                             </div>
+
                             <div>
-                                <label class="text-[10px] uppercase text-white/40 tracking-widest font-black italic mb-2 block">URL Постера</label>
-                                <input v-model="gameForm.poster" type="text" placeholder="https://..." class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold focus:border-blue-500 outline-none transition-colors" />
+                                <label class="text-[10px] uppercase text-white/40 tracking-widest font-black italic mb-2 block">Постер игры</label>
+                                <div class="flex gap-3 items-center">
+                                    <label class="flex-1 flex flex-col items-center justify-center bg-black border-2 border-dashed border-white/10 hover:border-blue-500/50 rounded-2xl p-3 cursor-pointer transition-colors group/upload">
+                                        <div class="flex items-center gap-2 text-xs font-bold text-white/40 group-hover/upload:text-blue-400">
+                                            <span>📁</span>
+                                            <span>{{ gameForm.poster || (isEditing && posterPreview) ? 'Изменить файл' : 'Выбрать постер' }}</span>
+                                        </div>
+                                        <input type="file" accept="image/*" @change="handlePosterChange" class="hidden" />
+                                    </label>
+
+                                    <div v-if="posterPreview" class="w-12 h-14 bg-white/5 rounded-xl border border-white/10 overflow-hidden shrink-0">
+                                        <img :src="posterPreview" class="w-full h-full object-cover" />
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -285,6 +361,7 @@ const getStatusBadge = (status) => {
             </div>
         </Teleport>
 
+        <!-- ВНЕСЕНИЕ АККАУНТА -->
         <Teleport to="body">
             <div v-if="showAccountModal" class="fixed inset-0 flex items-center justify-center z-[9999900] p-6 font-mono">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-md" @click="showAccountModal = false"></div>
@@ -327,7 +404,6 @@ const getStatusBadge = (status) => {
 <style scoped>
 @reference "../../../css/app.css";
 
-/* Стилизация скроллбара под дизайн */
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }

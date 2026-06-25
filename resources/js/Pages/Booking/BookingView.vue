@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue' // <-- Добавили watch
 import { router } from '@inertiajs/vue3'
 import axios from 'axios'
 
@@ -12,7 +12,6 @@ import SmsModal from '@/Components/SmsModal.vue'
 import PaymentModal from '@/Components/PaymentModal.vue'
 import ZoneInfoModal from '@/Components/ZoneInfoModal.vue'
 import TariffsModal from '@/Components/TariffsModal.vue'
-// Подключаем наш новый компонент
 import AgeWarningModal from '@/Components/AgeWarningModal.vue'
 
 const props = withDefaults(defineProps<{
@@ -109,6 +108,35 @@ const duration = computed(() => {
     return d === 0 ? 24 : d
 })
 
+// --- ДИНАМИЧЕСКИЙ РАСЧЕТ СТОИМОСТИ ЧЕРЕЗ БЭКЕНД ---
+const totalAmount = ref(0)
+const isPriceLoading = ref(false)
+
+const fetchServerPrice = async () => {
+    if (selectedIds.value.length === 0 || duration.value <= 0) {
+        totalAmount.value = 0
+        return
+    }
+    isPriceLoading.value = true
+    try {
+        const response = await axios.post('/api/booking/calculate-price', {
+            pc_ids: selectedIds.value,
+            duration: duration.value
+        })
+        totalAmount.value = response.data.total_price
+    } catch (e) {
+        console.error('Ошибка расчета стоимости', e)
+    } finally {
+        isPriceLoading.value = false
+    }
+}
+
+// Отслеживаем изменения мест, длительности и режима для мгновенного перезапроса цены
+watch([selectedIds, duration, bookingMode], () => {
+    fetchServerPrice()
+}, { deep: true, immediate: true })
+
+
 // --- ЛОГИКА ВОЗРАСТНОГО КОНТРОЛЯ ---
 const checkAgeRestriction = () => {
     const nightStart = 22;
@@ -135,7 +163,7 @@ const handleAgeConfirm = () => {
 // --- ДАННЫЕ ДЛЯ МОДАЛКИ ---
 const getComputerData = (id: string | number) => {
     const pc = props.computersList.find(c => c.id.toString() === id.toString());
-    if (!pc) return { zoneName: 'STANDARD', pcName: id, price: 250 };
+    if (!pc) return { zoneName: 'STANDARD', pcName: id };
     let zoneName = 'STANDARD';
     const pcX = Number(pc.x); const pcY = Number(pc.y);
     const rects = cleanMapConfig.value.zoneRects || [];
@@ -148,7 +176,7 @@ const getComputerData = (id: string | number) => {
             break;
         }
     }
-    return { zoneName, pcName: pc.name, price: pc.price || 250 };
+    return { zoneName, pcName: pc.name };
 }
 
 const selectedPlacesText = computed(() =>
@@ -157,11 +185,6 @@ const selectedPlacesText = computed(() =>
         return `${data.zoneName} №${data.pcName}`;
     }).join(', ')
 )
-
-const totalAmount = computed(() => {
-    const base = selectedIds.value.reduce((acc, id) => acc + getComputerData(id).price, 0)
-    return base * duration.value * (selectedPackage.value ? selectedPackage.value.discount : 1)
-})
 
 const bookingDataForModal = computed(() => ({
     pcNumber: selectedPlacesText.value,
@@ -182,7 +205,7 @@ const handleConfirmBooking = async (payload: any) => {
         try {
             await axios.post('/api/booking/reserve', {
                 pc_ids: selectedIds.value,
-                price: totalAmount.value,
+                price: totalAmount.value, // Отправляем точную серверную цену обратно для сверки фрода
                 date: selectedDate.value,
                 start_h: startH.value,
                 duration: duration.value
@@ -333,15 +356,19 @@ onUnmounted(() => closeAllModals())
                 </div>
 
                 <div class="pt-4 shrink-0">
-                    <button @click="selectedIds.length && checkAgeRestriction()"
-                            :disabled="isProcessing"
-                            :class="['group w-full p-1 bg-[#22c55e] rounded-[2.5rem] transition-all active:scale-95', !selectedIds.length || isProcessing ? 'opacity-30 grayscale cursor-not-allowed' : 'cursor-pointer shadow-[0_10px_30px_rgba(34,197,94,0.2)]']">
+                    <button @click="selectedIds.length && !isPriceLoading && checkAgeRestriction()"
+                            :disabled="isProcessing || isPriceLoading || !selectedIds.length"
+                            :class="['group w-full p-1 bg-[#22c55e] rounded-[2.5rem] transition-all active:scale-95', !selectedIds.length || isProcessing || isPriceLoading ? 'opacity-30 grayscale cursor-not-allowed' : 'cursor-pointer shadow-[0_10px_30px_rgba(34,197,94,0.2)]']">
                         <div class="bg-[#0a0a0a] rounded-[2.3rem] p-7 flex justify-between items-center border border-white/10 group-hover:bg-transparent transition-all">
                             <span class="font-black uppercase text-sm text-white group-hover:text-black italic tracking-widest">
-                                {{ isProcessing ? 'Связь...' : (isTerminal ? 'ОПЛАТИТЬ И ИГРАТЬ' : 'Подтвердить') }}
+                                <template v-if="isPriceLoading">Расчет...</template>
+                                <template v-else-if="isProcessing">Связь...</template>
+                                <template v-else>{{ isTerminal ? 'ОПЛАТИТЬ И ИГРАТЬ' : 'Подтвердить' }}</template>
                             </span>
                             <div class="flex flex-col items-end text-[#22c55e] group-hover:text-black leading-none font-black italic">
-                                <div class="text-5xl tracking-tighter leading-none">{{ totalAmount.toFixed(0) }}</div>
+                                <div class="text-5xl tracking-tighter leading-none">
+                                    {{ isPriceLoading ? '...' : totalAmount.toFixed(0) }}
+                                </div>
                                 <span class="text-[8px] uppercase mt-1">РУБ</span>
                             </div>
                         </div>

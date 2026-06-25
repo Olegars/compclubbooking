@@ -19,4 +19,5 @@ class Overlay extends Model
         'content' => 'array',
         'is_active' => 'boolean',
     ];
+
 }

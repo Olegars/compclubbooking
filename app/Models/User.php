@@ -9,6 +9,7 @@ use Illuminate\Notifications\Notifiable;
 class User extends Authenticatable
 {
     use HasFactory, Notifiable;
+    protected $appends = ['total_balance'];
 
     protected $fillable = [
         'name',
@@ -58,5 +59,11 @@ class User extends Authenticatable
      */
     public function bookings() {
         return $this->hasMany(Booking::class);
+    }
+    // Добавь это в модель User.php
+    public function getTotalBalanceAttribute()
+    {
+        // Берем из кошелька, если там пусто - берем из таблицы users
+        return (float)($this->wallet?->deposit_balance ?? $this->balance ?? 0);
     }
 }

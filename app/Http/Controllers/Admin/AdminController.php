@@ -86,28 +86,53 @@ class AdminController extends Controller
 
     public function saveProduct(Request $request)
     {
+        // 1. Валидируем данные. image здесь — это загружаемый файл изображения
         $request->validate([
+            'id'       => 'nullable|integer',
             'name'     => 'required|string|max:255',
             'category' => 'required|string',
             'price'    => 'required|numeric',
-            'image'    => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048'
+            'stock'    => 'nullable|integer|min:0',
+            'image'    => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048' // Проверка файла
         ]);
 
-        $data = $request->only(['name', 'category', 'price']);
+        $data = [
+            'name'     => $request->name,
+            'category' => $request->category,
+            'price'    => $request->price,
+            'stock'    => $request->stock ?? 0,
+            'barcode'  => $request->barcode ?? null,
+        ];
 
-        // Обработка загрузки файла
+        // 2. ОБРАБОТКА И ЗАГРУЗКА ФАЙЛА КАРТИНКИ
         if ($request->hasFile('image')) {
             $file = $request->file('image');
             $filename = time() . '_' . $file->getClientOriginalName();
-            // Сохраняем в public/images/shop
-            $file->move(public_path('images/shop'), $filename);
-            $data['image'] = '/images/shop/' . $filename;
+
+            // 1. Физический путь для сохранения на сервере
+            $targetPath = public_path('images/shop');
+
+            // Создаем папку, если её нет, и даем права 0755
+            if (!file_exists($targetPath)) {
+                mkdir($targetPath, 0755, true);
+            }
+
+            // 2. Перемещаем файл
+            $file->move($targetPath, $filename);
+
+            // 3. Сохраняем в базу БЕЗ ведущего слэша (чистый относительный путь)
+            $data['image'] = 'images/shop/' . $filename;
         }
 
-        // Обновляем или создаем (предполагаем, что таблица называется products)
+        // 3. СОХРАНЕНИЕ В БАЗУ ДАННЫХ
         if ($request->id) {
+            // Если товар редактируется
             DB::table('products')->where('id', $request->id)->update($data);
         } else {
+            // Если создается новый товар и картинка не была загружена — ставим пустую строку вместо null
+            if (!isset($data['image'])) {
+                $data['image'] = '';
+            }
             DB::table('products')->insert($data);
         }
 

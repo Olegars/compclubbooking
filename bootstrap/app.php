@@ -10,6 +10,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         commands: __DIR__.'/../routes/console.php',
+        channels: __DIR__.'/../routes/channels.php',
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
@@ -41,7 +42,12 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => \App\Http\Middleware\AdminMiddleware::class,
             'role'  => \App\Http\Middleware\CheckRole::class,
         ]);
-
+        $middleware->validateCsrfTokens(except: [
+            'api/shell/*',
+            'api/shell/login',
+            'http://localhost:22222/api/shell/login',
+            'http://127.0.0.1:22222/api/shell/login',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

@@ -4,33 +4,44 @@ namespace App\Events;
 
 use App\Models\Overlay;
 use Illuminate\Broadcasting\Channel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow; // Важно для мгновенной отправки
+use Illuminate\Foundation\Events\Dispatchable;
+use Illuminate\Queue\SerializesModels;
 
 class OverlayUpdated implements ShouldBroadcastNow
 {
-    public $overlay;
+    use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(Overlay $overlay)
+    public function __construct(
+        public Overlay $overlay
+    ) {}
+
+    // 1. Указываем канал (должен совпадать с тем, что в QML)
+    public function broadcastOn(): array
     {
-        $this->overlay = $overlay;
+        return [
+            new Channel('terminals.all'),
+        ];
     }
 
-    public function broadcastOn()
-    {
-        // Канал, который будет слушать QML
-        return new Channel('terminals.all');
-    }
-
-    public function broadcastAs()
+    // 2. Указываем точное имя события (чтобы QML его узнал)
+    public function broadcastAs(): string
     {
         return 'overlay.changed';
     }
 
-    public function broadcastWith()
+    // 3. Указываем, какие данные полетят в сокет
+    public function broadcastWith(): array
     {
         return [
             'block_position' => $this->overlay->block_position,
-            'data' => $this->overlay->toArray()
+            'data' => [
+                'title' => $this->overlay->title,
+                'type' => $this->overlay->type,
+                'content' => $this->overlay->content,
+                'is_active' => $this->overlay->is_active,
+            ]
         ];
     }
 }

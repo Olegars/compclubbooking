@@ -17,12 +17,16 @@ class ProfileController extends Controller
     {
         $user = Auth::user();
         $now = now();
+        // Берем брони за сегодня и вчера (на случай ночных смен)
         $yesterday = now()->subDay()->toDateString();
 
         // 1. Кошелек
-        $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id], ['balance' => 0]);
+        $wallet = $user->wallet()->firstOrCreate(
+            ['user_id' => $user->id],
+            ['deposit_balance' => 0]
+        );
 
-        // 2. Активные заказы из магазина (Снаряжение в пути)
+        // 2. Активные заказы из магазина
         $activeOrders = Order::where('user_id', $user->id)
             ->whereIn('status', ['pending', 'cooking', 'new', 'waiting'])
             ->latest()
@@ -42,38 +46,40 @@ class ProfileController extends Controller
                 ];
             });
 
-        // 4. Активные бронирования (ИСПРАВЛЕНО)
+        // 4. Активные бронирования (ЛОГИКА ИСПРАВЛЕНА)
         $activeBookings = Booking::where('user_id', $user->id)
-            // Расширяем статусы, чтобы подхватить даже те, что еще не отмечены как 'active' админом
             ->whereIn('status', ['active', 'paid', 'confirmed', 'new'])
             ->where('date', '>=', $yesterday)
             ->get()
-            ->filter(function($booking) use ($now) {
+            ->map(function($booking) use ($now) {
                 $startTime = (float)$booking->start_time;
                 $duration = (float)$booking->duration;
 
-                // Создаем время окончания брони
-                $end = Carbon::parse($booking->date)
-                    ->startOfDay()
-                    ->addMinutes($startTime * 60)
-                    ->addHours($duration);
+                // Считаем точное время старта и конца на сервере
+                $startDateTime = Carbon::parse($booking->date)->startOfDay()->addMinutes($startTime * 60);
+                $endDateTime = (clone $startDateTime)->addHours($duration);
 
-                // Бронь должна закончиться позже, чем "сейчас"
-                return $now->lessThan($end);
-            })
-            ->map(function($booking) {
-                // Гарантируем, что pc_ids дойдет до фронта в понятном виде
-                // Если там строка JSON, оставляем как есть (фронт сам распарсит)
+                // Обрабатываем pc_ids (Postgres часто отдает строку вместо массива)
+                $pcIds = $booking->pc_ids;
+                if (is_string($pcIds)) {
+                    $pcIds = json_decode($pcIds, true) ?: [$pcIds];
+                }
+
+                // Добавляем вычисленные поля для фронтенда
+                $booking->end_timestamp = $endDateTime->timestamp * 1000; // в миллисекундах для JS
+                $booking->is_expired = $now->greaterThan($endDateTime);
+                $booking->formatted_pc = implode(', ', (array)$pcIds);
+
                 return $booking;
             })
+            // Оставляем только те, что еще не закончились
+            ->filter(fn($b) => !$b->is_expired)
             ->values();
 
-        // 5. Бонусы за отзывы
-        $latestReview = ReviewClaim::where('user_id', $user->id)
-            ->latest()
-            ->first();
+        // 5. Бонусы
+        $latestReview = ReviewClaim::where('user_id', $user->id)->latest()->first();
 
-        // 6. Рендер интерфейса
+        // 6. Рендер (Все ключи приведены к соответствию с Vue)
         return Inertia::render('User/Dashboard', [
             'user' => [
                 'id' => $user->id,
@@ -82,14 +88,13 @@ class ProfileController extends Controller
                 'avatar' => $user->avatar,
             ],
             'gizmo' => [
-                'balance' => (float)$wallet->balance,
+                'balance' => (float)($wallet->balance ?? $wallet->deposit_balance),
                 'spent_total' => (float)abs($user->transactions()->where('amount', '<', 0)->sum('amount')),
             ],
             'transactions' => $transactions,
             'active_bookings' => $activeBookings,
             'orders' => $activeOrders,
             'latest_review' => $latestReview,
-            // Передаем серверное время, чтобы таймеры на фронте не врали
             'server_time' => $now->toIso8601String(),
         ]);
     }

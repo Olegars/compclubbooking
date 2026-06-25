@@ -111,7 +111,8 @@ const openModal = (product: any = null) => {
             price: Math.floor(product.price), stock: Number(product.stock),
             barcode: product.barcode || '', image: null, current_image_url: product.image || ''
         }
-        imagePreview.value = product.image
+        // Формируем корректный путь для превью старой картинки от корня домена
+        imagePreview.value = product.image ? (product.image.startsWith('/') ? product.image : '/' + product.image) : null
     } else {
         form.value = { id: null, name: '', category: 'Снэки', price: 100, stock: 0, barcode: '', image: null, current_image_url: '' }
         imagePreview.value = null
@@ -119,12 +120,35 @@ const openModal = (product: any = null) => {
     isModalOpen.value = true
 }
 
+// --- ОБРАБОТКА ВЫБОРА КАРТИНКИ ---
+const triggerFileInput = () => {
+    fileInput.value?.click()
+}
+
+const handleFileChange = (e: Event) => {
+    const target = e.target as HTMLInputElement
+    if (target.files && target.files[0]) {
+        const file = target.files[0]
+        form.value.image = file
+
+        // Создаем временную blob-ссылку для моментального локального превью
+        imagePreview.value = URL.createObjectURL(file)
+    }
+}
+
 const saveProduct = async () => {
     isProcessing.value = true
     const formData = new FormData()
-    Object.entries(form.value).forEach(([key, val]) => { if (val !== null) formData.append(key, val as any) })
+
+    // Упаковываем все поля формы в FormData для отправки файлов через multipart/form-data
+    Object.entries(form.value).forEach(([key, val]) => {
+        if (val !== null) formData.append(key, val as any)
+    })
+
     try {
-        await axios.post('/admin/api/inventory/save', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+        await axios.post('/admin/api/inventory/save', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        })
         await fetchProducts()
         isModalOpen.value = false
     } catch (e) { alert('Sync Error') }
@@ -197,7 +221,8 @@ const filteredProducts = computed(() => {
                     <div v-if="scannedId === item.id" class="absolute inset-0 bg-cyan-500/10 animate-pulse pointer-events-none"></div>
 
                     <div class="aspect-square bg-white/5 rounded-[2.5rem] mb-6 flex items-center justify-center border border-white/5 relative overflow-hidden group-hover:bg-cyan-500/5 transition-all">
-                        <img :src="item.image || '/images/shop/default.png'" class="w-3/4 h-3/4 object-contain transition-transform duration-700 group-hover:scale-110" />
+                        <img :src="item.image ? (item.image.startsWith('/') ? item.image : '/' + item.image) : '/images/shop/default.png'"
+                             class="w-3/4 h-3/4 object-contain transition-transform duration-700 group-hover:scale-110" />
                         <div class="absolute top-5 right-5 px-4 py-1.5 bg-black/80 backdrop-blur-xl rounded-full border border-white/10 flex items-center gap-2">
                             <span class="w-1.5 h-1.5 rounded-full" :class="item.stock <= 5 ? 'bg-red-500 animate-ping' : 'bg-cyan-500'"></span>
                             <span class="text-[11px] font-black text-white italic">{{ item.stock }} <span class="opacity-30">шт</span></span>
@@ -228,7 +253,25 @@ const filteredProducts = computed(() => {
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-2xl" @click="isModalOpen = false"></div>
                 <div class="relative w-full max-w-xl bg-[#050505] border-2 border-cyan-500/30 rounded-[3.5rem] p-12 shadow-[0_0_120px_rgba(6,182,212,0.2)] animate-in zoom-in duration-300">
                     <h2 class="text-cyan-500 text-3xl font-black uppercase italic mb-10 tracking-tighter">{{ form.id ? 'Core: Update Unit' : 'Core: Register Unit' }}</h2>
+
                     <div class="space-y-6">
+
+                        <div class="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-[2rem] p-6 bg-black/50 hover:border-cyan-500/40 transition-all cursor-pointer group" @click="triggerFileInput">
+                            <input type="file" ref="fileInput" class="hidden" accept="image/*" @change="handleFileChange" />
+
+                            <div v-if="imagePreview" class="w-32 h-32 relative rounded-xl overflow-hidden bg-white/5 border border-white/10">
+                                <img :src="imagePreview" class="w-full h-full object-contain" />
+                                <div class="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <span class="text-[9px] text-cyan-500 font-black uppercase tracking-widest">Сменить аватар</span>
+                                </div>
+                            </div>
+
+                            <div v-else class="text-center py-4">
+                                <span class="text-3xl block mb-2">📸</span>
+                                <span class="text-[10px] text-white/40 font-black uppercase tracking-widest group-hover:text-cyan-500 transition-colors">Загрузить аватар товара</span>
+                            </div>
+                        </div>
+
                         <div class="grid grid-cols-2 gap-6">
                             <div>
                                 <label class="text-[10px] text-white/30 uppercase font-black mb-2 block italic">Маркировка</label>
@@ -239,6 +282,7 @@ const filteredProducts = computed(() => {
                                 <input v-model="form.barcode" type="text" placeholder="Scan now..." class="w-full bg-black border border-cyan-500/50 rounded-2xl px-5 py-4 text-cyan-500 font-bold focus:border-cyan-500 outline-none" />
                             </div>
                         </div>
+
                         <div class="grid grid-cols-3 gap-6">
                             <div>
                                 <label class="text-[10px] text-white/30 uppercase font-black mb-2 block italic">Сектор</label>
@@ -256,6 +300,7 @@ const filteredProducts = computed(() => {
                             </div>
                         </div>
                     </div>
+
                     <div class="mt-12 flex gap-4">
                         <button @click="isModalOpen = false" class="flex-1 py-5 border border-white/10 text-white/30 uppercase font-black rounded-2xl hover:text-white transition-all">Abort</button>
                         <button @click="saveProduct" :disabled="isProcessing" class="flex-[2] py-5 bg-cyan-500 hover:bg-cyan-400 text-black uppercase font-black italic rounded-2xl shadow-[0_10px_30px_rgba(6,182,212,0.3)]">

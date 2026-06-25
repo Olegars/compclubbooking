@@ -17,17 +17,18 @@ class HandleInertiaRequests extends Middleware
 
     public function share(Request $request): array
     {
+        $user = Auth::guard('web')->user();
+
         return array_merge(parent::share($request), [
-            // Игроки
             'auth' => [
-                'user' => Auth::guard('web')->user(),
+                'user' => $user ? array_merge($user->toArray(), [
+                    // Принудительно берем deposit_balance из связи wallet
+                    'balance' => (float)($user->wallet?->deposit_balance ?? 0),
+                ]) : null,
             ],
-            // Баланс Gizmo
-            'gizmo' => [
-                'balance' => Auth::guard('web')->user()?->wallet?->balance ?? 0,
-            ],
-            // ПЕРСОНАЛ (Тот самый Boss)
+            // ПЕРСОНАЛ
             'admin_user' => Auth::guard('admin')->user(),
+            // Пропсы для истории и броней (проверь, чтобы они были в контроллере или здесь)
         ]);
     }
 }

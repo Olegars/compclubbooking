@@ -19,16 +19,37 @@ class LicenseController extends Controller
 
     public function storeGame(Request $request)
     {
-        $validated = $request->validate([
+        $request->validate([
+            'id' => 'nullable|integer|exists:games,id',
             'title' => 'required|string',
             'platform' => 'required|string',
-            'category' => 'nullable|string',
-            'poster' => 'nullable|string',
-            'exe_path' => 'nullable|string',
-            'launch_args' => 'nullable|string',
+            'poster' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048'
         ]);
 
-        Game::create($validated);
+        // Ищем игру, если передан id, либо создаем пустой экземпляр модели
+        $game = $request->id ? \App\Models\Game::findOrFail($request->id) : new \App\Models\Game();
+
+        $game->title = $request->title;
+        $game->platform = $request->platform;
+        $game->category = $request->category;
+        $game->exe_path = $request->exe_path;
+        $game->launch_args = $request->launch_args;
+
+        // Если загружен новый файл постера — пересохраняем его
+        if ($request->hasFile('poster')) {
+            // Если у игры уже был старый файл постера, его можно удалить с диска перед записью нового
+            if ($game->poster && file_exists(public_path($game->poster))) {
+                @unlink(public_path($game->poster));
+            }
+
+            $file = $request->file('poster');
+            $filename = time() . '_' . $file->getClientOriginalName();
+            $file->move(public_path('games/posters'), $filename);
+            $game->poster = 'games/posters/' . $filename;
+        }
+
+        $game->save();
+
         return back();
     }
 
