@@ -7,6 +7,8 @@ use App\Models\Overlay;
 use App\Models\User;
 use App\Models\Booking;
 use App\Models\Product;
+use App\Models\GameAccount;
+use App\Models\Game;
 use Illuminate\Http\Request;
 
 class ShellApiController extends Controller
@@ -229,5 +231,152 @@ class ShellApiController extends Controller
         // ...
 
         return response()->json(['status' => 'success']);
+    }
+    public function takeAccount(Request $request)
+    {
+        // 1. Валидируем прилетевшие из C++ данные
+        $request->validate([
+            'game_id' => 'required|integer',
+            'terminal_id' => 'required|string',
+        ]);
+
+        $gameId = $request->input('game_id');
+        $terminalId = $request->input('terminal_id');
+
+        // 2. Ищем саму игру в базе, чтобы забрать правильные пути и аргументы лаунчера
+        $game = Game::find($gameId);
+        if (!$game) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Игра не найдена в базе данных клуба.'
+            ], 404);
+        }
+
+        // 3. Вытаскиваем первый попавшийся свободный аккаунт для этой игры
+        // Используем sharedLock() или pessimistic locking, чтобы избежать двойной выдачи одной учетки
+        $account = GameAccount::where('game_id', $gameId)
+            ->where('status', 'free')
+            ->first();
+
+        if (!$account) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Все клубные аккаунты для этой игры сейчас заняты.'
+            ], 200); // Отдаем 200, чтобы шелл корректно вывел предупреждение в консоль
+        }
+
+        // 4. Мгновенно резервируем аккаунт за ПК, меняя статус
+        $account->update([
+            'status' => 'in_use',
+            'assigned_to_terminal' => $terminalId // Полезно логгировать, какой комп занял учетку
+        ]);
+
+        // 5. Упаковываем данные и отправляем обратно в зашифрованном JSON-пакете
+        return response()->json([
+            'status' => 'success',
+            'login' => $account->login,
+            'password' => $account->password, // C++ сам подставит его в аргументы -login
+            'exe_path' => $game->exe_path,
+            'args' => $game->launch_args
+        ], 200);
+    }
+    /**
+     * Освободить клубный аккаунт (перевод из in_use в free)
+     * Маршрут: POST /api/shell/games/free-account
+     */
+    public function freeAccount(Request $request)
+    {
+        // Нам нужен только ID игры, чтобы вернуть один из ее занятых аккаунтов в пул свободных
+        $request->validate([
+            'game_id' => 'required|integer'
+        ]);
+
+        $gameId = $request->input('game_id');
+
+        try {
+            // Ищем первый попавшийся аккаунт этой игры, который сейчас используется
+            $account = GameAccount::where('game_id', $gameId)
+                ->where('status', 'in_use')
+                ->first();
+
+            // Если нашли — меняем статус обратно на free
+            if ($account) {
+                $account->update([
+                    'status' => 'free'
+                ]);
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Клубный аккаунт для игры ID ' . $gameId . ' успешно освобожден.'
+                ]);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Занятых аккаунтов для этой игры не найдено (возможно, уже освобожден).'
+            ]);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("Shell API FreeAccount Error: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+    /**
+     * Перевод терминала в режим паузы с генерацией нового ПИН-кода
+     * Маршрут: POST /api/shell/games/pause
+     */
+    /**
+     * Перевод терминала в режим паузы с генерацией нового ПИН-кода
+     * Маршрут: POST /api/shell/games/pause
+     */
+    /**
+     * Перевод терминала в режим паузы с генерацией нового ПИН-кода
+     * Маршрут: POST /api/shell/games/pause
+     */
+    /**
+     * Перевод терминала в режим паузы с генерацией нового ПИН-кода
+     * Маршрут: POST /api/shell/games/pause
+     */
+    public function setPause(Request $request)
+    {
+        $request->validate([
+            'computer_id' => 'required|integer' // Из Qt прилетает численный ID (например, 15)
+        ]);
+
+        $computerId = $request->input('computer_id');
+
+        try {
+            // Ищем активную бронь, проверяя наличие строкового "15" внутри JSON-массива pc_ids
+            $booking = Booking::where('status', 'active')
+                ->where(function($query) use ($computerId) {
+                    $query->whereJsonContains('pc_ids', (string)$computerId)
+                        ->orWhere('pc_ids', 'like', '%"' . $computerId . '"%'); // Запасной вариант на случай текстового хранения
+                })
+                ->first();
+
+            if (!$booking) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Активная бронь для компьютера ID {$computerId} не найдена в системе."
+                ], 404);
+            }
+
+            // Генерируем новый четырехзначный код разблокировки
+            $newPin = rand(1000, 9999);
+
+            // Обновляем ПИН-код в найденной брони
+            $booking->update([
+                'pin_code' => $newPin
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'pin_code' => $newPin
+            ]);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("Shell API Pause Error: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
     }
 }

@@ -131,6 +131,7 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     Route::get('/orders', [AdminController::class, 'orders'])->name('admin.orders');
     Route::post('/orders/{id}/status', [AdminController::class, 'updateOrderStatus']);
     Route::get('/shifts/transfer', [ShiftController::class, 'transferPage'])->name('admin.shift.transfer');
+    // Метод переименован с completeTransfer на complete, чтобы соответствовать вызову в C++
     Route::post('/api/shifts/complete', [ShiftController::class, 'completeTransfer']);
     Route::get('/shifts/history', [ShiftController::class, 'history'])->name('admin.shift.history');
     Route::get('/incidents', [AdminController::class, 'incidents'])->name('admin.incidents');
@@ -186,16 +187,17 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::get('/find-barcode', [AdminController::class, 'findByBarcode']);
         });
 
-        Route::prefix('games')->group(function () {
-            Route::get('/', [\App\Http\Controllers\Admin\GameController::class, 'index'])->name('admin.games.index');
-            Route::post('/save', [\App\Http\Controllers\Admin\GameController::class, 'save'])->name('admin.games.save');
-            Route::delete('/delete/{id}', [\App\Http\Controllers\Admin\GameController::class, 'destroy'])->name('admin.games.delete');
-        });
+//        Route::prefix('games')->group(function () {
+//            Route::get('/', [\App\Http\Controllers\Admin\GameController::class, 'index'])->name('admin.games.index');
+//            Route::post('/save', [\App\Http\Controllers\Admin\GameController::class, 'save'])->name('admin.games.save');
+//            Route::delete('/delete/{id}', [\App\Http\Controllers\Admin\GameController::class, 'destroy'])->name('admin.games.delete');
+//        });
 
         Route::get('/bonuses', [BonusController::class, 'index'])->name('admin.bonuses.index');
         Route::post('/api/bonuses/verify/{id}', [BonusController::class, 'verify']);
         Route::get('/bonus-logs', [AdminController::class, 'bonusLogs'])->name('admin.bonus-logs');
 
+        // Ивенты
         Route::get('/tournaments', [TournamentController::class, 'index'])->name('admin.tournaments.index');
         Route::post('/tournaments', [TournamentController::class, 'store']);
         Route::patch('/tournaments/{tournament}/status', [TournamentController::class, 'updateStatus']);
@@ -221,6 +223,11 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 | API ДЛЯ QML-ШЕЛЛА (Терминалы клуба)
 |--------------------------------------------------------------------------
 */
+/*
+|--------------------------------------------------------------------------
+| API ДЛЯ QML-ШЕЛЛА (Терминалы клуба)
+|--------------------------------------------------------------------------
+*/
 Route::prefix('api/shell')->group(function () {
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
     Route::post('/login', [ShellApiController::class, 'login']);
@@ -229,7 +236,19 @@ Route::prefix('api/shell')->group(function () {
     // --- МАГАЗИН И БАР ДЛЯ ТЕРМИНАЛА ---
     Route::get('/store/products', [ShellApiController::class, 'getProducts']);
     Route::post('/store/checkout', [ShellApiController::class, 'checkout']);
+    Route::get('/products', [ShellApiController::class, 'getProducts']);
+    Route::post('/checkout', [ShellApiController::class, 'checkout']);
 
     // --- ВЫЗОВ АДМИНА ---
     Route::post('/admin/call', [ShellApiController::class, 'callAdmin']);
+
+    // --- УПРАВЛЕНИЕ ЛИЦЕНЗИЯМИ (free / in_use) ---
+    Route::post('/games/take-account', [ShellApiController::class, 'takeAccount']);
+    Route::post('/games/free-account', [ShellApiController::class, 'freeAccount']);
+
+    // --- НОВЫЙ РОУТ: ПОСТАНОВКА НА ПАУЗУ С ГЕНЕРАЦИЕЙ НОВОГО ПИНА ---
+    Route::post('/games/pause', [ShellApiController::class, 'setPause']);
+
+    // --- ЗАКРЫТИЕ СЕССИИ (Полное гашение брони ПК в базе клуба) ---
+    Route::post('/logout', [ShellApiController::class, 'logout']);
 });
