@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\Order;
 use App\Models\Transaction;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,126 +14,158 @@ use Inertia\Inertia;
 class ShopController extends Controller
 {
     /**
-     * Отображение главной страницы магазина для игрока
+     * Отображение главной страницы магазина для витрины киоска / игрока
      */
     public function index()
     {
-        // Берем все товары, которые есть в наличии
+        // Берем все товары, которые физически есть в наличии на складе
         $products = Product::where('stock', '>', 0)
             ->select('id', 'name', 'price', 'category', 'image', 'stock')
             ->get();
 
+        // Рендерим вьюшку магазина
         return Inertia::render('User/Shop', [
             'products' => $products
         ]);
     }
 
     /**
-     * Получение списка товаров через API
+     * Получение списка товаров для витрины киоска (через API)
      */
-    public function getProducts()
+    public function getProducts(Request $request)
     {
-        return response()->json(Product::all());
+        $terminalId = $request->input('terminal_id', 0);
+
+        // 1. Ищем, есть ли активные заказы для этого ПК
+        $hasActiveOrder = false;
+        $statusText = '';
+
+        if ($terminalId > 0) {
+            $hasActiveOrder = DB::table('orders')
+                ->where('pc_name', 'ПК №' . $terminalId)
+                ->where('status', 'pending')
+                ->exists();
+
+            $statusText = $hasActiveOrder ? 'Заказ в работе' : '';
+        }
+
+        // 2. Берем сам список товаров
+        $products = Product::select('id', 'name', 'price', 'category', 'image', 'stock')->get();
+
+        // 3. Отдаем объединенный объект
+        return response()->json([
+            'has_active_order' => $hasActiveOrder,
+            'status_text'      => $statusText,
+            'products'         => $products
+        ]);
     }
 
     /**
-     * Логика покупки (списание баланса и уменьшение склада)
+     * Обработка заказа (поддерживает и ПК из зала, и Киоск самообслуживания)
      */
     public function checkout(Request $request)
     {
+        // 1. Валидация входящего пакета от фронтенда
         $request->validate([
-            'product_id' => 'required|exists:products,id'
+            'product_id'     => 'required|exists:products,id',
+            'order_type'     => 'required|in:desktop,kiosk', // desktop = из зала с ПК, kiosk = со стойки
+            'payment_method' => 'required|in:account,sbp_qr,card', // Способ оплаты
+            'client_phone'   => 'nullable|string', // Телефон (нужен только для списания баланса на киоске)
+            'terminal_id'    => 'nullable|integer', // ID ПК (если заказ из зала)
         ]);
 
         $product = Product::findOrFail($request->product_id);
-        $user = auth()->user();
+        $orderType = $request->input('order_type');
+        $paymentMethod = $request->input('payment_method');
 
-        // Получаем кошелек. Если нет связи, ищем вручную по user_id
-        $wallet = $user->wallet ?: DB::table('wallets')->where('user_id', $user->id)->first();
-
-        // 1. Проверка баланса
-        if (!$wallet || $wallet->balance < $product->price) {
-            return response()->json(['message' => 'Недостаточно кредитов на счету'], 422);
-        }
-
-        // 2. Проверка остатка на складе
+        // 2. Базовая проверка склада
         if ($product->stock <= 0) {
-            return response()->json(['message' => 'Товар закончился'], 422);
+            return response()->json(['message' => 'Извините, этот товар только что закончился'], 422);
         }
 
-        // --- ПОИСК НОМЕРА ПК (ДЛЯ POSTGRESQL) ---
-        $pcName = 'Mobile';
+        $user = null;
 
-        try {
-            // А. Проверяем активную сессию в Gizmo
-            $session = DB::table('gizmo_sessions')
-                ->where('user_id', $user->id)
-                ->where('is_active', true)
-                ->first();
+        // 3. Логика авторизации и проверки кошелька при оплате с баланса клуба
+        if ($paymentMethod === 'account') {
+            // Если заказ идет с киоска, ищем пользователя по введенному номеру телефона
+            if ($orderType === 'kiosk') {
+                if (!$request->filled('client_phone')) {
+                    return response()->json(['message' => 'Введите номер телефона для оплаты с баланса'], 422);
+                }
 
-            if ($session && !empty($session->host_name)) {
-                $pcName = "ПК №" . $session->host_name;
+                // Очищаем номер от маски (оставляем только цифры)
+                $cleanPhone = preg_replace('/[^0-9]/', '', $request->client_phone);
+                $user = User::where('phone', $cleanPhone)->first();
+            } else {
+                // Если заказ стандартный (из игрового шелла ПК), берем текущую сессию
+                $user = auth()->user();
             }
-            // Б. Если сессии нет, ищем в бронях на текущий час
-            else {
-                $currentHour = (int)now()->format('H');
 
-                $booking = DB::table('bookings')
-                    ->where('user_id', $user->id)
-                    ->where('date', now()->toDateString())
-                    // Postgres требует явного приведения типов через ::int
-                    ->whereRaw('start_time::int <= ?', [$currentHour])
-                    ->whereRaw('(start_time::int + duration::int) > ?', [$currentHour])
-                    ->first();
+            if (!$user) {
+                return response()->json(['message' => 'Пользователь с таким номером телефона не найден в клубе'], 422);
+            }
 
-                if ($booking && !empty($booking->pc_ids)) {
-                    $ids = is_string($booking->pc_ids) ? json_decode($booking->pc_ids, true) : $booking->pc_ids;
-                    $pcNum = is_array($ids) ? $ids[0] : $ids;
-                    $pcName = "ПК №" . ($pcNum ?? '??');
+            // Проверяем состояние счета
+            $wallet = $user->wallet ?: DB::table('wallets')->where('user_id', $user->id)->first();
+            if (!$wallet || $wallet->balance < $product->price) {
+                return response()->json(['message' => 'Недостаточно средств на клубном балансе'], 422);
+            }
+        }
+
+        // --- ФОРМИРОВАНИЕ ТОЧКИ ДОСТАВКИ (ДЛЯ АДМИНИСТРАТОРА) ---
+        $pcName = 'Стойка самообслуживания'; // Дефолт для режима Киоска
+
+        if ($orderType === 'desktop') {
+            if ($request->has('terminal_id') && $request->terminal_id > 0) {
+                $pcName = "ПК №" . $request->terminal_id;
+            } elseif ($user) {
+                // Резервный поиск сессии в Gizmo
+                $session = DB::table('gizmo_sessions')->where('user_id', $user->id)->where('is_active', true)->first();
+                if ($session && !empty($session->host_name)) {
+                    $pcName = "ПК №" . $session->host_name;
                 }
             }
-        } catch (\Exception $e) {
-            Log::error("Reactor Shop: Ошибка поиска ПК: " . $e->getMessage());
-            // Если поиск ПК упал, оставляем 'Mobile', чтобы покупка не прервалась
         }
 
-        // 3. ПРОВЕДЕНИЕ СДЕЛКИ
+        // 4. АТОМАРНАЯ ТРАНЗАКЦИЯ ПРОВЕДЕНИЯ ЗАКАЗА
         try {
-            DB::transaction(function () use ($user, $wallet, $product, $pcName) {
-                // Списываем деньги (учитываем, что $wallet может быть объектом DB или моделью)
-                if ($wallet instanceof \Illuminate\Database\Eloquent\Model) {
-                    $wallet->decrement('balance', $product->price);
-                } else {
+            DB::transaction(function () use ($user, $product, $pcName, $paymentMethod) {
+
+                // Списываем деньги с баланса аккаунта (если применимо)
+                if ($paymentMethod === 'account' && $user) {
                     DB::table('wallets')->where('user_id', $user->id)->decrement('balance', $product->price);
+
+                    // Логируем списание в историю транзакций профиля
+                    Transaction::create([
+                        'user_id'     => $user->id,
+                        'amount'      => -$product->price,
+                        'type'        => 'purchase',
+                        'source'      => 'market',
+                        'description' => "Киоск: {$product->name} (Списание с баланса)",
+                    ]);
                 }
 
-                // Уменьшаем склад
+                // Уменьшаем остаток на складе
                 $product->decrement('stock', 1);
 
-                // Создаем заказ для админа
+                // Создаем заказ со статусом 'pending' для отображения на панели админа
                 Order::create([
-                    'user_id'      => $user->id,
+                    'user_id'      => $user ? $user->id : null, // Для внешних оплат картой/QR гость анонимен
                     'product_name' => $product->name,
                     'price'        => $product->price,
-                    'pc_name'      => $pcName,
+                    'pc_name'      => $pcName, // Админ на баре увидит: "Стойка самообслуживания"
                     'status'       => 'pending',
-                ]);
-
-                // Пишем в лог транзакций
-                Transaction::create([
-                    'user_id'     => $user->id,
-                    'amount'      => -$product->price,
-                    'type'        => 'purchase',
-                    'source'      => 'market',
-                    'description' => "Маркет: {$product->name} ({$pcName})",
                 ]);
             });
 
-            return response()->json(['message' => 'Заказ успешно оформлен!']);
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Заказ успешно оплачен! Заберите товар у стойки администратора.'
+            ]);
 
         } catch (\Exception $e) {
-            Log::error("Reactor Shop Error: " . $e->getMessage());
-            return response()->json(['message' => 'Критический сбой: ' . $e->getMessage()], 500);
+            Log::error("Reactor Kiosk Error: " . $e->getMessage());
+            return response()->json(['message' => 'Ошибка сервера при проведении платежа: ' . $e->getMessage()], 500);
         }
     }
 }

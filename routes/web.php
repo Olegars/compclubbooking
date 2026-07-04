@@ -47,6 +47,16 @@ Route::get('/', [HomeController::class, 'index'])->name('home');
 Route::get('/booking/{slug?}', [ClubController::class, 'show'])->name('booking');
 Route::get('/terminal/{slug?}', [TerminalController::class, 'index'])->name('terminal.booking');
 
+// =========================================================================
+//  КИОСК САМООБСЛУЖИВАНИЯ (ВЕБ-СТОЙКА НА РЕЦЕПШЕНЕ)
+// =========================================================================
+Route::prefix('kiosk')->group(function () {
+    // Открытие публичной витрины магазина на стойке
+    Route::get('/shop', [ShopController::class, 'index'])->name('kiosk.shop');
+    // Обработка платежей (карта, СБП, баланс) с киоска без авторизации сессии
+    Route::post('/checkout', [ShopController::class, 'checkout'])->name('kiosk.checkout');
+});
+
 /*
 |--------------------------------------------------------------------------
 | АВТОРИЗАЦИЯ ИГРОКОВ (SMS)
@@ -131,7 +141,6 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     Route::get('/orders', [AdminController::class, 'orders'])->name('admin.orders');
     Route::post('/orders/{id}/status', [AdminController::class, 'updateOrderStatus']);
     Route::get('/shifts/transfer', [ShiftController::class, 'transferPage'])->name('admin.shift.transfer');
-    // Метод переименован с completeTransfer на complete, чтобы соответствовать вызову в C++
     Route::post('/api/shifts/complete', [ShiftController::class, 'completeTransfer']);
     Route::get('/shifts/history', [ShiftController::class, 'history'])->name('admin.shift.history');
     Route::get('/incidents', [AdminController::class, 'incidents'])->name('admin.incidents');
@@ -187,12 +196,6 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::get('/find-barcode', [AdminController::class, 'findByBarcode']);
         });
 
-//        Route::prefix('games')->group(function () {
-//            Route::get('/', [\App\Http\Controllers\Admin\GameController::class, 'index'])->name('admin.games.index');
-//            Route::post('/save', [\App\Http\Controllers\Admin\GameController::class, 'save'])->name('admin.games.save');
-//            Route::delete('/delete/{id}', [\App\Http\Controllers\Admin\GameController::class, 'destroy'])->name('admin.games.delete');
-//        });
-
         Route::get('/bonuses', [BonusController::class, 'index'])->name('admin.bonuses.index');
         Route::post('/api/bonuses/verify/{id}', [BonusController::class, 'verify']);
         Route::get('/bonus-logs', [AdminController::class, 'bonusLogs'])->name('admin.bonus-logs');
@@ -220,35 +223,34 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| API ДЛЯ QML-ШЕЛЛА (Терминалы клуба)
-|--------------------------------------------------------------------------
-*/
-/*
-|--------------------------------------------------------------------------
-| API ДЛЯ QML-ШЕЛЛА (Терминалы клуба)
+| API ДЛЯ QML-ШЕЛЛА (Терминалы клуба из зала)
 |--------------------------------------------------------------------------
 */
 Route::prefix('api/shell')->group(function () {
+    // --- ПРОВЕРКА И АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ ОБОРУДОВАНИЯ ПО HWID ---
+    Route::post('/check', [ShellApiController::class, 'checkTerminalBooking']);
+    Route::post('/register-terminal', [ShellApiController::class, 'registerTerminal']);
+
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
     Route::post('/login', [ShellApiController::class, 'login']);
     Route::get('/games', [ShellApiController::class, 'getGames']);
 
-    // --- МАГАЗИН И БАР ДЛЯ ТЕРМИНАЛА ---
+    // --- ИГРОВОЙ МАРКЕТ И БАР (Запросы из C++ моделей шелла) ---
     Route::get('/store/products', [ShellApiController::class, 'getProducts']);
     Route::post('/store/checkout', [ShellApiController::class, 'checkout']);
     Route::get('/products', [ShellApiController::class, 'getProducts']);
     Route::post('/checkout', [ShellApiController::class, 'checkout']);
 
-    // --- ВЫЗОВ АДМИНА ---
+    // --- ВЫЗОВ АДМИНА ИЗ ШЕЛЛА ---
     Route::post('/admin/call', [ShellApiController::class, 'callAdmin']);
 
     // --- УПРАВЛЕНИЕ ЛИЦЕНЗИЯМИ (free / in_use) ---
     Route::post('/games/take-account', [ShellApiController::class, 'takeAccount']);
     Route::post('/games/free-account', [ShellApiController::class, 'freeAccount']);
 
-    // --- НОВЫЙ РОУТ: ПОСТАНОВКА НА ПАУЗУ С ГЕНЕРАЦИЕЙ НОВОГО ПИНА ---
+    // --- ПОСТАНОВКА НА ПАУЗУ С ГЕНЕРАЦИЕЙ ПИНА ---
     Route::post('/games/pause', [ShellApiController::class, 'setPause']);
 
-    // --- ЗАКРЫТИЕ СЕССИИ (Полное гашение брони ПК в базе клуба) ---
+    // --- ЗАКРЫТИЕ СЕССИИ ПК ИЗ ИНТЕРФЕЙСА ---
     Route::post('/logout', [ShellApiController::class, 'logout']);
 });

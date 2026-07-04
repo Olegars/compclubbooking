@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Computer extends Model
 {
-    protected $fillable = ['club_id', 'name', 'x', 'y', 'type', 'status'];
+    protected $fillable = ['club_id', 'name', 'x', 'y', 'type', 'status','hwid'];
 
     // Связь: компьютер принадлежит конкретному клубу
     public function club(): BelongsTo
