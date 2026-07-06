@@ -11,7 +11,6 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\ShopController;
 use App\Http\Controllers\BillingController;
-use App\Http\Controllers\GizmoController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\Api\PromoCodeController;
 use App\Http\Controllers\Api\QueueController;
@@ -46,16 +45,6 @@ use App\Http\Controllers\Admin\OverlayAdminController;
 Route::get('/', [HomeController::class, 'index'])->name('home');
 Route::get('/booking/{slug?}', [ClubController::class, 'show'])->name('booking');
 Route::get('/terminal/{slug?}', [TerminalController::class, 'index'])->name('terminal.booking');
-
-// =========================================================================
-//  КИОСК САМООБСЛУЖИВАНИЯ (ВЕБ-СТОЙКА НА РЕЦЕПШЕНЕ)
-// =========================================================================
-Route::prefix('kiosk')->group(function () {
-    // Открытие публичной витрины магазина на стойке
-    Route::get('/shop', [ShopController::class, 'index'])->name('kiosk.shop');
-    // Обработка платежей (карта, СБП, баланс) с киоска без авторизации сессии
-    Route::post('/checkout', [ShopController::class, 'checkout'])->name('kiosk.checkout');
-});
 
 /*
 |--------------------------------------------------------------------------
@@ -110,15 +99,6 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/join', [QueueController::class, 'join']);
         Route::get('/status', [QueueController::class, 'status']);
         Route::post('/leave', [QueueController::class, 'leave']);
-    });
-
-    Route::prefix('api/gizmo')->group(function () {
-        Route::get('/profile', [GizmoController::class, 'getUserProfile']);
-        Route::get('/computers', [GizmoController::class, 'getComputersStatus']);
-        Route::get('/history', [GizmoController::class, 'getTransactionHistory']);
-        Route::post('/start', [GizmoController::class, 'startSession']);
-        Route::post('/stop', [GizmoController::class, 'stopSession']);
-        Route::post('/deposit', [GizmoController::class, 'deposit']);
     });
 });
 
@@ -223,34 +203,34 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| API ДЛЯ QML-ШЕЛЛА (Терминалы клуба из зала)
+| API ДЛЯ QML-ШЕЛЛА (Терминалы клуба)
 |--------------------------------------------------------------------------
 */
 Route::prefix('api/shell')->group(function () {
-    // --- ПРОВЕРКА И АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ ОБОРУДОВАНИЯ ПО HWID ---
-    Route::post('/check', [ShellApiController::class, 'checkTerminalBooking']);
-    Route::post('/register-terminal', [ShellApiController::class, 'registerTerminal']);
+    // --- ПРОВЕРКА И АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ ОБОРУДОВАНИЯ ПО СЕРИЙНИКУ (HWID) ---
+    Route::post('/check', [ShellApiController::class, 'checkTerminalBooking']); // Стартовый роут проверки HWID
+    Route::post('/register-terminal', [ShellApiController::class, 'registerTerminal']); // Кнопка "Привязать ПК"
 
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
     Route::post('/login', [ShellApiController::class, 'login']);
     Route::get('/games', [ShellApiController::class, 'getGames']);
 
-    // --- ИГРОВОЙ МАРКЕТ И БАР (Запросы из C++ моделей шелла) ---
+    // --- МАГАЗИН И БАР ДЛЯ ТЕРМИНАЛА ---
     Route::get('/store/products', [ShellApiController::class, 'getProducts']);
     Route::post('/store/checkout', [ShellApiController::class, 'checkout']);
     Route::get('/products', [ShellApiController::class, 'getProducts']);
     Route::post('/checkout', [ShellApiController::class, 'checkout']);
 
-    // --- ВЫЗОВ АДМИНА ИЗ ШЕЛЛА ---
+    // --- ВЫЗОВ АДМИНА ---
     Route::post('/admin/call', [ShellApiController::class, 'callAdmin']);
 
     // --- УПРАВЛЕНИЕ ЛИЦЕНЗИЯМИ (free / in_use) ---
     Route::post('/games/take-account', [ShellApiController::class, 'takeAccount']);
     Route::post('/games/free-account', [ShellApiController::class, 'freeAccount']);
 
-    // --- ПОСТАНОВКА НА ПАУЗУ С ГЕНЕРАЦИЕЙ ПИНА ---
+    // --- ПОСТАНОВКА НА ПАУЗУ С ГЕНЕРАЦИЕЙ НОВОГО ПИНА ---
     Route::post('/games/pause', [ShellApiController::class, 'setPause']);
 
-    // --- ЗАКРЫТИЕ СЕССИИ ПК ИЗ ИНТЕРФЕЙСА ---
+    // --- ЗАКРЫТИЕ СЕССИИ (Полное гашение брони ПК в базе клуба) ---
     Route::post('/logout', [ShellApiController::class, 'logout']);
 });

@@ -34,7 +34,7 @@ class ShellApiController extends Controller
             $request->validate([
                 'phone' => 'required|string',
                 'pin' => 'required|string|size:4',
-                'terminal_id' => 'required|integer' // Валидация строго как INTEGER!
+                'terminal_id' => 'required|integer'
             ]);
 
             $user = User::where('phone', $request->phone)->first();
@@ -42,7 +42,6 @@ class ShellApiController extends Controller
                 return response()->json(['status' => 'error', 'message' => 'Пользователь не найден'], 404);
             }
 
-            // Находим бронь по ПИН-коду
             $booking = Booking::where('user_id', $user->id)
                 ->where('pin_code', $request->pin)
                 ->whereIn('status', ['paid', 'active'])
@@ -61,7 +60,6 @@ class ShellApiController extends Controller
 
             $floatStartTime = $now->hour + ($now->minute / 60);
 
-            // Сохраняем ЧИСЛОВОЙ ID в computer_id брони
             $booking->update([
                 'status' => 'active',
                 'start_time' => $floatStartTime,
@@ -69,7 +67,6 @@ class ShellApiController extends Controller
                 'computer_id' => $request->terminal_id
             ]);
 
-            // Парсим оставшееся время в ЧЧ:ММ:СС для QML таймера
             $hours = floor($durationMinutes / 60);
             $minutes = floor($durationMinutes % 60);
             $formattedTime = sprintf('%02d:%02d:%02d', $hours, $minutes, 0);
@@ -116,66 +113,9 @@ class ShellApiController extends Controller
         }
     }
 
-    /**
-     * МОДИФИЦИРОВАНО: Получение списка товаров со встроенным статусом активного заказа
-     */
-    /**
-     * МОДИФИЦИРОВАНО: Получение списка товаров со встроенным статусом активного заказа
-     */
-    /**
-     * АВТОМАТИЧЕСКИЙ СТАТУС-МЕНЕДЖЕР ДЛЯ ШЕЛЛА ИГРОКА
-     */
-    /**
-     * АВТОМАТИЧЕСКИЙ СТАТУС-МЕНЕДЖЕР ДЛЯ ШЕЛЛА ИГРОКА
-     */
-    public function getProducts(\Illuminate\Http\Request $request)
+    public function getProducts()
     {
-        $terminalId = $request->input('terminal_id', 0);
-
-        $hasActiveOrder = false;
-        $statusText = '';
-        $rawStatus = '';
-
-        if ($terminalId > 0) {
-            $order = \Illuminate\Support\Facades\DB::table('orders')
-                ->where('pc_name', 'ПК №' . $terminalId)
-                ->orderBy('created_at', 'desc')
-                ->first();
-
-            if ($order) {
-                $now = now();
-                $updatedAt = \Illuminate\Support\Carbon::parse($order->updated_at);
-                $secondsSinceUpdate = $now->diffInSeconds($updatedAt);
-
-                if ($order->status === 'pending') {
-                    // ЗАМЕНЕНО: Сразу переводим в визуальный статус "В РАБОТЕ"
-                    $hasActiveOrder = true;
-                    $rawStatus = 'pending';
-                    $statusText = 'ЗАКАЗ В РАБОТЕ';
-
-                } elseif ($order->status === 'delivered' && $secondsSinceUpdate <= 20) {
-                    $hasActiveOrder = true;
-                    $rawStatus = 'completed_holding';
-                    $statusText = 'ЗАКАЗ ВЫПОЛНЕН';
-
-                } elseif ($order->status === 'cancelled' && $secondsSinceUpdate <= 20) {
-                    $hasActiveOrder = true;
-                    $rawStatus = 'cancelled_holding';
-                    $statusText = 'ЗАКАЗ ОТМЕНЕН';
-                }
-            }
-        }
-
-        $products = \App\Models\Product::where('stock', '>', 0)
-            ->select('id', 'name', 'price', 'category', 'image', 'stock')
-            ->get();
-
-        return response()->json([
-            'has_active_order' => $hasActiveOrder,
-            'status_text'      => $statusText,
-            'raw_status'       => $rawStatus,
-            'products'         => $products
-        ]);
+        return response()->json(Product::where('stock', '>', 0)->get());
     }
 
     public function checkout(Request $request)
@@ -186,7 +126,6 @@ class ShellApiController extends Controller
         ]);
 
         try {
-            // Ищем активную бронь по числовому ID
             $booking = Booking::where('status', 'active')
                 ->where(function($query) use ($request) {
                     $query->whereJsonContains('pc_ids', (string)$request->terminal_id)
@@ -269,7 +208,7 @@ class ShellApiController extends Controller
     public function setPause(Request $request)
     {
         $request->validate(['computer_id' => 'required|integer']);
-        $computerId = (string)$request->input('computer_id'); // Приводим к строке один раз
+        $computerId = (string)$request->input('computer_id');
 
         try {
             $booking = Booking::where('status', 'active')
@@ -277,7 +216,7 @@ class ShellApiController extends Controller
                     $query->whereJsonContains('pc_ids', $computerId)
                         ->orWhere('computer_id', $computerId);
                 })
-                ->orderBy('created_at', 'desc') // Берем последнюю созданную сессию
+                ->orderBy('created_at', 'desc')
                 ->first();
 
             if (!$booking) {
@@ -289,11 +228,12 @@ class ShellApiController extends Controller
 
             return response()->json(['status' => 'success', 'pin_code' => $newPin]);
         } catch (\Exception $e) {
-            \Log::error("Ошибка паузы: " . $e->getMessage());
+            Log::error("Ошибка паузы: " . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => 'Внутренняя ошибка сервера'], 500);
         }
     }
 
+    // МЕТОД РЕГИСТРАЦИИ ТЕРМИНАЛА (ПРИВЯЗКА НАПРЯМУЮ, СОЗДАЕТ С НУЛЯ)[cite: 2]
     public function registerTerminal(Request $request)
     {
         try {
@@ -302,6 +242,7 @@ class ShellApiController extends Controller
                 'type' => 'required|string'
             ]);
 
+            // 1. Проверяем, может этот HWID уже привязан к какому-то ПК
             $computer = \App\Models\Computer::where('hwid', $request->hwid)->first();
 
             if ($computer) {
@@ -318,26 +259,24 @@ class ShellApiController extends Controller
                 ], 200);
             }
 
-            $freeComputer = \App\Models\Computer::whereNull('hwid')
-                ->where('type', $request->type)
-                ->orderBy('id', 'asc')
-                ->first();
+            // 2. ЖЕЛЕЗО НОВОЕ — Автоматически создаем запись в таблице computers
+            $nextNumber = \App\Models\Computer::max('id') + 1;
 
-            if (!$freeComputer) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Ошибка: На карте в зоне [' . strtoupper($request->type) . '] нет свободных мест!'
-                ], 400);
-            }
+            // Берем ID первого доступного клуба из базы REACTOR
+            $defaultClubId = \App\Models\Club::first()?->id ?? 1;
 
-            $freeComputer->update([
-                'hwid' => $request->hwid
+            // Создаем запись (поля x, y и status Laravel/PostgreSQL подхватят по дефолту из миграции)
+            $newComputer = \App\Models\Computer::create([
+                'hwid' => $request->hwid,
+                'type' => $request->type,
+                'name' => (string)$nextNumber,
+                'club_id' => $defaultClubId // Фикс: передаем правильную переменную
             ]);
 
             return response()->json([
                 'status' => 'success',
-                'terminal_id' => $freeComputer->id,
-                'message' => 'Успешная привязка к свободному месту в зоне ' . strtoupper($request->type) . ' (ПК №' . $freeComputer->name . ')'
+                'terminal_id' => $newComputer->id,
+                'message' => 'Успешная автоматическая генерация ПК №' . $newComputer->name
             ], 200);
 
         } catch (\Throwable $e) {
@@ -374,8 +313,54 @@ class ShellApiController extends Controller
             ], 200);
 
         } catch (\Throwable $e) {
-            \Log::error("Shell API Check Terminal Error: " . $e->getMessage());
+            Log::error("Shell API Check Terminal Error: " . $e->getMessage());
             return response()->json(['status' => 'error', 'computer_id' => 0], 500);
+        }
+    }
+
+    // МЕТОД ПОЛНОГО ЗАКРЫТИЯ СЕССИИ ИГРОКА (УДАЛЕНИЕ ИЗ АКТИВНЫХ БРОНЕЙ)[cite: 4]
+    public function logout(Request $request)
+    {
+        try {
+            $request->validate([
+                'terminal_id' => 'required|integer'
+            ]);
+
+            // Находим активную сессию, привязанную к этому терминалу
+            $booking = Booking::where('status', 'active')
+                ->where(function($query) use ($request) {
+                    $query->whereJsonContains('pc_ids', (string)$request->terminal_id)
+                        ->orWhere('computer_id', $request->terminal_id);
+                })->first();
+
+            if ($booking) {
+                // Переводим бронь в архивный статус (завершена)
+                $booking->update([
+                    'status' => 'completed',
+                    'end_time' => now()->hour + (now()->minute / 60)
+                ]);
+
+                // Если за терминалом были закреплены клубные аккаунты, освобождаем их
+                GameAccount::where('assigned_to_terminal', (string)$request->terminal_id)
+                    ->update(['status' => 'free', 'assigned_to_terminal' => null]);
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Сессия успешно закрыта. Терминал освобожден.'
+                ], 200);
+            }
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Активная сессия для данного терминала не найдена.'
+            ], 404);
+
+        } catch (\Throwable $e) {
+            Log::error("Shell API Logout Error: " . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ошибка сервера при выходе: ' . $e->getMessage()
+            ], 500);
         }
     }
 }
