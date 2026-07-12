@@ -206,6 +206,11 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 | API ДЛЯ QML-ШЕЛЛА (Терминалы клуба)
 |--------------------------------------------------------------------------
 */
+/*
+|--------------------------------------------------------------------------
+| API ДЛЯ QML-ШЕЛЛА (Терминалы клуба)
+|--------------------------------------------------------------------------
+*/
 Route::prefix('api/shell')->group(function () {
     // --- ПРОВЕРКА И АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ ОБОРУДОВАНИЯ ПО СЕРИЙНИКУ (HWID) ---
     Route::post('/check', [ShellApiController::class, 'checkTerminalBooking']); // Стартовый роут проверки HWID
@@ -224,9 +229,10 @@ Route::prefix('api/shell')->group(function () {
     // --- ВЫЗОВ АДМИНА ---
     Route::post('/admin/call', [ShellApiController::class, 'callAdmin']);
 
-    // --- УПРАВЛЕНИЕ ЛИЦЕНЗИЯМИ (free / in_use) ---
+    // --- УПРАВЛЕНИЕ ЛИЦЕНЗИЯМИ И ОБНОВЛЕНИЕ КЭША VDF ---
     Route::post('/games/take-account', [ShellApiController::class, 'takeAccount']);
     Route::post('/games/free-account', [ShellApiController::class, 'freeAccount']);
+    Route::post('/games/update-vdf', [ShellApiController::class, 'updateAccountVdf']); // ТВОЙ НОВЫЙ РОУТ ДЛЯ КЭША!
 
     // --- ПОСТАНОВКА НА ПАУЗУ С ГЕНЕРАЦИЕЙ НОВОГО ПИНА ---
     Route::post('/games/pause', [ShellApiController::class, 'setPause']);

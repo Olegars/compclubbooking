@@ -13,6 +13,7 @@ use App\Models\Computer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\Process\Process;
 
 class ShellApiController extends Controller
 {
@@ -44,7 +45,7 @@ class ShellApiController extends Controller
 
             $booking = Booking::where('user_id', $user->id)
                 ->where('pin_code', $request->pin)
-                ->whereIn('status', ['paid', 'active'])
+                ->whereIn('status', ['paid', 'active', 'completed'])
                 ->first();
 
             if (!$booking) {
@@ -179,29 +180,80 @@ class ShellApiController extends Controller
         ]);
 
         $game = Game::find($request->game_id);
-        if (!$game) return response()->json(['status' => 'error'], 404);
+        if (!$game) return response()->json(['status' => 'error', 'message' => 'Игра не найдена'], 404);
 
         $account = GameAccount::where('game_id', $request->game_id)->where('status', 'free')->first();
-        if (!$account) return response()->json(['status' => 'error', 'message' => 'Занято'], 200);
+        if (!$account) return response()->json(['status' => 'error', 'message' => 'Все аккаунты заняты'], 200);
 
+        // Предотвращаем падение Symfony Process при передаче null-значений
+        $cleanSecret = $account->shared_secret ? $account->shared_secret : 'null';
+
+        // Передаем динамические аргументы из БД в Node.js
+        $scriptPath = base_path('steam_generator.cjs');
+        $process = new Process(['/usr/bin/node', $scriptPath, $account->login, $account->password, $cleanSecret]);
+        $process->setTimeout(15);
+        $process->run();
+
+        if (!$process->isSuccessful()) {
+            Log::error("Ошибка Node.js: " . $process->getErrorOutput());
+            return response()->json(['status' => 'error', 'message' => 'Ошибка запуска генератора токенов'], 500);
+        }
+
+        $result = json_decode($process->getOutput(), true);
+
+        if (!isset($result['status']) || $result['status'] === 'error') {
+            return response()->json([
+                'status' => 'error',
+                'message' => $result['message'] ?? 'Не удалось получить токен через Node.js'
+            ], 200);
+        }
+
+        // Обновляем статус и записываем строго в current_pc_id
         $account->update([
             'status' => 'in_use',
-            'assigned_to_terminal' => (string)$request->terminal_id
+            'current_pc_id' => $request->terminal_id
         ]);
 
+        $finalArgs = $game->launch_args ?? $game->args ?? '';
+
         return response()->json([
-            'status' => 'success',
-            'login' => $account->login,
-            'password' => $account->password,
-            'exe_path' => $game->exe_path,
-            'args' => $game->launch_args
+            'status'       => 'success',
+            'login'        => $account->login,
+            'password'     => $account->password, // Добавили чистый пароль для инжектора
+            'persona_name' => $account->persona_name ?? $account->login,
+            'steam_id'     => (string)$result['steamid'],
+            'token'        => (string)$result['token'],
+            'exe_path'     => $game->exe_path,
+            'args'         => trim($finalArgs),
+
+            // ВКУСНОЕ: Передаем кэш VDF-файлов, если они есть в базе
+            'vdf_files'    => [
+                'config_vdf'     => $account->config_vdf,
+                'loginusers_vdf' => $account->loginusers_vdf,
+                'local_vdf'      => $account->local_vdf,
+            ]
         ], 200);
     }
 
     public function freeAccount(Request $request)
     {
-        $account = GameAccount::where('game_id', $request->game_id)->where('status', 'in_use')->first();
-        if ($account) $account->update(['status' => 'free']);
+        $request->validate([
+            'game_id' => 'required|integer',
+            'terminal_id' => 'required|integer',
+        ]);
+
+        $account = GameAccount::where('game_id', $request->game_id)
+            ->where('current_pc_id', $request->terminal_id)
+            ->where('status', 'in_use')
+            ->first();
+
+        if ($account) {
+            $account->update([
+                'status' => 'free',
+                'current_pc_id' => null
+            ]);
+        }
+
         return response()->json(['status' => 'success']);
     }
 
@@ -233,45 +285,43 @@ class ShellApiController extends Controller
         }
     }
 
-    // МЕТОД РЕГИСТРАЦИИ ТЕРМИНАЛА (ПРИВЯЗКА НАПРЯМУЮ, СОЗДАЕТ С НУЛЯ)[cite: 2]
     public function registerTerminal(Request $request)
     {
         try {
             $request->validate([
-                'hwid' => 'required|string',
-                'type' => 'required|string'
+                'hwid'      => 'required|string',
+                'zone_type' => 'required|string',
+                'name'      => 'required|string'
             ]);
 
-            // 1. Проверяем, может этот HWID уже привязан к какому-то ПК
-            $computer = \App\Models\Computer::where('hwid', $request->hwid)->first();
+            $zoneType = strtolower($request->zone_type);
+            $computer = Computer::where('hwid', $request->hwid)->first();
 
             if ($computer) {
-                if ($computer->type !== $request->type) {
+                if ($computer->type !== $zoneType || $computer->name !== $request->name) {
                     $computer->update([
-                        'type' => $request->type
+                        'type' => $zoneType,
+                        'name' => $request->name
                     ]);
                 }
 
                 return response()->json([
                     'status' => 'success',
                     'terminal_id' => $computer->id,
-                    'message' => 'Конфигурация обновлена. ПК №' . $computer->name . ' изменен на ' . strtoupper($request->type)
+                    'message' => 'Конфигурация обновлена. ПК №' . $computer->name . ' изменен на ' . strtoupper($zoneType)
                 ], 200);
             }
 
-            // 2. ЖЕЛЕЗО НОВОЕ — Автоматически создаем запись в таблице computers
-            $nextNumber = \App\Models\Computer::max('id') + 1;
-
-            // Берем ID первого доступного клуба из базы REACTOR
             $defaultClubId = \App\Models\Club::first()?->id ?? 1;
 
-            // Создаем запись (поля x, y и status Laravel/PostgreSQL подхватят по дефолту из миграции)
-            $newComputer = \App\Models\Computer::create([
-                'hwid' => $request->hwid,
-                'type' => $request->type,
-                'name' => (string)$nextNumber,
-                'club_id' => $defaultClubId // Фикс: передаем правильную переменную
-            ]);
+            $newComputer = Computer::updateOrCreate(
+                ['hwid' => $request->hwid],
+                [
+                    'club_id'   => $defaultClubId,
+                    'type'      => $zoneType,
+                    'name'      => $request->name
+                ]
+            );
 
             return response()->json([
                 'status' => 'success',
@@ -280,7 +330,7 @@ class ShellApiController extends Controller
             ], 200);
 
         } catch (\Throwable $e) {
-            \Log::error("Shell API Register Terminal Error: " . $e->getMessage());
+            Log::error("Shell API Register Terminal Error: " . $e->getMessage());
             return response()->json([
                 'status' => 'error',
                 'message' => 'Ошибка сервера привязки: ' . $e->getMessage()
@@ -295,7 +345,7 @@ class ShellApiController extends Controller
                 'hwid' => 'required|string'
             ]);
 
-            $computer = \App\Models\Computer::where('hwid', $request->hwid)->first();
+            $computer = Computer::where('hwid', $request->hwid)->first();
 
             if ($computer) {
                 return response()->json([
@@ -318,31 +368,28 @@ class ShellApiController extends Controller
         }
     }
 
-    // МЕТОД ПОЛНОГО ЗАКРЫТИЯ СЕССИИ ИГРОКА (УДАЛЕНИЕ ИЗ АКТИВНЫХ БРОНЕЙ)[cite: 4]
     public function logout(Request $request)
     {
         try {
             $request->validate([
-                'terminal_id' => 'required|integer'
+                'terminal_id' => 'required'
             ]);
 
-            // Находим активную сессию, привязанную к этому терминалу
+            $termId = (string)$request->terminal_id;
             $booking = Booking::where('status', 'active')
-                ->where(function($query) use ($request) {
-                    $query->whereJsonContains('pc_ids', (string)$request->terminal_id)
-                        ->orWhere('computer_id', $request->terminal_id);
+                ->where(function($query) use ($termId) {
+                    $query->whereJsonContains('pc_ids', $termId)
+                        ->orWhere('computer_id', (int)$termId);
                 })->first();
 
             if ($booking) {
-                // Переводим бронь в архивный статус (завершена)
                 $booking->update([
                     'status' => 'completed',
-                    'end_time' => now()->hour + (now()->minute / 60)
+                    'end_time' => now()
                 ]);
 
-                // Если за терминалом были закреплены клубные аккаунты, освобождаем их
-                GameAccount::where('assigned_to_terminal', (string)$request->terminal_id)
-                    ->update(['status' => 'free', 'assigned_to_terminal' => null]);
+                GameAccount::where('current_pc_id', (int)$termId)
+                    ->update(['status' => 'free', 'current_pc_id' => null]);
 
                 return response()->json([
                     'status' => 'success',
@@ -352,7 +399,7 @@ class ShellApiController extends Controller
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Активная сессия для данного терминала не найдена.'
+                'message' => 'Active session for this terminal not found.'
             ], 404);
 
         } catch (\Throwable $e) {
@@ -360,6 +407,50 @@ class ShellApiController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Ошибка сервера при выходе: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    public function updateAccountVdf(Request $request)
+    {
+        try {
+            $request->validate([
+                'login'          => 'required|string',
+                'config_vdf'     => 'nullable|string',
+                'loginusers_vdf' => 'nullable|string',
+                'local_vdf'      => 'nullable|string',
+            ]);
+
+            // Ищем аккаунт по логину
+            $account = GameAccount::where('login', $request->login)->first();
+
+            if (!$account) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Аккаунт Steam не найден в базе данных'
+                ], 404);
+            }
+
+            // Обновляем только те файлы, которые прилетели в запросе
+            $updateData = [];
+            if ($request->has('config_vdf'))     $updateData['config_vdf'] = $request->config_vdf;
+            if ($request->has('loginusers_vdf')) $updateData['loginusers_vdf'] = $request->loginusers_vdf;
+            if ($request->has('local_vdf'))      $updateData['local_vdf'] = $request->local_vdf;
+
+            if (!empty($updateData)) {
+                $account->update($updateData);
+                Log::info("[SHELL-API] Обновлен кэш VDF-файлов для аккаунта: {$account->login}");
+            }
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Кэш авторизации успешно обновлен в базе данных'
+            ], 200);
+
+        } catch (\Throwable $e) {
+            Log::error("Shell API Update VDF Error: " . $e->getMessage());
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Ошибка сервера при сохранении кэша: ' . $e->getMessage()
             ], 500);
         }
     }
