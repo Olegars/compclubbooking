@@ -297,6 +297,63 @@ class ShellApiController extends Controller
         }
     }
 
+    public function clearPause(Request $request)
+    {
+        $request->validate([
+            'computer_id' => 'required|integer',
+            'pin_code' => 'required|string',
+            'booking_id' => 'nullable|integer',
+        ]);
+
+        $computerId = (int) $request->input('computer_id');
+        $pin = preg_replace('/\D+/', '', (string) $request->input('pin_code'));
+        $bookingId = (int) $request->input('booking_id', 0);
+
+        try {
+            $booking = null;
+
+            if ($bookingId > 0) {
+                $booking = Booking::where('id', $bookingId)
+                    ->where('status', 'active')
+                    ->first();
+            }
+
+            if (!$booking) {
+                $booking = Booking::where('status', 'active')
+                    ->where(function ($query) use ($computerId) {
+                        $query->where('computer_id', $computerId)
+                            ->orWhereJsonContains('pc_ids', $computerId)
+                            ->orWhereJsonContains('pc_ids', (string) $computerId);
+                    })
+                    ->orderByDesc('id')
+                    ->first();
+            }
+
+            if (!$booking) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Активная бронь не найдена.',
+                ], 404);
+            }
+
+            $storedPin = preg_replace('/\D+/', '', (string) ($booking->pin_code ?? ''));
+            if ($storedPin === '' || $storedPin !== $pin) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Неверный PIN-код.',
+                ], 401);
+            }
+
+            // Как при обычном входе — одноразовый PIN сгорает
+            $booking->update(['pin_code' => null]);
+
+            return response()->json(['status' => 'success']);
+        } catch (\Exception $e) {
+            Log::error("Ошибка снятия паузы: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Внутренняя ошибка сервера'], 500);
+        }
+    }
+
     public function registerTerminal(Request $request)
     {
         try {

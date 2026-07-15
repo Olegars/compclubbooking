@@ -9,4 +9,3 @@ Route::prefix('shell')->group(function () {
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
     Route::post('/login', [ShellApiController::class, 'login']);
 });
-Route::post('/shell/games/pause', [\App\Http\Controllers\Api\ShellApiController::class, 'setPause']);

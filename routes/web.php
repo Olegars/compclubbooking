@@ -236,6 +236,7 @@ Route::prefix('api/shell')->group(function () {
 
     // --- ПОСТАНОВКА НА ПАУЗУ С ГЕНЕРАЦИЕЙ НОВОГО ПИНА ---
     Route::post('/games/pause', [ShellApiController::class, 'setPause']);
+    Route::post('/games/unpause', [ShellApiController::class, 'clearPause']);
 
     // --- ЗАКРЫТИЕ СЕССИИ (Полное гашение брони ПК в базе клуба) ---
     Route::post('/logout', [ShellApiController::class, 'logout']);
