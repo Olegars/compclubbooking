@@ -14,7 +14,6 @@ use App\Models\Computer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Symfony\Component\Process\Process;
 
 class ShellApiController extends Controller
 {
@@ -195,46 +194,14 @@ class ShellApiController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Все аккаунты заняты'], 200);
         }
 
-        $steamId = $account->steam_id;
-
-        // Всегда обновляем JWT через SteamClient-генератор (старые Web-токены
-        // десктопный Steam для ConnectCache не принимает → окно входа).
-        $cleanSecret = $account->shared_secret ? $account->shared_secret : 'null';
-        $scriptPath = base_path('steam_generator.cjs');
-        $nodeBin = file_exists('/usr/bin/node') ? '/usr/bin/node' : 'node';
-        $process = new Process([$nodeBin, $scriptPath, $account->login, $account->password, $cleanSecret]);
-        $process->setTimeout(30);
-        $process->run();
-
-        if (!$process->isSuccessful()) {
-            Log::error("Ошибка Node.js: " . $process->getErrorOutput() . " | out: " . $process->getOutput());
-            return response()->json(['status' => 'error', 'message' => 'Ошибка запуска генератора токенов'], 500);
-        }
-
-        $result = json_decode($process->getOutput(), true);
-
-        if (!isset($result['status']) || $result['status'] === 'error') {
-            return response()->json([
-                'status' => 'error',
-                'message' => $result['message'] ?? 'Не удалось получить токен через Node.js',
-                'raw' => $process->getOutput(),
-            ], 200);
-        }
-
-        $token = (string) $result['token'];
-        $steamId = (string) ($result['steamid'] ?? $steamId);
-
+        // JWT с сервера для десктопного Steam не работает (ip_subject чужой машины).
+        // Авторизация: machine VDF-кэш + fallback логин/пароль в шелле.
         $account->update([
-            'refresh_token' => $token,
-            'steam_id' => $steamId,
-            'refresh_token_updated_at' => now(),
             'status' => 'in_use',
             'current_pc_id' => $request->terminal_id,
         ]);
 
-        // VDF только для пары аккаунт × этот компьютер
         $machineCache = $account->cacheForComputer((int) $request->terminal_id);
-
         $finalArgs = $game->launch_args ?? $game->args ?? '';
 
         return response()->json([
@@ -242,8 +209,7 @@ class ShellApiController extends Controller
             'login'        => $account->login,
             'password'     => $account->password,
             'persona_name' => $account->persona_name ?? $account->login,
-            'steam_id'     => (string) ($steamId ?? ''),
-            'token'        => (string) $token,
+            'steam_id'     => (string) ($account->steam_id ?? ''),
             'exe_path'     => $game->exe_path,
             'args'         => trim($finalArgs),
             'terminal_id'  => (int) $request->terminal_id,
