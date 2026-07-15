@@ -196,42 +196,38 @@ class ShellApiController extends Controller
         }
 
         $steamId = $account->steam_id;
-        $token = $account->refresh_token;
 
-        // Если JWT ещё нет — генерируем через Node и сохраняем на аккаунте (не на машине)
-        if (empty($token)) {
-            $cleanSecret = $account->shared_secret ? $account->shared_secret : 'null';
-            $scriptPath = base_path('steam_generator.cjs');
-            $nodeBin = file_exists('/usr/bin/node') ? '/usr/bin/node' : 'node';
-            $process = new Process([$nodeBin, $scriptPath, $account->login, $account->password, $cleanSecret]);
-            $process->setTimeout(15);
-            $process->run();
+        // Всегда обновляем JWT через SteamClient-генератор (старые Web-токены
+        // десктопный Steam для ConnectCache не принимает → окно входа).
+        $cleanSecret = $account->shared_secret ? $account->shared_secret : 'null';
+        $scriptPath = base_path('steam_generator.cjs');
+        $nodeBin = file_exists('/usr/bin/node') ? '/usr/bin/node' : 'node';
+        $process = new Process([$nodeBin, $scriptPath, $account->login, $account->password, $cleanSecret]);
+        $process->setTimeout(30);
+        $process->run();
 
-            if (!$process->isSuccessful()) {
-                Log::error("Ошибка Node.js: " . $process->getErrorOutput());
-                return response()->json(['status' => 'error', 'message' => 'Ошибка запуска генератора токенов'], 500);
-            }
-
-            $result = json_decode($process->getOutput(), true);
-
-            if (!isset($result['status']) || $result['status'] === 'error') {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => $result['message'] ?? 'Не удалось получить токен через Node.js'
-                ], 200);
-            }
-
-            $token = (string) $result['token'];
-            $steamId = (string) ($result['steamid'] ?? $steamId);
-
-            $account->update([
-                'refresh_token' => $token,
-                'steam_id' => $steamId,
-                'refresh_token_updated_at' => now(),
-            ]);
+        if (!$process->isSuccessful()) {
+            Log::error("Ошибка Node.js: " . $process->getErrorOutput() . " | out: " . $process->getOutput());
+            return response()->json(['status' => 'error', 'message' => 'Ошибка запуска генератора токенов'], 500);
         }
 
+        $result = json_decode($process->getOutput(), true);
+
+        if (!isset($result['status']) || $result['status'] === 'error') {
+            return response()->json([
+                'status' => 'error',
+                'message' => $result['message'] ?? 'Не удалось получить токен через Node.js',
+                'raw' => $process->getOutput(),
+            ], 200);
+        }
+
+        $token = (string) $result['token'];
+        $steamId = (string) ($result['steamid'] ?? $steamId);
+
         $account->update([
+            'refresh_token' => $token,
+            'steam_id' => $steamId,
+            'refresh_token_updated_at' => now(),
             'status' => 'in_use',
             'current_pc_id' => $request->terminal_id,
         ]);

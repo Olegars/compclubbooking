@@ -15,9 +15,10 @@ const client = new SteamUser();
 const logOnDetails = {
     accountName: LOGIN,
     password: PASSWORD,
-    // ИСПРАВЛЕНО: Запрашиваем токен через тип Web/Mobile, чтобы он не аннулировался десктопом
-    platformType: 2,
-    clientAppId: 0
+    // SteamClient (1) — токен для десктопного ConnectCache / silent login.
+    // WebBrowser (2) даёт JWT, но клиент Steam его часто игнорирует → окно входа.
+    platformType: 1,
+    clientAppId: 7
 };
 
 if (SHARED_SECRET) {
