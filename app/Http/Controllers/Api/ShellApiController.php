@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Booking;
 use App\Models\Product;
 use App\Models\GameAccount;
+use App\Models\GameAccountMachineCache;
 use App\Models\Game;
 use App\Models\Computer;
 use Illuminate\Http\Request;
@@ -180,58 +181,81 @@ class ShellApiController extends Controller
         ]);
 
         $game = Game::find($request->game_id);
-        if (!$game) return response()->json(['status' => 'error', 'message' => 'Игра не найдена'], 404);
+        if (!$game) {
+            return response()->json(['status' => 'error', 'message' => 'Игра не найдена'], 404);
+        }
+
+        $computer = Computer::find($request->terminal_id);
+        if (!$computer) {
+            return response()->json(['status' => 'error', 'message' => 'Терминал не найден'], 404);
+        }
 
         $account = GameAccount::where('game_id', $request->game_id)->where('status', 'free')->first();
-        if (!$account) return response()->json(['status' => 'error', 'message' => 'Все аккаунты заняты'], 200);
-
-        // Предотвращаем падение Symfony Process при передаче null-значений
-        $cleanSecret = $account->shared_secret ? $account->shared_secret : 'null';
-
-        // Передаем динамические аргументы из БД в Node.js
-        $scriptPath = base_path('steam_generator.cjs');
-        $process = new Process(['/usr/bin/node', $scriptPath, $account->login, $account->password, $cleanSecret]);
-        $process->setTimeout(15);
-        $process->run();
-
-        if (!$process->isSuccessful()) {
-            Log::error("Ошибка Node.js: " . $process->getErrorOutput());
-            return response()->json(['status' => 'error', 'message' => 'Ошибка запуска генератора токенов'], 500);
+        if (!$account) {
+            return response()->json(['status' => 'error', 'message' => 'Все аккаунты заняты'], 200);
         }
 
-        $result = json_decode($process->getOutput(), true);
+        $steamId = $account->steam_id;
+        $token = $account->refresh_token;
 
-        if (!isset($result['status']) || $result['status'] === 'error') {
-            return response()->json([
-                'status' => 'error',
-                'message' => $result['message'] ?? 'Не удалось получить токен через Node.js'
-            ], 200);
+        // Если JWT ещё нет — генерируем через Node и сохраняем на аккаунте (не на машине)
+        if (empty($token)) {
+            $cleanSecret = $account->shared_secret ? $account->shared_secret : 'null';
+            $scriptPath = base_path('steam_generator.cjs');
+            $nodeBin = file_exists('/usr/bin/node') ? '/usr/bin/node' : 'node';
+            $process = new Process([$nodeBin, $scriptPath, $account->login, $account->password, $cleanSecret]);
+            $process->setTimeout(15);
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                Log::error("Ошибка Node.js: " . $process->getErrorOutput());
+                return response()->json(['status' => 'error', 'message' => 'Ошибка запуска генератора токенов'], 500);
+            }
+
+            $result = json_decode($process->getOutput(), true);
+
+            if (!isset($result['status']) || $result['status'] === 'error') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $result['message'] ?? 'Не удалось получить токен через Node.js'
+                ], 200);
+            }
+
+            $token = (string) $result['token'];
+            $steamId = (string) ($result['steamid'] ?? $steamId);
+
+            $account->update([
+                'refresh_token' => $token,
+                'steam_id' => $steamId,
+                'refresh_token_updated_at' => now(),
+            ]);
         }
 
-        // Обновляем статус и записываем строго в current_pc_id
         $account->update([
             'status' => 'in_use',
-            'current_pc_id' => $request->terminal_id
+            'current_pc_id' => $request->terminal_id,
         ]);
+
+        // VDF только для пары аккаунт × этот компьютер
+        $machineCache = $account->cacheForComputer((int) $request->terminal_id);
 
         $finalArgs = $game->launch_args ?? $game->args ?? '';
 
         return response()->json([
             'status'       => 'success',
             'login'        => $account->login,
-            'password'     => $account->password, // Добавили чистый пароль для инжектора
+            'password'     => $account->password,
             'persona_name' => $account->persona_name ?? $account->login,
-            'steam_id'     => (string)$result['steamid'],
-            'token'        => (string)$result['token'],
+            'steam_id'     => (string) ($steamId ?? ''),
+            'token'        => (string) $token,
             'exe_path'     => $game->exe_path,
             'args'         => trim($finalArgs),
-
-            // ВКУСНОЕ: Передаем кэш VDF-файлов, если они есть в базе
+            'terminal_id'  => (int) $request->terminal_id,
             'vdf_files'    => [
-                'config_vdf'     => $account->config_vdf,
-                'loginusers_vdf' => $account->loginusers_vdf,
-                'local_vdf'      => $account->local_vdf,
-            ]
+                'config_vdf'     => $machineCache?->config_vdf,
+                'loginusers_vdf' => $machineCache?->loginusers_vdf,
+                'local_vdf'      => $machineCache?->local_vdf,
+            ],
         ], 200);
     }
 
@@ -415,12 +439,14 @@ class ShellApiController extends Controller
         try {
             $request->validate([
                 'login'          => 'required|string',
+                'terminal_id'    => 'required|integer',
                 'config_vdf'     => 'nullable|string',
                 'loginusers_vdf' => 'nullable|string',
                 'local_vdf'      => 'nullable|string',
+                'refresh_token'  => 'nullable|string',
+                'steam_id'       => 'nullable|string',
             ]);
 
-            // Ищем аккаунт по логину
             $account = GameAccount::where('login', $request->login)->first();
 
             if (!$account) {
@@ -430,20 +456,49 @@ class ShellApiController extends Controller
                 ], 404);
             }
 
-            // Обновляем только те файлы, которые прилетели в запросе
-            $updateData = [];
-            if ($request->has('config_vdf'))     $updateData['config_vdf'] = $request->config_vdf;
-            if ($request->has('loginusers_vdf')) $updateData['loginusers_vdf'] = $request->loginusers_vdf;
-            if ($request->has('local_vdf'))      $updateData['local_vdf'] = $request->local_vdf;
-
-            if (!empty($updateData)) {
-                $account->update($updateData);
-                Log::info("[SHELL-API] Обновлен кэш VDF-файлов для аккаунта: {$account->login}");
+            $computer = Computer::find($request->terminal_id);
+            if (!$computer) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Терминал не найден'
+                ], 404);
             }
+
+            // JWT относится к аккаунту (переносим между машинами как plaintext)
+            $accountUpdate = [];
+            if ($request->filled('refresh_token')) {
+                $accountUpdate['refresh_token'] = $request->refresh_token;
+                $accountUpdate['refresh_token_updated_at'] = now();
+            }
+            if ($request->filled('steam_id')) {
+                $accountUpdate['steam_id'] = $request->steam_id;
+            }
+            if (!empty($accountUpdate)) {
+                $account->update($accountUpdate);
+            }
+
+            // VDF — строго пара аккаунт × компьютер
+            $cache = GameAccountMachineCache::firstOrNew([
+                'game_account_id' => $account->id,
+                'computer_id' => $computer->id,
+            ]);
+
+            if ($request->has('config_vdf')) {
+                $cache->config_vdf = $request->config_vdf;
+            }
+            if ($request->has('loginusers_vdf')) {
+                $cache->loginusers_vdf = $request->loginusers_vdf;
+            }
+            if ($request->has('local_vdf')) {
+                $cache->local_vdf = $request->local_vdf;
+            }
+            $cache->save();
+
+            Log::info("[SHELL-API] Обновлен кэш VDF для {$account->login} на PC#{$computer->id}");
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'Кэш авторизации успешно обновлен в базе данных'
+                'message' => 'Кэш авторизации сохранён для пары аккаунт×машина'
             ], 200);
 
         } catch (\Throwable $e) {

@@ -4,14 +4,19 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Computer extends Model
 {
-    protected $fillable = ['club_id', 'name', 'x', 'y', 'type', 'status','hwid'];
+    protected $fillable = ['club_id', 'name', 'x', 'y', 'type', 'status', 'hwid'];
 
-    // Связь: компьютер принадлежит конкретному клубу
     public function club(): BelongsTo
     {
         return $this->belongsTo(Club::class);
+    }
+
+    public function gameAccountCaches(): HasMany
+    {
+        return $this->hasMany(GameAccountMachineCache::class, 'computer_id');
     }
 }
