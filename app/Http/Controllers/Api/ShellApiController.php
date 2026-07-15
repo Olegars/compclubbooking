@@ -65,7 +65,7 @@ class ShellApiController extends Controller
                 'status' => 'active',
                 'start_time' => $floatStartTime,
                 'pin_code' => null,
-                'computer_id' => $request->terminal_id
+                'computer_id' => (int) $request->terminal_id,
             ]);
 
             $hours = floor($durationMinutes / 60);
@@ -77,6 +77,7 @@ class ShellApiController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Авторизация успешна.',
+                'booking_id' => $booking->id,
                 'user' => [
                     'id' => $user->id,
                     'name' => $user->name ?? 'Игрок',
@@ -245,26 +246,51 @@ class ShellApiController extends Controller
 
     public function setPause(Request $request)
     {
-        $request->validate(['computer_id' => 'required|integer']);
-        $computerId = (string)$request->input('computer_id');
+        $request->validate([
+            'computer_id' => 'required|integer',
+            'booking_id' => 'nullable|integer',
+        ]);
+        $computerId = (int) $request->input('computer_id');
+        $bookingId = (int) $request->input('booking_id', 0);
 
         try {
-            $booking = Booking::where('status', 'active')
-                ->where(function($query) use ($computerId) {
-                    $query->whereJsonContains('pc_ids', $computerId)
-                        ->orWhere('computer_id', $computerId);
-                })
-                ->orderBy('created_at', 'desc')
-                ->first();
+            $booking = null;
 
-            if (!$booking) {
-                return response()->json(['status' => 'error', 'message' => 'Активная бронь на ПК не найдена.'], 404);
+            if ($bookingId > 0) {
+                $booking = Booking::where('id', $bookingId)
+                    ->where('status', 'active')
+                    ->first();
             }
 
-            $newPin = rand(1000, 9999);
-            $booking->update(['pin_code' => $newPin]);
+            if (!$booking) {
+                $booking = Booking::where('status', 'active')
+                    ->where(function ($query) use ($computerId) {
+                        $query->where('computer_id', $computerId)
+                            ->orWhereJsonContains('pc_ids', $computerId)
+                            ->orWhereJsonContains('pc_ids', (string) $computerId);
+                    })
+                    ->orderByDesc('id')
+                    ->first();
+            }
 
-            return response()->json(['status' => 'success', 'pin_code' => $newPin]);
+            if (!$booking) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Активная бронь на ПК не найдена.',
+                ], 404);
+            }
+
+            $newPin = (string) random_int(1000, 9999);
+            $booking->update([
+                'pin_code' => $newPin,
+                'computer_id' => $computerId,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'pin_code' => $newPin,
+                'booking_id' => $booking->id,
+            ]);
         } catch (\Exception $e) {
             Log::error("Ошибка паузы: " . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => 'Внутренняя ошибка сервера'], 500);
