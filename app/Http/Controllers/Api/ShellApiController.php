@@ -554,7 +554,7 @@ class ShellApiController extends Controller
             if (!$account) {
                 return response()->json([
                     'status'  => 'error',
-                    'message' => 'Аккаунт Steam не найден в базе данных'
+                    'message' => 'Аккаунт не найден в базе данных'
                 ], 404);
             }
 
