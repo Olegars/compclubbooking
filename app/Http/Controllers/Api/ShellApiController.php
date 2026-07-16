@@ -204,20 +204,44 @@ class ShellApiController extends Controller
 
         $machineCache = $account->cacheForComputer((int) $request->terminal_id);
         $finalArgs = $game->launch_args ?? $game->args ?? '';
+        $platform = strtolower((string) ($game->platform ?? 'steam'));
+        if ($platform === '' || $platform === 'pc' || $platform === 'valve') {
+            $platform = 'steam';
+        }
+
+        $vdfFiles = [
+            'config_vdf'     => $machineCache?->config_vdf,
+            'loginusers_vdf' => $machineCache?->loginusers_vdf,
+            'local_vdf'      => $machineCache?->local_vdf,
+        ];
+        $hasMachineCache = !empty($machineCache?->local_vdf);
 
         return response()->json([
-            'status'       => 'success',
-            'login'        => $account->login,
-            'password'     => $account->password,
-            'persona_name' => $account->persona_name ?? $account->login,
-            'steam_id'     => (string) ($account->steam_id ?? ''),
-            'exe_path'     => $game->exe_path,
-            'args'         => trim($finalArgs),
-            'terminal_id'  => (int) $request->terminal_id,
-            'vdf_files'    => [
-                'config_vdf'     => $machineCache?->config_vdf,
-                'loginusers_vdf' => $machineCache?->loginusers_vdf,
-                'local_vdf'      => $machineCache?->local_vdf,
+            'status'           => 'success',
+            'platform'         => $platform,
+            'game_id'          => (int) $game->id,
+            'account_id'       => (int) $account->id,
+            'login'            => $account->login,
+            'password'         => $account->password,
+            'persona_name'     => $account->persona_name ?? $account->login,
+            'display_name'     => $account->persona_name ?? $account->login,
+            'steam_id'         => (string) ($account->steam_id ?? ''),
+            'platform_user_id' => (string) ($account->steam_id ?? ''),
+            'platform_app_id'  => '',
+            'exe_path'         => $game->exe_path,
+            'args'             => trim($finalArgs),
+            'terminal_id'      => (int) $request->terminal_id,
+            'launcher'         => [
+                'exe_path' => $game->exe_path,
+                'args'     => trim($finalArgs),
+            ],
+            // Совместимость со старым шеллом + универсальный auth-блок
+            'vdf_files'        => $vdfFiles,
+            'auth'             => [
+                'mode'  => $hasMachineCache ? 'cache' : 'interactive',
+                'cache' => [
+                    'vdf_files' => $vdfFiles,
+                ],
             ],
         ], 200);
     }
