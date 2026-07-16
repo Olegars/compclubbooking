@@ -203,10 +203,26 @@ class ShellApiController extends Controller
         ]);
 
         $machineCache = $account->cacheForComputer((int) $request->terminal_id);
-        $finalArgs = $game->launch_args ?? $game->args ?? '';
-        $platform = strtolower((string) ($game->platform ?? 'steam'));
-        if ($platform === '' || $platform === 'pc' || $platform === 'valve') {
+        $finalArgs = trim((string) ($game->launch_args ?? $game->args ?? ''));
+        $exePath = (string) ($game->exe_path ?? '');
+        $platformRaw = (string) ($game->platform ?? '');
+        $platform = strtolower($platformRaw);
+
+        $looksEpic = str_contains(strtolower($finalArgs), 'com.epicgames.launcher')
+            || str_contains(strtolower($exePath), 'epicgameslauncher')
+            || str_contains(strtolower($exePath), 'epic games');
+
+        $platformSource = 'db';
+        if ($looksEpic) {
+            $platform = 'epic';
+            $platformSource = 'inferred_epic_from_exe_args';
+        } elseif ($platform === '' || $platform === 'valve') {
             $platform = 'steam';
+            $platformSource = $platformRaw === '' ? 'default_steam' : 'normalized_valve';
+        } elseif ($platform === 'pc') {
+            // «PC» без признаков Epic — считаем Steam (как раньше)
+            $platform = 'steam';
+            $platformSource = 'normalized_pc_to_steam';
         }
 
         $vdfFiles = [
@@ -216,10 +232,27 @@ class ShellApiController extends Controller
         ];
         $hasMachineCache = !empty($machineCache?->local_vdf);
 
+        \Log::info('[shell.take-account]', [
+            'game_id' => $game->id,
+            'title' => $game->title,
+            'platform_raw' => $platformRaw,
+            'platform' => $platform,
+            'platform_source' => $platformSource,
+            'exe_path' => $exePath,
+            'args' => $finalArgs,
+            'account_id' => $account->id,
+            'login' => $account->login,
+            'terminal_id' => (int) $request->terminal_id,
+            'has_machine_cache' => $hasMachineCache,
+        ]);
+
         return response()->json([
             'status'           => 'success',
             'platform'         => $platform,
+            'platform_raw'     => $platformRaw,
+            'platform_source'  => $platformSource,
             'game_id'          => (int) $game->id,
+            'game_title'       => (string) $game->title,
             'account_id'       => (int) $account->id,
             'login'            => $account->login,
             'password'         => $account->password,
@@ -228,12 +261,12 @@ class ShellApiController extends Controller
             'steam_id'         => (string) ($account->steam_id ?? ''),
             'platform_user_id' => (string) ($account->steam_id ?? ''),
             'platform_app_id'  => '',
-            'exe_path'         => $game->exe_path,
-            'args'             => trim($finalArgs),
+            'exe_path'         => $exePath,
+            'args'             => $finalArgs,
             'terminal_id'      => (int) $request->terminal_id,
             'launcher'         => [
-                'exe_path' => $game->exe_path,
-                'args'     => trim($finalArgs),
+                'exe_path' => $exePath,
+                'args'     => $finalArgs,
             ],
             // Совместимость со старым шеллом + универсальный auth-блок
             'vdf_files'        => $vdfFiles,
