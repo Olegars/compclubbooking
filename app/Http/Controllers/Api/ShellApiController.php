@@ -218,6 +218,15 @@ class ShellApiController extends Controller
             || str_contains($argsLower, 'origin2://')
             || str_contains($argsLower, 'origin://')
             || str_contains($argsLower, 'eadm://');
+        $titleLower = strtolower((string) ($game->title ?? ''));
+        $looksRiot = str_contains($exeLower, 'riotclient')
+            || str_contains($exeLower, 'riot games')
+            || str_contains($exeLower, 'riot client')
+            || str_contains($argsLower, 'valorant')
+            || str_contains($argsLower, 'league_of_legends')
+            || str_contains($titleLower, 'valorant')
+            || str_contains($titleLower, 'league of legends')
+            || str_contains($platform, 'riot');
 
         $platformSource = 'db';
         if ($looksEpic) {
@@ -226,11 +235,14 @@ class ShellApiController extends Controller
         } elseif ($looksEa || in_array($platform, ['ea', 'origin', 'eadesktop', 'eaapp', 'ea app', 'electronic arts'], true)) {
             $platform = 'ea';
             $platformSource = $looksEa ? 'inferred_ea_from_exe_args' : 'normalized_ea';
+        } elseif ($looksRiot || in_array($platform, ['riot', 'riot games', 'riotgames', 'valorant', 'league of legends'], true)) {
+            $platform = 'riot';
+            $platformSource = $looksRiot ? 'inferred_riot_from_exe_args' : 'normalized_riot';
         } elseif ($platform === '' || $platform === 'valve') {
             $platform = 'steam';
             $platformSource = $platformRaw === '' ? 'default_steam' : 'normalized_valve';
         } elseif ($platform === 'pc') {
-            // «PC» без признаков Epic/EA — считаем Steam (как раньше)
+            // «PC» без признаков Epic/EA/Riot — считаем Steam (как раньше)
             $platform = 'steam';
             $platformSource = 'normalized_pc_to_steam';
         }
