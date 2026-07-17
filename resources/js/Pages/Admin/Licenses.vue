@@ -135,8 +135,10 @@ const getPlatformColor = (platform) => {
         'Steam': 'text-blue-500',
         'Battle.net': 'text-cyan-500',
         'Epic': 'text-gray-300',
+        'EA': 'text-orange-500',
         'VK Play': 'text-[#0077ff]',
-        'Riot': 'text-red-500'
+        'Riot': 'text-red-500',
+        'Lesta': 'text-amber-400'
     }
     return colors[platform] || 'text-white'
 }
@@ -305,7 +307,7 @@ const getStatusBadge = (status) => {
                             <div>
                                 <label class="text-[10px] uppercase text-white/40 tracking-widest font-black italic mb-2 block">Платформа</label>
                                 <select v-model="gameForm.platform" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold focus:border-blue-500 outline-none transition-colors appearance-none cursor-pointer">
-                                    <option>Steam</option><option>Battle.net</option><option>Epic</option><option>VK Play</option><option>Riot</option><option>Other</option>
+                                    <option>Steam</option><option>Battle.net</option><option>Epic</option><option>EA</option><option>VK Play</option><option>Riot</option><option>Lesta</option><option>Other</option>
                                 </select>
                             </div>
                         </div>
