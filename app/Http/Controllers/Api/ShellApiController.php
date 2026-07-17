@@ -208,19 +208,29 @@ class ShellApiController extends Controller
         $platformRaw = (string) ($game->platform ?? '');
         $platform = strtolower($platformRaw);
 
-        $looksEpic = str_contains(strtolower($finalArgs), 'com.epicgames.launcher')
-            || str_contains(strtolower($exePath), 'epicgameslauncher')
-            || str_contains(strtolower($exePath), 'epic games');
+        $exeLower = strtolower($exePath);
+        $argsLower = strtolower($finalArgs);
+        $looksEpic = str_contains($argsLower, 'com.epicgames.launcher')
+            || str_contains($exeLower, 'epicgameslauncher')
+            || str_contains($exeLower, 'epic games');
+        $looksEa = str_contains($exeLower, 'eadesktop.exe')
+            || str_contains($exeLower, 'ea desktop')
+            || str_contains($argsLower, 'origin2://')
+            || str_contains($argsLower, 'origin://')
+            || str_contains($argsLower, 'eadm://');
 
         $platformSource = 'db';
         if ($looksEpic) {
             $platform = 'epic';
             $platformSource = 'inferred_epic_from_exe_args';
+        } elseif ($looksEa || in_array($platform, ['ea', 'origin', 'eadesktop', 'eaapp', 'ea app', 'electronic arts'], true)) {
+            $platform = 'ea';
+            $platformSource = $looksEa ? 'inferred_ea_from_exe_args' : 'normalized_ea';
         } elseif ($platform === '' || $platform === 'valve') {
             $platform = 'steam';
             $platformSource = $platformRaw === '' ? 'default_steam' : 'normalized_valve';
         } elseif ($platform === 'pc') {
-            // «PC» без признаков Epic — считаем Steam (как раньше)
+            // «PC» без признаков Epic/EA — считаем Steam (как раньше)
             $platform = 'steam';
             $platformSource = 'normalized_pc_to_steam';
         }
