@@ -23,7 +23,7 @@ class GameSeeder extends Seeder
             ['title' => 'Cyberpunk 2077', 'platform' => 'Steam', 'category' => 'RPG', 'id_app' => '1091500'],
 
             // --- RIOT ---
-            ['title' => 'League of Legends', 'platform' => 'Riot', 'category' => 'MOBA', 'exe' => 'C:\Riot Games\League of Legends\LeagueClient.exe'],
+            ['title' => 'League of Legends', 'platform' => 'Riot', 'category' => 'MOBA', 'exe' => 'C:\Riot Games\Riot Client\RiotClientServices.exe', 'args' => '--launch-product=league_of_legends --launch-patchline=live'],
             ['title' => 'Valorant', 'platform' => 'Riot', 'category' => 'Шутеры', 'exe' => 'C:\Riot Games\Riot Client\RiotClientServices.exe', 'args' => '--launch-product=valorant --launch-patchline=live'],
 
             // --- BATTLE.NET ---

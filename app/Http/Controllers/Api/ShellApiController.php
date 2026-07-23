@@ -564,6 +564,8 @@ class ShellApiController extends Controller
             $request->validate([
                 'login'          => 'required|string',
                 'terminal_id'    => 'required|integer',
+                'account_id'     => 'nullable|integer',
+                'game_id'        => 'nullable|integer',
                 'config_vdf'     => 'nullable|string',
                 'loginusers_vdf' => 'nullable|string',
                 'local_vdf'      => 'nullable|string',
@@ -571,7 +573,26 @@ class ShellApiController extends Controller
                 'steam_id'       => 'nullable|string',
             ]);
 
-            $account = GameAccount::where('login', $request->login)->first();
+            // Один login может быть у нескольких game_accounts (LoL / Valorant / …).
+            // Приоритет: account_id → login+game_id → login+in_use на этом ПК → login first.
+            $account = null;
+            if ($request->filled('account_id')) {
+                $account = GameAccount::find((int) $request->account_id);
+            }
+            if (!$account && $request->filled('game_id')) {
+                $account = GameAccount::where('login', $request->login)
+                    ->where('game_id', (int) $request->game_id)
+                    ->first();
+            }
+            if (!$account) {
+                $account = GameAccount::where('login', $request->login)
+                    ->where('current_pc_id', (int) $request->terminal_id)
+                    ->where('status', 'in_use')
+                    ->first();
+            }
+            if (!$account) {
+                $account = GameAccount::where('login', $request->login)->first();
+            }
 
             if (!$account) {
                 return response()->json([
@@ -618,11 +639,14 @@ class ShellApiController extends Controller
             }
             $cache->save();
 
-            Log::info("[SHELL-API] Обновлен кэш VDF для {$account->login} на PC#{$computer->id}");
+            Log::info("[SHELL-API] Обновлен кэш VDF для {$account->login} (account_id={$account->id}, game_id={$account->game_id}) на PC#{$computer->id}");
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'Кэш авторизации сохранён для пары аккаунт×машина'
+                'message' => 'Кэш авторизации сохранён для пары аккаунт×машина',
+                'account_id' => $account->id,
+                'game_id' => $account->game_id,
+                'computer_id' => $computer->id,
             ], 200);
 
         } catch (\Throwable $e) {
