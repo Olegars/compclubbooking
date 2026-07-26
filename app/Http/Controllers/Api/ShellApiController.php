@@ -11,6 +11,9 @@ use App\Models\GameAccount;
 use App\Models\GameAccountMachineCache;
 use App\Models\Game;
 use App\Models\Computer;
+use App\Models\UserGameStat;
+use App\Models\ComputerInputDevice;
+use App\Models\ComputerInputAlert;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -95,24 +98,209 @@ class ShellApiController extends Controller
         }
     }
 
-    public function getGames()
+    public function getGames(Request $request)
     {
         try {
-            $games = Game::all()->map(function ($game) {
-                return [
-                    'id'       => $game->id,
-                    'title'    => $game->title,
-                    'category' => $game->category ?? 'STEAM',
-                    'platform' => $game->platform ?? 'PC',
-                    'poster'   => $game->poster ? $game->poster : '',
-                    'exe_path' => $game->exe_path,
-                    'args'     => $game->launch_args ?? $game->args ?? '',
-                ];
-            });
-            return response()->json($games);
+            $games = Game::query()
+                ->orderBy('title')
+                ->get()
+                ->map(fn (Game $game) => $this->mapGamePayload($game))
+                ->values();
+
+            $userId = (int) $request->query('user_id', 0);
+            $featured = $this->buildFeaturedGames($userId > 0 ? $userId : null);
+
+            // Enriched payload for personalization; shell understands both array and object.
+            return response()->json([
+                'status' => 'success',
+                'games' => $games,
+                'featured' => $featured,
+            ]);
         } catch (\Exception $e) {
+            Log::error('Shell API getGames: '.$e->getMessage());
             return response()->json([]);
         }
+    }
+
+    public function recordGameLaunch(Request $request)
+    {
+        $request->validate([
+            'user_id' => 'required|integer|exists:users,id',
+            'game_id' => 'required|integer|exists:games,id',
+        ]);
+
+        try {
+            $stat = UserGameStat::firstOrNew([
+                'user_id' => (int) $request->user_id,
+                'game_id' => (int) $request->game_id,
+            ]);
+            $stat->launch_count = ((int) $stat->launch_count) + 1;
+            $stat->last_launched_at = now();
+            $stat->save();
+
+            return response()->json([
+                'status' => 'success',
+                'launch_count' => $stat->launch_count,
+                'last_launched_at' => optional($stat->last_launched_at)->toIso8601String(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API recordGameLaunch: '.$e->getMessage());
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getGameTops(Request $request)
+    {
+        $userId = (int) $request->query('user_id', 0);
+
+        return response()->json([
+            'status' => 'success',
+            'featured' => $this->buildFeaturedGames($userId > 0 ? $userId : null),
+        ]);
+    }
+
+    public function saveHidSnapshot(Request $request)
+    {
+        $request->validate([
+            'computer_id' => 'required|integer|exists:computers,id',
+            'fingerprint' => 'required|array',
+            'booking_id' => 'nullable|integer|exists:bookings,id',
+        ]);
+
+        try {
+            $device = ComputerInputDevice::updateOrCreate(
+                ['computer_id' => (int) $request->computer_id],
+                [
+                    'booking_id' => $request->booking_id ? (int) $request->booking_id : null,
+                    'fingerprint' => $request->fingerprint,
+                    'bound_at' => now(),
+                ]
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'computer_id' => $device->computer_id,
+                'bound_at' => optional($device->bound_at)->toIso8601String(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API saveHidSnapshot: '.$e->getMessage());
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function reportHidAlert(Request $request)
+    {
+        $request->validate([
+            'computer_id' => 'required|integer|exists:computers,id',
+            'type' => 'required|string|in:device_changed,disconnected,unstable',
+            'payload' => 'nullable|array',
+            'booking_id' => 'nullable|integer|exists:bookings,id',
+            'severity' => 'nullable|string|in:info,warn,critical',
+        ]);
+
+        try {
+            $alert = ComputerInputAlert::create([
+                'computer_id' => (int) $request->computer_id,
+                'booking_id' => $request->booking_id ? (int) $request->booking_id : null,
+                'type' => $request->type,
+                'severity' => $request->input('severity', 'warn'),
+                'payload' => $request->input('payload', []),
+            ]);
+
+            Log::warning('[HID-ALERT]', [
+                'id' => $alert->id,
+                'computer_id' => $alert->computer_id,
+                'type' => $alert->type,
+                'severity' => $alert->severity,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'alert_id' => $alert->id,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API reportHidAlert: '.$e->getMessage());
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    private function mapGamePayload(Game $game): array
+    {
+        return [
+            'id' => $game->id,
+            'title' => $game->title,
+            'category' => $game->category ?? 'STEAM',
+            'platform' => $game->platform ?? 'PC',
+            'poster' => $game->poster ? $game->poster : '',
+            'exe_path' => $game->exe_path,
+            'args' => $game->launch_args ?? $game->args ?? '',
+        ];
+    }
+
+    /**
+     * Personal top (last 30 days by launch_count) or club top fallback.
+     */
+    private function buildFeaturedGames(?int $userId): array
+    {
+        $since = now()->subDays(30);
+        $personalLimit = 4;
+        $clubLimit = 5;
+
+        $personalIds = [];
+        if ($userId) {
+            $personalIds = UserGameStat::query()
+                ->where('user_id', $userId)
+                ->where('last_launched_at', '>=', $since)
+                ->orderByDesc('launch_count')
+                ->orderByDesc('last_launched_at')
+                ->limit($personalLimit)
+                ->pluck('game_id')
+                ->all();
+        }
+
+        if (!empty($personalIds)) {
+            $games = Game::whereIn('id', $personalIds)->get()->keyBy('id');
+            $ordered = collect($personalIds)
+                ->map(fn ($id) => isset($games[$id]) ? $this->mapGamePayload($games[$id]) : null)
+                ->filter()
+                ->values();
+
+            return [
+                'mode' => 'personal',
+                'label' => 'Вы часто играете',
+                'games' => $ordered,
+            ];
+        }
+
+        $clubIds = UserGameStat::query()
+            ->select('game_id', DB::raw('SUM(launch_count) as total_launches'), DB::raw('MAX(last_launched_at) as last_at'))
+            ->where('last_launched_at', '>=', $since)
+            ->groupBy('game_id')
+            ->orderByDesc('total_launches')
+            ->orderByDesc('last_at')
+            ->limit($clubLimit)
+            ->pluck('game_id')
+            ->all();
+
+        if (empty($clubIds)) {
+            return [
+                'mode' => 'club',
+                'label' => 'Популярно в клубе',
+                'games' => [],
+            ];
+        }
+
+        $games = Game::whereIn('id', $clubIds)->get()->keyBy('id');
+        $ordered = collect($clubIds)
+            ->map(fn ($id) => isset($games[$id]) ? $this->mapGamePayload($games[$id]) : null)
+            ->filter()
+            ->values();
+
+        return [
+            'mode' => 'club',
+            'label' => 'Популярно в клубе',
+            'games' => $ordered,
+        ];
     }
 
     public function getProducts()

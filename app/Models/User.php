@@ -43,6 +43,16 @@ class User extends Authenticatable
         return $this->hasMany(Transaction::class);
     }
 
+    public function settings()
+    {
+        return $this->hasOne(UserSetting::class);
+    }
+
+    public function gameStats()
+    {
+        return $this->hasMany(UserGameStat::class);
+    }
+
     // --- НОВЫЕ СВЯЗИ ДЛЯ REACTOR ---
 
     /**

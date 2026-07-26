@@ -219,6 +219,8 @@ Route::prefix('api/shell')->group(function () {
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
     Route::post('/login', [ShellApiController::class, 'login']);
     Route::get('/games', [ShellApiController::class, 'getGames']);
+    Route::get('/games/tops', [ShellApiController::class, 'getGameTops']);
+    Route::post('/games/record-launch', [ShellApiController::class, 'recordGameLaunch']);
 
     // --- МАГАЗИН И БАР ДЛЯ ТЕРМИНАЛА ---
     Route::get('/store/products', [ShellApiController::class, 'getProducts']);
@@ -228,6 +230,10 @@ Route::prefix('api/shell')->group(function () {
 
     // --- ВЫЗОВ АДМИНА ---
     Route::post('/admin/call', [ShellApiController::class, 'callAdmin']);
+
+    // --- HID мышь/клавиатура (привязка к computers) ---
+    Route::post('/hid/snapshot', [ShellApiController::class, 'saveHidSnapshot']);
+    Route::post('/hid/alert', [ShellApiController::class, 'reportHidAlert']);
 
     // --- УПРАВЛЕНИЕ ЛИЦЕНЗИЯМИ И ОБНОВЛЕНИЕ КЭША VDF ---
     Route::post('/games/take-account', [ShellApiController::class, 'takeAccount']);

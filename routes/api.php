@@ -8,4 +8,9 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('shell')->group(function () {
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
     Route::post('/login', [ShellApiController::class, 'login']);
+    Route::get('/games', [ShellApiController::class, 'getGames']);
+    Route::get('/games/tops', [ShellApiController::class, 'getGameTops']);
+    Route::post('/games/record-launch', [ShellApiController::class, 'recordGameLaunch']);
+    Route::post('/hid/snapshot', [ShellApiController::class, 'saveHidSnapshot']);
+    Route::post('/hid/alert', [ShellApiController::class, 'reportHidAlert']);
 });

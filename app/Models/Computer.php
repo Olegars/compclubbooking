@@ -19,4 +19,14 @@ class Computer extends Model
     {
         return $this->hasMany(GameAccountMachineCache::class, 'computer_id');
     }
+
+    public function inputDevice()
+    {
+        return $this->hasOne(ComputerInputDevice::class);
+    }
+
+    public function inputAlerts(): HasMany
+    {
+        return $this->hasMany(ComputerInputAlert::class);
+    }
 }
