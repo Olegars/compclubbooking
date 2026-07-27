@@ -173,7 +173,7 @@ const getStatusBadge = (status) => {
                          :class="selectedGame?.id === game.id ? 'border-blue-500 shadow-[0_0_30px_rgba(37,99,235,0.15)] scale-[1.02]' : 'border-white/5 hover:border-white/20 hover:bg-white/[0.02]'">
 
                         <div class="w-20 h-28 rounded-xl overflow-hidden bg-white/5 flex-shrink-0 relative">
-                            <img v-if="game.poster" :src="game.poster.startsWith('/') || game.poster.startsWith('http') ? game.poster : '/' + game.poster" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                            <img v-if="game.poster" :src="game.poster.startsWith('/') || game.poster.startsWith('http') ? game.poster : '/' + game.poster" :alt="game.title" loading="lazy" decoding="async" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                             <div v-else class="w-full h-full flex items-center justify-center text-3xl opacity-20 bg-gradient-to-br from-blue-900/20 to-black">🎮</div>
                         </div>
 

@@ -158,6 +158,11 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::get('/check-orders', [AdminController::class, 'checkNewOrders']);
         Route::post('/incidents/{id}/resolve', [AdminController::class, 'resolveIncident']);
 
+        // --- SOS И HID-СИГНАЛЫ С ТЕРМИНАЛОВ ---
+        Route::get('/sos-alerts', [AdminController::class, 'sosAlerts']);
+        Route::post('/sos-alerts/{id}/ack', [AdminController::class, 'ackSosAlert']);
+        Route::post('/input-alerts/{id}/ack', [AdminController::class, 'ackInputAlert']);
+
         // --- ОВЕРЛЕИ (Управление и Загрузка) ---
         Route::get('/overlays', [OverlayAdminController::class, 'getOverlays']);
         Route::put('/overlays/{id}', [OverlayAdminController::class, 'updateOverlay']);

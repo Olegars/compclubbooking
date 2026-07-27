@@ -1,12 +1,51 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
+import Toast from '@/Components/Toast.vue'
+import { useAdminAlerts } from '@/Composables/useAdminAlerts'
 
 // Определяем текущий маршрут для автоматической подсветки активного пункта меню
 const page = usePage()
 const currentUrl = computed(() => page.url)
 
-const isActive = (url: string) => currentUrl.value.startsWith(url)
+// Только путь, без query-строки и хвостового слэша
+const currentPath = computed(() => {
+    const path = currentUrl.value.split('?')[0].split('#')[0]
+    return path.length > 1 ? path.replace(/\/+$/, '') : path
+})
+
+// Точное совпадение либо вложенный маршрут — иначе /admin/orders светился бы на /admin/orders-archive
+const isActive = (url: string) => currentPath.value === url || currentPath.value.startsWith(url + '/')
+
+const { counts, setCounts } = useAdminAlerts()
+
+watch(() => page.props.admin_alerts, (next) => setCounts(next), { immediate: true, deep: true })
+
+// Данные оператора для шапки (шарятся из HandleInertiaRequests)
+const admin = computed(() => page.props.admin_user as any)
+const adminName = computed(() => admin.value?.name || admin.value?.email || 'Оператор')
+const adminRole = computed(() => admin.value?.role || null)
+
+// admin_shift приходит только при открытой смене (status != closed)
+const shift = computed(() => page.props.admin_shift as any)
+// Зелёным горит только своя смена — чужую подсвечивать как «активна у тебя» нельзя
+const shiftIsActive = computed(() => Boolean(shift.value?.is_mine))
+
+const shiftLabel = computed(() => {
+    const parts: string[] = []
+
+    if (!shift.value) {
+        parts.push('Смена закрыта')
+    } else if (shift.value.is_mine) {
+        parts.push('Смена активна')
+    } else {
+        parts.push(`Смена: ${shift.value.admin_name || '—'}`)
+    }
+
+    if (adminRole.value) parts.push(adminRole.value)
+
+    return parts.join(' · ')
+})
 </script>
 
 <template>
@@ -43,6 +82,10 @@ const isActive = (url: string) => currentUrl.value.startsWith(url)
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/orders') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>📦</span> Очередь заказов
+                        <span v-if="counts.pending_orders > 0"
+                              class="ml-auto min-w-[22px] px-2 py-0.5 rounded-full bg-amber-500 text-black text-[10px] font-black tabular-nums text-center shadow-[0_0_12px_rgba(245,158,11,0.4)]">
+                            {{ counts.pending_orders }}
+                        </span>
                     </Link>
                 </div>
 
@@ -59,13 +102,6 @@ const isActive = (url: string) => currentUrl.value.startsWith(url)
                           :class="isActive('/admin/promocodes') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>🎁</span> Маркетинг
                     </Link>
-
-                    <!-- ИСПРАВЛЕНО: Ссылка теперь перенаправляет на рабочий роут лицензий и игр -->
-                    <Link href="/admin/licenses"
-                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
-                          :class="isActive('/admin/licenses') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500 shadow-[0_0_30px_rgba(6,182,212,0.05)]' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
-                        <span>🎮</span> Библиотека игр
-                    </Link>
                 </div>
 
                 <!-- СЕКЦИЯ: ЭКОНОМИКА -->
@@ -75,6 +111,13 @@ const isActive = (url: string) => currentUrl.value.startsWith(url)
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/tariffs') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>🏷️</span> Тарифы и пакеты
+                    </Link>
+                    <!-- Налоги доступны только владельцу (middleware role:owner) -->
+                    <Link v-if="adminRole === 'owner'"
+                          href="/admin/taxes"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/taxes') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🧾</span> Налоги
                     </Link>
                 </div>
 
@@ -104,7 +147,7 @@ const isActive = (url: string) => currentUrl.value.startsWith(url)
                     <Link href="/admin/licenses"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/licenses') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
-                        <span>🔑</span> Менеджер лицензий
+                        <span>🎮</span> Игры и лицензии
                     </Link>
                 </div>
 
@@ -115,6 +158,11 @@ const isActive = (url: string) => currentUrl.value.startsWith(url)
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/incidents') ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>⚠️</span> Инциденты
+                        <span v-if="counts.incidents > 0"
+                              class="ml-auto min-w-[22px] px-2 py-0.5 rounded-full bg-red-500 text-black text-[10px] font-black tabular-nums text-center shadow-[0_0_12px_rgba(239,68,68,0.45)]"
+                              :class="counts.sos > 0 ? 'animate-pulse' : ''">
+                            {{ counts.incidents }}
+                        </span>
                     </Link>
                 </div>
 
@@ -133,8 +181,11 @@ const isActive = (url: string) => currentUrl.value.startsWith(url)
 
                 <div class="flex items-center gap-6">
                     <div class="text-right">
-                        <div class="text-xs font-black uppercase italic text-white">Operator_1</div>
-                        <div class="text-[9px] text-[#22c55e] font-bold uppercase tracking-wider">Shift: Active</div>
+                        <div class="text-xs font-black uppercase italic text-white">{{ adminName }}</div>
+                        <div class="text-[9px] font-bold uppercase tracking-wider"
+                             :class="shiftIsActive ? 'text-[#22c55e]' : 'text-white/30'">
+                            {{ shiftLabel }}
+                        </div>
                     </div>
                     <Link href="/admin/logout" method="post" as="button" class="px-4 py-2 border border-white/10 hover:border-red-500/40 text-white/40 hover:text-red-500 rounded-xl text-[10px] font-black uppercase transition-all">
                         Exit Node
@@ -147,6 +198,8 @@ const isActive = (url: string) => currentUrl.value.startsWith(url)
             </main>
 
         </div>
+
+        <Toast />
     </div>
 </template>
 

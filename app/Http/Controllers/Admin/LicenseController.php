@@ -12,8 +12,18 @@ class LicenseController extends Controller
 {
     public function index()
     {
-        // Загружаем игры сразу с их аккаунтами
-        $games = Game::with('accounts')->get();
+        // Загружаем игры сразу с их аккаунтами, но тянем только те колонки,
+        // которые реально использует страница: остальное (steam_id, токены,
+        // кэш машин, таймстампы) на фронт отдавать незачем
+        $games = Game::query()
+            ->select('id', 'title', 'platform', 'category', 'poster', 'exe_path', 'launch_args')
+            ->with(['accounts' => function ($query) {
+                // game_id обязателен, иначе Eloquent не сможет связать аккаунты с игрой
+                $query->select('id', 'game_id', 'login', 'status')->orderBy('id');
+            }])
+            ->orderBy('title')
+            ->get();
+
         return Inertia::render('Admin/Licenses', ['games' => $games]);
     }
 

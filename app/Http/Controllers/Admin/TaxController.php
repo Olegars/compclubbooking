@@ -43,7 +43,7 @@ class TaxController extends Controller
         // Ограничение максимальной суммы 1% (в 2024 году это 277 571 руб.)
         $extraPremium = min($extraPremium, 277571);
 
-        return Inertia::render('Admin/Index', [
+        return Inertia::render('Admin/Taxes', [
             'year' => $year,
             'quarters' => $quarters,
             'total_income' => $totalIncome,

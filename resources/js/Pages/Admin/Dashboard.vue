@@ -3,16 +3,34 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import { useToast } from '@/Composables/useToast'
+import { useAdminAlerts } from '@/Composables/useAdminAlerts'
 
 const props = defineProps<{
     stats: { TOTAL_REVENUE: number | string, ACTIVE_SESSIONS: number, NEW_USERS_TODAY: number },
     computers: any[]
 }>()
 
+const { success, error, warning } = useToast()
+const { setCounts } = useAdminAlerts()
+
 const localComputers = ref([...props.computers])
 const selectedPc = ref<any>(null)
 const statusTimer = ref<any>(null)
 const activeCalls = ref<any[]>([])
+const sosAlerts = ref<any[]>([])
+const inputAlerts = ref<any[]>([])
+
+// Первый опрос только наполняет панели: сирена звучит лишь на новых сигналах
+const isFirstPoll = ref(true)
+const seenCallIds = ref<Set<number>>(new Set())
+const seenSosIds = ref<Set<number>>(new Set())
+
+const playSiren = () => {
+    new Audio('/sounds/notification.mp3').play().catch(() => {})
+}
+
+const pickNew = (list: any[], seen: Set<number>) => list.filter(item => !seen.has(item.id))
 
 const refreshStatuses = async () => {
     try {
@@ -22,11 +40,34 @@ const refreshStatuses = async () => {
             if (updated) pc.status = updated.status
         })
 
-        const { data: callData } = await axios.get('/admin/api/active-calls')
-        if (callData.length > activeCalls.value.length) {
-            new Audio('/sounds/notification.mp3').play().catch(() => {})
+        const [{ data: callData }, { data: alertData }] = await Promise.all([
+            axios.get('/admin/api/active-calls'),
+            axios.get('/admin/api/sos-alerts'),
+        ])
+
+        const calls = callData || []
+        const sos = alertData?.sos || []
+
+        const newCalls = pickNew(calls, seenCallIds.value)
+        const newSos = pickNew(sos, seenSosIds.value)
+
+        seenCallIds.value = new Set(calls.map((c: any) => c.id))
+        seenSosIds.value = new Set(sos.map((a: any) => a.id))
+
+        activeCalls.value = calls
+        sosAlerts.value = sos
+        inputAlerts.value = alertData?.input || []
+        setCounts(alertData?.counts)
+
+        if (!isFirstPoll.value) {
+            if (newSos.length) {
+                playSiren()
+                newSos.forEach((a: any) => warning(`SOS ${a.pc_name}: ${a.reason}`, 12000))
+            } else if (newCalls.length) {
+                playSiren()
+            }
         }
-        activeCalls.value = callData
+        isFirstPoll.value = false
     } catch (e) { console.error('📡 REACTOR Link Error') }
 }
 
@@ -34,7 +75,25 @@ const resolveCall = async (callId: number) => {
     try {
         await axios.post(`/admin/api/calls/${callId}/resolve`)
         activeCalls.value = activeCalls.value.filter(c => c.id !== callId)
-    } catch (e) { alert('Ошибка закрытия сигнала') }
+    } catch (e) { error('Ошибка закрытия сигнала') }
+}
+
+const ackSos = async (alertId: number) => {
+    try {
+        const { data } = await axios.post(`/admin/api/sos-alerts/${alertId}/ack`)
+        sosAlerts.value = sosAlerts.value.filter(a => a.id !== alertId)
+        setCounts(data?.counts)
+        success('SOS принят в работу')
+    } catch (e) { error('Не удалось закрыть SOS-вызов') }
+}
+
+const ackInputAlert = async (alertId: number) => {
+    try {
+        const { data } = await axios.post(`/admin/api/input-alerts/${alertId}/ack`)
+        inputAlerts.value = inputAlerts.value.filter(a => a.id !== alertId)
+        setCounts(data?.counts)
+        success('Сигнал периферии закрыт')
+    } catch (e) { error('Не удалось закрыть сигнал') }
 }
 
 // Поиск и бонусы
@@ -55,7 +114,7 @@ const search = async () => {
 
 const handleBonus = async () => {
     if (!foundUser.value || isProcessing.value) return
-    if (!bonusReason.value.trim()) return alert('Укажите причину!')
+    if (!bonusReason.value.trim()) return warning('Укажите причину!')
     isProcessing.value = true
     try {
         await axios.post('/admin/give-bonus', {
@@ -63,15 +122,16 @@ const handleBonus = async () => {
             minutes: bonusMinutes.value,
             reason: bonusReason.value
         })
+        success(`Начислено ${bonusMinutes.value} мин бонусом`)
         foundUser.value = null
         searchPhone.value = ''; bonusReason.value = ''
-    } catch (e) { alert('Ошибка начисления') }
+    } catch (e) { error('Ошибка начисления') }
     finally { isProcessing.value = false }
 }
 
 const handleTopUp = async () => {
     if (!foundUser.value || isProcessing.value) return
-    if (topUpAmount.value < 100) return alert('Минимум 100 ₽')
+    if (topUpAmount.value < 100) return warning('Минимум 100 ₽')
     isProcessing.value = true
     try {
         const { data } = await axios.post('/admin/topup', {
@@ -84,9 +144,9 @@ const handleTopUp = async () => {
             balance: data.new_balance ?? data.balance,
             total_balance: data.new_balance ?? data.balance,
         }
-        alert(`Баланс пополнен: ${data.new_balance ?? data.balance} ₽`)
+        success(`Баланс пополнен: ${data.new_balance ?? data.balance} ₽`)
     } catch (e: any) {
-        alert(e.response?.data?.message || 'Ошибка пополнения')
+        error(e.response?.data?.message || 'Ошибка пополнения')
     } finally {
         isProcessing.value = false
     }
@@ -104,6 +164,44 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
 <template>
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 pb-10 font-mono text-white p-6">
+
+            <!-- SOS С ТЕРМИНАЛОВ: ЛИПКАЯ КРАСНАЯ ПАНЕЛЬ -->
+            <div v-if="sosAlerts.length > 0" class="sticky top-0 z-40 -mx-6 -mt-6 px-6 pt-6 pb-4 bg-[#050505]/95 backdrop-blur-md">
+                <div class="bg-red-600/[0.07] border-2 border-red-600/50 rounded-[2.5rem] p-6 shadow-[0_0_60px_rgba(220,38,38,0.2)]">
+                    <div class="flex items-center justify-between gap-4 mb-5">
+                        <div class="flex items-center gap-4">
+                            <span class="w-3 h-3 bg-red-600 rounded-full animate-ping"></span>
+                            <h2 class="text-xl font-black uppercase italic tracking-tighter text-red-500">
+                                SOS с терминалов
+                            </h2>
+                        </div>
+                        <span class="px-4 py-1.5 bg-red-600 text-black rounded-full text-[10px] font-black uppercase tracking-widest">
+                            {{ sosAlerts.length }} активных
+                        </span>
+                    </div>
+
+                    <div class="space-y-3 max-h-[320px] overflow-y-auto custom-scrollbar">
+                        <div v-for="alert in sosAlerts" :key="alert.id"
+                             class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-black/40 border border-red-600/30 rounded-2xl p-5">
+                            <div class="flex items-center gap-5 min-w-0">
+                                <div class="shrink-0 px-4 py-3 bg-red-600 text-black rounded-xl text-lg font-black italic tracking-tighter">
+                                    {{ alert.pc_name }}
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="text-sm font-black uppercase italic text-white truncate">{{ alert.reason }}</div>
+                                    <div class="text-[9px] text-white/30 uppercase font-black tracking-widest mt-1">
+                                        {{ alert.time }} · ожидает {{ alert.waiting_minutes }} мин
+                                    </div>
+                                </div>
+                            </div>
+                            <button @click="ackSos(alert.id)"
+                                    class="shrink-0 px-8 py-4 bg-red-600 hover:bg-red-500 text-black font-black uppercase text-[10px] tracking-widest rounded-xl transition-all active:scale-95 shadow-[0_0_25px_rgba(220,38,38,0.3)]">
+                                Принято
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden">
@@ -132,7 +230,8 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                              class="aspect-square rounded-2xl border transition-all cursor-pointer flex flex-col items-center justify-center group relative overflow-hidden"
                              :class="[ pc.status === 'busy' ? 'bg-cyan-500/10 border-cyan-500/40' : 'bg-white/[0.02] border-white/5',
                                        selectedPc?.id === pc.id ? 'ring-2 ring-cyan-500 ring-offset-4 ring-offset-[#050505] scale-90' : 'hover:scale-105' ]">
-                            <div v-if="activeCalls.some(c => c.pc_id === pc.id)" class="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full animate-ping"></div>
+                            <div v-if="activeCalls.some(c => c.pc_id === pc.id) || sosAlerts.some(a => a.computer_id === pc.id)"
+                                 class="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full animate-ping"></div>
                             <span class="text-[11px] font-black" :class="pc.status === 'busy' ? 'text-cyan-400' : 'text-white/20'">{{ pc.name }}</span>
                         </div>
                     </div>
@@ -167,6 +266,23 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                             </div>
                         </div>
                         <div v-else class="py-10 text-center border border-dashed border-white/5 rounded-2xl italic text-[10px] text-white/10 uppercase tracking-widest">Сигналов нет</div>
+                    </div>
+
+                    <div v-if="inputAlerts.length > 0" class="bg-[#0a0a0a] border border-amber-500/20 rounded-[2.5rem] p-8 shadow-2xl">
+                        <h3 class="text-lg font-black text-amber-500 uppercase italic mb-6 flex items-center gap-3">
+                            <span class="w-1.5 h-6 bg-amber-500 rounded-full"></span> Периферия
+                        </h3>
+                        <div class="space-y-4 max-h-[300px] overflow-y-auto custom-scrollbar">
+                            <div v-for="alert in inputAlerts" :key="alert.id" class="bg-amber-500/5 border border-amber-500/20 p-4 rounded-2xl">
+                                <div class="flex justify-between items-start mb-2">
+                                    <span class="text-[10px] font-black text-amber-500 uppercase italic tracking-widest">{{ alert.pc_name }}</span>
+                                    <span class="text-[8px] text-white/20 font-mono">{{ alert.time }}</span>
+                                </div>
+                                <p class="text-xs text-white/80 italic">{{ alert.type_label }}</p>
+                                <p class="text-[9px] text-white/25 uppercase tracking-wider font-bold mt-1 mb-4">{{ alert.details }}</p>
+                                <button @click="ackInputAlert(alert.id)" class="w-full py-2 bg-amber-500/10 hover:bg-amber-500 text-amber-500 hover:text-black rounded-xl text-[9px] font-black uppercase transition-all">Принято</button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="bg-[#0a0a0a] border border-white/5 rounded-[2.5rem] p-8 shadow-2xl">

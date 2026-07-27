@@ -2,14 +2,27 @@
 import { ref, computed } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import AdminConfirm from '@/Components/AdminConfirm.vue'
+import { useToast } from '@/Composables/useToast'
+import { useAdminAlerts } from '@/Composables/useAdminAlerts'
 import axios from 'axios'
 
 const props = defineProps<{
     incidents: any[]
 }>()
 
+const { success, error } = useToast()
+const { setCounts } = useAdminAlerts()
+
 // --- ФИЛЬТРАЦИЯ ---
-const filter = ref('all') // 'all', 'high', 'medium'
+const filter = ref('all')
+
+const filters = [
+    { value: 'all', label: 'Все' },
+    { value: 'high', label: 'Критические' },
+    { value: 'medium', label: 'Средние' },
+    { value: 'low', label: 'Низкие' },
+]
 
 const filteredIncidents = computed(() => {
     if (filter.value === 'all') return props.incidents
@@ -18,16 +31,26 @@ const filteredIncidents = computed(() => {
 
 // --- ЛОГИКА УДАЛЕНИЯ/АРХИВАЦИИ (ТОЛЬКО ДЛЯ СУПЕРВИЗОРА) ---
 const isProcessing = ref(false)
+const resolveTarget = ref<any>(null)
 
-const resolveIncident = async (id: number) => {
-    if (!confirm('Отметить инцидент как отработанный? Он исчезнет из активного лога.')) return
+const resolveMessage = computed(() => {
+    if (!resolveTarget.value) return ''
+    return `«${resolveTarget.value.description}» — запись будет отмечена как отработанная и исчезнет из активного лога.`
+})
 
+const resolveIncident = async () => {
+    if (!resolveTarget.value || isProcessing.value) return
+
+    const id = resolveTarget.value.id
     isProcessing.value = true
     try {
-        await axios.post(`/admin/api/incidents/${id}/resolve`)
-        router.reload({ only: ['incidents'] })
+        const { data } = await axios.post(`/admin/api/incidents/${id}/resolve`)
+        setCounts(data?.counts)
+        router.reload({ only: ['incidents', 'admin_alerts'] })
+        success('Инцидент отработан')
+        resolveTarget.value = null
     } catch (e) {
-        alert('Ошибка доступа. Только высший уровень допуска может изменять лог.')
+        error('Ошибка доступа. Только высший уровень допуска может изменять лог.')
     } finally {
         isProcessing.value = false
     }
@@ -62,13 +85,13 @@ const formatDate = (dateStr: string) => {
                 </div>
 
                 <div class="flex bg-black border border-white/5 p-1 rounded-2xl h-fit">
-                    <button v-for="f in ['all', 'high', 'medium']" :key="f"
-                            @click="filter = f"
+                    <button v-for="f in filters" :key="f.value"
+                            @click="filter = f.value"
                             :class="[
                                 'px-6 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all',
-                                filter === f ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.3)]' : 'text-white/30 hover:text-white'
+                                filter === f.value ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.3)]' : 'text-white/30 hover:text-white'
                             ]">
-                        {{ f === 'all' ? 'Все' : (f === 'high' ? 'Критические' : 'Средние') }}
+                        {{ f.label }}
                     </button>
                 </div>
             </div>
@@ -98,7 +121,7 @@ const formatDate = (dateStr: string) => {
                             <td class="p-8">
                                 <div class="flex flex-col gap-2">
                                         <span class="text-[10px] font-black text-white/60 uppercase italic tracking-tighter">
-                                            {{ incident.type === 'late_order' ? 'Задержка сервиса' : 'Ручная правка' }}
+                                            {{ incident.type_label || 'Нарушение протокола' }}
                                         </span>
                                     <div :class="[
                                             'w-fit px-3 py-1 rounded-md text-[9px] font-black uppercase border shadow-sm',
@@ -118,13 +141,16 @@ const formatDate = (dateStr: string) => {
                                 <div v-if="incident.order_id" class="mt-2 inline-flex items-center gap-2 text-[9px] text-red-500/50 font-black uppercase tracking-widest border-b border-red-500/10 pb-1">
                                     Target ID: #{{ incident.order_id }}
                                 </div>
+                                <div v-if="incident.pc_name" class="mt-2 inline-flex items-center gap-2 text-[9px] text-cyan-500/50 font-black uppercase tracking-widest border-b border-cyan-500/10 pb-1">
+                                    Терминал: {{ incident.pc_name }}
+                                </div>
                             </td>
 
                             <td class="p-8 text-right">
-                                <button @click="resolveIncident(incident.id)"
+                                <button @click="resolveTarget = incident"
                                         :disabled="isProcessing"
                                         class="p-4 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white/30 hover:bg-red-600 hover:text-white hover:border-red-600 transition-all active:scale-95 disabled:opacity-30">
-                                    Удалить из лога
+                                    Отработано
                                 </button>
                             </td>
                         </tr>
@@ -144,15 +170,25 @@ const formatDate = (dateStr: string) => {
                     <div class="w-12 h-12 bg-red-600 text-black flex items-center justify-center rounded-2xl text-2xl">⚠️</div>
                     <div>
                         <div class="text-white font-black uppercase text-sm italic">Режим тотального контроля</div>
-                        <p class="text-[9px] text-white/30 uppercase mt-1">Любое удаление записи фиксируется в логах ядра</p>
+                        <p class="text-[9px] text-white/30 uppercase mt-1">Любое закрытие записи фиксируется в логах ядра</p>
                     </div>
                 </div>
                 <div class="text-right">
                     <div class="text-2xl font-black text-red-600 italic tracking-tighter">{{ incidents.length }}</div>
-                    <div class="text-[9px] text-white/20 uppercase font-black italic">Инцидентов всего</div>
+                    <div class="text-[9px] text-white/20 uppercase font-black italic">Активных инцидентов</div>
                 </div>
             </div>
         </div>
+
+        <AdminConfirm :is-open="!!resolveTarget"
+                      :is-processing="isProcessing"
+                      title="Инцидент отработан?"
+                      :message="resolveMessage"
+                      confirm-text="Да, закрыть"
+                      cancel-text="Отмена"
+                      tone="danger"
+                      @confirm="resolveIncident"
+                      @close="resolveTarget = null" />
     </AdminLayout>
 </template>
 

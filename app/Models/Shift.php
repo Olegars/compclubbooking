@@ -18,6 +18,13 @@ class Shift extends Model
         'status'
     ];
 
+    protected $casts = [
+        'started_at' => 'datetime',
+        'ended_at' => 'datetime',
+        'cash_start' => 'decimal:2',
+        'cash_end' => 'decimal:2',
+    ];
+
     // Связь с админом, который открыл смену
     public function admin(): BelongsTo
     {

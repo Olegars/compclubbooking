@@ -155,6 +155,15 @@ const saveProduct = async () => {
     finally { isProcessing.value = false }
 }
 
+const deleteProduct = async (id: number) => {
+    if (!confirm('Снять единицу с учета и удалить из базы?')) return
+
+    try {
+        await axios.delete(`/admin/api/inventory/delete/${id}`)
+        products.value = products.value.filter(p => p.id !== id)
+    } catch (e) { alert('Sync Error') }
+}
+
 onMounted(() => {
     fetchProducts()
     window.addEventListener('keydown', handleGlobalKeyDown)
@@ -222,6 +231,7 @@ const filteredProducts = computed(() => {
 
                     <div class="aspect-square bg-white/5 rounded-[2.5rem] mb-6 flex items-center justify-center border border-white/5 relative overflow-hidden group-hover:bg-cyan-500/5 transition-all">
                         <img :src="item.image ? (item.image.startsWith('/') ? item.image : '/' + item.image) : '/images/shop/default.png'"
+                             :alt="item.name" loading="lazy" decoding="async"
                              class="w-3/4 h-3/4 object-contain transition-transform duration-700 group-hover:scale-110" />
                         <div class="absolute top-5 right-5 px-4 py-1.5 bg-black/80 backdrop-blur-xl rounded-full border border-white/10 flex items-center gap-2">
                             <span class="w-1.5 h-1.5 rounded-full" :class="item.stock <= 5 ? 'bg-red-500 animate-ping' : 'bg-cyan-500'"></span>

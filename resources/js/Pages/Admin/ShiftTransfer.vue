@@ -3,24 +3,36 @@ import { ref, computed } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
-const props = defineProps<{ expected: any[] }>()
+const props = defineProps<{ expected: any[], expectedCash: number }>()
 
 const items = ref(props.expected.map(i => ({
     ...i,
     actual: i.stock
 })))
 
+// Пересчитанная касса: она же станет остатком на конец сдаваемой смены
+const cashCounted = ref<number | null>(props.expectedCash)
+
 const hasDiscrepancies = computed(() => items.value.some(i => i.actual !== i.stock))
+const cashIsValid = computed(() => typeof cashCounted.value === 'number' && cashCounted.value >= 0)
 
 const printList = () => { window.print() }
 
 const submitShift = () => {
+    if (!cashIsValid.value) {
+        alert("Укажите сумму наличных в кассе")
+        return
+    }
+
     const msg = hasDiscrepancies.value
         ? "ВНИМАНИЕ: Обнаружены расхождения! Зафиксировать инцидент и открыть смену?"
         : "Открыть новую смену?"
 
     if (confirm(msg)) {
-        router.post('/admin/api/shifts/complete', { items: items.value })
+        router.post('/admin/api/shifts/complete', {
+            items: items.value,
+            cash_counted: cashCounted.value
+        })
     }
 }
 </script>
@@ -44,6 +56,20 @@ const submitShift = () => {
                             class="px-8 py-3 text-black font-black uppercase rounded-xl transition-all active:scale-95 italic shadow-lg">
                         {{ hasDiscrepancies ? 'Открыть с Разногласиями' : 'Подтвердить и Открыть' }}
                     </button>
+                </div>
+            </div>
+
+            <div class="no-print flex items-center justify-between gap-8 bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem]">
+                <div>
+                    <h2 class="text-sm font-black text-white uppercase italic tracking-tight">Касса</h2>
+                    <p class="text-white/20 text-[10px] uppercase font-bold mt-1">
+                        Пересчитайте наличные — по документам {{ expectedCash }} ₽
+                    </p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <input v-model.number="cashCounted" type="number" min="0" step="0.01"
+                           class="w-40 bg-black border-2 border-white/10 rounded-lg py-2 px-4 text-right text-xl font-black text-white focus:border-cyan-500 outline-none" />
+                    <span class="text-white/30 text-xl font-black">₽</span>
                 </div>
             </div>
 
@@ -79,6 +105,7 @@ const submitShift = () => {
             </div>
 
             <div class="only-print footer-signatures">
+                <div class="sig-row">Наличные в кассе (факт): {{ cashCounted }} ₽</div>
                 <div class="sig-row">Сдал: ____________________ (уходящий)</div>
                 <div class="sig-row">Принял: ____________________ (приходящий)</div>
                 <div class="time-stamp">System Time: {{ new Date().toLocaleString() }}</div>

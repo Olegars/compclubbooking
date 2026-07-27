@@ -11,28 +11,56 @@ use Illuminate\Support\Facades\DB;
 
 class ShiftController extends Controller
 {
+    // Сколько последних смен показываем в архиве
+    private const HISTORY_LIMIT = 100;
+
     public function transferPage()
     {
         $products = Product::select('id', 'name', 'stock', 'category')->get();
+
         return Inertia::render('Admin/ShiftTransfer', [
-            'expected' => $products
+            'expected' => $products,
+            'expectedCash' => (float) (Shift::where('status', '!=', 'closed')
+                ->orderByDesc('started_at')
+                ->value('cash_start') ?? 0),
         ]);
     }
 
     public function completeTransfer(Request $request)
     {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.name' => ['required', 'string'],
+            'items.*.stock' => ['required', 'integer'],
+            'items.*.actual' => ['required', 'integer', 'min:0'],
+            'cash_counted' => ['required', 'numeric', 'min:0'],
+        ]);
+
         $admin = auth()->user();
 
-        return DB::transaction(function () use ($request, $admin) {
-            // 1. Создаем новую смену
+        return DB::transaction(function () use ($data, $admin) {
+            $cashCounted = (float) $data['cash_counted'];
+
+            // 1. Закрываем смену, которую нам сдают. Пересчитанная касса — это одновременно
+            // остаток на конец старой смены и начальный остаток новой.
+            Shift::where('status', '!=', 'closed')->update([
+                'status' => 'closed',
+                'closed_by' => $admin->id,
+                'ended_at' => now(),
+                'cash_end' => $cashCounted,
+            ]);
+
+            // 2. Создаем новую смену
             $shift = Shift::create([
                 'admin_id' => $admin->id,
                 'status' => 'open',
                 'started_at' => now(),
+                'cash_start' => $cashCounted,
             ]);
 
-            foreach ($request->items as $item) {
-                // 2. Логируем состояние в таблицу передачи
+            foreach ($data['items'] as $item) {
+                // 3. Логируем состояние в таблицу передачи
                 DB::table('shift_inventory')->insert([
                     'shift_id' => $shift->id,
                     'product_id' => $item['id'],
@@ -41,7 +69,7 @@ class ShiftController extends Controller
                     'created_at' => now(),
                 ]);
 
-                // 3. Если есть расхождение — пишем в Инциденты
+                // 4. Если есть расхождение — пишем в Инциденты
                 if ($item['actual'] != $item['stock']) {
                     DB::table('incidents')->insert([
                         'type' => 'inventory_discrepancy',
@@ -58,15 +86,25 @@ class ShiftController extends Controller
             return redirect()->route('admin.dashboard');
         });
     }
+
     public function history()
     {
-        // Пока передаем пустой массив, чтобы не словить ошибку базы данных,
-        // если таблицы shifts у нас еще нет или она пустая.
-        // Позже здесь будет что-то вроде: Shift::with('admin')->orderByDesc('closed_at')->get();
-        $shifts = [];
+        $shifts = Shift::with('admin:id,name')
+            ->orderByDesc('started_at')
+            ->orderByDesc('id')
+            ->limit(self::HISTORY_LIMIT)
+            ->get()
+            ->map(fn (Shift $shift) => [
+                'id' => $shift->id,
+                'admin' => $shift->admin ? ['name' => $shift->admin->name] : null,
+                'opened_at' => $shift->started_at?->toIso8601String(),
+                'closed_at' => $shift->ended_at?->toIso8601String(),
+                'cash_balance' => (float) ($shift->cash_end ?? $shift->cash_start),
+                'status' => $shift->status,
+            ]);
 
-        return \Inertia\Inertia::render('Admin/ShiftHistory', [
-            'shifts' => $shifts
+        return Inertia::render('Admin/ShiftHistory', [
+            'shifts' => $shifts,
         ]);
     }
 }

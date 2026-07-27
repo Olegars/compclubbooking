@@ -24,7 +24,15 @@
     }
 }
 
+/* Общая анимация появления страниц админки (раньше дублировалась в scoped-стилях каждой страницы) */
+@keyframes fade-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 @layer utilities {
+    .animate-in { animation: fade-in 0.4s ease-out forwards; }
+
     .text-glow { text-shadow: 0 0 15px rgba(34, 197, 94, 0.5); }
     .border-glow { box-shadow: 0 0 20px rgba(34, 197, 94, 0.1); }
     .crt-overlay {

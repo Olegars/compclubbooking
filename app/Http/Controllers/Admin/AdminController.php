@@ -7,8 +7,13 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 use App\Models\User;
 use App\Models\Order;
+use App\Models\ComputerSosAlert;
+use App\Models\ComputerInputAlert;
+use App\Support\AdminAlerts;
 // Если у тебя есть модель BonusLog, раскомментируй:
 // use App\Models\BonusLog;
 
@@ -347,13 +352,381 @@ class AdminController extends Controller
 
         return response()->json($product);
     }
+    // ==========================================
+    // 5. SOS И HID-СИГНАЛЫ С ТЕРМИНАЛОВ (QML SHELL)
+    // ==========================================
+
+    /**
+     * Активные (необработанные) SOS-вызовы и аномалии периферии для дашбоарда.
+     */
+    public function sosAlerts()
+    {
+        $sos = ComputerSosAlert::with('computer:id,name')
+            ->whereNull('resolved_at')
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get()
+            ->map(function (ComputerSosAlert $alert) {
+                return [
+                    'id' => $alert->id,
+                    'computer_id' => $alert->computer_id,
+                    'pc_name' => $this->pcName($alert->computer?->name, $alert->computer_id),
+                    'booking_id' => $alert->booking_id,
+                    'reason_code' => $alert->reason_code,
+                    'reason' => $alert->reason_label ?: $this->sosReasonLabel($alert->reason_code),
+                    'created_at' => optional($alert->created_at)->toIso8601String(),
+                    'time' => optional($alert->created_at)->format('H:i'),
+                    'waiting_minutes' => $this->minutesAgo($alert->created_at),
+                ];
+            })
+            ->values();
+
+        $input = ComputerInputAlert::with('computer:id,name')
+            ->whereNull('resolved_at')
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get()
+            ->map(function (ComputerInputAlert $alert) {
+                return [
+                    'id' => $alert->id,
+                    'computer_id' => $alert->computer_id,
+                    'pc_name' => $this->pcName($alert->computer?->name, $alert->computer_id),
+                    'type' => $alert->type,
+                    'type_label' => $this->inputAlertLabel($alert->type),
+                    'severity' => $this->normalizeSeverity($alert->severity),
+                    'details' => $this->inputAlertDetails($alert->payload),
+                    'created_at' => optional($alert->created_at)->toIso8601String(),
+                    'time' => optional($alert->created_at)->format('H:i'),
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'sos' => $sos,
+            'input' => $input,
+            'counts' => AdminAlerts::counts(),
+        ]);
+    }
+
+    /**
+     * Оператор принял SOS-вызов.
+     */
+    public function ackSosAlert($id)
+    {
+        if (! $this->resolveSosAlert((int) $id)) {
+            return response()->json(['message' => 'Сигнал не найден'], 404);
+        }
+
+        return response()->json(['status' => 'resolved', 'counts' => AdminAlerts::counts()]);
+    }
+
+    /**
+     * Оператор принял сигнал о подмене/отключении периферии.
+     */
+    public function ackInputAlert($id)
+    {
+        if (! $this->resolveInputAlert((int) $id)) {
+            return response()->json(['message' => 'Сигнал не найден'], 404);
+        }
+
+        return response()->json(['status' => 'resolved', 'counts' => AdminAlerts::counts()]);
+    }
+
+    // ==========================================
+    // 6. РЕЕСТР ИНЦИДЕНТОВ
+    // ==========================================
     public function incidents()
     {
-        // Пока передаем пустой массив, чтобы Vue не ругался на отсутствие данных.
-        // Позже мы подключим сюда базу данных (модель Incident).
-        return \Inertia\Inertia::render('Admin/Incidents', [
-            'incidents' => []
+        // Страховка на случай, если планировщик (reactor:check-quality) не запущен на машине клуба
+        $this->syncLateOrderIncidents();
+
+        $manual = DB::table('incidents')
+            ->whereNull('resolved_at')
+            ->orderByDesc('created_at')
+            ->limit(200)
+            ->get()
+            ->map(function ($row) {
+                $createdAt = $row->created_at ? Carbon::parse($row->created_at) : now();
+
+                return [
+                    'id' => 'inc-'.$row->id,
+                    'source' => 'incident',
+                    'type' => $row->type,
+                    'type_label' => $this->incidentTypeLabel($row->type),
+                    'severity' => $this->normalizeSeverity($row->severity),
+                    'description' => $row->description,
+                    'order_id' => $row->order_id,
+                    'pc_name' => null,
+                    'created_at' => $createdAt->toIso8601String(),
+                    'sort_ts' => $createdAt->getTimestamp(),
+                    'resolved' => false,
+                ];
+            });
+
+        $sos = ComputerSosAlert::with('computer:id,name')
+            ->whereNull('resolved_at')
+            ->orderByDesc('created_at')
+            ->limit(200)
+            ->get()
+            ->map(function (ComputerSosAlert $alert) {
+                $createdAt = $alert->created_at ?: now();
+                $pcName = $this->pcName($alert->computer?->name, $alert->computer_id);
+                $reason = $alert->reason_label ?: $this->sosReasonLabel($alert->reason_code);
+
+                return [
+                    'id' => 'sos-'.$alert->id,
+                    'source' => 'sos',
+                    'type' => 'sos',
+                    'type_label' => 'SOS с терминала',
+                    'severity' => 'high',
+                    'description' => "SOS {$pcName}: {$reason}",
+                    'order_id' => null,
+                    'pc_name' => $pcName,
+                    'created_at' => $createdAt->toIso8601String(),
+                    'sort_ts' => $createdAt->getTimestamp(),
+                    'resolved' => false,
+                ];
+            });
+
+        $input = ComputerInputAlert::with('computer:id,name')
+            ->whereNull('resolved_at')
+            ->orderByDesc('created_at')
+            ->limit(200)
+            ->get()
+            ->map(function (ComputerInputAlert $alert) {
+                $createdAt = $alert->created_at ?: now();
+                $pcName = $this->pcName($alert->computer?->name, $alert->computer_id);
+                $label = $this->inputAlertLabel($alert->type);
+                $details = $this->inputAlertDetails($alert->payload);
+
+                return [
+                    'id' => 'hid-'.$alert->id,
+                    'source' => 'input',
+                    'type' => $alert->type,
+                    'type_label' => $label,
+                    'severity' => $this->normalizeSeverity($alert->severity),
+                    'description' => trim("{$label} на {$pcName}. {$details}"),
+                    'order_id' => null,
+                    'pc_name' => $pcName,
+                    'created_at' => $createdAt->toIso8601String(),
+                    'sort_ts' => $createdAt->getTimestamp(),
+                    'resolved' => false,
+                ];
+            });
+
+        $incidents = $manual
+            ->concat($sos)
+            ->concat($input)
+            ->sortByDesc('sort_ts')
+            ->values();
+
+        return Inertia::render('Admin/Incidents', [
+            'incidents' => $incidents,
         ]);
+    }
+
+    /**
+     * Закрытие записи реестра. ID приходит с префиксом источника: inc-12 / sos-3 / hid-7.
+     */
+    public function resolveIncident($id)
+    {
+        [$source, $rawId] = $this->parseIncidentId((string) $id);
+
+        $resolved = match ($source) {
+            'sos' => $this->resolveSosAlert($rawId),
+            'hid' => $this->resolveInputAlert($rawId),
+            default => $this->resolveManualIncident($rawId),
+        };
+
+        if (! $resolved) {
+            return response()->json(['message' => 'Запись не найдена'], 404);
+        }
+
+        return response()->json(['status' => 'resolved', 'counts' => AdminAlerts::counts()]);
+    }
+
+    // ==========================================
+    // ХЕЛПЕРЫ АЛЕРТОВ / ИНЦИДЕНТОВ
+    // ==========================================
+
+    private function resolveSosAlert(int $id): bool
+    {
+        $alert = ComputerSosAlert::with('computer:id,name')->find($id);
+        if (! $alert) {
+            return false;
+        }
+
+        if (! $alert->resolved_at) {
+            $alert->resolved_at = now();
+            $alert->save();
+
+            // SOS дублируется в общий канал вызовов — гасим и его, чтобы не звонить дважды
+            $pcName = $this->pcName($alert->computer?->name, $alert->computer_id);
+            DB::table('admin_calls')
+                ->where('status', 'pending')
+                ->where('pc_name', $pcName)
+                ->where('message', 'SOS: '.$alert->reason_label)
+                ->update(['status' => 'resolved', 'updated_at' => now()]);
+
+            Log::info('[SOS-ACK]', [
+                'alert_id' => $alert->id,
+                'admin_id' => Auth::guard('admin')->id(),
+            ]);
+        }
+
+        return true;
+    }
+
+    private function resolveInputAlert(int $id): bool
+    {
+        $alert = ComputerInputAlert::find($id);
+        if (! $alert) {
+            return false;
+        }
+
+        if (! $alert->resolved_at) {
+            $alert->resolved_at = now();
+            $alert->save();
+
+            Log::info('[HID-ACK]', [
+                'alert_id' => $alert->id,
+                'admin_id' => Auth::guard('admin')->id(),
+            ]);
+        }
+
+        return true;
+    }
+
+    private function resolveManualIncident(int $id): bool
+    {
+        $incident = DB::table('incidents')->where('id', $id)->first();
+        if (! $incident) {
+            return false;
+        }
+
+        DB::table('incidents')->where('id', $id)->update([
+            'resolved_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Log::info('[INCIDENT-RESOLVED]', [
+            'incident_id' => $id,
+            'type' => $incident->type,
+            'admin_id' => Auth::guard('admin')->id(),
+        ]);
+
+        return true;
+    }
+
+    private function parseIncidentId(string $id): array
+    {
+        if (preg_match('/^(inc|sos|hid)-(\d+)$/', $id, $matches)) {
+            return [$matches[1], (int) $matches[2]];
+        }
+
+        return ['inc', (int) $id];
+    }
+
+    /**
+     * Фиксация просроченных заказов (та же логика, что в команде reactor:check-quality).
+     */
+    private function syncLateOrderIncidents(): void
+    {
+        try {
+            $lateOrders = DB::table('orders')
+                ->where('status', 'pending')
+                ->where('created_at', '<', now()->subMinutes(5))
+                ->get(['id', 'product_name']);
+
+            foreach ($lateOrders as $order) {
+                $exists = DB::table('incidents')
+                    ->where('type', 'late_order')
+                    ->where('order_id', $order->id)
+                    ->exists();
+
+                if ($exists) {
+                    continue;
+                }
+
+                DB::table('incidents')->insert([
+                    'type' => 'late_order',
+                    'order_id' => $order->id,
+                    'severity' => 'high',
+                    'description' => "КРИТИЧЕСКАЯ ЗАДЕРЖКА: Заказ #{$order->id} ({$order->product_name}) не обработан за 5+ минут.",
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('syncLateOrderIncidents: '.$e->getMessage());
+        }
+    }
+
+    private function pcName(?string $name, ?int $computerId): string
+    {
+        return $name ?: ('PC-'.($computerId ?? 0));
+    }
+
+    private function sosReasonLabel(?string $code): string
+    {
+        return match ($code) {
+            ComputerSosAlert::REASON_PERIPHERALS => 'Проблема с периферией',
+            ComputerSosAlert::REASON_AUTH_HELP => 'Помощь с авторизацией',
+            ComputerSosAlert::REASON_OTHER => 'Другая причина',
+            default => 'Вызов оператора',
+        };
+    }
+
+    private function inputAlertLabel(?string $type): string
+    {
+        return match ($type) {
+            ComputerInputAlert::TYPE_DEVICE_CHANGED => 'Подмена периферии',
+            ComputerInputAlert::TYPE_DISCONNECTED => 'Периферия отключена',
+            ComputerInputAlert::TYPE_UNSTABLE => 'Нестабильная периферия',
+            default => 'Аномалия периферии',
+        };
+    }
+
+    private function inputAlertDetails($payload): string
+    {
+        if (! is_array($payload)) {
+            return '';
+        }
+
+        $current = is_array($payload['current'] ?? null) ? $payload['current'] : [];
+        $mice = is_array($current['mice'] ?? null) ? count($current['mice']) : 0;
+        $keyboards = is_array($current['keyboards'] ?? null) ? count($current['keyboards']) : 0;
+        $burst = (int) ($payload['burst_count'] ?? 0);
+
+        return "Мышей: {$mice}, клавиатур: {$keyboards}, срабатываний за минуту: {$burst}";
+    }
+
+    private function incidentTypeLabel(?string $type): string
+    {
+        return match ($type) {
+            'late_order' => 'Задержка сервиса',
+            'inventory_discrepancy' => 'Расхождение склада',
+            'manual_balance_edit' => 'Ручная правка баланса',
+            default => 'Нарушение протокола',
+        };
+    }
+
+    private function normalizeSeverity(?string $severity): string
+    {
+        return match ($severity) {
+            'critical', 'high' => 'high',
+            'low', 'info' => 'low',
+            default => 'medium',
+        };
+    }
+
+    private function minutesAgo($timestamp): int
+    {
+        if (! $timestamp) {
+            return 0;
+        }
+
+        return (int) abs(Carbon::parse($timestamp)->diffInMinutes(now()));
     }
 }
 

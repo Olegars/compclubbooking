@@ -1,22 +1,75 @@
 <script setup>
 import { router } from '@inertiajs/vue3'
-import { watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import AdminLayout from '@/Layouts/AdminLayout.vue' // <-- ИМПОРТИРУЕМ ОБОЛОЧКУ АДМИНКИ
+import AdminConfirm from '@/Components/AdminConfirm.vue'
+import { useToast } from '@/Composables/useToast'
 
 const props = defineProps({ orders: Array })
 
+const { success, error, info } = useToast()
+
+const POLL_INTERVAL = 7000
+const pollTimer = ref(null)
+
+// Заказы, которые оператор уже видел — чтобы звук играл только на реально новых
+const seenOrderIds = ref(new Set((props.orders || []).map(o => o.id)))
+
+const orderLabels = {
+    cooking: 'Заказ отправлен в работу',
+    delivered: 'Заказ выполнен',
+    cancelled: 'Заказ отменён',
+}
+
 const setStatus = (id, status) => {
     router.post(`/admin/orders/${id}/status`, { status }, {
-        preserveScroll: true
+        preserveScroll: true,
+        onSuccess: () => success(orderLabels[status] || 'Статус обновлён'),
+        onError: () => error('Не удалось обновить статус заказа'),
     })
 }
 
-watch(() => props.orders?.length, (newCount, oldCount) => {
-    if (newCount > oldCount) {
-        // Если заказов стало больше — играем звук
-        const audio = new Audio('/sounds/notification.mp3');
-        audio.play().catch(e => console.log('Аудио заблокировано браузером до первого клика'));
+// --- ПОДТВЕРЖДЕНИЕ ОТМЕНЫ ---
+const cancelTarget = ref(null)
+const cancelMessage = computed(() => {
+    if (!cancelTarget.value) return ''
+    const pc = cancelTarget.value.pc_name ? ` (${cancelTarget.value.pc_name})` : ''
+    return `Заказ #${cancelTarget.value.id}${pc} будет отменён. Действие необратимо.`
+})
+
+const confirmCancel = () => {
+    if (!cancelTarget.value) return
+    const id = cancelTarget.value.id
+    cancelTarget.value = null
+    setStatus(id, 'cancelled')
+}
+
+// --- АВТООБНОВЛЕНИЕ ОЧЕРЕДИ ---
+const refreshQueue = () => {
+    router.reload({
+        only: ['orders', 'admin_alerts'],
+        preserveScroll: true,
+        preserveState: true,
+    })
+}
+
+watch(() => props.orders, (list) => {
+    const ids = (list || []).map(o => o.id)
+    const hasNew = ids.some(id => !seenOrderIds.value.has(id))
+    seenOrderIds.value = new Set(ids)
+
+    if (hasNew) {
+        new Audio('/sounds/notification.mp3').play().catch(() => {})
+        info('Новый заказ в очереди')
     }
+})
+
+onMounted(() => {
+    pollTimer.value = setInterval(refreshQueue, POLL_INTERVAL)
+})
+
+onUnmounted(() => {
+    if (pollTimer.value) clearInterval(pollTimer.value)
 })
 </script>
 
@@ -85,7 +138,7 @@ watch(() => props.orders?.length, (newCount, oldCount) => {
                                 class="flex-1 md:flex-none px-8 py-4 bg-[#22c55e] hover:bg-[#1ea34d] text-black font-black uppercase text-xs tracking-widest rounded-xl transition-all shadow-[0_0_20px_rgba(34,197,94,0.2)] active:scale-95">
                             Выполнен
                         </button>
-                        <button @click="setStatus(order.id, 'cancelled')"
+                        <button @click="cancelTarget = order"
                                 class="flex-1 md:flex-none px-6 py-4 bg-red-500/10 border border-red-500/30 text-red-500 font-black uppercase text-xs tracking-widest rounded-xl hover:bg-red-500 hover:text-black transition-all active:scale-95">
                             Отмена
                         </button>
@@ -98,6 +151,15 @@ watch(() => props.orders?.length, (newCount, oldCount) => {
                 <div class="text-[10px] text-white/20 uppercase tracking-widest mt-2 font-bold">Ожидание новых поступлений...</div>
             </div>
         </div>
+
+        <AdminConfirm :is-open="!!cancelTarget"
+                      title="Отменить заказ?"
+                      :message="cancelMessage"
+                      confirm-text="Да, отменить"
+                      cancel-text="Не трогать"
+                      tone="danger"
+                      @confirm="confirmCancel"
+                      @close="cancelTarget = null" />
     </AdminLayout>
 </template>
 

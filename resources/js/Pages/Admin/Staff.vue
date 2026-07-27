@@ -23,8 +23,12 @@ const formatMoney = (val: number | string | null) => {
                     <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">Staff <span class="text-purple-500">Directory</span></h1>
                     <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">Управление персоналом и ставками</p>
                 </div>
-                <button class="px-6 py-4 bg-purple-500 hover:bg-purple-400 text-black font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all shadow-[0_0_20px_rgba(168,85,247,0.3)] active:scale-95">
-                    + Нанять сотрудника
+                <!-- Бэкенда для создания сотрудников пока нет (StaffController умеет только index),
+                     поэтому кнопка явно заблокирована, а не молча ничего не делает -->
+                <button disabled
+                        title="Найм через панель пока недоступен — сотрудники добавляются через сидер / БД"
+                        class="px-6 py-4 bg-white/5 border border-white/10 text-white/20 font-black uppercase tracking-widest text-[10px] rounded-2xl cursor-not-allowed">
+                    + Нанять сотрудника <span class="opacity-60">(скоро)</span>
                 </button>
             </div>
 
@@ -73,11 +77,3 @@ const formatMoney = (val: number | string | null) => {
         </div>
     </AdminLayout>
 </template>
-
-<style scoped>
-.animate-in { animation: fade-in 0.4s ease-out forwards; }
-@keyframes fade-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-</style>

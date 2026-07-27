@@ -111,8 +111,6 @@ const formatDate = (dateStr: string) => {
 
 <style scoped>
 @reference "../../../css/app.css";
-.animate-in { animation: fade-in 0.4s ease-out forwards; }
-@keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
 .custom-scrollbar::-webkit-scrollbar { height: 6px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 10px; }
