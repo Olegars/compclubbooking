@@ -88,7 +88,7 @@ class ProfileController extends Controller
                 'avatar' => $user->avatar,
             ],
             'gizmo' => [
-                'balance' => (float)($wallet->balance ?? $wallet->deposit_balance),
+                'balance' => $user->availableBalance(),
                 'spent_total' => (float)abs($user->transactions()->where('amount', '<', 0)->sum('amount')),
             ],
             'transactions' => $transactions,

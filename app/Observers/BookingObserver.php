@@ -23,7 +23,12 @@ class BookingObserver
             if ($diff > 0) {
                 DB::transaction(function () use ($booking, $diff) {
                     // 1. Списываем разницу с кошелька
-                    $booking->user->wallet->decrement('balance', $diff);
+                    $wallet = $booking->user->wallet;
+                    if ($wallet && array_key_exists('deposit_balance', $wallet->getAttributes())) {
+                        $wallet->decrement('deposit_balance', $diff);
+                    } elseif ($wallet) {
+                        $wallet->decrement('balance', $diff);
+                    }
 
                     // 2. Создаем запись в логе для юзера
                     Transaction::create([

@@ -21,9 +21,8 @@ class HandleInertiaRequests extends Middleware
 
         return array_merge(parent::share($request), [
             'auth' => [
-                'user' => $user ? array_merge($user->toArray(), [
-                    // Принудительно берем deposit_balance из связи wallet
-                    'balance' => (float)($user->wallet?->deposit_balance ?? 0),
+                'user' =>                 $user ? array_merge($user->toArray(), [
+                    'balance' => $user->availableBalance(),
                 ]) : null,
             ],
             // ПЕРСОНАЛ

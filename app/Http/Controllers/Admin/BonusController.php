@@ -69,7 +69,15 @@ class BonusController extends Controller
         $claim = ReviewClaim::findOrFail($id);
 
         if ($request->status === 'approved') {
-            $claim->user->increment('balance', $claim->bonus_amount);
+            // Credit club wallet (deposit_balance), not legacy users.balance — shell reads the wallet.
+            $user = $claim->user;
+            $user->syncBalanceToWallet();
+            $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id]);
+            if (array_key_exists('deposit_balance', $wallet->getAttributes())) {
+                $wallet->increment('deposit_balance', (float) $claim->bonus_amount);
+            } else {
+                $wallet->increment('balance', (float) $claim->bonus_amount);
+            }
             $claim->update(['status' => 'approved', 'verified_at' => now()]);
         } else {
             $claim->update(['status' => 'rejected']);

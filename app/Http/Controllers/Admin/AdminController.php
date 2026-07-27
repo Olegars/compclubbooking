@@ -50,7 +50,12 @@ class AdminController extends Controller
             return response()->json(['message' => 'Гость не найден'], 404);
         }
 
-        return response()->json($user);
+        $balance = $user->availableBalance();
+
+        return response()->json(array_merge($user->toArray(), [
+            'balance' => $balance,
+            'total_balance' => $balance,
+        ]));
     }
 
     public function giveBonus(Request $request)

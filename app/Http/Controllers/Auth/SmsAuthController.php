@@ -76,7 +76,7 @@ class SmsAuthController extends Controller
         if (!$wallet) {
             $newWallet = new \App\Models\Wallet();
             $newWallet->user_id = $user->id;
-            $newWallet->balance = 0;
+            $newWallet->deposit_balance = 0;
             $newWallet->save();
         }
 

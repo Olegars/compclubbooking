@@ -39,11 +39,15 @@ class ClubController extends Controller
             'zonesList' => [],
             'zoneRectsList' => $zoneRects,
 
-            // Отдаем РЕАЛЬНЫЙ кошелек, если авторизован. Если нет - отдаем нули.
-            'gizmo' => auth()->check() && auth()->user()->wallet ? auth()->user()->wallet : [
+            // Same balance field the shell / user cabinet use (deposit, not raw wallet JSON).
+            'gizmo' => auth()->check() ? [
+                'balance' => auth()->user()->availableBalance(),
+                'bonus' => (float) (auth()->user()->wallet?->bonus_balance ?? 0),
+                'current_pc' => 'NONE',
+            ] : [
                 'balance' => 0,
                 'bonus' => 0,
-                'current_pc' => 'NONE'
+                'current_pc' => 'NONE',
             ]
         ]);
     }

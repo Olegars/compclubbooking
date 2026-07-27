@@ -105,9 +105,11 @@ class ShopController extends Controller
                 return response()->json(['message' => 'Пользователь с таким номером телефона не найден в клубе'], 422);
             }
 
-            // Проверяем состояние счета
-            $wallet = $user->wallet ?: DB::table('wallets')->where('user_id', $user->id)->first();
-            if (!$wallet || $wallet->balance < $product->price) {
+            // Проверяем состояние счета (wallet deposit / legacy balance)
+            $balance = method_exists($user, 'syncBalanceToWallet')
+                ? $user->syncBalanceToWallet()
+                : (float) ($user->wallet?->balance ?? 0);
+            if ($balance < $product->price) {
                 return response()->json(['message' => 'Недостаточно средств на клубном балансе'], 422);
             }
         }
@@ -133,7 +135,12 @@ class ShopController extends Controller
 
                 // Списываем деньги с баланса аккаунта (если применимо)
                 if ($paymentMethod === 'account' && $user) {
-                    DB::table('wallets')->where('user_id', $user->id)->decrement('balance', $product->price);
+                    $walletRow = DB::table('wallets')->where('user_id', $user->id)->first();
+                    if ($walletRow && property_exists($walletRow, 'deposit_balance')) {
+                        DB::table('wallets')->where('user_id', $user->id)->decrement('deposit_balance', $product->price);
+                    } else {
+                        DB::table('wallets')->where('user_id', $user->id)->decrement('balance', $product->price);
+                    }
 
                     // Логируем списание в историю транзакций профиля
                     Transaction::create([

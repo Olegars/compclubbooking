@@ -76,7 +76,8 @@ class ShellApiController extends Controller
             $minutes = floor($durationMinutes % 60);
             $formattedTime = sprintf('%02d:%02d:%02d', $hours, $minutes, 0);
 
-            $balance = $user->wallet ? $user->wallet->deposit_balance : 0;
+            // Sync legacy users.balance / wallets.balance into deposit_balance so shell matches admin.
+            $balance = $user->syncBalanceToWallet();
 
             return response()->json([
                 'status' => 'success',
@@ -86,6 +87,8 @@ class ShellApiController extends Controller
                     'id' => $user->id,
                     'name' => $user->name ?? 'Игрок',
                     'balance' => $balance,
+                    'deposit_balance' => $balance,
+                    'total_balance' => $balance,
                     'time_remaining' => $formattedTime
                 ]
             ]);
@@ -397,14 +400,19 @@ class ShellApiController extends Controller
 
             $user = User::find($booking->user_id);
             $product = Product::find($request->product_id);
-            $wallet = $user->wallet;
+            $balance = $user ? $user->syncBalanceToWallet() : 0;
+            $wallet = $user?->wallet;
 
-            if (!$wallet || $wallet->deposit_balance < $product->price) {
+            if (!$wallet || $balance < $product->price) {
                 return response()->json(['message' => 'Недостаточно средств'], 422);
             }
 
             DB::transaction(function () use ($user, $product, $wallet, $request) {
-                $wallet->decrement('deposit_balance', $product->price);
+                if (array_key_exists('deposit_balance', $wallet->getAttributes())) {
+                    $wallet->decrement('deposit_balance', $product->price);
+                } else {
+                    $wallet->decrement('balance', $product->price);
+                }
                 $product->decrement('stock', 1);
 
                 DB::table('orders')->insert([
