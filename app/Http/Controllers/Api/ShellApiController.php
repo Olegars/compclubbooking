@@ -316,8 +316,9 @@ class ShellApiController extends Controller
     private function buildFeaturedGames(?int $userId): array
     {
         $since = now()->subDays(30);
-        $personalLimit = 4;
-        $clubLimit = 5;
+        // One first-row strip in the shell grid (max 6 tiles).
+        $personalLimit = 6;
+        $clubLimit = 6;
 
         $personalIds = [];
         if ($userId) {
