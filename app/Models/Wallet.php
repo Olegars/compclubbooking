@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class Wallet extends Model {
     protected $fillable = ['user_id', 'deposit_balance', 'bonus_balance', 'total_spent'];
@@ -27,16 +29,75 @@ class Wallet extends Model {
      */
     public function getBalanceAttribute(): float
     {
-        $attrs = $this->attributes;
-        if (array_key_exists('deposit_balance', $attrs) && $attrs['deposit_balance'] !== null) {
-            return (float) $attrs['deposit_balance'];
-        }
-
-        return (float) ($attrs['balance'] ?? 0);
+        return $this->depositAmount();
     }
 
+    /**
+     * Spendable club money on this wallet row (deposit, or legacy balance column).
+     */
     public function depositAmount(): float
     {
-        return $this->balance;
+        $attrs = $this->attributes;
+        $deposit = array_key_exists('deposit_balance', $attrs)
+            ? (float) ($attrs['deposit_balance'] ?? 0)
+            : null;
+        $legacy = array_key_exists('balance', $attrs)
+            ? (float) ($attrs['balance'] ?? 0)
+            : 0.0;
+
+        if ($deposit === null) {
+            return $legacy;
+        }
+
+        // Partial migrate: deposit_balance present but money still on old column.
+        return $deposit > 0 ? $deposit : $legacy;
+    }
+
+    public static function hasDepositColumn(): bool
+    {
+        static $cached = null;
+        if ($cached === null) {
+            $cached = Schema::hasColumn('wallets', 'deposit_balance');
+        }
+        return $cached;
+    }
+
+    public static function hasLegacyBalanceColumn(): bool
+    {
+        static $cached = null;
+        if ($cached === null) {
+            $cached = Schema::hasColumn('wallets', 'balance');
+        }
+        return $cached;
+    }
+
+    /**
+     * Debit spendable funds without Eloquent decrement('balance') —
+     * that path breaks when getBalanceAttribute() exists and the column was renamed.
+     */
+    public function debitSpendable(float $amount): float
+    {
+        $amount = abs((float) $amount);
+        if ($amount <= 0) {
+            return $this->depositAmount();
+        }
+
+        if (static::hasDepositColumn()) {
+            if (static::hasLegacyBalanceColumn()) {
+                $leftover = (float) (DB::table('wallets')->where('id', $this->id)->value('balance') ?? 0);
+                if ($leftover > 0) {
+                    DB::table('wallets')->where('id', $this->id)->update([
+                        'deposit_balance' => DB::raw('COALESCE(deposit_balance, 0) + ' . $leftover),
+                        'balance' => 0,
+                    ]);
+                }
+            }
+            DB::table('wallets')->where('id', $this->id)->decrement('deposit_balance', $amount);
+        } else {
+            DB::table('wallets')->where('id', $this->id)->decrement('balance', $amount);
+        }
+
+        $this->refresh();
+        return $this->depositAmount();
     }
 }

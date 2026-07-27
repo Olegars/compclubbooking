@@ -395,30 +395,44 @@ class ShellApiController extends Controller
                 })->first();
 
             if (!$booking) {
+                Log::warning('Shell shop checkout: no active booking', [
+                    'terminal_id' => $request->terminal_id,
+                    'product_id' => $request->product_id,
+                ]);
                 return response()->json(['message' => 'Активная сессия не найдена.'], 403);
             }
 
             $user = User::find($booking->user_id);
             $product = Product::find($request->product_id);
-            $balance = $user ? $user->syncBalanceToWallet() : 0;
-            $wallet = $user?->wallet;
-
-            if (!$wallet || $balance < $product->price) {
-                return response()->json(['message' => 'Недостаточно средств'], 422);
+            if (!$user || !$product) {
+                return response()->json(['message' => 'Пользователь или товар не найден'], 404);
             }
 
-            DB::transaction(function () use ($user, $product, $wallet, $request) {
-                if (array_key_exists('deposit_balance', $wallet->getAttributes())) {
-                    $wallet->decrement('deposit_balance', $product->price);
-                } else {
-                    $wallet->decrement('balance', $product->price);
-                }
+            $balance = $user->syncBalanceToWallet();
+            $wallet = $user->wallet()->first();
+            $price = (float) $product->price;
+
+            if (!$wallet || $balance < $price) {
+                Log::warning('Shell shop checkout: insufficient funds', [
+                    'user_id' => $user->id,
+                    'balance' => $balance,
+                    'price' => $price,
+                ]);
+                return response()->json([
+                    'message' => 'Недостаточно средств',
+                    'balance' => $balance,
+                ], 422);
+            }
+
+            $newBalance = $balance;
+            DB::transaction(function () use ($user, $product, $wallet, $request, $price, &$newBalance) {
+                $newBalance = $wallet->debitSpendable($price);
                 $product->decrement('stock', 1);
 
                 DB::table('orders')->insert([
                     'user_id'      => $user->id,
                     'product_name' => $product->name,
-                    'price'        => $product->price,
+                    'price'        => $price,
                     'pc_name'      => "ПК №" . $request->terminal_id,
                     'status'       => 'pending',
                     'created_at'   => now(),
@@ -426,9 +440,25 @@ class ShellApiController extends Controller
                 ]);
             });
 
-            return response()->json(['status' => 'success', 'message' => 'Заказ оформлен!']);
+            Log::info('Shell shop checkout OK', [
+                'user_id' => $user->id,
+                'product_id' => $product->id,
+                'price' => $price,
+                'balance' => $newBalance,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Заказ оформлен!',
+                'balance' => $newBalance,
+                'deposit_balance' => $newBalance,
+            ]);
 
         } catch (\Exception $e) {
+            Log::error('Shell shop checkout error: ' . $e->getMessage(), [
+                'terminal_id' => $request->terminal_id,
+                'product_id' => $request->product_id,
+            ]);
             return response()->json(['message' => $e->getMessage()], 500);
         }
     }

@@ -22,12 +22,11 @@ class BookingObserver
             // Если разница положительная (апгрейд тарифа)
             if ($diff > 0) {
                 DB::transaction(function () use ($booking, $diff) {
-                    // 1. Списываем разницу с кошелька
-                    $wallet = $booking->user->wallet;
-                    if ($wallet && array_key_exists('deposit_balance', $wallet->getAttributes())) {
-                        $wallet->decrement('deposit_balance', $diff);
-                    } elseif ($wallet) {
-                        $wallet->decrement('balance', $diff);
+                    // 1. Списываем разницу с кошелька (DB debit — safe after balance→deposit rename)
+                    $booking->user->syncBalanceToWallet();
+                    $wallet = $booking->user->wallet()->first();
+                    if ($wallet) {
+                        $wallet->debitSpendable($diff);
                     }
 
                     // 2. Создаем запись в логе для юзера

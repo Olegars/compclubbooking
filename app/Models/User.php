@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 
 class User extends Authenticatable
 {
@@ -97,15 +98,27 @@ class User extends Authenticatable
 
     /**
      * Ensure spendable funds live on the wallet row shell/shop use.
-     * Moves legacy users.balance onto wallets.deposit_balance (or wallets.balance).
+     * Moves legacy users.balance and leftover wallets.balance onto deposit_balance.
      */
     public function syncBalanceToWallet(): float
     {
-        $this->loadMissing('wallet');
         $wallet = $this->wallet()->firstOrCreate(['user_id' => $this->id]);
+        $hasDepositCol = Wallet::hasDepositColumn();
+        $hasLegacyWalletCol = Wallet::hasLegacyBalanceColumn();
 
+        // Merge leftover wallets.balance into deposit_balance after partial renames.
+        if ($hasDepositCol && $hasLegacyWalletCol) {
+            $leftover = (float) (DB::table('wallets')->where('id', $wallet->id)->value('balance') ?? 0);
+            if ($leftover > 0) {
+                DB::table('wallets')->where('id', $wallet->id)->update([
+                    'deposit_balance' => DB::raw('COALESCE(deposit_balance, 0) + ' . $leftover),
+                    'balance' => 0,
+                ]);
+            }
+        }
+
+        $wallet->refresh();
         $attrs = $wallet->getAttributes();
-        $hasDepositCol = array_key_exists('deposit_balance', $attrs);
         $onWallet = $hasDepositCol
             ? (float) ($attrs['deposit_balance'] ?? 0)
             : (float) ($attrs['balance'] ?? 0);
@@ -114,14 +127,20 @@ class User extends Authenticatable
 
         if ($onWallet <= 0 && $legacyUser > 0) {
             if ($hasDepositCol) {
-                $wallet->deposit_balance = $legacyUser;
+                DB::table('wallets')->where('id', $wallet->id)->update([
+                    'deposit_balance' => $legacyUser,
+                ]);
             } else {
-                $wallet->setAttribute('balance', $legacyUser);
+                DB::table('wallets')->where('id', $wallet->id)->update([
+                    'balance' => $legacyUser,
+                ]);
             }
-            $wallet->save();
             $this->forceFill(['balance' => 0])->save();
             $onWallet = $legacyUser;
+            $wallet->refresh();
         }
+
+        $this->setRelation('wallet', $wallet);
 
         return (float) $onWallet;
     }

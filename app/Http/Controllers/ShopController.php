@@ -135,12 +135,12 @@ class ShopController extends Controller
 
                 // Списываем деньги с баланса аккаунта (если применимо)
                 if ($paymentMethod === 'account' && $user) {
-                    $walletRow = DB::table('wallets')->where('user_id', $user->id)->first();
-                    if ($walletRow && property_exists($walletRow, 'deposit_balance')) {
-                        DB::table('wallets')->where('user_id', $user->id)->decrement('deposit_balance', $product->price);
-                    } else {
-                        DB::table('wallets')->where('user_id', $user->id)->decrement('balance', $product->price);
+                    $user->syncBalanceToWallet();
+                    $wallet = $user->wallet()->first();
+                    if (!$wallet) {
+                        throw new \RuntimeException('Кошелёк пользователя не найден');
                     }
+                    $wallet->debitSpendable((float) $product->price);
 
                     // Логируем списание в историю транзакций профиля
                     Transaction::create([
