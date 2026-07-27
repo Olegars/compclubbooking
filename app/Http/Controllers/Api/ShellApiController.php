@@ -103,6 +103,65 @@ class ShellApiController extends Controller
         }
     }
 
+    /**
+     * Lightweight balance poll for an active shell session (no auth re-login).
+     * Prefer booking_id / active booking on terminal; fall back to user_id.
+     */
+    public function getBalance(Request $request)
+    {
+        try {
+            $bookingId = (int) $request->query('booking_id', 0);
+            $terminalId = (int) $request->query('terminal_id', 0);
+            $userId = (int) $request->query('user_id', 0);
+
+            $booking = null;
+            if ($bookingId > 0) {
+                $booking = Booking::where('id', $bookingId)
+                    ->where('status', 'active')
+                    ->first();
+            }
+            if (!$booking && $terminalId > 0) {
+                $booking = Booking::where('status', 'active')
+                    ->where(function ($query) use ($terminalId) {
+                        $query->whereJsonContains('pc_ids', (string) $terminalId)
+                            ->orWhere('computer_id', $terminalId);
+                    })->first();
+            }
+
+            $user = null;
+            if ($booking) {
+                $user = User::find($booking->user_id);
+            } elseif ($userId > 0) {
+                $user = User::find($userId);
+            }
+
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Активная сессия не найдена.',
+                ], 404);
+            }
+
+            // Read-only for polling (login already syncs legacy columns).
+            $balance = $user->availableBalance();
+
+            return response()->json([
+                'status' => 'success',
+                'user_id' => $user->id,
+                'booking_id' => $booking?->id,
+                'balance' => $balance,
+                'deposit_balance' => $balance,
+                'total_balance' => $balance,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API getBalance: '.$e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ошибка сервера: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function getGames(Request $request)
     {
         try {
