@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   isOpen: boolean;
@@ -14,6 +14,14 @@ const emit = defineEmits(['close'])
 
 const status = ref<'processing' | 'success'>('processing')
 const progress = ref(0)
+
+const bookingGames = computed(() => {
+  const games = props.data?.games
+  if (!Array.isArray(games) || !games.length) return [] as string[]
+  return games
+    .map((game: any) => (typeof game === 'string' ? game : game?.title))
+    .filter(Boolean)
+})
 
 watch(() => props.isOpen, (val) => {
   if (val) {
@@ -65,10 +73,17 @@ watch(() => props.isOpen, (val) => {
               <div class="absolute left-0 top-0 bottom-0 w-1 bg-[#22c55e]/30"></div>
 
               <div class="space-y-4">
-                <div class="flex justify-between items-center border-b border-white/5 pb-3">
-                  <span class="text-[9px] text-slate-600 uppercase tracking-widest font-black">ОБЪЕКТ</span>
-                  <span class="text-white text-sm font-black uppercase leading-none italic">
+                <div class="flex justify-between items-center border-b border-white/5 pb-3 gap-3">
+                  <span class="text-[9px] text-slate-600 uppercase tracking-widest font-black shrink-0">ОБЪЕКТ</span>
+                  <span class="text-white text-sm font-black uppercase leading-none italic text-right">
                     {{ mode === 'view' ? 'СТАТУС: БАЛАНС' : (mode === 'topup' ? 'СЧЕТ: REACTOR' : data?.pcNumber) }}
+                  </span>
+                </div>
+
+                <div v-if="mode === 'booking' && bookingGames.length" class="flex justify-between items-start border-b border-white/5 pb-3 gap-3">
+                  <span class="text-[9px] text-slate-600 uppercase tracking-widest font-black shrink-0">ИГРЫ</span>
+                  <span class="text-white text-sm font-black uppercase leading-snug italic text-right">
+                    {{ bookingGames.join(', ') }}
                   </span>
                 </div>
 

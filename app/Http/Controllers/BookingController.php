@@ -2,165 +2,204 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use App\Models\Booking;
-use App\Models\Transaction;
+use App\Models\BookingGroup;
 use App\Models\Computer;
-use App\Models\Tariff; // Не забудь импортировать модель тарифов
-use Carbon\Carbon;
+use App\Models\Tariff;
+use App\Services\GameBookingService;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class BookingController extends Controller
 {
-    /**
-     * Динамический расчет стоимости сессии для фронтенда
-     */
-    public function calculatePrice(Request $request)
+    public function __construct(private readonly GameBookingService $bookings)
     {
-        $request->validate([
-            'pc_ids'   => 'required|array',
-            'duration' => 'required|numeric',
-        ]);
-
-        $originalDuration = (float) $request->duration;
-        $countPcs = count($request->pc_ids);
-
-        if ($countPcs === 0 || $originalDuration <= 0) {
-            return response()->json(['total_price' => 0]);
-        }
-
-        // Вычисляем базовый пакет (округляем вниз до целого часа)
-        $hoursForTariff = (int) floor($originalDuration);
-        if ($hoursForTariff < 1) {
-            $hoursForTariff = 1;
-        }
-
-        $tariff = Tariff::where('threshold_hours', $hoursForTariff)->first();
-
-        if ($tariff) {
-            // Вычисляем стоимость часа внутри этого пакета (например, 300 руб / 3 часа = 100 руб/час)
-            $pricePerHour = $tariff->price_per_package / $tariff->threshold_hours;
-        } else {
-            $pricePerHour = 250; // Дефолтный тариф, если в БД пусто
-        }
-
-        // Считаем итоговую сумму с учетом точного дробного времени
-        $totalPrice = (int) round($pricePerHour * $originalDuration * $countPcs);
-
-        return response()->json(['total_price' => $totalPrice]);
     }
 
-    /**
-     * Безопасное резервирование узлов
-     */
-    public function reserve(Request $request)
+    public function computersAvailability(Request $request)
     {
-        $request->validate([
-            'pc_ids'   => 'required|array',
-            'price'    => 'required|numeric',
-            'date'     => 'required|string',
-            'start_h'  => 'required|numeric',
-            'duration' => 'required|numeric',
+        $validated = $request->validate([
+            'club_id' => 'required|integer|exists:clubs,id',
+            'starts_at' => 'required|date',
+            'ends_at' => 'required|date',
         ]);
 
-        $user = auth()->user();
-        $originalDuration = (float) $request->duration;
-        $countPcs = count($request->pc_ids);
+        [$startsAt, $endsAt] = $this->resolvePeriod($validated);
+        $computerIds = Computer::query()
+            ->where('club_id', (int) $validated['club_id'])
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
 
-        // Повторяем коммерческий расчет на стороне сервера (защита от изменения цены на фронте)
-        $hoursForTariff = (int) floor($originalDuration);
-        if ($hoursForTariff < 1) {
-            $hoursForTariff = 1;
+        $bookedIds = $this->bookings->occupiedComputerIds($computerIds, $startsAt, $endsAt);
+        $offlineIds = Computer::query()
+            ->where('club_id', (int) $validated['club_id'])
+            ->where('status', '!=', 'available')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return response()->json([
+            'occupied_pc_ids' => array_values(array_unique([...$bookedIds, ...$offlineIds])),
+            'booked_pc_ids' => $bookedIds,
+        ]);
+    }
+
+    public function availability(Request $request)
+    {
+        $validated = $request->validate([
+            'club_id' => 'required|integer|exists:clubs,id',
+            'pc_ids' => 'required|array|min:1',
+            'pc_ids.*' => 'integer|distinct|exists:computers,id',
+            'starts_at' => 'required|date',
+            'ends_at' => 'required|date',
+        ]);
+
+        [$startsAt, $endsAt] = $this->resolvePeriod($validated);
+
+        return response()->json([
+            'games' => $this->bookings->availability(
+                (int) $validated['club_id'],
+                $validated['pc_ids'],
+                $startsAt,
+                $endsAt
+            ),
+        ]);
+    }
+
+    public function calculatePrice(Request $request)
+    {
+        $validated = $request->validate([
+            'club_id' => 'nullable|integer|exists:clubs,id',
+            'pc_ids' => 'required|array|min:1',
+            'pc_ids.*' => 'integer|distinct|exists:computers,id',
+            'game_ids' => 'nullable|array',
+            'game_ids.*' => 'integer|distinct|exists:games,id',
+            'starts_at' => 'nullable|date|required_with:ends_at',
+            'ends_at' => 'nullable|date|required_with:starts_at',
+            'date' => 'nullable|string',
+            'start_h' => 'nullable|numeric',
+            'duration' => 'required_without_all:starts_at,ends_at|nullable|numeric|min:0.25',
+        ]);
+
+        if (!isset($validated['starts_at']) && !isset($validated['date'])) {
+            $duration = (float) $validated['duration'];
+            $hoursForTariff = max(1, (int) floor($duration));
+            $tariff = Tariff::query()
+                ->where('is_active', true)
+                ->where('threshold_hours', $hoursForTariff)
+                ->first();
+            $pricePerHour = $tariff
+                ? ((float) $tariff->price_per_package / $tariff->threshold_hours)
+                : 250;
+            $totalPrice = (int) round($pricePerHour * $duration * count($validated['pc_ids']));
+
+            return response()->json([
+                'total_price' => $totalPrice,
+                'total_minor' => $totalPrice * 100,
+                'computers_total_minor' => $totalPrice * 100,
+                'games_total_minor' => 0,
+                'games' => [],
+            ]);
         }
 
-        $tariff = Tariff::where('threshold_hours', $hoursForTariff)->first();
+        [$startsAt, $endsAt] = $this->resolvePeriod($validated);
+        $clubId = $this->resolveClubId($validated);
 
-        if ($tariff) {
-            $pricePerHour = $tariff->price_per_package / $tariff->threshold_hours;
-        } else {
-            $pricePerHour = 250;
-        }
+        return response()->json($this->bookings->quote(
+            $clubId,
+            $validated['pc_ids'],
+            $validated['game_ids'] ?? [],
+            $startsAt,
+            $endsAt
+        ));
+    }
 
-        $calculatedPrice = $pricePerHour * $originalDuration * $countPcs;
-        $totalPrice = (int) round($calculatedPrice); // Округляем до целых рублей для Postgres integer
+    public function reserve(Request $request)
+    {
+        $validated = $request->validate([
+            'club_id' => 'nullable|integer|exists:clubs,id',
+            'pc_ids' => 'required|array|min:1',
+            'pc_ids.*' => 'integer|distinct|exists:computers,id',
+            'game_ids' => 'nullable|array',
+            'game_ids.*' => 'integer|distinct|exists:games,id',
+            'starts_at' => 'nullable|date|required_with:ends_at',
+            'ends_at' => 'nullable|date|required_with:starts_at',
+            'date' => 'required_without:starts_at|nullable|string',
+            'start_h' => 'required_without:starts_at|nullable|numeric',
+            'duration' => 'required_without:starts_at|nullable|numeric|min:0.25',
+        ]);
 
-        // ЗАЩИТА: Сверяем цену сервера с ценой, которую прислал фронт (зазор 1 руб на округление)
-        if (abs((int)round($request->price) - $totalPrice) > 1) {
-            return response()->json(['message' => 'Ошибка валидации стоимости: сумма не совпадает с тарифом сервера.'], 422);
-        }
-
-        if ($user->wallet->deposit_balance < $totalPrice) {
-            return response()->json(['message' => 'Недостаточно средств на балансе.'], 422);
-        }
-
+        [$startsAt, $endsAt] = $this->resolvePeriod($validated);
         try {
-            return DB::transaction(function () use ($user, $request, $totalPrice, $originalDuration, $countPcs) {
-
-                $start = (float) $request->start_h;
-                $end   = $start + $originalDuration;
-
-                $generatedPins = [];
-
-                foreach ($request->pc_ids as $pcId) {
-
-                    // Проверка на занятость
-                    $isOccupied = Booking::where('computer_id', $pcId)
-                        ->where('date', $request->date)
-                        ->whereIn('status', ['active', 'paid', 'confirmed'])
-                        ->where(function($q) use ($start, $end) {
-                            $q->whereRaw('start_time < ? AND (start_time + duration) > ?', [$end, $start]);
-                        })->exists();
-
-                    if ($isOccupied) {
-                        throw new \Exception("Узел #{$pcId} уже занят на выбранное время.");
-                    }
-
-                    $pinCode = rand(1000, 9999);
-                    $generatedPins[$pcId] = $pinCode;
-
-                    // Делим общую сумму на количество компов (пишем целое число)
-                    $singlePcPrice = (int) floor($totalPrice / $countPcs);
-
-                    // Создаем запись бронирования
-                    Booking::create([
-                        'user_id'     => $user->id,
-                        'computer_id' => $pcId,
-                        'pc_ids'      => [$pcId],
-                        'date'        => $request->date,
-                        'start_time'  => $request->start_h,
-                        'duration'    => $originalDuration, // Пишем точное дробное время в базу
-                        'price'       => $singlePcPrice,
-                        'status'      => 'active',
-                        'pin_code'    => $pinCode
-                    ]);
-
-                    // Мгновенное обновление статуса железки
-                    $nowH = now()->hour + (now()->minute / 60);
-                    if ($request->date === now()->toDateString() && $nowH >= $start && $nowH < $end) {
-                        DB::table('computers')->where('id', $pcId)->update(['status' => 'busy']);
-                    }
-                }
-
-                // Списание средств с баланса игрока
-                $user->wallet()->decrement('deposit_balance', $totalPrice);
-
-                // Фиксация финансовой транзакции
-                Transaction::create([
-                    'user_id'     => $user->id,
-                    'amount'      => -$totalPrice,
-                    'type'        => 'booking',
-                    'source'      => 'balance',
-                    'description' => 'Резерв узлов: ' . implode(', ', $request->pc_ids),
-                    'date'        => now()->format('d.m.Y H:i')
+            $group = $this->bookings->reserve(
+                $request->user(),
+                $this->resolveClubId($validated),
+                $validated['pc_ids'],
+                $validated['game_ids'] ?? [],
+                $startsAt,
+                $endsAt
+            );
+        } catch (QueryException $exception) {
+            if (in_array($exception->getCode(), ['23P01', '23505', '23000'], true)) {
+                throw ValidationException::withMessages([
+                    'booking' => 'Выбранный компьютер или игровой аккаунт только что заняли. Обновите доступность.',
                 ]);
+            }
 
-                return response()->json([
-                    'status' => 'success',
-                    'pins'   => $generatedPins
-                ]);
-            });
-        } catch (\Exception $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
+            throw $exception;
         }
+
+        return response()->json([
+            'status' => 'success',
+            'booking_group_id' => $group->id,
+            'pins' => $group->bookings->pluck('pin_code', 'computer_id'),
+            'pricing' => $group->pricing_snapshot,
+        ], 201);
+    }
+
+    public function cancel(Request $request, BookingGroup $bookingGroup)
+    {
+        $group = $this->bookings->cancel($request->user(), $bookingGroup);
+
+        return response()->json([
+            'status' => 'success',
+            'booking_group_id' => $group->id,
+            'booking_status' => $group->status,
+            'payment_status' => $group->payment_status,
+            'refunded_total_minor' => $group->refunded_total_minor,
+        ]);
+    }
+
+    private function resolveClubId(array $validated): int
+    {
+        if (!empty($validated['club_id'])) {
+            return (int) $validated['club_id'];
+        }
+
+        return (int) Computer::query()
+            ->whereKey((int) $validated['pc_ids'][0])
+            ->value('club_id');
+    }
+
+    private function resolvePeriod(array $validated): array
+    {
+        $tz = config('app.timezone');
+
+        if (!empty($validated['starts_at']) && !empty($validated['ends_at'])) {
+            // Переводим в TZ клуба до записи в PG: PDO пишет naive timestamp,
+            // а сессия БД (Europe/Moscow) иначе сдвигает UTC-инстант на -3 часа.
+            return [
+                CarbonImmutable::parse($validated['starts_at'])->timezone($tz),
+                CarbonImmutable::parse($validated['ends_at'])->timezone($tz),
+            ];
+        }
+
+        $date = CarbonImmutable::parse($validated['date'], $tz)->startOfDay();
+        $startsAt = $date->addMinutes((int) round(((float) $validated['start_h']) * 60));
+        $endsAt = $startsAt->addMinutes((int) round(((float) $validated['duration']) * 60));
+
+        return [$startsAt, $endsAt];
     }
 }

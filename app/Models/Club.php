@@ -25,4 +25,14 @@ class Club extends Model
     {
         return $this->hasMany(Computer::class);
     }
+
+    public function gameOffers(): HasMany
+    {
+        return $this->hasMany(ClubGame::class);
+    }
+
+    public function bookingGroups(): HasMany
+    {
+        return $this->hasMany(BookingGroup::class);
+    }
 }

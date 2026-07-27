@@ -71,6 +71,11 @@ class User extends Authenticatable
     public function bookings() {
         return $this->hasMany(Booking::class);
     }
+
+    public function bookingGroups()
+    {
+        return $this->hasMany(BookingGroup::class);
+    }
     // Добавь это в модель User.php
     public function getTotalBalanceAttribute()
     {

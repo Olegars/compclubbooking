@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         DB::statement("ALTER TABLE transactions DROP CONSTRAINT transactions_type_check");
         DB::statement("ALTER TABLE transactions ADD CONSTRAINT transactions_type_check CHECK (type IN ('deposit', 'withdraw', 'booking', 'refund', 'purchase'))");
     }
@@ -20,6 +24,15 @@ return new class extends Migration
      */
     public function down(): void
     {
-        //
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        DB::statement('ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_type_check');
+        DB::statement("
+            ALTER TABLE transactions
+            ADD CONSTRAINT transactions_type_check
+            CHECK (type IN ('deposit', 'withdraw', 'booking', 'refund'))
+        ");
     }
 };

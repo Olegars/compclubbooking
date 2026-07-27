@@ -8,7 +8,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Computer extends Model
 {
-    protected $fillable = ['club_id', 'name', 'x', 'y', 'type', 'status', 'hwid'];
+    protected $fillable = ['club_id', 'name', 'x', 'y', 'type', 'kind', 'booth_id', 'status', 'hwid'];
+
+    public const KIND_PC = 'pc';
+    public const KIND_TV = 'tv';
+    public const KIND_PS5 = 'ps5';
+
+    public function isTvBoothSeat(): bool
+    {
+        return in_array($this->kind, [self::KIND_TV, self::KIND_PS5], true);
+    }
 
     public function club(): BelongsTo
     {
@@ -18,6 +27,11 @@ class Computer extends Model
     public function gameAccountCaches(): HasMany
     {
         return $this->hasMany(GameAccountMachineCache::class, 'computer_id');
+    }
+
+    public function installedGames(): HasMany
+    {
+        return $this->hasMany(ComputerGame::class);
     }
 
     public function inputDevice()

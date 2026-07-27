@@ -15,8 +15,9 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->nullable()->constrained(); // Null если гость/покупка на кассе
             $table->decimal('amount', 10, 2); // Положительная (доход) или отрицательная (возврат/расход)
-            $table->enum('type', ['deposit', 'refund', 'expense', 'correction'])->default('deposit');
-            $table->enum('payment_method', ['card', 'cash', 'sbp', 'bonus'])->default('card');
+            // String + explicit PostgreSQL CHECK in later migrations keeps SQLite tests portable.
+            $table->string('type')->default('deposit');
+            $table->string('payment_method')->default('card');
             $table->string('description');
             $table->string('receipt_id')->nullable(); // ID фискального чека (ОФД)
             $table->boolean('is_taxable')->default(true); // Флаг: облагается ли налогом (бонусы - нет)

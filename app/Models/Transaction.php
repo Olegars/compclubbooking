@@ -7,11 +7,25 @@ use Illuminate\Database\Eloquent\Model;
 
 class Transaction extends Model
 {
-    protected $fillable = ['user_id', 'amount', 'type', 'source', 'description', 'payload'];
+    protected $fillable = [
+        'user_id',
+        'booking_group_id',
+        'amount',
+        'type',
+        'source',
+        'description',
+        'payload',
+        'idempotency_key',
+    ];
     protected $casts = ['payload' => 'array'];
 
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function bookingGroup()
+    {
+        return $this->belongsTo(BookingGroup::class);
     }
 }

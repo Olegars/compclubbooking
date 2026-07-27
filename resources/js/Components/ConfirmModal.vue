@@ -87,6 +87,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
                 <div class="text-[10px] text-white/40 uppercase mb-1">Сумма к оплате</div>
                 <div class="text-2xl font-black text-[#22c55e]">{{ data.price }} ₽</div>
                 <div v-if="data.date" class="text-[10px] text-white/40 uppercase mt-2">{{ data.date }} | {{ data.startTime }} - {{ data.endTime }}</div>
+                <div v-if="Array.isArray(data.games) && data.games.length" class="mt-3 pt-3 border-t border-[#22c55e]/10">
+                    <div class="text-[9px] text-white/30 uppercase tracking-widest mb-1">Игры</div>
+                    <div class="text-[11px] text-white/80 font-black uppercase italic leading-snug">
+                        {{ data.games.map((g: any) => g.title || g).filter(Boolean).join(', ') }}
+                    </div>
+                </div>
             </div>
 
             <div class="text-center mb-8">

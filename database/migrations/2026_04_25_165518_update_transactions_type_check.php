@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up()
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         // 1. Удаляем старое ограничение (имя мы знаем из ошибки: transactions_type_check)
         DB::statement('ALTER TABLE transactions DROP CONSTRAINT transactions_type_check');
 
@@ -20,6 +24,10 @@ return new class extends Migration
 
     public function down()
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         DB::statement('ALTER TABLE transactions DROP CONSTRAINT transactions_type_check');
         DB::statement("ALTER TABLE transactions ADD CONSTRAINT transactions_type_check CHECK (type IN ('deposit', 'withdraw'))");
     }

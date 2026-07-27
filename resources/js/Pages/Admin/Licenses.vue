@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { router, useForm } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
-const props = defineProps({ games: Array })
+const props = defineProps({ games: Array, clubs: Array })
 
 // --- СОСТОЯНИЕ ИНТЕРФЕЙСА ---
 const selectedGame = ref(null)
@@ -26,12 +26,53 @@ const gameForm = useForm({
 const accountForm = useForm({
     login: '',
     password: '',
-    status: 'free'
+    status: 'free',
+    club_id: null
+})
+
+const offerForm = useForm({
+    club_id: null,
+    billing_mode: 'free',
+    unit_price_rubles: 0,
+    billing_unit_minutes: 60,
+    is_enabled: true
 })
 
 // --- ЛОГИКА ---
 const selectGame = (game) => {
     selectedGame.value = game
+    offerForm.club_id = game.club_offers?.[0]?.club_id ?? props.clubs?.[0]?.id ?? null
+    selectOffer()
+}
+
+// Строки club_games может ещё не быть: тогда показываем дефолт «бесплатно»,
+// а сохранение создаст запись через updateOrCreate.
+const loadOffer = (offer) => {
+    offerForm.billing_mode = offer?.billing_mode ?? 'free'
+    offerForm.unit_price_rubles = Number(offer?.unit_price_minor ?? 0) / 100
+    offerForm.billing_unit_minutes = offer?.billing_unit_minutes ?? 60
+    offerForm.is_enabled = offer ? Boolean(offer.is_enabled) : true
+}
+
+const findOffer = (clubId) =>
+    selectedGame.value?.club_offers?.find(offer => Number(offer.club_id) === Number(clubId))
+
+const selectOffer = () => {
+    loadOffer(findOffer(offerForm.club_id))
+}
+
+const submitOffer = () => {
+    if (!selectedGame.value || !offerForm.club_id) return
+    offerForm.put(`/admin/licenses/games/${selectedGame.value.id}/offers/${offerForm.club_id}`, {
+        preserveScroll: true,
+        onSuccess: () => {
+            const updated = props.games.find(game => game.id === selectedGame.value.id)
+            if (updated) {
+                selectedGame.value = updated
+                selectOffer()
+            }
+        }
+    })
 }
 
 // Открытие модалки для добавления новой игры
@@ -94,8 +135,15 @@ const submitGame = () => {
     })
 }
 
+const openAccountModal = () => {
+    accountForm.reset()
+    accountForm.club_id = selectedGame.value?.club_offers?.[0]?.club_id ?? props.clubs?.[0]?.id ?? null
+    showAccountModal.value = true
+}
+
 const submitAccount = () => {
     if (!selectedGame.value) return
+    accountForm.club_id ??= props.clubs?.[0]?.id ?? null
 
     accountForm.post(`/admin/licenses/games/${selectedGame.value.id}/accounts`, {
         preserveScroll: true,
@@ -188,6 +236,10 @@ const getStatusBadge = (status) => {
                                 <div class="flex items-center gap-2 mt-1">
                                     <span class="text-[9px] uppercase font-bold tracking-widest" :class="getPlatformColor(game.platform)">{{ game.platform }}</span>
                                     <span v-if="game.category" class="text-[9px] uppercase font-bold text-white/30 tracking-widest">• {{ game.category }}</span>
+                                    <span v-if="game.club_offers?.some(o => o.is_paid || o.billing_mode !== 'free')"
+                                          class="text-[8px] uppercase font-black tracking-widest px-1.5 py-0.5 rounded bg-[#22c55e]/15 text-[#22c55e] border border-[#22c55e]/30">
+                                        Платная
+                                    </span>
                                 </div>
                             </div>
 
@@ -232,7 +284,7 @@ const getStatusBadge = (status) => {
                                     </button>
                                 </h2>
                             </div>
-                            <button @click="showAccountModal = true" class="px-6 py-3 bg-white/5 hover:bg-white/10 text-white border border-white/10 font-black rounded-xl tracking-widest text-[10px] uppercase transition-all active:scale-95">
+                            <button @click="openAccountModal" class="px-6 py-3 bg-white/5 hover:bg-white/10 text-white border border-white/10 font-black rounded-xl tracking-widest text-[10px] uppercase transition-all active:scale-95">
                                 + Внести аккаунт
                             </button>
                         </div>
@@ -248,6 +300,60 @@ const getStatusBadge = (status) => {
                                 <code class="text-xs text-yellow-400 bg-black/50 px-2 py-1 rounded w-full">{{ selectedGame.launch_args || 'Нет параметров' }}</code>
                             </div>
                         </div>
+
+                        <form v-if="props.clubs?.length" @submit.prevent="submitOffer"
+                              class="mb-8 p-5 bg-white/[0.02] border border-white/10 rounded-2xl relative z-10">
+                            <div class="flex items-center justify-between mb-4">
+                                <div>
+                                    <div class="text-[10px] text-[#22c55e] font-black uppercase tracking-widest">Тариф игры в клубе</div>
+                                    <p class="mt-1 text-[8px] text-white/30 uppercase tracking-widest leading-relaxed">
+                                        «Бесплатно» — только shell. Платный режим — появляется в бронировании ПК.
+                                    </p>
+                                </div>
+                                <label class="flex items-center gap-2 text-[9px] uppercase text-white/50 font-black">
+                                    <input v-model="offerForm.is_enabled" type="checkbox" class="accent-green-500" />
+                                    Доступна
+                                </label>
+                            </div>
+                            <div class="grid grid-cols-4 gap-3">
+                                <select v-model.number="offerForm.club_id" @change="selectOffer"
+                                        class="bg-black border border-white/10 rounded-xl p-3 text-xs text-white">
+                                    <option v-for="club in props.clubs" :key="club.id" :value="club.id">
+                                        {{ club.name }}
+                                    </option>
+                                </select>
+                                <select v-model="offerForm.billing_mode"
+                                        class="bg-black border border-white/10 rounded-xl p-3 text-xs text-white">
+                                    <option value="free">Бесплатно (только shell)</option>
+                                    <option value="per_seat_hour">Платная: место / период</option>
+                                    <option value="per_seat_booking">Платная: место / бронь</option>
+                                    <option value="per_booking_hour">Платная: бронь / период</option>
+                                    <option value="fixed">Платная: фикс</option>
+                                </select>
+                                <input v-model.number="offerForm.unit_price_rubles" type="number" min="0" step="0.01"
+                                       placeholder="Цена, ₽"
+                                       :disabled="offerForm.billing_mode === 'free'"
+                                       class="bg-black border border-white/10 rounded-xl p-3 text-xs text-white disabled:opacity-40" />
+                                <div class="flex gap-2">
+                                    <input v-model.number="offerForm.billing_unit_minutes" type="number" min="1"
+                                           title="Размер периода в минутах"
+                                           :disabled="offerForm.billing_mode === 'free'"
+                                           class="w-full bg-black border border-white/10 rounded-xl p-3 text-xs text-white disabled:opacity-40" />
+                                    <button type="submit" :disabled="offerForm.processing"
+                                            class="px-4 bg-[#22c55e] text-black rounded-xl text-[9px] font-black uppercase disabled:opacity-50">
+                                        Сохранить
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="mt-3 flex items-center gap-2">
+                                <span :class="['px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest',
+                                               offerForm.billing_mode !== 'free'
+                                                 ? 'bg-[#22c55e]/15 text-[#22c55e] border border-[#22c55e]/30'
+                                                 : 'bg-white/5 text-white/40 border border-white/10']">
+                                    {{ offerForm.billing_mode !== 'free' ? 'Платная · бронь ПК' : 'Бесплатная · только shell' }}
+                                </span>
+                            </div>
+                        </form>
 
                         <div class="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-2 relative z-10">
                             <div v-for="acc in selectedGame.accounts" :key="acc.id"
@@ -379,6 +485,13 @@ const getStatusBadge = (status) => {
                         <div>
                             <label class="text-[10px] uppercase text-white/40 tracking-widest font-black italic mb-2 block">Пароль</label>
                             <input v-model="accountForm.password" type="text" placeholder="Pass123!@#" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold focus:border-white/50 outline-none transition-colors" required autocomplete="off" />
+                        </div>
+
+                        <div>
+                            <label class="text-[10px] uppercase text-white/40 tracking-widest font-black italic mb-2 block">Клуб</label>
+                            <select v-model.number="accountForm.club_id" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold focus:border-white/50 outline-none transition-colors appearance-none cursor-pointer">
+                                <option v-for="club in props.clubs" :key="club.id" :value="club.id">{{ club.name }}</option>
+                            </select>
                         </div>
 
                         <div>

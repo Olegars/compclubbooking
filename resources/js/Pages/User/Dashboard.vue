@@ -213,6 +213,11 @@ onMounted(() => {
                                 </div>
                             </div>
                         </div>
+
+                        <div v-if="b.games_label" class="mt-6 pt-5 border-t border-white/5 relative z-10 flex flex-wrap items-center gap-x-3 gap-y-2">
+                            <span class="text-[10px] text-white/30 uppercase font-bold italic tracking-widest">Игры</span>
+                            <span class="text-sm font-black uppercase italic text-white/90 tracking-tight">{{ b.games_label }}</span>
+                        </div>
                     </div>
                 </div>
 

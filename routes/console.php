@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('reactor:check-quality')->everyMinute();
+Schedule::command('reactor:update-statuses')->everyMinute()->withoutOverlapping();

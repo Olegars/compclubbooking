@@ -88,8 +88,11 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/api/promo/apply', [PromoCodeController::class, 'apply']);
 
     // --- РОУТЫ СИСТЕМЫ БРОНИРОВАНИЯ ---
+    Route::post('/api/booking/computers/availability', [BookingController::class, 'computersAvailability']);
+    Route::post('/api/booking/games/availability', [BookingController::class, 'availability']);
     Route::post('/api/booking/calculate-price', [BookingController::class, 'calculatePrice']);
     Route::post('/api/booking/reserve', [BookingController::class, 'reserve']);
+    Route::post('/api/booking/{bookingGroup}/cancel', [BookingController::class, 'cancel']);
 
     Route::post('/api/billing/topup', [BillingController::class, 'topUp']);
     Route::post('/api/billing/start-session', [BillingController::class, 'startSession']);
@@ -128,7 +131,8 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 
     // КАРТА И ТАРИФЫ
     Route::get('/map-builder', fn() => Inertia::render('Admin/MapBuilder', [
-        'clubs' => \App\Models\Club::select('id', 'name')->get()
+        'clubs' => \App\Models\Club::select('id', 'name')->get(),
+        'topologyZones' => \App\Models\Zone::select('id', 'name', 'slug', 'color')->orderBy('name')->get(),
     ]))->name('admin.map-builder');
     Route::post('/save-map', [MapController::class, 'save']);
     Route::get('/get-map', [MapController::class, 'getMap']);
@@ -150,6 +154,7 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     Route::post('/licenses/games', [LicenseController::class, 'storeGame']);
     Route::delete('/licenses/games/{game}', [LicenseController::class, 'destroyGame']);
     Route::post('/licenses/games/{game}/accounts', [LicenseController::class, 'storeAccount']);
+    Route::put('/licenses/games/{game}/offers/{club}', [LicenseController::class, 'updateOffer']);
     Route::delete('/licenses/accounts/{account}', [LicenseController::class, 'destroyAccount']);
 
     // API АДМИНКИ

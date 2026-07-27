@@ -10,6 +10,7 @@ class GameAccount extends Model
 {
     protected $fillable = [
         'game_id',
+        'club_id',
         'login',
         'password',
         'status',
@@ -19,6 +20,7 @@ class GameAccount extends Model
         'steam_id',
         'refresh_token',
         'refresh_token_updated_at',
+        'is_enabled',
     ];
 
     protected $hidden = [
@@ -29,11 +31,22 @@ class GameAccount extends Model
 
     protected $casts = [
         'refresh_token_updated_at' => 'datetime',
+        'is_enabled' => 'boolean',
     ];
 
     public function game(): BelongsTo
     {
         return $this->belongsTo(Game::class);
+    }
+
+    public function club(): BelongsTo
+    {
+        return $this->belongsTo(Club::class);
+    }
+
+    public function reservations(): HasMany
+    {
+        return $this->hasMany(GameAccountReservation::class);
     }
 
     public function machineCaches(): HasMany

@@ -9,6 +9,7 @@ use App\Models\Booking;
 use App\Models\Product;
 use App\Models\Order;
 use App\Models\GameAccount;
+use App\Models\GameAccountReservation;
 use App\Models\GameAccountMachineCache;
 use App\Models\Game;
 use App\Models\Computer;
@@ -50,7 +51,8 @@ class ShellApiController extends Controller
 
             $booking = Booking::where('user_id', $user->id)
                 ->where('pin_code', $request->pin)
-                ->whereIn('status', ['paid', 'active', 'completed'])
+                ->where('computer_id', (int) $request->terminal_id)
+                ->whereIn('status', ['paid', 'confirmed', 'active'])
                 ->first();
 
             if (!$booking) {
@@ -61,17 +63,29 @@ class ShellApiController extends Controller
             }
 
             $now = now();
-            $duration = $booking->duration ?: $booking->end_time->diffInMinutes($booking->start_time);
-            $durationMinutes = (float)$duration * 60;
+            if ($booking->starts_at && $now->lt($booking->starts_at->subMinutes(10))) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Бронь ещё не началась.',
+                ], 422);
+            }
+            if ($booking->ends_at && $now->gte($booking->ends_at)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Время брони уже закончилось.',
+                ], 422);
+            }
 
-            $floatStartTime = $now->hour + ($now->minute / 60);
+            $durationMinutes = $booking->ends_at
+                ? max(0, $now->diffInMinutes($booking->ends_at, false))
+                : ((float) $booking->duration * 60);
 
             $booking->update([
                 'status' => 'active',
-                'start_time' => $floatStartTime,
+                'actual_started_at' => $now,
                 'pin_code' => null,
-                'computer_id' => (int) $request->terminal_id,
             ]);
+            $booking->group?->update(['status' => 'active']);
 
             $hours = floor($durationMinutes / 60);
             $minutes = floor($durationMinutes % 60);
@@ -762,8 +776,9 @@ class ShellApiController extends Controller
     public function takeAccount(Request $request)
     {
         $request->validate([
-            'game_id' => 'required|integer',
-            'terminal_id' => 'required|integer',
+            'game_id' => 'required|integer|exists:games,id',
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'booking_id' => 'nullable|integer|exists:bookings,id',
         ]);
 
         $game = Game::find($request->game_id);
@@ -776,18 +791,89 @@ class ShellApiController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Терминал не найден'], 404);
         }
 
-        $account = GameAccount::where('game_id', $request->game_id)->where('status', 'free')->first();
+        $booking = Booking::query()
+            ->when(
+                $request->filled('booking_id'),
+                fn ($query) => $query->whereKey((int) $request->booking_id),
+                fn ($query) => $query
+                    ->where('computer_id', (int) $request->terminal_id)
+                    ->where('status', 'active')
+            )
+            ->where('computer_id', (int) $request->terminal_id)
+            ->first();
+
+        $reservation = null;
+        $account = DB::transaction(function () use ($request, $booking, $computer, &$reservation) {
+            if ($booking) {
+                $reservation = GameAccountReservation::query()
+                    ->where('booking_id', $booking->id)
+                    ->whereIn('status', ['confirmed', 'active'])
+                    ->whereHas(
+                        'bookingGame.clubGame',
+                        fn ($query) => $query->where('game_id', (int) $request->game_id)
+                    )
+                    ->lockForUpdate()
+                    ->first();
+            }
+
+            if ($reservation) {
+                $reservedAccount = GameAccount::query()
+                    ->whereKey($reservation->game_account_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$reservedAccount || !$reservedAccount->is_enabled) {
+                    return null;
+                }
+
+                $reservation->update([
+                    'status' => 'active',
+                    'activated_at' => now(),
+                    'released_at' => null,
+                ]);
+
+                $reservedAccount->update([
+                    'status' => 'in_use',
+                    'current_pc_id' => (int) $request->terminal_id,
+                ]);
+
+                return $reservedAccount;
+            }
+
+            $sessionEndsAt = $booking?->ends_at ?? now()->addHours(1);
+
+            $walkInAccount = GameAccount::query()
+                ->where('game_id', (int) $request->game_id)
+                ->where('is_enabled', true)
+                ->where('status', 'free')
+                ->where(function ($query) use ($computer) {
+                    $query->where('club_id', $computer->club_id)->orWhereNull('club_id');
+                })
+                ->whereDoesntHave('reservations', function ($query) use ($sessionEndsAt) {
+                    $query->whereIn('status', ['held', 'confirmed', 'active'])
+                        ->where('starts_at', '<', $sessionEndsAt)
+                        ->where('ends_at', '>', now());
+                })
+                ->orderBy('id')
+                ->lock('for update skip locked')
+                ->first();
+
+            if ($walkInAccount) {
+                $walkInAccount->update([
+                    'status' => 'in_use',
+                    'current_pc_id' => (int) $request->terminal_id,
+                ]);
+            }
+
+            return $walkInAccount;
+        });
+
         if (!$account) {
             return response()->json(['status' => 'error', 'message' => 'Все аккаунты заняты'], 200);
         }
 
         // JWT с сервера для десктопного Steam не работает (ip_subject чужой машины).
         // Авторизация: machine VDF-кэш + fallback логин/пароль в шелле.
-        $account->update([
-            'status' => 'in_use',
-            'current_pc_id' => $request->terminal_id,
-        ]);
-
         $machineCache = $account->cacheForComputer((int) $request->terminal_id);
         $finalArgs = trim((string) ($game->launch_args ?? $game->args ?? ''));
         $exePath = (string) ($game->exe_path ?? '');
@@ -900,10 +986,24 @@ class ShellApiController extends Controller
             ->first();
 
         if ($account) {
-            $account->update([
-                'status' => 'free',
-                'current_pc_id' => null
-            ]);
+            DB::transaction(function () use ($account, $request) {
+                $lockedAccount = GameAccount::query()->whereKey($account->id)->lockForUpdate()->firstOrFail();
+                $lockedAccount->update([
+                    'status' => 'free',
+                    'current_pc_id' => null
+                ]);
+
+                GameAccountReservation::query()
+                    ->where('game_account_id', $account->id)
+                    ->where('status', 'active')
+                    ->whereHas('booking', fn ($query) => $query
+                        ->where('computer_id', (int) $request->terminal_id)
+                        ->where('status', 'active'))
+                    ->update([
+                        'status' => 'confirmed',
+                        'released_at' => now(),
+                    ]);
+            });
         }
 
         return response()->json(['status' => 'success']);
@@ -1057,6 +1157,13 @@ class ShellApiController extends Controller
                 ]
             );
 
+            Game::query()->pluck('id')->each(fn ($gameId) =>
+                \App\Models\ComputerGame::firstOrCreate(
+                    ['computer_id' => $newComputer->id, 'game_id' => $gameId],
+                    ['is_installed' => true, 'verified_at' => now()]
+                )
+            );
+
             return response()->json([
                 'status' => 'success',
                 'terminal_id' => $newComputer->id,
@@ -1117,13 +1224,28 @@ class ShellApiController extends Controller
                 })->first();
 
             if ($booking) {
-                $booking->update([
-                    'status' => 'completed',
-                    'end_time' => now()
-                ]);
+                DB::transaction(function () use ($booking, $termId) {
+                    $booking->update([
+                        'status' => 'completed',
+                        'actual_ended_at' => now(),
+                    ]);
 
-                GameAccount::where('current_pc_id', (int)$termId)
-                    ->update(['status' => 'free', 'current_pc_id' => null]);
+                    GameAccount::where('current_pc_id', (int) $termId)
+                        ->update(['status' => 'free', 'current_pc_id' => null]);
+
+                    $booking->gameReservations()
+                        ->whereIn('status', ['confirmed', 'active'])
+                        ->update([
+                            'status' => 'completed',
+                            'released_at' => now(),
+                        ]);
+
+                    if ($booking->group && !$booking->group->bookings()
+                        ->whereNotIn('status', ['completed', 'cancelled'])
+                        ->exists()) {
+                        $booking->group->update(['status' => 'completed']);
+                    }
+                });
 
                 return response()->json([
                     'status' => 'success',
