@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Transaction;
-use App\Models\Wallet;
 use App\Services\GizmoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -12,38 +11,48 @@ use Illuminate\Support\Facades\Log;
 class BillingController extends Controller
 {
     /**
-     * Пополнение баланса (Обработка формы с дашборда)
+     * Пополнение баланса (заглушка оплаты → credit deposit_balance).
+     * В будущем здесь будет вызов API эквайринга (ЮKassa / СБП).
      */
     public function topUp(Request $request)
     {
         $request->validate([
             'amount' => 'required|numeric|min:100',
+            'method' => 'nullable|string|in:card,sbp,system',
         ]);
 
         $user = $request->user();
         $amount = (float) $request->amount;
+        $source = $request->input('method', 'system');
 
         try {
-            DB::transaction(function () use ($user, $amount) {
-                // 1. ИСПРАВЛЕНО: Начисляем деньги на deposit_balance
-                $user->wallet()->firstOrCreate([])->increment('deposit_balance', $amount);
+            $newBalance = 0.0;
+            $bonusBalance = 0.0;
 
-                // 2. Записываем в историю
+            DB::transaction(function () use ($user, $amount, $source, &$newBalance, &$bonusBalance) {
+                // Payment stub: treat request as successful charge, then credit wallet.
+                $user->syncBalanceToWallet();
+                $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id]);
+                $newBalance = $wallet->creditSpendable($amount);
+
                 Transaction::create([
                     'user_id' => $user->id,
                     'amount' => $amount,
                     'type' => 'deposit',
-                    'source' => 'system', // Потом будет 'yookassa' или 'sbp'
+                    'source' => $source ?: 'system',
                     'description' => 'Пополнение депозита REACTOR',
                 ]);
+
+                $wallet->refresh();
+                $bonusBalance = (float) ($wallet->getAttributes()['bonus_balance'] ?? 0);
             });
 
-            // ИСПРАВЛЕНО: Возвращаем новые разделенные балансы
-            $user->refresh();
             return response()->json([
                 'message' => 'Баланс успешно пополнен',
-                'deposit_balance' => $user->wallet->deposit_balance,
-                'bonus_balance' => $user->wallet->bonus_balance
+                'new_balance' => $newBalance,
+                'deposit_balance' => $newBalance,
+                'bonus_balance' => $bonusBalance,
+                'balance' => $newBalance,
             ]);
 
         } catch (\Exception $e) {
@@ -65,10 +74,12 @@ class BillingController extends Controller
 
         $user = $request->user();
         $cost = (float) $request->price;
-        $wallet = $user->wallet()->firstOrCreate([]);
+        $user->syncBalanceToWallet();
+        $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id]);
 
-        // Проверяем общую платежеспособность (Депозит + Бонусы)
-        $totalAvailable = $wallet->deposit_balance + $wallet->bonus_balance;
+        $deposit = $wallet->depositAmount();
+        $bonus = (float) ($wallet->getAttributes()['bonus_balance'] ?? 0);
+        $totalAvailable = $deposit + $bonus;
 
         if ($totalAvailable < $cost) {
             return response()->json([
@@ -77,14 +88,14 @@ class BillingController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($user, $wallet, $cost, $request, $gizmo) {
+            DB::transaction(function () use ($user, $wallet, $cost, $request, $gizmo, $bonus) {
 
                 // 1. УМНОЕ СПИСАНИЕ (Сначала жжем бонусы)
-                $payFromBonus = min($wallet->bonus_balance, $cost);
+                $payFromBonus = min($bonus, $cost);
                 $payFromDeposit = $cost - $payFromBonus;
 
                 if ($payFromBonus > 0) {
-                    $wallet->decrement('bonus_balance', $payFromBonus);
+                    DB::table('wallets')->where('id', $wallet->id)->decrement('bonus_balance', $payFromBonus);
                     Transaction::create([
                         'user_id' => $user->id,
                         'amount' => -$payFromBonus,
@@ -95,8 +106,8 @@ class BillingController extends Controller
                 }
 
                 if ($payFromDeposit > 0) {
-                    $wallet->decrement('deposit_balance', $payFromDeposit);
-                    $wallet->increment('total_spent', $payFromDeposit); // Растим статус лояльности
+                    $wallet->debitSpendable($payFromDeposit);
+                    DB::table('wallets')->where('id', $wallet->id)->increment('total_spent', $payFromDeposit);
 
                     Transaction::create([
                         'user_id' => $user->id,
@@ -106,13 +117,11 @@ class BillingController extends Controller
                         'description' => "Оплата с депозита: ПК {$request->hostId} ({$request->minutes} мин.)",
                     ]);
 
-                    // 2. АВТОМАТИЧЕСКИЙ КЕШБЭК (Начисляем только с реальных трат)
-                    // Допустим, базовый кешбэк клуба - 5%
                     $cashbackPercent = 0.05;
                     $cashbackAmount = $payFromDeposit * $cashbackPercent;
 
                     if ($cashbackAmount > 0) {
-                        $wallet->increment('bonus_balance', $cashbackAmount);
+                        DB::table('wallets')->where('id', $wallet->id)->increment('bonus_balance', $cashbackAmount);
                         Transaction::create([
                             'user_id' => $user->id,
                             'amount' => $cashbackAmount,
@@ -123,7 +132,6 @@ class BillingController extends Controller
                     }
                 }
 
-                // 3. Отправка команды в Gizmo
                 $isStarted = $gizmo->startSession(
                     $user->gizmo_id ?? 1,
                     $request->hostId,
@@ -135,12 +143,16 @@ class BillingController extends Controller
                 }
             });
 
-            // Возвращаем свежие разделенные балансы для интерфейса
             $wallet->refresh();
+            $newDeposit = $wallet->depositAmount();
+            $newBonus = (float) ($wallet->getAttributes()['bonus_balance'] ?? 0);
+
             return response()->json([
                 'message' => 'Сеанс запущен!',
-                'deposit_balance' => $wallet->deposit_balance,
-                'bonus_balance' => $wallet->bonus_balance
+                'deposit_balance' => $newDeposit,
+                'bonus_balance' => $newBonus,
+                'new_balance' => $newDeposit,
+                'balance' => $newDeposit,
             ]);
 
         } catch (\Exception $e) {

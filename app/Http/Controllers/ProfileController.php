@@ -20,8 +20,9 @@ class ProfileController extends Controller
         // Берем брони за сегодня и вчера (на случай ночных смен)
         $yesterday = now()->subDay()->toDateString();
 
-        // 1. Кошелек
-        $wallet = $user->wallet()->firstOrCreate(
+        // 1. Кошелек (единый spendable баланс для shell / shop / кабинета)
+        $user->syncBalanceToWallet();
+        $user->wallet()->firstOrCreate(
             ['user_id' => $user->id],
             ['deposit_balance' => 0]
         );

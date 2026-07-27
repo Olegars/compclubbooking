@@ -72,6 +72,47 @@ class Wallet extends Model {
     }
 
     /**
+     * Merge leftover wallets.balance into deposit_balance after partial renames.
+     */
+    protected function coalesceLegacyBalanceColumn(): void
+    {
+        if (!static::hasDepositColumn() || !static::hasLegacyBalanceColumn()) {
+            return;
+        }
+
+        $leftover = (float) (DB::table('wallets')->where('id', $this->id)->value('balance') ?? 0);
+        if ($leftover > 0) {
+            DB::table('wallets')->where('id', $this->id)->update([
+                'deposit_balance' => DB::raw('COALESCE(deposit_balance, 0) + ' . $leftover),
+                'balance' => 0,
+            ]);
+        }
+    }
+
+    /**
+     * Credit spendable funds without Eloquent increment('balance') —
+     * that path breaks when getBalanceAttribute() exists and the column was renamed.
+     */
+    public function creditSpendable(float $amount): float
+    {
+        $amount = abs((float) $amount);
+        if ($amount <= 0) {
+            return $this->depositAmount();
+        }
+
+        $this->coalesceLegacyBalanceColumn();
+
+        if (static::hasDepositColumn()) {
+            DB::table('wallets')->where('id', $this->id)->increment('deposit_balance', $amount);
+        } else {
+            DB::table('wallets')->where('id', $this->id)->increment('balance', $amount);
+        }
+
+        $this->refresh();
+        return $this->depositAmount();
+    }
+
+    /**
      * Debit spendable funds without Eloquent decrement('balance') —
      * that path breaks when getBalanceAttribute() exists and the column was renamed.
      */
@@ -82,16 +123,9 @@ class Wallet extends Model {
             return $this->depositAmount();
         }
 
+        $this->coalesceLegacyBalanceColumn();
+
         if (static::hasDepositColumn()) {
-            if (static::hasLegacyBalanceColumn()) {
-                $leftover = (float) (DB::table('wallets')->where('id', $this->id)->value('balance') ?? 0);
-                if ($leftover > 0) {
-                    DB::table('wallets')->where('id', $this->id)->update([
-                        'deposit_balance' => DB::raw('COALESCE(deposit_balance, 0) + ' . $leftover),
-                        'balance' => 0,
-                    ]);
-                }
-            }
             DB::table('wallets')->where('id', $this->id)->decrement('deposit_balance', $amount);
         } else {
             DB::table('wallets')->where('id', $this->id)->decrement('balance', $amount);

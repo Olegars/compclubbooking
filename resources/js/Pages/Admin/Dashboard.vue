@@ -42,6 +42,7 @@ const searchPhone = ref('')
 const foundUser = ref<any>(null)
 const bonusMinutes = ref(60)
 const bonusReason = ref('')
+const topUpAmount = ref(500)
 const isProcessing = ref(false)
 
 const search = async () => {
@@ -66,6 +67,29 @@ const handleBonus = async () => {
         searchPhone.value = ''; bonusReason.value = ''
     } catch (e) { alert('Ошибка начисления') }
     finally { isProcessing.value = false }
+}
+
+const handleTopUp = async () => {
+    if (!foundUser.value || isProcessing.value) return
+    if (topUpAmount.value < 100) return alert('Минимум 100 ₽')
+    isProcessing.value = true
+    try {
+        const { data } = await axios.post('/admin/topup', {
+            user_id: foundUser.value.id,
+            amount: topUpAmount.value,
+            reason: bonusReason.value || 'Кассовое пополнение',
+        })
+        foundUser.value = {
+            ...foundUser.value,
+            balance: data.new_balance ?? data.balance,
+            total_balance: data.new_balance ?? data.balance,
+        }
+        alert(`Баланс пополнен: ${data.new_balance ?? data.balance} ₽`)
+    } catch (e: any) {
+        alert(e.response?.data?.message || 'Ошибка пополнения')
+    } finally {
+        isProcessing.value = false
+    }
 }
 
 onMounted(() => {
@@ -147,14 +171,19 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
 
                     <div class="bg-[#0a0a0a] border border-white/5 rounded-[2.5rem] p-8 shadow-2xl">
                         <h3 class="text-lg font-black text-white uppercase italic mb-8 flex items-center gap-3">
-                            <span class="w-1.5 h-6 bg-[#22c55e] rounded-full"></span> Бонусы
+                            <span class="w-1.5 h-6 bg-[#22c55e] rounded-full"></span> Гость / Касса
                         </h3>
                         <div class="space-y-4">
                             <input v-model="searchPhone" @input="search" type="text" placeholder="Поиск по телефону..." class="w-full bg-black border border-white/10 rounded-2xl p-5 text-white focus:border-[#22c55e] outline-none text-sm transition-all" />
                             <div v-if="foundUser" class="space-y-4 animate-in slide-in-from-top-4">
-                                <div class="p-4 bg-[#22c55e]/5 rounded-xl border border-[#22c55e]/20 text-sm font-black">{{ foundUser.name }}</div>
-                                <input v-model="bonusReason" type="text" placeholder="Причина..." class="w-full bg-black border border-white/10 rounded-xl p-4 text-xs" />
-                                <button @click="handleBonus" class="w-full bg-[#22c55e] text-black font-black py-4 rounded-xl uppercase text-[10px]">Выдать бонус</button>
+                                <div class="p-4 bg-[#22c55e]/5 rounded-xl border border-[#22c55e]/20 text-sm font-black flex justify-between gap-3">
+                                    <span>{{ foundUser.name }}</span>
+                                    <span class="text-[#22c55e] font-mono">{{ Math.floor(foundUser.balance ?? foundUser.total_balance ?? 0) }} ₽</span>
+                                </div>
+                                <input v-model.number="topUpAmount" type="number" min="100" placeholder="Сумма пополнения" class="w-full bg-black border border-white/10 rounded-xl p-4 text-xs" />
+                                <input v-model="bonusReason" type="text" placeholder="Причина / комментарий..." class="w-full bg-black border border-white/10 rounded-xl p-4 text-xs" />
+                                <button @click="handleTopUp" class="w-full bg-[#22c55e] text-black font-black py-4 rounded-xl uppercase text-[10px]">Пополнить баланс</button>
+                                <button @click="handleBonus" class="w-full bg-white/5 border border-white/10 text-white font-black py-4 rounded-xl uppercase text-[10px]">Выдать бонус (мин)</button>
                             </div>
                         </div>
                     </div>

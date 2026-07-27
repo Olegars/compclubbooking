@@ -10,8 +10,10 @@ const page = usePage()
 // --- ЛОГИКА БАЛАНСА ---
 const getRawBalance = () => {
     const props = page.props as any;
-    // Берем баланс из объекта gizmo, как указано в твоем контроллере
-    return parseFloat(String(props.gizmo?.balance ?? 0));
+    // gizmo (dashboard) → shared gizmo → auth.user.balance
+    return parseFloat(String(
+        props.gizmo?.balance ?? props.auth?.user?.balance ?? 0
+    )) || 0;
 }
 
 const currentBalance = ref(getRawBalance())
@@ -119,10 +121,18 @@ const proceedToPayment = async () => {
     paymentData.value = { mode: 'topup', price: topUpAmount.value, date: new Date().toLocaleDateString('ru-RU') };
 
     try {
-        await axios.post('/api/billing/topup', { amount: topUpAmount.value });
+        // Payment stub: fake success UI + real deposit_balance credit
+        const { data } = await axios.post('/api/billing/topup', { amount: topUpAmount.value, method: 'system' });
+        const next = parseFloat(String(data.new_balance ?? data.deposit_balance ?? data.balance ?? 0));
+        if (!isNaN(next) && next !== currentBalance.value) {
+            const old = currentBalance.value;
+            currentBalance.value = next;
+            animateValue(old, next);
+        }
         fetchDashboardData();
     } catch (e) {
         isPaymentProcessing.value = false;
+        alert('Сбой транзакции пополнения');
     }
 }
 

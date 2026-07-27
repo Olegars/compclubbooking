@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import axios from 'axios' // <--- Прямой импорт (решает проблему с window.axios)
 
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import SmsModal from '@/Components/SmsModal.vue'
+import PaymentModal from '@/Components/PaymentModal.vue'
 
 const page = usePage()
 
@@ -13,6 +14,60 @@ const isPhoneModalOpen = ref(false)
 const isSmsModalOpen = ref(false)
 const authPhone = ref('')
 const smsModalRef = ref<InstanceType<typeof SmsModal> | null>(null)
+
+// --- ПОПОЛНЕНИЕ (заглушка оплаты) ---
+const isTopUpInputOpen = ref(false)
+const isPaymentProcessing = ref(false)
+const topUpAmount = ref(500)
+const paymentMethod = ref<'card' | 'sbp'>('sbp')
+const paymentData = ref<any>({})
+const localBalance = ref<number | null>(null)
+
+const displayBalance = computed(() => {
+    if (localBalance.value !== null) return localBalance.value
+    const props = page.props as any
+    const fromGizmo = props.gizmo?.balance
+    const fromAuth = props.auth?.user?.balance
+    return parseFloat(String(fromGizmo ?? fromAuth ?? 0)) || 0
+})
+
+const isAuthenticated = computed(() => !!(page.props.auth?.user || page.props.user))
+
+const openTopUp = () => {
+    if (!isAuthenticated.value) {
+        isPhoneModalOpen.value = true
+        return
+    }
+    topUpAmount.value = 500
+    paymentMethod.value = 'sbp'
+    isTopUpInputOpen.value = true
+}
+
+const proceedToPayment = async () => {
+    if (topUpAmount.value < 100) return
+
+    isTopUpInputOpen.value = false
+    isPaymentProcessing.value = true
+    paymentData.value = {
+        mode: 'topup',
+        price: topUpAmount.value,
+        date: new Date().toLocaleDateString('ru-RU'),
+    }
+
+    try {
+        // Payment stub: backend credits deposit_balance as if acquiring succeeded
+        const { data } = await axios.post('/api/billing/topup', {
+            amount: topUpAmount.value,
+            method: paymentMethod.value,
+        })
+        const next = parseFloat(String(data.new_balance ?? data.deposit_balance ?? data.balance ?? 0))
+        if (!isNaN(next)) localBalance.value = next
+        router.reload({ only: ['gizmo', 'auth', 'transactions'], preserveScroll: true })
+    } catch (e: any) {
+        isPaymentProcessing.value = false
+        alert(e.response?.data?.message || 'Сбой транзакции пополнения')
+    }
+}
 
 const handleLogout = () => {
     if (confirm('ВНИМАНИЕ: Разорвать соединение с Sector 0451?')) {
@@ -135,13 +190,20 @@ onMounted(() => {
                     <div>
                         <span class="block text-[10px] uppercase text-white/30 tracking-[0.2em] mb-1 italic font-black">Account Balance</span>
                         <span class="text-4xl font-black italic tracking-tighter text-white font-bomber">
-                            {{ $page.props.gizmo?.balance || '0' }}
+                            {{ Math.floor(displayBalance) }}
                             <span class="text-[#22c55e] text-2xl font-mono ml-1">₽</span>
                         </span>
                     </div>
-                    <div class="ml-auto w-12 h-12 rounded-2xl bg-white/5 border border-white/10 text-[#22c55e] flex items-center justify-center">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                    </div>
+                    <button
+                        type="button"
+                        @click="openTopUp"
+                        title="Пополнить баланс"
+                        class="ml-auto w-12 h-12 rounded-2xl bg-white/5 border border-white/10 text-[#22c55e] flex items-center justify-center hover:bg-[#22c55e] hover:text-black transition-all group"
+                    >
+                        <svg class="w-5 h-5 group-hover:scale-125 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
 
@@ -167,6 +229,55 @@ onMounted(() => {
                 :phone="authPhone"
                 @close="isSmsModalOpen = false"
                 @verify="handleSmsVerify"
+            />
+
+            <div v-if="isTopUpInputOpen" class="fixed inset-0 flex items-center justify-center z-[9998] p-6 animate-in fade-in duration-300">
+                <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="isTopUpInputOpen = false"></div>
+                <div class="relative max-w-md w-full bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3.5rem] p-12 text-center shadow-[0_0_120px_rgba(34,197,94,0.2)]">
+                    <h2 class="text-[#22c55e] text-4xl font-black uppercase italic mb-8 tracking-tighter">Reactor Pay</h2>
+                    <div class="grid grid-cols-3 gap-3 mb-6">
+                        <button
+                            v-for="amount in [500, 1000, 2000]"
+                            :key="amount"
+                            type="button"
+                            @click="topUpAmount = amount"
+                            :class="['py-4 rounded-2xl font-black transition-all italic text-[12px]', topUpAmount === amount ? 'bg-[#22c55e] text-black' : 'bg-white/5 text-white border border-white/10']"
+                        >
+                            {{ amount }}
+                        </button>
+                    </div>
+                    <input
+                        v-model.number="topUpAmount"
+                        type="number"
+                        min="100"
+                        class="w-full bg-black border-2 border-white/5 rounded-[2.5rem] py-8 text-6xl font-black text-center text-white mb-6 outline-none focus:border-[#22c55e]/50 transition-colors"
+                    />
+                    <div class="grid grid-cols-2 gap-3 mb-8">
+                        <button
+                            type="button"
+                            @click="paymentMethod = 'sbp'"
+                            :class="['py-3 rounded-xl font-black uppercase text-[10px] tracking-widest italic border', paymentMethod === 'sbp' ? 'bg-[#22c55e]/10 border-[#22c55e] text-[#22c55e]' : 'border-white/10 text-white/40']"
+                        >СБП</button>
+                        <button
+                            type="button"
+                            @click="paymentMethod = 'card'"
+                            :class="['py-3 rounded-xl font-black uppercase text-[10px] tracking-widest italic border', paymentMethod === 'card' ? 'bg-[#22c55e]/10 border-[#22c55e] text-[#22c55e]' : 'border-white/10 text-white/40']"
+                        >Карта</button>
+                    </div>
+                    <button
+                        type="button"
+                        @click="proceedToPayment"
+                        class="w-full py-7 bg-[#22c55e] text-black font-black uppercase rounded-[2.5rem] italic hover:bg-[#2ae06d] transition-colors shadow-[0_0_20px_rgba(34,197,94,0.3)]"
+                    >Оплатить</button>
+                </div>
+            </div>
+
+            <PaymentModal
+                v-if="isPaymentProcessing"
+                :is-open="isPaymentProcessing"
+                mode="topup"
+                :data="paymentData"
+                @close="isPaymentProcessing = false"
             />
         </Teleport>
     </main>

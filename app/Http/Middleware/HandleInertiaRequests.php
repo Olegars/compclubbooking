@@ -19,15 +19,20 @@ class HandleInertiaRequests extends Middleware
     {
         $user = Auth::guard('web')->user();
 
+        $balance = $user ? $user->availableBalance() : 0.0;
+
         return array_merge(parent::share($request), [
             'auth' => [
-                'user' =>                 $user ? array_merge($user->toArray(), [
-                    'balance' => $user->availableBalance(),
+                'user' => $user ? array_merge($user->toArray(), [
+                    'balance' => $balance,
                 ]) : null,
+            ],
+            // Shared for MainLayout Account Balance + top-up stub on every page
+            'gizmo' => [
+                'balance' => $balance,
             ],
             // ПЕРСОНАЛ
             'admin_user' => Auth::guard('admin')->user(),
-            // Пропсы для истории и броней (проверь, чтобы они были в контроллере или здесь)
         ]);
     }
 }

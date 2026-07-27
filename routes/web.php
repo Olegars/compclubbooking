@@ -117,6 +117,7 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     // ГЛАВНОЕ
     Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
     Route::post('/give-bonus', [AdminController::class, 'giveBonus']);
+    Route::post('/topup', [AdminController::class, 'topUpBalance']);
     Route::get('/search-user', [AdminController::class, 'searchUser']);
     Route::get('/orders', [AdminController::class, 'orders'])->name('admin.orders');
     Route::post('/orders/{id}/status', [AdminController::class, 'updateOrderStatus']);

@@ -81,6 +81,46 @@ class AdminController extends Controller
         return response()->json(['message' => 'Бонус успешно начислен и залогирован']);
     }
 
+    /**
+     * Касса: ручное пополнение deposit_balance (без эквайринга).
+     */
+    public function topUpBalance(Request $request)
+    {
+        $request->validate([
+            'user_id' => 'required|exists:users,id',
+            'amount' => 'required|numeric|min:100',
+            'reason' => 'nullable|string|max:255',
+        ]);
+
+        $user = User::findOrFail($request->user_id);
+        $amount = (float) $request->amount;
+
+        $newBalance = DB::transaction(function () use ($user, $amount, $request) {
+            $user->syncBalanceToWallet();
+            $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id]);
+            $balance = $wallet->creditSpendable($amount);
+
+            DB::table('transactions')->insert([
+                'user_id' => $user->id,
+                'amount' => $amount,
+                'type' => 'deposit',
+                'source' => 'admin_cash',
+                'description' => $request->reason ?: 'Пополнение кассой REACTOR',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            return $balance;
+        });
+
+        return response()->json([
+            'message' => 'Баланс пополнен',
+            'balance' => $newBalance,
+            'deposit_balance' => $newBalance,
+            'new_balance' => $newBalance,
+        ]);
+    }
+
     // ==========================================
     // 2. СКЛАД МАРКЕТА (ИНВЕНТАРЬ)
     // ==========================================

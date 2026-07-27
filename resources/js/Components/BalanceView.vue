@@ -1,19 +1,24 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { router, usePage } from '@inertiajs/vue3'
+import axios from 'axios'
 import ConfirmModal from './ConfirmModal.vue'
 import SmsModal from './SmsModal.vue'
-import PaymentModal from './PaymentModal.vue' // Заменили SuccessModal на PaymentModal
+import PaymentModal from './PaymentModal.vue'
 
+const page = usePage()
 const amount = ref('')
 const paymentMethod = ref<'card' | 'sbp' | null>(null)
 const currentMode = ref<'topup' | 'view'>('topup')
 
-// --- СОСТОЯНИЯ ОКОН ---
 const showOverlay = ref(false)
 const isConfirmModalOpen = ref(false)
 const isSmsModalOpen = ref(false)
 const isSuccessModalOpen = ref(false)
 const userPhone = ref('')
+const isSubmitting = ref(false)
+
+const isLoggedIn = computed(() => !!(page.props.auth?.user || page.props.user))
 
 const setAmount = (val: number) => {
   amount.value = val.toString()
@@ -22,6 +27,11 @@ const setAmount = (val: number) => {
 const openModal = (mode: 'topup' | 'view') => {
   currentMode.value = mode
   showOverlay.value = true
+  // Logged-in top-up: skip phone/SMS, go straight to payment stub after a light confirm skip
+  if (mode === 'topup' && isLoggedIn.value) {
+    void runTopUpStub()
+    return
+  }
   isConfirmModalOpen.value = true
 }
 
@@ -30,6 +40,7 @@ const closeAll = () => {
   isConfirmModalOpen.value = false
   isSmsModalOpen.value = false
   isSuccessModalOpen.value = false
+  isSubmitting.value = false
 }
 
 const handleConfirm = (payload: any) => {
@@ -38,9 +49,44 @@ const handleConfirm = (payload: any) => {
   setTimeout(() => { isSmsModalOpen.value = true }, 200)
 }
 
-const handleSmsVerify = () => {
+const handleSmsVerify = async () => {
   isSmsModalOpen.value = false
+  if (currentMode.value === 'topup') {
+    await runTopUpStub()
+    return
+  }
   setTimeout(() => { isSuccessModalOpen.value = true }, 200)
+}
+
+const runTopUpStub = async () => {
+  const value = parseFloat(amount.value)
+  if (!value || value < 100) {
+    alert('Минимальная сумма пополнения — 100 ₽')
+    closeAll()
+    return
+  }
+  if (!paymentMethod.value) {
+    alert('Выберите метод оплаты')
+    closeAll()
+    return
+  }
+  if (isSubmitting.value) return
+  isSubmitting.value = true
+  isSuccessModalOpen.value = true
+
+  try {
+    await axios.post('/api/billing/topup', {
+      amount: value,
+      method: paymentMethod.value,
+    })
+    router.reload({ only: ['gizmo', 'auth', 'transactions'], preserveScroll: true })
+  } catch (e: any) {
+    isSuccessModalOpen.value = false
+    alert(e.response?.data?.message || 'Сбой транзакции пополнения')
+    closeAll()
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 const handleSuccessClose = () => {
@@ -55,7 +101,7 @@ const modalData = computed(() => {
   const today = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '').toUpperCase()
   return {
     date: today,
-    price: currentMode.value === 'topup' ? (amount.value || '0') : '1250',
+    price: currentMode.value === 'topup' ? (amount.value || '0') : String((page.props as any).gizmo?.balance ?? (page.props as any).auth?.user?.balance ?? 0),
     pcNumber: currentMode.value === 'topup' ? 'СЧЕТ: REACTOR' : 'СТАТУС: БАЛАНС'
   }
 })
@@ -125,7 +171,7 @@ const modalData = computed(() => {
 
     <Teleport to="body">
       <div v-if="showOverlay" class="fixed inset-0 bg-black/95 backdrop-blur-xl z-[9999990]" @click="closeAll"></div>
-      <ConfirmModal v-if="isConfirmModalOpen" :isOpen="isConfirmModalOpen" :data="modalData" :mode="currentMode" :paymentMethod="paymentMethod" @close="closeAll" @confirm="handleConfirm" />
+      <ConfirmModal v-if="isConfirmModalOpen" :isOpen="isConfirmModalOpen" :data="modalData" mode="auth" :paymentMethod="paymentMethod" @close="closeAll" @confirm="handleConfirm" />
       <SmsModal v-if="isSmsModalOpen" :isOpen="isSmsModalOpen" :phone="userPhone" @close="closeAll" @verify="handleSmsVerify" />
       <PaymentModal v-if="isSuccessModalOpen" :isOpen="isSuccessModalOpen" :data="modalData" :mode="currentMode" @close="handleSuccessClose" />
     </Teleport>
