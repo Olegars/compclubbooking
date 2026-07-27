@@ -375,9 +375,141 @@ class ShellApiController extends Controller
         ];
     }
 
-    public function getProducts()
+    /** Russian labels for shell / admin order statuses. */
+    public static function orderStatusLabel(string $status): string
     {
-        return response()->json(Product::where('stock', '>', 0)->get());
+        return match ($status) {
+            'pending' => 'ЗАКАЗ ПРИНЯТ',
+            'cooking' => 'ЗАКАЗ ГОТОВИТСЯ',
+            'delivered' => 'ЗАКАЗ ВЫПОЛНЕН',
+            'cancelled' => 'ЗАКАЗ ОТМЕНЁН',
+            default => 'ЗАКАЗ В РАБОТЕ',
+        };
+    }
+
+    private function ordersForTerminal(int $terminalId)
+    {
+        return DB::table('orders')->where('pc_name', 'ПК №' . $terminalId);
+    }
+
+    /**
+     * Active + briefly keep finished orders so shell can show ✓ / отмена.
+     */
+    private function shellOrderSnapshot(int $terminalId): array
+    {
+        if ($terminalId <= 0) {
+            return [
+                'has_active_order' => false,
+                'status_text' => '',
+                'order_id' => null,
+                'status' => null,
+                'orders' => [],
+            ];
+        }
+
+        $active = $this->ordersForTerminal($terminalId)
+            ->whereIn('status', ['pending', 'cooking'])
+            ->orderByDesc('id')
+            ->get();
+
+        $recentDone = $this->ordersForTerminal($terminalId)
+            ->whereIn('status', ['delivered', 'cancelled'])
+            ->where('updated_at', '>=', now()->subSeconds(60))
+            ->orderByDesc('updated_at')
+            ->get();
+
+        $orders = $active->concat($recentDone)->unique('id')->values()->map(function ($order) {
+            return [
+                'id' => (int) $order->id,
+                'product_name' => $order->product_name,
+                'status' => $order->status,
+                'status_label' => self::orderStatusLabel($order->status),
+                'price' => (float) $order->price,
+            ];
+        });
+
+        $primary = $active->first() ?? $recentDone->first();
+        $hasActive = $active->isNotEmpty()
+            || ($primary && in_array($primary->status, ['delivered', 'cancelled'], true));
+
+        return [
+            'has_active_order' => (bool) $hasActive && $primary !== null,
+            'status_text' => $primary ? self::orderStatusLabel($primary->status) : '',
+            'order_id' => $primary ? (int) $primary->id : null,
+            'status' => $primary?->status,
+            'orders' => $orders,
+        ];
+    }
+
+    public function getProducts(Request $request)
+    {
+        $terminalId = (int) $request->input('terminal_id', 0);
+        $snapshot = $this->shellOrderSnapshot($terminalId);
+
+        return response()->json([
+            'has_active_order' => $snapshot['has_active_order'],
+            'status_text' => $snapshot['status_text'],
+            'order_id' => $snapshot['order_id'],
+            'status' => $snapshot['status'],
+            'orders' => $snapshot['orders'],
+            'products' => Product::where('stock', '>', 0)->get(),
+        ]);
+    }
+
+    public function getOrderStatus(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|min:1',
+            'order_id' => 'nullable|integer|min:1',
+        ]);
+
+        $terminalId = (int) $request->input('terminal_id');
+        $orderId = (int) $request->input('order_id', 0);
+
+        if ($orderId > 0) {
+            $order = $this->ordersForTerminal($terminalId)->where('id', $orderId)->first();
+            if (!$order) {
+                return response()->json([
+                    'status' => 'success',
+                    'has_active_order' => false,
+                    'status_text' => '',
+                    'order_id' => null,
+                    'order_status' => null,
+                    'orders' => [],
+                ]);
+            }
+
+            $isActive = in_array($order->status, ['pending', 'cooking'], true)
+                || (in_array($order->status, ['delivered', 'cancelled'], true)
+                    && $order->updated_at
+                    && now()->diffInSeconds($order->updated_at) <= 60);
+
+            return response()->json([
+                'status' => 'success',
+                'has_active_order' => $isActive,
+                'status_text' => self::orderStatusLabel($order->status),
+                'order_id' => (int) $order->id,
+                'order_status' => $order->status,
+                'orders' => [[
+                    'id' => (int) $order->id,
+                    'product_name' => $order->product_name,
+                    'status' => $order->status,
+                    'status_label' => self::orderStatusLabel($order->status),
+                    'price' => (float) $order->price,
+                ]],
+            ]);
+        }
+
+        $snapshot = $this->shellOrderSnapshot($terminalId);
+
+        return response()->json([
+            'status' => 'success',
+            'has_active_order' => $snapshot['has_active_order'],
+            'status_text' => $snapshot['status_text'],
+            'order_id' => $snapshot['order_id'],
+            'order_status' => $snapshot['status'],
+            'orders' => $snapshot['orders'],
+        ]);
     }
 
     public function checkout(Request $request)
@@ -425,16 +557,19 @@ class ShellApiController extends Controller
             }
 
             $newBalance = $balance;
-            DB::transaction(function () use ($user, $product, $wallet, $request, $price, &$newBalance) {
+            $orderId = 0;
+            $orderStatus = 'pending';
+            DB::transaction(function () use ($user, $product, $wallet, $request, $price, &$newBalance, &$orderId, &$orderStatus) {
                 $newBalance = $wallet->debitSpendable($price);
                 $product->decrement('stock', 1);
 
-                DB::table('orders')->insert([
+                $orderStatus = 'pending';
+                $orderId = (int) DB::table('orders')->insertGetId([
                     'user_id'      => $user->id,
                     'product_name' => $product->name,
                     'price'        => $price,
                     'pc_name'      => "ПК №" . $request->terminal_id,
-                    'status'       => 'pending',
+                    'status'       => $orderStatus,
                     'created_at'   => now(),
                     'updated_at'   => now()
                 ]);
@@ -443,6 +578,7 @@ class ShellApiController extends Controller
             Log::info('Shell shop checkout OK', [
                 'user_id' => $user->id,
                 'product_id' => $product->id,
+                'order_id' => $orderId,
                 'price' => $price,
                 'balance' => $newBalance,
             ]);
@@ -452,6 +588,9 @@ class ShellApiController extends Controller
                 'message' => 'Заказ оформлен!',
                 'balance' => $newBalance,
                 'deposit_balance' => $newBalance,
+                'order_id' => $orderId,
+                'order_status' => $orderStatus,
+                'status_label' => self::orderStatusLabel($orderStatus),
             ]);
 
         } catch (\Exception $e) {

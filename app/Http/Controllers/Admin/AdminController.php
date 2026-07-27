@@ -195,7 +195,7 @@ class AdminController extends Controller
     // ==========================================
     public function orders()
     {
-        // Загружаем только активные заказы (pending), чтобы не засорять экран доставленными
+        // Активная очередь: новые (pending) и в работе (cooking)
         $orders = DB::table('orders')
             ->join('users', 'orders.user_id', '=', 'users.id')
             ->select(
@@ -203,16 +203,22 @@ class AdminController extends Controller
                 'users.name as user_name',
                 'users.phone as user_phone'
             )
-            ->where('orders.status', 'pending')
-            ->orderBy('orders.created_at', 'asc') // Сначала старые заказы
+            ->whereIn('orders.status', ['pending', 'cooking'])
+            ->orderBy('orders.created_at', 'asc')
             ->get()
             ->map(function($order) {
-                // Упаковываем данные в формат, который ждет твой Vue-компонент Orders.vue
+                $labels = [
+                    'pending' => 'Принят',
+                    'cooking' => 'Готовится',
+                    'delivered' => 'Выполнен',
+                    'cancelled' => 'Отменён',
+                ];
                 return [
                     'id' => $order->id,
                     'product_name' => $order->product_name,
                     'pc_name' => $order->pc_name,
                     'status' => $order->status,
+                    'status_label' => $labels[$order->status] ?? $order->status,
                     'user' => [
                         'name' => $order->user_name,
                         'phone' => $order->user_phone,
@@ -228,16 +234,14 @@ class AdminController extends Controller
     public function updateOrderStatus(Request $request, $id)
     {
         $request->validate([
-            'status' => 'required|in:delivered,cancelled'
+            'status' => 'required|in:pending,cooking,delivered,cancelled'
         ]);
 
-        // Обновляем статус заказа в базе
         DB::table('orders')->where('id', $id)->update([
             'status' => $request->status,
             'updated_at' => now()
         ]);
 
-        // Inertia 'back()' автоматически перезагрузит данные на странице без полного рефреша
         return back();
     }
     public function getPcStatuses()

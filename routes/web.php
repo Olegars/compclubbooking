@@ -225,8 +225,10 @@ Route::prefix('api/shell')->group(function () {
     // --- МАГАЗИН И БАР ДЛЯ ТЕРМИНАЛА ---
     Route::get('/store/products', [ShellApiController::class, 'getProducts']);
     Route::post('/store/checkout', [ShellApiController::class, 'checkout']);
+    Route::get('/store/order-status', [ShellApiController::class, 'getOrderStatus']);
     Route::get('/products', [ShellApiController::class, 'getProducts']);
     Route::post('/checkout', [ShellApiController::class, 'checkout']);
+    Route::get('/order-status', [ShellApiController::class, 'getOrderStatus']);
 
     // --- ВЫЗОВ АДМИНА ---
     Route::post('/admin/call', [ShellApiController::class, 'callAdmin']);

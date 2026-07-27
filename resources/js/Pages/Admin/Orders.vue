@@ -45,16 +45,30 @@ watch(() => props.orders?.length, (newCount, oldCount) => {
                         <div class="text-2xl font-black uppercase italic tracking-tight text-white mb-1">
                             {{ order.product_name }}
                         </div>
-                        <div class="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-lg">
-                            <span class="text-[9px] text-white/40 uppercase font-black tracking-widest">Доставить на:</span>
-                            <span class="text-sm text-white font-black">{{ order.pc_name }}</span>
+                        <div class="flex flex-wrap items-center gap-2 mt-2">
+                            <div class="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-lg">
+                                <span class="text-[9px] text-white/40 uppercase font-black tracking-widest">Доставить на:</span>
+                                <span class="text-sm text-white font-black">{{ order.pc_name }}</span>
+                            </div>
+                            <div class="inline-flex items-center px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest"
+                                 :class="order.status === 'cooking'
+                                    ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
+                                    : 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]'">
+                                {{ order.status_label || order.status }}
+                            </div>
                         </div>
                     </div>
 
                     <div class="flex gap-3 pl-4 md:pl-0 w-full md:w-auto">
-                        <button @click="setStatus(order.id, 'delivered')"
+                        <button v-if="order.status === 'pending'"
+                                @click="setStatus(order.id, 'cooking')"
+                                class="flex-1 md:flex-none px-8 py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black uppercase text-xs tracking-widest rounded-xl transition-all active:scale-95">
+                            В работу
+                        </button>
+                        <button v-if="order.status === 'cooking' || order.status === 'pending'"
+                                @click="setStatus(order.id, 'delivered')"
                                 class="flex-1 md:flex-none px-8 py-4 bg-[#22c55e] hover:bg-[#1ea34d] text-black font-black uppercase text-xs tracking-widest rounded-xl transition-all shadow-[0_0_20px_rgba(34,197,94,0.2)] active:scale-95">
-                            Доставлено
+                            Выполнен
                         </button>
                         <button @click="setStatus(order.id, 'cancelled')"
                                 class="flex-1 md:flex-none px-6 py-4 bg-red-500/10 border border-red-500/30 text-red-500 font-black uppercase text-xs tracking-widest rounded-xl hover:bg-red-500 hover:text-black transition-all active:scale-95">

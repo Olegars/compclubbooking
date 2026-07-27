@@ -41,12 +41,20 @@ class ShopController extends Controller
         $statusText = '';
 
         if ($terminalId > 0) {
-            $hasActiveOrder = DB::table('orders')
+            $order = DB::table('orders')
                 ->where('pc_name', 'ПК №' . $terminalId)
-                ->where('status', 'pending')
-                ->exists();
+                ->whereIn('status', ['pending', 'cooking'])
+                ->orderByDesc('id')
+                ->first();
 
-            $statusText = $hasActiveOrder ? 'Заказ в работе' : '';
+            $hasActiveOrder = (bool) $order;
+            $labels = [
+                'pending' => 'ЗАКАЗ ПРИНЯТ',
+                'cooking' => 'ЗАКАЗ ГОТОВИТСЯ',
+                'delivered' => 'ЗАКАЗ ВЫПОЛНЕН',
+                'cancelled' => 'ЗАКАЗ ОТМЕНЁН',
+            ];
+            $statusText = $order ? ($labels[$order->status] ?? 'ЗАКАЗ В РАБОТЕ') : '';
         }
 
         // 2. Берем сам список товаров
