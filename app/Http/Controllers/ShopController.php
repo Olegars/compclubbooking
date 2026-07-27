@@ -50,11 +50,11 @@ class ShopController extends Controller
             $hasActiveOrder = (bool) $order;
             $labels = [
                 'pending' => 'ЗАКАЗ ПРИНЯТ',
-                'cooking' => 'ЗАКАЗ ГОТОВИТСЯ',
+                'cooking' => 'В РАБОТЕ',
                 'delivered' => 'ЗАКАЗ ВЫПОЛНЕН',
                 'cancelled' => 'ЗАКАЗ ОТМЕНЁН',
             ];
-            $statusText = $order ? ($labels[$order->status] ?? 'ЗАКАЗ В РАБОТЕ') : '';
+            $statusText = $order ? ($labels[$order->status] ?? 'В РАБОТЕ') : '';
         }
 
         // 2. Берем сам список товаров

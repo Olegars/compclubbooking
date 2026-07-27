@@ -380,10 +380,10 @@ class ShellApiController extends Controller
     {
         return match ($status) {
             'pending' => 'ЗАКАЗ ПРИНЯТ',
-            'cooking' => 'ЗАКАЗ ГОТОВИТСЯ',
+            'cooking' => 'В РАБОТЕ',
             'delivered' => 'ЗАКАЗ ВЫПОЛНЕН',
             'cancelled' => 'ЗАКАЗ ОТМЕНЁН',
-            default => 'ЗАКАЗ В РАБОТЕ',
+            default => 'В РАБОТЕ',
         };
     }
 
@@ -484,19 +484,23 @@ class ShellApiController extends Controller
                     && $order->updated_at
                     && now()->diffInSeconds($order->updated_at) <= 60);
 
+            // Full terminal snapshot so shell can show all cart lines, not only tracked id
+            $snapshot = $this->shellOrderSnapshot($terminalId);
+            $orders = !empty($snapshot['orders']) ? $snapshot['orders'] : [[
+                'id' => (int) $order->id,
+                'product_name' => $order->product_name,
+                'status' => $order->status,
+                'status_label' => self::orderStatusLabel($order->status),
+                'price' => (float) $order->price,
+            ]];
+
             return response()->json([
                 'status' => 'success',
                 'has_active_order' => $isActive,
                 'status_text' => self::orderStatusLabel($order->status),
                 'order_id' => (int) $order->id,
                 'order_status' => $order->status,
-                'orders' => [[
-                    'id' => (int) $order->id,
-                    'product_name' => $order->product_name,
-                    'status' => $order->status,
-                    'status_label' => self::orderStatusLabel($order->status),
-                    'price' => (float) $order->price,
-                ]],
+                'orders' => $orders,
             ]);
         }
 

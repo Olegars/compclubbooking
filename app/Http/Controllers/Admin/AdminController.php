@@ -209,7 +209,7 @@ class AdminController extends Controller
             ->map(function($order) {
                 $labels = [
                     'pending' => 'Принят',
-                    'cooking' => 'Готовится',
+                    'cooking' => 'В работе',
                     'delivered' => 'Выполнен',
                     'cancelled' => 'Отменён',
                 ];
