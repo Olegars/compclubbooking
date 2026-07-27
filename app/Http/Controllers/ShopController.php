@@ -163,10 +163,19 @@ class ShopController extends Controller
                 // Уменьшаем остаток на складе
                 $product->decrement('stock', 1);
 
+                $lineItems = [[
+                    'product_id' => (int) $product->id,
+                    'name' => $product->name,
+                    'qty' => 1,
+                    'unit_price' => (float) $product->price,
+                    'line_total' => (float) $product->price,
+                ]];
+
                 // Создаем заказ со статусом 'pending' для отображения на панели админа
                 Order::create([
                     'user_id'      => $user ? $user->id : null, // Для внешних оплат картой/QR гость анонимен
                     'product_name' => $product->name,
+                    'items'        => $lineItems,
                     'price'        => $product->price,
                     'pc_name'      => $pcName, // Админ на баре увидит: "Стойка самообслуживания"
                     'status'       => 'pending',

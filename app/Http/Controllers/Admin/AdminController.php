@@ -8,6 +8,7 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
+use App\Models\Order;
 // Если у тебя есть модель BonusLog, раскомментируй:
 // use App\Models\BonusLog;
 
@@ -246,23 +247,30 @@ class AdminController extends Controller
             ->whereIn('orders.status', ['pending', 'cooking'])
             ->orderBy('orders.created_at', 'asc')
             ->get()
-            ->map(function($order) {
+            ->map(function ($order) {
                 $labels = [
                     'pending' => 'Принят',
                     'cooking' => 'В работе',
                     'delivered' => 'Выполнен',
                     'cancelled' => 'Отменён',
                 ];
+                $items = Order::normalizeItems(
+                    $order->items ?? null,
+                    $order->product_name ?? null,
+                    (float) ($order->price ?? 0)
+                );
                 return [
                     'id' => $order->id,
                     'product_name' => $order->product_name,
+                    'items' => $items,
+                    'price' => (float) ($order->price ?? 0),
                     'pc_name' => $order->pc_name,
                     'status' => $order->status,
                     'status_label' => $labels[$order->status] ?? $order->status,
                     'user' => [
                         'name' => $order->user_name,
                         'phone' => $order->user_phone,
-                    ]
+                    ],
                 ];
             });
 

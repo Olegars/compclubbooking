@@ -38,17 +38,32 @@ watch(() => props.orders?.length, (newCount, oldCount) => {
 
                     <div class="absolute left-0 top-0 bottom-0 w-1 bg-[#22c55e]/20 group-hover:bg-[#22c55e] transition-colors"></div>
 
-                    <div class="pl-4 mb-4 md:mb-0">
+                    <div class="pl-4 mb-4 md:mb-0 flex-1 min-w-0">
                         <div class="text-[10px] text-[#22c55e] font-black uppercase tracking-widest mb-2 italic">
-                            Клиент: <span class="text-white">{{ order.user?.name }}</span> ({{ order.user?.phone }})
+                            Заказ #{{ order.id }} · Клиент: <span class="text-white">{{ order.user?.name }}</span> ({{ order.user?.phone }})
                         </div>
-                        <div class="text-2xl font-black uppercase italic tracking-tight text-white mb-1">
+
+                        <ul v-if="order.items && order.items.length" class="space-y-1 mb-2">
+                            <li v-for="(item, idx) in order.items" :key="idx"
+                                class="text-xl md:text-2xl font-black uppercase italic tracking-tight text-white flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                                <span>{{ item.name }}</span>
+                                <span class="text-sm text-white/40 font-black not-italic tracking-widest">×{{ item.qty }}</span>
+                                <span class="text-sm text-white/30 font-mono not-italic tracking-normal">{{ Number(item.line_total || 0).toFixed(0) }} ₽</span>
+                            </li>
+                        </ul>
+                        <div v-else class="text-2xl font-black uppercase italic tracking-tight text-white mb-1">
                             {{ order.product_name }}
                         </div>
+
                         <div class="flex flex-wrap items-center gap-2 mt-2">
                             <div class="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-lg">
                                 <span class="text-[9px] text-white/40 uppercase font-black tracking-widest">Доставить на:</span>
                                 <span class="text-sm text-white font-black">{{ order.pc_name }}</span>
+                            </div>
+                            <div v-if="order.price > 0"
+                                 class="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-lg">
+                                <span class="text-[9px] text-white/40 uppercase font-black tracking-widest">Итого:</span>
+                                <span class="text-sm text-[#22c55e] font-black font-mono">{{ Number(order.price).toFixed(0) }} ₽</span>
                             </div>
                             <div class="inline-flex items-center px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest"
                                  :class="order.status === 'cooking'

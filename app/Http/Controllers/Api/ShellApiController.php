@@ -7,6 +7,7 @@ use App\Models\Overlay;
 use App\Models\User;
 use App\Models\Booking;
 use App\Models\Product;
+use App\Models\Order;
 use App\Models\GameAccount;
 use App\Models\GameAccountMachineCache;
 use App\Models\Game;
@@ -419,13 +420,7 @@ class ShellApiController extends Controller
             ->get();
 
         $orders = $active->concat($recentDone)->unique('id')->values()->map(function ($order) {
-            return [
-                'id' => (int) $order->id,
-                'product_name' => $order->product_name,
-                'status' => $order->status,
-                'status_label' => self::orderStatusLabel($order->status),
-                'price' => (float) $order->price,
-            ];
+            return $this->mapOrderPayload($order);
         });
 
         $primary = $active->first() ?? $recentDone->first();
@@ -486,13 +481,9 @@ class ShellApiController extends Controller
 
             // Full terminal snapshot so shell can show all cart lines, not only tracked id
             $snapshot = $this->shellOrderSnapshot($terminalId);
-            $orders = !empty($snapshot['orders']) ? $snapshot['orders'] : [[
-                'id' => (int) $order->id,
-                'product_name' => $order->product_name,
-                'status' => $order->status,
-                'status_label' => self::orderStatusLabel($order->status),
-                'price' => (float) $order->price,
-            ]];
+            $orders = !empty($snapshot['orders'])
+                ? $snapshot['orders']
+                : [$this->mapOrderPayload($order)];
 
             return response()->json([
                 'status' => 'success',
@@ -516,43 +507,121 @@ class ShellApiController extends Controller
         ]);
     }
 
+    /**
+     * Map DB order row → shell/admin payload (supports multi-item orders).
+     */
+    private function mapOrderPayload(object $order): array
+    {
+        $items = Order::normalizeItems(
+            $order->items ?? null,
+            $order->product_name ?? null,
+            (float) ($order->price ?? 0)
+        );
+
+        return [
+            'id' => (int) $order->id,
+            'product_name' => $order->product_name,
+            'status' => $order->status,
+            'status_label' => self::orderStatusLabel($order->status),
+            'price' => (float) $order->price,
+            'items' => $items,
+        ];
+    }
+
     public function checkout(Request $request)
     {
+        // Multi-item: { terminal_id, items: [{ product_id, qty }] }
+        // Legacy single: { terminal_id, product_id } (+ optional qty)
         $request->validate([
-            'product_id' => 'required|exists:products,id',
-            'terminal_id' => 'required|integer'
+            'terminal_id' => 'required|integer',
+            'product_id' => 'nullable|exists:products,id',
+            'qty' => 'nullable|integer|min:1|max:50',
+            'items' => 'nullable|array|min:1',
+            'items.*.product_id' => 'required_with:items|exists:products,id',
+            'items.*.qty' => 'nullable|integer|min:1|max:50',
         ]);
+
+        $rawItems = $request->input('items');
+        if (!is_array($rawItems) || count($rawItems) === 0) {
+            if (!$request->filled('product_id')) {
+                return response()->json(['message' => 'Корзина пуста'], 422);
+            }
+            $rawItems = [[
+                'product_id' => (int) $request->product_id,
+                'qty' => max(1, (int) $request->input('qty', 1)),
+            ]];
+        }
+
+        // Merge duplicate product_ids
+        $qtyByProduct = [];
+        foreach ($rawItems as $row) {
+            $pid = (int) ($row['product_id'] ?? 0);
+            $qty = max(1, (int) ($row['qty'] ?? 1));
+            if ($pid <= 0) {
+                continue;
+            }
+            $qtyByProduct[$pid] = ($qtyByProduct[$pid] ?? 0) + $qty;
+        }
+
+        if (count($qtyByProduct) === 0) {
+            return response()->json(['message' => 'Корзина пуста'], 422);
+        }
 
         try {
             $booking = Booking::where('status', 'active')
-                ->where(function($query) use ($request) {
-                    $query->whereJsonContains('pc_ids', (string)$request->terminal_id)
+                ->where(function ($query) use ($request) {
+                    $query->whereJsonContains('pc_ids', (string) $request->terminal_id)
                         ->orWhere('computer_id', $request->terminal_id);
                 })->first();
 
             if (!$booking) {
                 Log::warning('Shell shop checkout: no active booking', [
                     'terminal_id' => $request->terminal_id,
-                    'product_id' => $request->product_id,
+                    'items' => $qtyByProduct,
                 ]);
                 return response()->json(['message' => 'Активная сессия не найдена.'], 403);
             }
 
             $user = User::find($booking->user_id);
-            $product = Product::find($request->product_id);
-            if (!$user || !$product) {
-                return response()->json(['message' => 'Пользователь или товар не найден'], 404);
+            if (!$user) {
+                return response()->json(['message' => 'Пользователь не найден'], 404);
+            }
+
+            $products = Product::whereIn('id', array_keys($qtyByProduct))->get()->keyBy('id');
+            if ($products->count() !== count($qtyByProduct)) {
+                return response()->json(['message' => 'Товар не найден'], 404);
+            }
+
+            $lineItems = [];
+            $totalPrice = 0.0;
+            foreach ($qtyByProduct as $pid => $qty) {
+                /** @var Product $product */
+                $product = $products[$pid];
+                if ((int) $product->stock < $qty) {
+                    return response()->json([
+                        'message' => "Недостаточно «{$product->name}» на складе (нужно {$qty}, есть {$product->stock})",
+                    ], 422);
+                }
+                $unit = (float) $product->price;
+                $lineTotal = $unit * $qty;
+                $totalPrice += $lineTotal;
+                $lineItems[] = [
+                    'product_id' => (int) $product->id,
+                    'name' => $product->name,
+                    'qty' => $qty,
+                    'unit_price' => $unit,
+                    'line_total' => $lineTotal,
+                ];
             }
 
             $balance = $user->syncBalanceToWallet();
             $wallet = $user->wallet()->first();
-            $price = (float) $product->price;
 
-            if (!$wallet || $balance < $price) {
+            if (!$wallet || $balance < $totalPrice) {
                 Log::warning('Shell shop checkout: insufficient funds', [
                     'user_id' => $user->id,
                     'balance' => $balance,
-                    'price' => $price,
+                    'price' => $totalPrice,
                 ]);
                 return response()->json([
                     'message' => 'Недостаточно средств',
@@ -560,30 +629,48 @@ class ShellApiController extends Controller
                 ], 422);
             }
 
+            $summary = Order::summaryFromItems($lineItems);
             $newBalance = $balance;
             $orderId = 0;
             $orderStatus = 'pending';
-            DB::transaction(function () use ($user, $product, $wallet, $request, $price, &$newBalance, &$orderId, &$orderStatus) {
-                $newBalance = $wallet->debitSpendable($price);
-                $product->decrement('stock', 1);
+
+            DB::transaction(function () use (
+                $user,
+                $wallet,
+                $request,
+                $lineItems,
+                $qtyByProduct,
+                $products,
+                $totalPrice,
+                $summary,
+                &$newBalance,
+                &$orderId,
+                &$orderStatus
+            ) {
+                $newBalance = $wallet->debitSpendable($totalPrice);
+
+                foreach ($qtyByProduct as $pid => $qty) {
+                    $products[$pid]->decrement('stock', $qty);
+                }
 
                 $orderStatus = 'pending';
                 $orderId = (int) DB::table('orders')->insertGetId([
-                    'user_id'      => $user->id,
-                    'product_name' => $product->name,
-                    'price'        => $price,
-                    'pc_name'      => "ПК №" . $request->terminal_id,
-                    'status'       => $orderStatus,
-                    'created_at'   => now(),
-                    'updated_at'   => now()
+                    'user_id' => $user->id,
+                    'product_name' => $summary,
+                    'items' => json_encode($lineItems, JSON_UNESCAPED_UNICODE),
+                    'price' => $totalPrice,
+                    'pc_name' => 'ПК №' . $request->terminal_id,
+                    'status' => $orderStatus,
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
             });
 
             Log::info('Shell shop checkout OK', [
                 'user_id' => $user->id,
-                'product_id' => $product->id,
                 'order_id' => $orderId,
-                'price' => $price,
+                'items' => $lineItems,
+                'price' => $totalPrice,
                 'balance' => $newBalance,
             ]);
 
@@ -595,12 +682,13 @@ class ShellApiController extends Controller
                 'order_id' => $orderId,
                 'order_status' => $orderStatus,
                 'status_label' => self::orderStatusLabel($orderStatus),
+                'items' => $lineItems,
+                'price' => $totalPrice,
             ]);
-
         } catch (\Exception $e) {
             Log::error('Shell shop checkout error: ' . $e->getMessage(), [
                 'terminal_id' => $request->terminal_id,
-                'product_id' => $request->product_id,
+                'items' => $qtyByProduct ?? null,
             ]);
             return response()->json(['message' => $e->getMessage()], 500);
         }
