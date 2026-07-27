@@ -235,6 +235,9 @@ Route::prefix('api/shell')->group(function () {
     Route::post('/hid/snapshot', [ShellApiController::class, 'saveHidSnapshot']);
     Route::post('/hid/alert', [ShellApiController::class, 'reportHidAlert']);
 
+    // --- SOS вызов администратора с причиной ---
+    Route::post('/sos', [ShellApiController::class, 'reportSos']);
+
     // --- УПРАВЛЕНИЕ ЛИЦЕНЗИЯМИ И ОБНОВЛЕНИЕ КЭША VDF ---
     Route::post('/games/take-account', [ShellApiController::class, 'takeAccount']);
     Route::post('/games/free-account', [ShellApiController::class, 'freeAccount']);

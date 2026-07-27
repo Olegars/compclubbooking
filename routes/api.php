@@ -13,4 +13,5 @@ Route::prefix('shell')->group(function () {
     Route::post('/games/record-launch', [ShellApiController::class, 'recordGameLaunch']);
     Route::post('/hid/snapshot', [ShellApiController::class, 'saveHidSnapshot']);
     Route::post('/hid/alert', [ShellApiController::class, 'reportHidAlert']);
+    Route::post('/sos', [ShellApiController::class, 'reportSos']);
 });

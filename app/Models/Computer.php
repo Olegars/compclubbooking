@@ -29,4 +29,9 @@ class Computer extends Model
     {
         return $this->hasMany(ComputerInputAlert::class);
     }
+
+    public function sosAlerts(): HasMany
+    {
+        return $this->hasMany(ComputerSosAlert::class);
+    }
 }

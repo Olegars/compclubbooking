@@ -14,6 +14,7 @@ use App\Models\Computer;
 use App\Models\UserGameStat;
 use App\Models\ComputerInputDevice;
 use App\Models\ComputerInputAlert;
+use App\Models\ComputerSosAlert;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -220,6 +221,74 @@ class ShellApiController extends Controller
             ]);
         } catch (\Throwable $e) {
             Log::error('Shell API reportHidAlert: '.$e->getMessage());
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function reportSos(Request $request)
+    {
+        $request->validate([
+            'computer_id' => 'required|integer|exists:computers,id',
+            'booking_id' => 'nullable|integer|exists:bookings,id',
+            'reason' => 'required|array',
+            'reason.code' => 'required|string|in:peripherals,auth_help,other',
+            'reason.label' => 'required|string|max:255',
+            'timestamp' => 'nullable|date',
+        ]);
+
+        try {
+            $reasonCode = (string) $request->input('reason.code');
+            $reasonLabel = (string) $request->input('reason.label');
+            $reportedAt = $request->filled('timestamp')
+                ? \Carbon\Carbon::parse($request->input('timestamp'))
+                : now();
+
+            $alert = ComputerSosAlert::create([
+                'computer_id' => (int) $request->computer_id,
+                'booking_id' => $request->booking_id ? (int) $request->booking_id : null,
+                'reason_code' => $reasonCode,
+                'reason_label' => $reasonLabel,
+                'payload' => [
+                    'reason' => [
+                        'code' => $reasonCode,
+                        'label' => $reasonLabel,
+                    ],
+                    'reported_at' => $reportedAt->toIso8601String(),
+                ],
+            ]);
+
+            // Hook into existing admin_calls channel when a user session is known.
+            $pc = Computer::find((int) $request->computer_id);
+            $pcName = $pc?->name ?: ('PC-'.$request->computer_id);
+            $booking = $request->booking_id
+                ? Booking::find((int) $request->booking_id)
+                : null;
+            if ($booking && $booking->user_id) {
+                DB::table('admin_calls')->insert([
+                    'user_id' => $booking->user_id,
+                    'pc_name' => $pcName,
+                    'message' => 'SOS: '.$reasonLabel,
+                    'status' => 'pending',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            Log::warning('[SOS-ALERT]', [
+                'id' => $alert->id,
+                'computer_id' => $alert->computer_id,
+                'booking_id' => $alert->booking_id,
+                'reason_code' => $alert->reason_code,
+                'reason_label' => $alert->reason_label,
+                'reported_at' => $reportedAt->toIso8601String(),
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'alert_id' => $alert->id,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API reportSos: '.$e->getMessage());
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
     }
