@@ -5,12 +5,12 @@ namespace App\Services;
 use App\Models\Booking;
 use App\Models\BookingGame;
 use App\Models\BookingGroup;
+use App\Models\Club;
 use App\Models\ClubGame;
 use App\Models\Computer;
 use App\Models\ComputerGame;
 use App\Models\GameAccount;
 use App\Models\GameAccountReservation;
-use App\Models\Tariff;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
@@ -21,6 +21,12 @@ use Illuminate\Validation\ValidationException;
 
 class GameBookingService
 {
+    public function __construct(
+        private readonly TariffService $tariffs,
+        private readonly MapZoneResolver $zones,
+    ) {
+    }
+
     public function availability(
         int $clubId,
         array $computerIds,
@@ -83,7 +89,9 @@ class GameBookingService
         array $computerIds,
         array $gameIds,
         CarbonImmutable $startsAt,
-        CarbonImmutable $endsAt
+        CarbonImmutable $endsAt,
+        string $mode = 'hourly',
+        ?int $tariffId = null,
     ): array {
         $this->validatePeriod($startsAt, $endsAt);
         $computers = $this->validateComputers($clubId, $computerIds);
@@ -91,13 +99,22 @@ class GameBookingService
         $this->assertComputersAvailable($computerIds, $startsAt, $endsAt);
         $durationMinutes = $startsAt->diffInMinutes($endsAt);
         $durationHours = $durationMinutes / 60;
-        $baseComputerMinor = $this->computerPriceMinor($durationHours, $computers->count());
+        $club = Club::query()->findOrFail($clubId);
+        $seatQuote = $this->seatTariffQuote($club, $computers, $durationHours, $mode, $tariffId);
+        $baseComputerMinor = (int) $seatQuote['total_minor'];
         $ps5SurchargeMinor = $this->ps5SurchargeMinor($durationHours, $computers);
         $computerTotalMinor = $baseComputerMinor + $ps5SurchargeMinor;
         $availability = collect($this->availability($clubId, $computerIds, $startsAt, $endsAt))
             ->keyBy('id');
 
-        $lines = collect(array_values(array_unique(array_map('intval', $gameIds))))
+        $lines = collect(array_values(array_unique(array_map('intval', $gameIds))));
+        if ($lines->count() > 1) {
+            throw ValidationException::withMessages([
+                'game_ids' => 'Можно забронировать только одну платную игру.',
+            ]);
+        }
+
+        $lines = $lines
             ->map(function (int $gameId) use ($availability, $durationMinutes, $computers, $clubId) {
                 $offer = ClubGame::query()
                     ->where('club_id', $clubId)
@@ -140,10 +157,13 @@ class GameBookingService
             'starts_at' => $startsAt->toIso8601String(),
             'ends_at' => $endsAt->toIso8601String(),
             'duration_minutes' => $durationMinutes,
+            'mode' => $mode,
+            'tariff_id' => $tariffId,
+            'tariff' => $seatQuote,
             'computers_total_minor' => $computerTotalMinor,
             'computers_base_minor' => $baseComputerMinor,
             'ps5_surcharge_minor' => $ps5SurchargeMinor,
-            'games_total_minor' => $gameTotalMinor,
+            'games_total_minor' => $gamesTotalMinor,
             'total_minor' => $computerTotalMinor + $gamesTotalMinor,
             'total_price' => ($computerTotalMinor + $gamesTotalMinor) / 100,
             'games' => $lines->all(),
@@ -156,7 +176,9 @@ class GameBookingService
         array $computerIds,
         array $gameIds,
         CarbonImmutable $startsAt,
-        CarbonImmutable $endsAt
+        CarbonImmutable $endsAt,
+        string $mode = 'hourly',
+        ?int $tariffId = null,
     ): BookingGroup {
         return DB::transaction(function () use (
             $user,
@@ -164,13 +186,15 @@ class GameBookingService
             $computerIds,
             $gameIds,
             $startsAt,
-            $endsAt
+            $endsAt,
+            $mode,
+            $tariffId
         ) {
             // Снимаем просроченные confirmed/active, иначе EXCLUDE-ограничение
             // PostgreSQL продолжает считать слот занятым.
             $this->closeExpiredBookings();
 
-            $quote = $this->quote($clubId, $computerIds, $gameIds, $startsAt, $endsAt);
+            $quote = $this->quote($clubId, $computerIds, $gameIds, $startsAt, $endsAt, $mode, $tariffId);
 
             $user->syncBalanceToWallet();
             $wallet = Wallet::query()->where('user_id', $user->id)->lockForUpdate()->firstOrFail();
@@ -199,16 +223,11 @@ class GameBookingService
             ]);
 
             $durationHours = $quote['duration_minutes'] / 60;
-            $pricePerComputerMinor = intdiv(
-                $quote['computers_total_minor'],
-                count($computerIds)
-            );
-            $priceRemainderMinor = $quote['computers_total_minor']
-                - ($pricePerComputerMinor * count($computerIds));
+            $seatPrices = $this->seatPriceMinorsFromQuote($quote, $computerIds);
             $bookings = collect();
 
-            foreach (array_values($computerIds) as $index => $computerId) {
-                $computerPriceMinor = $pricePerComputerMinor + ($index < $priceRemainderMinor ? 1 : 0);
+            foreach (array_values($computerIds) as $computerId) {
+                $computerPriceMinor = $seatPrices[(int) $computerId] ?? 0;
                 $bookings->push(Booking::create([
                     'booking_group_id' => $group->id,
                     'user_id' => $user->id,
@@ -548,18 +567,64 @@ class GameBookingService
         }
     }
 
-    private function computerPriceMinor(float $hours, int $quantity): int
-    {
-        $tariffHours = max(1, (int) floor($hours));
-        $tariff = Tariff::query()
-            ->where('is_active', true)
-            ->where('threshold_hours', $tariffHours)
-            ->first();
-        $pricePerHour = $tariff
-            ? ((float) $tariff->price_per_package / $tariff->threshold_hours)
-            : 250.0;
+    private function seatTariffQuote(
+        Club $club,
+        Collection $computers,
+        float $hours,
+        string $mode,
+        ?int $tariffId
+    ): array {
+        $mode = $mode === 'packages' ? 'packages' : 'hourly';
+        $zones = $this->zones->resolveForComputers($club, $computers);
 
-        return (int) round($pricePerHour * $hours * $quantity * 100);
+        return $this->tariffs->quoteSeats($zones, $hours, $mode, $tariffId);
+    }
+
+    /**
+     * @param  array<string, mixed>  $quote
+     * @param  array<int, int>  $computerIds
+     * @return array<int, int>
+     */
+    private function seatPriceMinorsFromQuote(array $quote, array $computerIds): array
+    {
+        $perSeat = collect($quote['tariff']['per_seat'] ?? [])->keyBy('computer_id');
+        $prices = [];
+        $allocated = 0;
+
+        foreach ($computerIds as $computerId) {
+            $id = (int) $computerId;
+            $base = (int) round(((float) ($perSeat->get($id)['total_rub'] ?? 0)) * 100);
+            $prices[$id] = $base;
+            $allocated += $base;
+        }
+
+        // PS5 surcharge — equally across PS5 seats if present in snapshot; else remainder on first seats.
+        $ps5Minor = (int) ($quote['ps5_surcharge_minor'] ?? 0);
+        if ($ps5Minor > 0) {
+            $ps5Ids = Computer::query()
+                ->whereIn('id', $computerIds)
+                ->where('kind', Computer::KIND_PS5)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            $targets = $ps5Ids !== [] ? $ps5Ids : array_map('intval', $computerIds);
+            $share = intdiv($ps5Minor, count($targets));
+            $rem = $ps5Minor - ($share * count($targets));
+            foreach (array_values($targets) as $index => $id) {
+                $prices[$id] = ($prices[$id] ?? 0) + $share + ($index < $rem ? 1 : 0);
+            }
+            $allocated += $ps5Minor;
+        }
+
+        $expected = (int) ($quote['computers_total_minor'] ?? $allocated);
+        $diff = $expected - array_sum($prices);
+        if ($diff !== 0 && $computerIds !== []) {
+            $first = (int) $computerIds[0];
+            $prices[$first] = ($prices[$first] ?? 0) + $diff;
+        }
+
+        return $prices;
     }
 
     private function ps5SurchargeMinor(float $hours, Collection $computers): int

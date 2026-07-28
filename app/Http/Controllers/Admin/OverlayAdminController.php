@@ -9,7 +9,17 @@ use Inertia\Inertia;
 
 class OverlayAdminController extends Controller
 {
-    // ... методы index(), getOverlays() оставляем без изменений ...
+    public function index()
+    {
+        return Inertia::render('Admin/OverlayManager');
+    }
+
+    public function getOverlays()
+    {
+        return response()->json(
+            Overlay::query()->orderBy('block_position')->orderBy('id')->get()
+        );
+    }
 
     // Сохраняет изменения из админки (PUT /api/overlays/{id})
     public function updateOverlay(Request $request, $id)

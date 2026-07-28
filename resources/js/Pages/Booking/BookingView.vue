@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
-import { router } from '@inertiajs/vue3'
+import { router, usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 
 import MainLayout from '@/Layouts/MainLayout.vue'
@@ -13,6 +13,7 @@ import PaymentModal from '@/Components/PaymentModal.vue'
 import ZoneInfoModal from '@/Components/ZoneInfoModal.vue'
 import TariffsModal from '@/Components/TariffsModal.vue'
 import AgeWarningModal from '@/Components/AgeWarningModal.vue'
+import GamesBookingModal from '@/Components/GamesBookingModal.vue'
 
 const props = withDefaults(defineProps<{
     clubData: {
@@ -24,10 +25,24 @@ const props = withDefaults(defineProps<{
     computersList: any[];
     zonesList: any[];
     zoneRectsList: any[];
+    tariffShowcase?: {
+        rates?: Array<{ zone: string; slug?: string; price: string; color: string }>
+        packages?: Array<{ id?: number; name: string; discount: string; hours?: number; cost?: number; category?: string }>
+    } | null;
     isTerminal?: boolean;
+    preselectSeatIds?: string[] | null;
+    preselectStart?: string | null;
+    preselectDuration?: number | null;
 }>(), {
-    isTerminal: false
+    isTerminal: false,
+    tariffShowcase: null,
+    preselectSeatIds: null,
+    preselectStart: null,
+    preselectDuration: null,
 })
+
+const page = usePage()
+const isAuthenticated = computed(() => !!(page.props.auth?.user || page.props.user))
 
 type BookingGame = {
     id: number;
@@ -83,7 +98,9 @@ const staticOccupiedIds = computed(() =>
 const occupiedIds = computed(() =>
     [...new Set([...staticOccupiedIds.value, ...bookedOccupiedIds.value])]
 )
-const selectedIds = ref<string[]>([])
+const selectedIds = ref<string[]>(
+    (props.preselectSeatIds || []).filter(id => !staticOccupiedIds.value.includes(id))
+)
 const seatError = ref(false)
 let errorTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -130,15 +147,36 @@ const showAgeWarning = ref(false)
 const showSuccessModal = ref(false)
 const showInfoModal = ref(false)
 const showTariffsModal = ref(false)
+const showGamesModal = ref(false)
 
 const selectedZoneForInfo = ref('PRO')
 const userPhone = ref('')
 const isProcessing = ref(false)
 
 // --- ВРЕМЯ И ТАРИФЫ ---
-const selectedDate = ref(new Date().toDateString())
-const bookingMode = ref('hourly')
-const selectedPackage = ref<any>(null)
+const mod24 = (n: number) => ((n % 24) + 24) % 24
+
+// Ближайший слот кратный 15 минутам. После 23:45 он попадает уже на следующие сутки.
+const nextQuarterSlot = () => {
+    const now = new Date()
+    const m = now.getMinutes()
+    const step = m < 15 ? 0.25 : m < 30 ? 0.5 : m < 45 ? 0.75 : 1
+    const raw = now.getHours() + step
+    return { time: mod24(raw), rollsOverMidnight: raw >= 24 }
+}
+
+const initialSlot = nextQuarterSlot()
+const initialDate = new Date()
+if (initialSlot.rollsOverMidnight) initialDate.setDate(initialDate.getDate() + 1)
+
+const selectedDate = ref(initialDate.toDateString())
+const bookingMode = ref<'hourly' | 'packages'>('hourly')
+const selectedPackage = ref<{ id: number; title: string; hours: number; cost: number } | null>(null)
+const zonePackages = ref<Array<{ id: number; title: string; hours: number; cost: number; finished_at?: string | null }>>([])
+const zoneHourlyRate = ref<number | null>(null)
+const zoneCategory = ref<string | null>(null)
+const tariffGridError = ref('')
+let tariffGridRequestId = 0
 
 const timeSteps = Array.from({ length: 96 }, (_, i) => i * 0.25)
 const formatTimeLabel = (h: number) => {
@@ -151,15 +189,17 @@ const getIndexByTime = (time: number) => {
     const idx = timeSteps.indexOf(val)
     return idx === -1 ? 0 : idx
 }
-const getNextQuarter = () => {
-    const d = new Date(), h = d.getHours(), m = d.getMinutes()
-    if (m < 15) return h + 0.25; if (m < 30) return h + 0.5; if (m < 45) return h + 0.75;
-    return (h + 1) % 24
+// Возврат после входа по SMS: восстанавливаем время, если оно ещё не прошло.
+const parseTimeParam = (value?: string | null) => {
+    const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(value || '')
+    if (!match) return null
+    const restored = Number(match[1]) + Number(match[2]) / 60
+    if (!initialSlot.rollsOverMidnight && restored < initialSlot.time) return null
+    return restored
 }
-const mod24 = (n: number) => ((n % 24) + 24) % 24
 
-const startH = ref(getNextQuarter())
-const endH = ref(mod24(startH.value + 1))
+const startH = ref(parseTimeParam(props.preselectStart) ?? initialSlot.time)
+const endH = ref(mod24(startH.value + (props.preselectDuration || 1)))
 
 const duration = computed(() => {
     if (bookingMode.value === 'packages' && selectedPackage.value) return selectedPackage.value.hours
@@ -191,8 +231,75 @@ const bookingPayload = computed(() => ({
     club_id: props.clubData.id,
     pc_ids: [...selectedIds.value],
     game_ids: [...selectedGameIds.value],
+    mode: bookingMode.value,
+    tariff_id: bookingMode.value === 'packages' ? selectedPackage.value?.id ?? null : null,
     ...bookingInterval.value
 }))
+
+const fetchTariffGrid = async () => {
+    const requestId = ++tariffGridRequestId
+    tariffGridError.value = ''
+
+    if (selectedIds.value.length === 0) {
+        zonePackages.value = []
+        zoneHourlyRate.value = null
+        zoneCategory.value = null
+        selectedPackage.value = null
+        return
+    }
+
+    try {
+        const response = await axios.post('/api/booking/tariff-grid', {
+            club_id: props.clubData.id,
+            pc_ids: [...selectedIds.value],
+            starts_at: bookingInterval.value.starts_at,
+        })
+        if (requestId !== tariffGridRequestId) return
+
+        zoneCategory.value = response.data?.category ?? null
+        zoneHourlyRate.value = Number(response.data?.hourly_rate ?? 0) || null
+        const packages = Array.isArray(response.data?.packages) ? response.data.packages : []
+        zonePackages.value = packages.map((pkg: any) => ({
+            id: Number(pkg.id),
+            title: String(pkg.title ?? pkg.name ?? `${pkg.hours}ч`),
+            hours: Number(pkg.hours),
+            cost: Number(pkg.cost),
+            finished_at: pkg.finished_at ?? null,
+        }))
+
+        if (selectedPackage.value) {
+            const still = zonePackages.value.find(p => p.id === selectedPackage.value!.id)
+            selectedPackage.value = still ?? null
+            if (!still && bookingMode.value === 'packages') {
+                bookingMode.value = 'hourly'
+            }
+        }
+    } catch (e: any) {
+        if (requestId !== tariffGridRequestId) return
+        console.error('Ошибка загрузки тарифной сетки', e)
+        zonePackages.value = []
+        tariffGridError.value = e?.response?.data?.errors?.pc_ids?.[0]
+            || e?.response?.data?.message
+            || 'Не удалось загрузить пакеты'
+    }
+}
+
+const selectPackage = (pkg: { id: number; title: string; hours: number; cost: number }) => {
+    selectedPackage.value = pkg
+    bookingMode.value = 'packages'
+    endH.value = mod24(startH.value + pkg.hours)
+}
+
+const setBookingMode = (mode: 'hourly' | 'packages') => {
+    bookingMode.value = mode
+    if (mode === 'hourly') {
+        selectedPackage.value = null
+        return
+    }
+    if (!selectedPackage.value && zonePackages.value.length) {
+        selectPackage(zonePackages.value[0])
+    }
+}
 
 const fetchGamesAvailability = async () => {
     const requestId = ++availabilityRequestId
@@ -218,7 +325,7 @@ const fetchGamesAvailability = async () => {
         // Недоступные игры остаются в списке (но невыбираемыми), чтобы пользователь видел ассортимент клуба.
         availableGames.value = [...games].sort((a, b) => Number(b.is_available) - Number(a.is_available))
         const availableIds = new Set(games.filter(game => game.is_available).map(game => game.id))
-        selectedGameIds.value = selectedGameIds.value.filter(id => availableIds.has(id))
+        selectedGameIds.value = selectedGameIds.value.filter(id => availableIds.has(id)).slice(0, 1)
     } catch (e) {
         if (requestId !== availabilityRequestId) return
         console.error('Ошибка загрузки доступных игр', e)
@@ -265,8 +372,14 @@ const fetchServerPrice = async () => {
         totalAmount.value = 0
         computersTotalMinor.value = 0
         gamesTotalMinor.value = 0
+        if (e?.response?.status === 401) {
+            priceError.value = 'Войдите по номеру телефона, чтобы продолжить'
+            return
+        }
         const errors = e?.response?.data?.errors
         priceError.value = errors?.pc_ids?.[0]
+            || errors?.tariff_id?.[0]
+            || errors?.duration?.[0]
             || errors?.starts_at?.[0]
             || errors?.ends_at?.[0]
             || errors?.game_ids?.[0]
@@ -327,7 +440,7 @@ const selectedGamesCount = computed(() => selectedGameIds.value.length)
 const selectableGamesCount = computed(() => availableGames.value.filter(game => game.is_available).length)
 
 const panelScroller = ref<HTMLElement | null>(null)
-const gamesSection = ref<HTMLElement | null>(null)
+const gamesBanner = ref<HTMLElement | null>(null)
 const hasHiddenPanelContent = ref(false)
 const highlightGames = ref(false)
 let highlightTimer: ReturnType<typeof setTimeout> | null = null
@@ -344,27 +457,27 @@ const updatePanelScrollState = () => {
 const pulseGames = () => {
     highlightGames.value = true
     if (highlightTimer) clearTimeout(highlightTimer)
-    highlightTimer = setTimeout(() => { highlightGames.value = false }, 1400)
+    highlightTimer = setTimeout(() => { highlightGames.value = false }, 1800)
 }
 
-// Автопоказ двигает только внутреннюю панель: дёргать скролл всей страницы
-// (мобильная раскладка) во время выбора мест нельзя.
-const revealGamesInPanel = () => {
+const openGamesModal = () => {
+    showGamesModal.value = true
     pulseGames()
-    const scroller = panelScroller.value
-    const section = gamesSection.value
-    if (!scroller || !section) return
-    const bottomOverflow = section.offsetTop + section.offsetHeight - scroller.clientHeight
-    if (bottomOverflow > scroller.scrollTop) {
-        scroller.scrollTo({ top: bottomOverflow, behavior: 'smooth' })
-    }
 }
 
-// Как только у клуба появляются доступные игры — подсвечиваем секцию, чтобы её не пролистали.
+const closeGamesModal = () => {
+    showGamesModal.value = false
+}
+
+const confirmGamesSelection = () => {
+    closeGamesModal()
+}
+
+// Подсветка баннера, когда появились доступные игры после выбора мест
 watch(selectableGamesCount, async (count, previous) => {
     if (count > 0 && !previous) {
         await nextTick()
-        revealGamesInPanel()
+        pulseGames()
     }
 })
 
@@ -388,7 +501,13 @@ watch([() => props.clubData.id, selectedIds, selectedDate, startH, duration], fe
     immediate: true
 })
 
-watch([() => props.clubData.id, selectedIds, selectedGameIds, selectedDate, startH, duration, isGamesLoading], fetchServerPrice, {
+watch([() => props.clubData.id, selectedIds, selectedDate, startH], fetchTariffGrid, {
+    immediate: true,
+    deep: true,
+})
+
+watch([() => props.clubData.id, selectedIds, selectedGameIds, selectedDate, startH, duration, bookingMode, selectedPackage, isGamesLoading], fetchServerPrice, {
+
     deep: true,
     immediate: true
 })
@@ -442,6 +561,45 @@ const getComputerData = (id: string | number) => {
     return { zoneName, pcName: pc.name };
 }
 
+/** Места, сгруппированные по зонам: на телефоне карта слишком мелкая для точного нажатия. */
+const seatGroups = computed(() => {
+    const groups = new Map<string, { name: string; seats: Array<{ id: string; name: string; occupied: boolean }> }>()
+
+    for (const pc of props.computersList) {
+        const id = pc.id.toString()
+        const zoneName = getComputerData(id).zoneName
+        if (!groups.has(zoneName)) groups.set(zoneName, { name: zoneName, seats: [] })
+        groups.get(zoneName)!.seats.push({
+            id,
+            name: String(pc.name ?? id),
+            occupied: occupiedIds.value.includes(id),
+        })
+    }
+
+    return [...groups.values()].map(group => ({
+        name: group.name,
+        seats: [...group.seats].sort((a, b) => a.name.localeCompare(b.name, 'ru', { numeric: true })),
+        freeCount: group.seats.filter(seat => !seat.occupied).length,
+    }))
+})
+
+const priceBreakdown = computed(() => {
+    if (!selectedIds.value.length || isPriceLoading.value) return []
+
+    const lines: Array<{ label: string; value: number }> = []
+    if (computersTotalMinor.value > 0) {
+        const seats = selectedIds.value.length
+        const label = seats > 1
+            ? `Места, ${seats} × ${formatDuration(duration.value)}`
+            : `Место, ${formatDuration(duration.value)}`
+        lines.push({ label, value: computersTotalMinor.value / 100 })
+    }
+    if (gamesTotalMinor.value > 0) {
+        lines.push({ label: 'Платная игра', value: gamesTotalMinor.value / 100 })
+    }
+    return lines
+})
+
 const toggleSeatSelection = (id: string) => {
     const index = selectedIds.value.indexOf(id)
     if (index !== -1) {
@@ -484,6 +642,63 @@ const bookingDataForModal = computed(() => ({
         .map(game => ({ id: game.id, title: game.title }))
 }))
 
+// --- ВХОД ГОСТЯ ПЕРЕД БРОНИРОВАНИЕМ ---
+// Цену и занятость гость видит без входа, но саму бронь оформляем только после SMS.
+const showGuestPhoneModal = ref(false)
+const isGuestAuthFlow = ref(false)
+const authError = ref('')
+
+const buildReturnUrl = () => {
+    const params = new URLSearchParams()
+    if (selectedIds.value.length) params.set('seat', selectedIds.value.join(','))
+    params.set('start', formatTimeLabel(startH.value))
+    params.set('dur', String(duration.value))
+    return `${window.location.pathname}?${params.toString()}`
+}
+
+const startBooking = () => {
+    if (!selectedIds.value.length || isBookingLoading.value || isProcessing.value) return
+
+    if (!props.isTerminal && !isAuthenticated.value) {
+        authError.value = ''
+        isGuestAuthFlow.value = true
+        showGuestPhoneModal.value = true
+        showOverlay.value = true
+        return
+    }
+
+    checkAgeRestriction()
+}
+
+const handleGuestPhone = async (payload: any) => {
+    const phone = payload?.phone || payload || ''
+    userPhone.value = phone
+    authError.value = ''
+
+    try {
+        await axios.post('/auth/send-code', { phone })
+        showGuestPhoneModal.value = false
+        showSmsModal.value = true
+    } catch (e: any) {
+        authError.value = e?.response?.data?.message || 'Не удалось отправить код'
+    }
+}
+
+const handleSmsVerify = (code: string) => {
+    if (!isGuestAuthFlow.value) {
+        // Терминал: подтверждение по SMS без входа в аккаунт.
+        showSmsModal.value = false
+        showSuccessModal.value = true
+        return
+    }
+
+    router.post('/auth/verify-code', {
+        phone: userPhone.value,
+        code,
+        redirect_to: buildReturnUrl(),
+    })
+}
+
 // --- УПРАВЛЕНИЕ БРОНИРОВАНИЕМ ---
 const handleConfirmBooking = async (payload: any) => {
     showConfirmModal.value = false
@@ -513,6 +728,8 @@ const handleConfirmBooking = async (payload: any) => {
 const closeAllModals = () => {
     showConfirmModal.value = false; showSmsModal.value = false; showSuccessModal.value = false;
     showInfoModal.value = false; showTariffsModal.value = false; showAgeWarning.value = false;
+    showGamesModal.value = false; showGuestPhoneModal.value = false;
+    isGuestAuthFlow.value = false;
     showOverlay.value = false;
 }
 
@@ -521,29 +738,78 @@ const handleFinalClose = () => {
     if (!props.isTerminal) router.visit('/account/dashboard');
 }
 
-const handleWheel = (e: any, type: 'start' | 'end') => {
+/** Шаг 15 минут. Используется колесом мыши, свайпом и кнопками ±. */
+const stepTime = (type: 'start' | 'end', direction: 1 | -1) => {
     if (bookingMode.value === 'packages' && type === 'end') return
-    const delta = (e.deltaY || e) > 0 ? 0.25 : -0.25
+    const delta = 0.25 * direction
+
     if (type === 'start') {
         const next = mod24(startH.value + delta)
-        if (selectedDate.value === new Date().toDateString() && next < getNextQuarter()) return
+        if (selectedDate.value === new Date().toDateString()) {
+            const slot = nextQuarterSlot()
+            if (slot.rollsOverMidnight || next < slot.time) return
+        }
         startH.value = next
         if (bookingMode.value === 'packages' && selectedPackage.value) endH.value = mod24(next + selectedPackage.value.hours)
         else if (mod24(endH.value - next) < 1) endH.value = mod24(next + 1)
-    } else {
-        if (delta < 0 && (mod24(endH.value - startH.value) || 24) <= 1) return
-        endH.value = mod24(endH.value + delta)
+        return
     }
+
+    if (direction < 0 && (mod24(endH.value - startH.value) || 24) <= 1) return
+    endH.value = mod24(endH.value + delta)
+}
+
+const handleWheel = (e: WheelEvent, type: 'start' | 'end') => {
+    stepTime(type, (e.deltaY ?? 0) > 0 ? 1 : -1)
+}
+
+// Свайп пальцем: на тач-устройствах события wheel не существует.
+const DRAG_STEP_PX = 24
+let dragState: { type: 'start' | 'end'; lastY: number; accumulated: number } | null = null
+
+const startTimeDrag = (e: PointerEvent, type: 'start' | 'end') => {
+    if (bookingMode.value === 'packages' && type === 'end') return
+    dragState = { type, lastY: e.clientY, accumulated: 0 }
+    ;(e.currentTarget as HTMLElement)?.setPointerCapture?.(e.pointerId)
+}
+
+const moveTimeDrag = (e: PointerEvent) => {
+    if (!dragState) return
+    // Движение вверх листает время вперёд, как в нативных пикерах.
+    dragState.accumulated += dragState.lastY - e.clientY
+    dragState.lastY = e.clientY
+
+    while (Math.abs(dragState.accumulated) >= DRAG_STEP_PX) {
+        const direction: 1 | -1 = dragState.accumulated > 0 ? 1 : -1
+        dragState.accumulated -= direction * DRAG_STEP_PX
+        stepTime(dragState.type, direction)
+    }
+}
+
+const endTimeDrag = (e: PointerEvent) => {
+    if (!dragState) return
+    ;(e.currentTarget as HTMLElement)?.releasePointerCapture?.(e.pointerId)
+    dragState = null
+}
+
+const formatDuration = (hours: number) => {
+    const totalMinutes = Math.round(hours * 60)
+    const h = Math.floor(totalMinutes / 60)
+    const m = totalMinutes % 60
+    if (!m) return `${h} ч`
+    return h ? `${h} ч ${m} мин` : `${m} мин`
 }
 
 const days = computed(() => {
     const today = new Date();
+    const todayExhausted = nextQuarterSlot().rollsOverMidnight
     return Array.from({ length: 14 }, (_, i) => {
         const d = new Date(); d.setDate(today.getDate() + i)
         return {
             full: d.toDateString(),
             dayNum: d.getDate(),
-            dayName: d.toLocaleDateString('ru-RU', { weekday: 'short' }).toUpperCase()
+            dayName: d.toLocaleDateString('ru-RU', { weekday: 'short' }).toUpperCase(),
+            disabled: i === 0 && todayExhausted
         }
     })
 })
@@ -573,8 +839,32 @@ onUnmounted(() => {
     <component :is="layout">
         <div class="booking-frame flex flex-col lg:flex-row bg-black rounded-[28px] lg:rounded-[40px] border border-[#22c55e]/30 p-2 mx-auto w-full lg:w-fit h-auto lg:h-[880px] relative shadow-[0_0_50px_rgba(34,197,94,0.1)] overflow-visible lg:overflow-hidden select-none">
 
-            <section class="p-3 sm:p-6 lg:p-8 border-b lg:border-b-0 lg:border-r border-[#22c55e]/30 flex bg-[#080808] rounded-t-[26px] lg:rounded-t-none lg:rounded-l-[38px] w-full lg:w-auto lg:min-w-[960px] lg:h-full lg:min-h-0 relative">
-                <div class="w-full h-[min(70vh,640px)] lg:h-full min-h-[320px]">
+            <section class="p-3 sm:p-5 lg:p-6 border-b lg:border-b-0 lg:border-r border-[#22c55e]/30 flex flex-col gap-3 bg-[#080808] rounded-t-[26px] lg:rounded-t-none lg:rounded-l-[38px] w-full lg:w-auto lg:min-w-[960px] lg:h-full lg:min-h-0 relative">
+                <div ref="gamesBanner"
+                     :class="['shrink-0 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 rounded-2xl border px-4 py-3 transition-all duration-500',
+                              highlightGames ? 'border-[#22c55e] shadow-[0_0_0_3px_rgba(34,197,94,0.22)] bg-[#22c55e]/[0.08]'
+                              : 'border-[#22c55e]/25 bg-[#22c55e]/[0.04]']">
+                    <div class="min-w-0 flex-1">
+                        <p class="text-[10px] sm:text-[11px] font-black uppercase tracking-wide text-[#22c55e] leading-snug">
+                            Платную игру лучше забронировать заранее
+                        </p>
+                        <p class="mt-1 text-[9px] sm:text-[10px] text-white/45 leading-relaxed">
+                            Так аккаунт будет закреплён за вашей сессией — без риска что его займут раньше.
+                        </p>
+                        <p v-if="selectedGamesCount" class="mt-1.5 text-[9px] text-[#22c55e]/90 font-black uppercase tracking-widest">
+                            В брони: {{ selectedGamesCount }}
+                            <button type="button" class="ml-2 underline underline-offset-2 text-white/40 hover:text-white" @click="selectedGameIds = []">сбросить</button>
+                        </p>
+                    </div>
+                    <button type="button"
+                            @click="openGamesModal"
+                            class="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#22c55e] text-black text-[10px] font-black uppercase tracking-widest hover:bg-[#1ea34d] transition-colors shadow-[0_0_20px_rgba(34,197,94,0.2)]">
+                        {{ selectedGamesCount ? 'Изменить' : 'Выбрать' }}
+                        <span v-if="selectedGamesCount" class="px-1.5 py-0.5 rounded-md bg-black/15 text-[9px]">{{ selectedGamesCount }}</span>
+                    </button>
+                </div>
+
+                <div class="w-full flex-1 min-h-[280px] h-[min(62vh,560px)] lg:h-auto lg:min-h-0">
                     <ClubMap
                         :selectedIds="selectedIds"
                         :occupiedIds="occupiedIds"
@@ -620,8 +910,9 @@ onUnmounted(() => {
                         <p class="step-label"><span class="step-num">02</span> Дата и время</p>
                         <div class="mb-2.5 shrink-0">
                             <div class="flex gap-2 overflow-x-auto pb-2 no-scrollbar flex-nowrap scroll-smooth">
-                                <div v-for="d in days" :key="d.full" @click="selectedDate = d.full"
-                                     :class="['min-w-[48px] h-[56px] flex flex-col items-center justify-center rounded-xl border transition-all cursor-pointer',
+                                <div v-for="d in days" :key="d.full" @click="!d.disabled && (selectedDate = d.full)"
+                                     :class="['min-w-[48px] h-[56px] flex flex-col items-center justify-center rounded-xl border transition-all',
+                                      d.disabled ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer',
                                       selectedDate === d.full ? 'bg-[#22c55e] border-[#22c55e]' : 'bg-white/5 border-white/10']">
                                     <span :class="['text-[8px] font-black uppercase', selectedDate === d.full ? 'text-black/70' : 'text-slate-400']">{{ d.dayName }}</span>
                                     <span :class="['text-[16px] font-mono font-black', selectedDate === d.full ? 'text-black' : 'text-white']">{{ d.dayNum }}</span>
@@ -630,84 +921,94 @@ onUnmounted(() => {
                         </div>
 
                         <div class="grid grid-cols-2 gap-2 p-1 bg-white/5 rounded-2xl border border-white/5 mb-2.5">
-                            <button @click="bookingMode='hourly'" :class="['py-2.5 rounded-xl text-[10px] font-black uppercase', bookingMode==='hourly' ? 'bg-[#22c55e] text-black shadow-lg' : 'text-white/40']">ПОЧАСОВОЙ</button>
-                            <button @click="bookingMode='packages'" :class="['py-2.5 rounded-xl text-[10px] font-black uppercase', bookingMode==='packages' ? 'bg-[#22c55e] text-black shadow-lg' : 'text-white/40']">ПАКЕТЫ</button>
+                            <button @click="setBookingMode('hourly')" :class="['py-2.5 rounded-xl text-[10px] font-black uppercase', bookingMode==='hourly' ? 'bg-[#22c55e] text-black shadow-lg' : 'text-white/40']">ПОЧАСОВОЙ</button>
+                            <button @click="setBookingMode('packages')" :class="['py-2.5 rounded-xl text-[10px] font-black uppercase', bookingMode==='packages' ? 'bg-[#22c55e] text-black shadow-lg' : 'text-white/40']">ПАКЕТЫ</button>
                         </div>
 
-                        <div class="bg-black border border-white/10 rounded-[32px] p-4 mb-4 relative overflow-hidden min-h-[150px] flex flex-col justify-center shrink-0">
-                            <div class="flex justify-between items-center h-[60px] px-2 mb-2">
-                                <div class="flex-1 h-full wheel-container touch-none" @wheel.prevent="handleWheel($event, 'start')">
-                                    <div class="wheel-strip" :style="{ transform: `translateY(-${getIndexByTime(startH) * 60}px)` }">
-                                        <div v-for="s in timeSteps" :key="'s'+s" class="time-cell">{{ formatTimeLabel(s) }}</div>
-                                    </div>
+                        <div v-if="bookingMode === 'packages'" class="mb-2.5 space-y-2">
+                            <p v-if="tariffGridError" class="text-[9px] text-red-400 uppercase tracking-widest">{{ tariffGridError }}</p>
+                            <p v-else-if="!selectedIds.length" class="text-[9px] text-white/30 uppercase tracking-widest">Сначала выберите места</p>
+                            <p v-else-if="!zonePackages.length" class="text-[9px] text-white/30 uppercase tracking-widest">
+                                Для зоны {{ zoneCategory || '—' }} нет пакетов
+                            </p>
+                            <button
+                                v-for="pkg in zonePackages"
+                                :key="pkg.id"
+                                type="button"
+                                @click="selectPackage(pkg)"
+                                :class="[
+                                    'w-full flex items-center justify-between rounded-2xl border px-4 py-3 transition-all text-left',
+                                    selectedPackage?.id === pkg.id
+                                        ? 'border-[#22c55e] bg-[#22c55e]/10'
+                                        : 'border-white/10 bg-black hover:border-white/25'
+                                ]"
+                            >
+                                <div>
+                                    <div class="text-white font-black text-xs uppercase tracking-widest">{{ pkg.title }}</div>
+                                    <div class="text-white/40 text-[9px] font-bold uppercase tracking-widest mt-1">{{ pkg.hours }} ч · зона {{ zoneCategory }}</div>
                                 </div>
-                                <div class="text-[#22c55e] font-black text-xl px-2 opacity-50">/</div>
-                                <div class="flex-1 h-full wheel-container touch-none" @wheel.prevent="handleWheel($event, 'end')">
-                                    <div class="wheel-strip" :style="{ transform: `translateY(-${getIndexByTime(endH) * 60}px)` }">
-                                        <div v-for="e in timeSteps" :key="'e'+e" class="time-cell">{{ formatTimeLabel(e) }}</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="flex justify-center items-baseline gap-2 font-black text-[#22c55e]">
-                                <span class="text-white/40 uppercase tracking-widest text-[10px] mr-2 italic">Длительность:</span>
-                                <span class="text-4xl font-mono leading-none">{{ Math.floor(duration) }}</span><span class="text-lg">ч</span>
-                            </div>
+                                <div class="text-[#22c55e] font-black italic text-lg leading-none">{{ Math.round(pkg.cost) }}₽</div>
+                            </button>
+                            <p v-if="zoneHourlyRate" class="text-[8px] text-white/25 uppercase tracking-widest px-1">
+                                Докат сверх пакета: {{ Math.round(zoneHourlyRate) }} ₽/ч
+                            </p>
                         </div>
 
-                        <section ref="gamesSection"
-                                 :class="['mb-4 shrink-0 rounded-2xl border overflow-hidden transition-all duration-500 scroll-mt-1',
-                                          highlightGames ? 'border-[#22c55e] shadow-[0_0_0_3px_rgba(34,197,94,0.25)]'
-                                          : selectableGamesCount ? 'border-[#22c55e]/40' : 'border-white/10',
-                                          selectableGamesCount ? 'bg-[#22c55e]/[0.04]' : 'bg-white/[0.02]']">
-                            <header class="lg:sticky lg:top-0 z-20 flex items-center justify-between gap-2 px-4 py-2.5 border-b border-white/10 bg-[#0b0f0c]/95 backdrop-blur-md">
-                                <p class="step-label step-label-active"><span class="step-num">03</span> Платные игры</p>
-                                <span :class="['px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest whitespace-nowrap',
-                                               selectedGamesCount ? 'bg-[#22c55e] text-black' : 'bg-white/5 text-white/40']">
-                                    {{ selectedGamesCount ? `${selectedGamesCount} выбрано` : 'не выбрано' }}
-                                </span>
-                            </header>
-
-                            <div class="px-4">
-                                <p v-if="!selectedIds.length" class="py-4 text-center text-[9px] text-white/25 uppercase tracking-widest leading-relaxed">
-                                    Выберите места на карте,<br>чтобы добавить игры к брони
-                                </p>
-                                <p v-else-if="isGamesLoading" class="py-4 text-center text-[9px] text-white/30 uppercase tracking-widest animate-pulse">
-                                    Проверяем доступность...
-                                </p>
-                                <p v-else-if="gamesError" class="py-4 text-center text-[9px] text-red-400 uppercase tracking-widest">
-                                    {{ gamesError }}
-                                </p>
-                                <p v-else-if="!availableGames.length" class="py-4 text-center text-[9px] text-white/20 uppercase tracking-widest">
-                                    Нет платных игр — бесплатные берутся в shell
-                                </p>
-                                <template v-else>
-                                    <label v-for="game in availableGames" :key="game.id"
-                                           :class="['flex items-start gap-3 py-2.5 border-t border-white/5 first:border-t-0 group',
-                                                    game.is_available ? 'cursor-pointer' : 'cursor-not-allowed opacity-50']">
-                                        <input v-model="selectedGameIds" type="checkbox" :value="game.id"
-                                               :disabled="!game.is_available"
-                                               class="mt-0.5 size-4 accent-[#22c55e] disabled:cursor-not-allowed"
-                                               :class="game.is_available ? 'cursor-pointer' : ''">
-                                        <div class="min-w-0 flex-1">
-                                            <div :class="['text-[11px] font-black uppercase truncate transition-colors',
-                                                          game.is_available ? 'text-white group-hover:text-[#22c55e]' : 'text-white/50 line-through']">
-                                                {{ game.title }}
-                                            </div>
-                                            <div v-if="game.is_available" class="text-[8px] text-white/25 uppercase truncate">
-                                                {{ [game.platform, gameBillingNote(game)].filter(Boolean).join(' · ') }}
-                                            </div>
-                                            <div v-else class="text-[8px] text-amber-500/80 uppercase leading-snug">
-                                                {{ gameBlockReason(game) }}
-                                            </div>
+                        <div class="bg-black border border-white/10 rounded-[32px] p-3 sm:p-4 mb-4 shrink-0">
+                            <div class="grid grid-cols-2 gap-2 sm:gap-3">
+                                <div class="flex flex-col items-center gap-1">
+                                    <span class="time-label">Начало</span>
+                                    <div class="w-full wheel-container touch-none"
+                                         @wheel.prevent="handleWheel($event, 'start')"
+                                         @pointerdown="startTimeDrag($event, 'start')"
+                                         @pointermove="moveTimeDrag"
+                                         @pointerup="endTimeDrag"
+                                         @pointercancel="endTimeDrag">
+                                        <div class="wheel-strip" :style="{ transform: `translateY(-${getIndexByTime(startH) * 60}px)` }">
+                                            <div v-for="s in timeSteps" :key="'s'+s" class="time-cell">{{ formatTimeLabel(s) }}</div>
                                         </div>
-                                        <span :class="['text-[9px] font-black whitespace-nowrap shrink-0 mt-0.5',
-                                                       game.is_available ? 'text-[#22c55e]' : 'text-white/30']">
-                                            {{ formatGamePrice(game) }}
-                                        </span>
-                                    </label>
-                                </template>
+                                    </div>
+                                    <div class="flex gap-1.5 w-full">
+                                        <button type="button" class="time-step" @click="stepTime('start', -1)" aria-label="Начало на 15 минут раньше">−15</button>
+                                        <button type="button" class="time-step" @click="stepTime('start', 1)" aria-label="Начало на 15 минут позже">+15</button>
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-col items-center gap-1">
+                                    <span class="time-label">Конец</span>
+                                    <div class="w-full wheel-container touch-none"
+                                         @wheel.prevent="handleWheel($event, 'end')"
+                                         @pointerdown="startTimeDrag($event, 'end')"
+                                         @pointermove="moveTimeDrag"
+                                         @pointerup="endTimeDrag"
+                                         @pointercancel="endTimeDrag">
+                                        <div class="wheel-strip" :style="{ transform: `translateY(-${getIndexByTime(endH) * 60}px)` }">
+                                            <div v-for="e in timeSteps" :key="'e'+e" class="time-cell">{{ formatTimeLabel(e) }}</div>
+                                        </div>
+                                    </div>
+                                    <div class="flex gap-1.5 w-full">
+                                        <button type="button" class="time-step" :disabled="bookingMode === 'packages'"
+                                                @click="stepTime('end', -1)" aria-label="Конец на 15 минут раньше">−15</button>
+                                        <button type="button" class="time-step" :disabled="bookingMode === 'packages'"
+                                                @click="stepTime('end', 1)" aria-label="Конец на 15 минут позже">+15</button>
+                                    </div>
+                                </div>
                             </div>
-                        </section>
+
+                            <div class="mt-3 pt-3 border-t border-white/5 flex justify-center items-baseline gap-2">
+                                <span class="text-white/40 uppercase tracking-widest text-[10px] italic">Длительность:</span>
+                                <span class="text-[#22c55e] font-black text-xl font-mono leading-none">{{ formatDuration(duration) }}</span>
+                            </div>
+                        </div>
+
+                        <div v-if="priceBreakdown.length" class="mb-4 rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 shrink-0">
+                            <div v-for="line in priceBreakdown" :key="line.label"
+                                 class="flex items-center justify-between gap-3 py-1.5 text-[11px] border-b border-white/5 last:border-0">
+                                <span class="text-white/45">{{ line.label }}</span>
+                                <span class="font-mono text-white/80 whitespace-nowrap">{{ formatMoney(line.value) }} ₽</span>
+                            </div>
+                        </div>
+
                     </div>
 
                     <div v-if="hasHiddenPanelContent"
@@ -754,7 +1055,21 @@ onUnmounted(() => {
                 <SmsModal v-if="showSmsModal" :is-open="showSmsModal" :phone="userPhone" :is-terminal="isTerminal" @close="showSmsModal = false" @verify="() => { showSmsModal = false; showSuccessModal = true }" />
                 <PaymentModal v-if="showSuccessModal" :isOpen="showSuccessModal" mode="booking" :data="bookingDataForModal" @close="handleFinalClose" />
                 <ZoneInfoModal v-if="showInfoModal" :isOpen="showInfoModal" :zoneId="selectedZoneForInfo" @close="closeAllModals" />
-                <TariffsModal v-if="showTariffsModal" :isOpen="showTariffsModal" @close="closeAllModals" />
+                <TariffsModal v-if="showTariffsModal" :isOpen="showTariffsModal" :showcase="tariffShowcase" @close="closeAllModals" />
+                <GamesBookingModal
+                    :isOpen="showGamesModal"
+                    :games="availableGames"
+                    :selectedIds="selectedGameIds"
+                    :hasSeats="selectedIds.length > 0"
+                    :isLoading="isGamesLoading"
+                    :error="gamesError"
+                    :formatPrice="formatGamePrice"
+                    :billingNote="gameBillingNote"
+                    :blockReason="gameBlockReason"
+                    @close="closeGamesModal"
+                    @update:selectedIds="selectedGameIds = $event"
+                    @confirm="confirmGamesSelection"
+                />
             </Teleport>
         </div>
     </component>
@@ -791,9 +1106,43 @@ onUnmounted(() => {
 .panel-scroll::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.04); border-radius: 999px; }
 .panel-scroll::-webkit-scrollbar-thumb { background: rgba(34, 197, 94, 0.45); border-radius: 999px; }
 .panel-scroll::-webkit-scrollbar-thumb:hover { background: rgba(34, 197, 94, 0.7); }
-.wheel-container { overflow: hidden; height: 60px; position: relative; display: flex; justify-content: center; z-index: 20; }
+.wheel-container { overflow: hidden; height: 60px; position: relative; display: flex; justify-content: center; z-index: 20; cursor: ns-resize; }
 .wheel-strip { display: flex; flex-direction: column; align-items: center; transition: transform 0.5s cubic-bezier(0.23, 1, 0.32, 1); will-change: transform; width: 100%; }
-.time-cell { height: 60px; min-height: 60px; display: flex; align-items: center; justify-content: center; font-size: 2.8rem; font-weight: 900; color: #22c55e; font-family: ui-monospace, monospace; text-shadow: 0 0 10px rgba(34, 197, 94, 0.4); }
+/* Размер подстраивается под ширину: на узких экранах фиксированные 2.8rem обрезались. */
+.time-cell { height: 60px; min-height: 60px; display: flex; align-items: center; justify-content: center; font-size: clamp(1.75rem, 8.5vw, 2.8rem); font-weight: 900; color: #22c55e; font-family: ui-monospace, monospace; text-shadow: 0 0 10px rgba(34, 197, 94, 0.4); }
+
+.time-label { font-size: 9px; font-weight: 900; font-style: italic; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(255, 255, 255, 0.35); }
+.time-step {
+    flex: 1;
+    min-height: 34px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #22c55e;
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 900;
+    transition: background-color 0.15s, color 0.15s;
+}
+.time-step:hover:not(:disabled) { background: rgba(34, 197, 94, 0.15); }
+.time-step:active:not(:disabled) { background: #22c55e; color: #000; }
+.time-step:disabled { opacity: 0.25; cursor: not-allowed; }
+
+.seat-chip {
+    min-width: 58px;
+    min-height: 44px;
+    padding: 0 0.5rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.75);
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    font-weight: 900;
+    transition: all 0.15s;
+}
+.seat-chip.is-selected { background: #22c55e; border-color: #22c55e; color: #000; }
+.seat-chip.is-occupied { opacity: 0.3; text-decoration: line-through; cursor: not-allowed; }
 
 .animate-in { animation: zoom-in 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes zoom-in { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }

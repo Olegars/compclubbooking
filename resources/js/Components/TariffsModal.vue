@@ -1,19 +1,49 @@
 <script setup lang="ts">
-const props = defineProps<{ isOpen: boolean }>()
+import { computed, onMounted, ref, watch } from 'vue'
+import axios from 'axios'
+
+const props = defineProps<{
+  isOpen: boolean
+  showcase?: {
+    rates?: Array<{ zone: string; slug?: string; price: string; color: string }>
+    packages?: Array<{ id?: number; name: string; discount: string; hours?: number; cost?: number; category?: string }>
+  } | null
+}>()
 const emit = defineEmits(['close'])
 
-const rates = [
-  { zone: 'PRO / BOOTCAMP', price: '300', color: '#ff0000' },
-  { zone: 'SINGLE', price: '250', color: '#ffff00' },
-  { zone: 'DUO', price: '180', color: '#3b82f6' },
-  { zone: 'TRIO', price: '150', color: '#ff9900' }
-]
+const rates = ref(props.showcase?.rates ?? [])
+const packages = ref(props.showcase?.packages ?? [])
+const loading = ref(false)
 
-const packages = [
-  { name: '3 ЧАСА', discount: 'Скидка 10%' },
-  { name: '5 ЧАСОВ', discount: 'Скидка 20%' },
-  { name: 'НОЧЬ (12ч)', discount: 'Скидка 40%' }
-]
+const loadTariffs = async () => {
+  if ((rates.value?.length || 0) > 0 || (packages.value?.length || 0) > 0) return
+  loading.value = true
+  try {
+    const { data } = await axios.get('/api/booking/tariffs')
+    rates.value = Array.isArray(data?.rates) ? data.rates : []
+    packages.value = Array.isArray(data?.packages) ? data.packages : []
+  } catch (e) {
+    console.error('Не удалось загрузить тарифы', e)
+  } finally {
+    loading.value = false
+  }
+}
+
+watch(() => props.showcase, (value) => {
+  if (value?.rates) rates.value = value.rates
+  if (value?.packages) packages.value = value.packages
+}, { deep: true })
+
+watch(() => props.isOpen, (open) => {
+  if (open) loadTariffs()
+})
+
+onMounted(() => {
+  if (props.isOpen) loadTariffs()
+})
+
+const hasRates = computed(() => rates.value.length > 0)
+const hasPackages = computed(() => packages.value.length > 0)
 </script>
 
 <template>
@@ -37,11 +67,13 @@ const packages = [
 
           <div class="mb-8">
             <span class="text-[10px] text-slate-500 font-black uppercase tracking-widest block mb-4 italic">Почасовая оплата (за 1 место)</span>
-            <div class="space-y-2">
-              <div v-for="rate in rates" :key="rate.zone" class="flex justify-between items-end bg-white/[0.02] p-3 rounded-xl border border-white/5">
+            <div v-if="loading && !hasRates" class="text-white/30 text-xs uppercase tracking-widest py-4">Загрузка...</div>
+            <div v-else-if="!hasRates" class="text-white/30 text-xs uppercase tracking-widest py-4">Тарифы пока не заданы</div>
+            <div v-else class="space-y-2">
+              <div v-for="rate in rates" :key="rate.slug || rate.zone" class="flex justify-between items-end bg-white/[0.02] p-3 rounded-xl border border-white/5">
                 <div class="flex items-center gap-2">
                   <div class="w-2 h-2 rounded-full" :style="{ backgroundColor: rate.color, boxShadow: `0 0 8px ${rate.color}` }"></div>
-                  <span class="text-white font-bold font-mono text-sm">{{ rate.zone }}</span>
+                  <span class="text-white font-bold font-mono text-sm uppercase">{{ rate.zone }}</span>
                 </div>
                 <div class="flex items-baseline gap-1">
                   <span class="text-[#22c55e] font-black italic text-xl leading-none">{{ rate.price }}</span>
@@ -53,9 +85,13 @@ const packages = [
 
           <div>
             <span class="text-[10px] text-slate-500 font-black uppercase tracking-widest block mb-4 italic">Пакетные предложения</span>
-            <div class="grid grid-cols-1 gap-2">
-              <div v-for="pkg in packages" :key="pkg.name" class="flex justify-between items-center border border-white/10 rounded-xl p-3 bg-black">
-                <span class="text-white font-black text-xs tracking-widest uppercase">{{ pkg.name }}</span>
+            <div v-if="!hasPackages" class="text-white/30 text-xs uppercase tracking-widest py-2">Нет активных пакетов</div>
+            <div v-else class="grid grid-cols-1 gap-2">
+              <div v-for="pkg in packages" :key="pkg.id || pkg.name" class="flex justify-between items-center border border-white/10 rounded-xl p-3 bg-black">
+                <div class="flex flex-col gap-0.5">
+                  <span class="text-white font-black text-xs tracking-widest uppercase">{{ pkg.name }}</span>
+                  <span v-if="pkg.cost != null" class="text-white/40 text-[9px] font-bold uppercase tracking-widest">{{ Math.round(Number(pkg.cost)) }} ₽ · {{ pkg.hours }}ч</span>
+                </div>
                 <span class="text-[#22c55e] text-[10px] font-bold uppercase tracking-widest px-2 py-1 bg-[#22c55e]/10 rounded-md">{{ pkg.discount }}</span>
               </div>
             </div>

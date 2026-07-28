@@ -84,7 +84,13 @@ class SmsAuthController extends Controller
         \Illuminate\Support\Facades\Auth::guard('web')->login($user, true);
         $request->session()->regenerate();
 
-        // Жестко редиректим в личный кабинет
-        return inertia()->location(route('dashboard'));
+        // Вход из бронирования возвращает на ту же страницу с сохранённым выбором,
+        // остальные случаи ведут в личный кабинет. Принимаем только локальные пути.
+        $redirectTo = (string) $request->input('redirect_to', '');
+        $isLocalPath = $redirectTo !== ''
+            && str_starts_with($redirectTo, '/')
+            && ! str_starts_with($redirectTo, '//');
+
+        return inertia()->location($isLocalPath ? $redirectTo : route('dashboard'));
     }
 }

@@ -840,6 +840,8 @@ class ShellApiController extends Controller
                 return $reservedAccount;
             }
 
+            // Walk-in: и бесплатные, и платные игры (если аккаунт не удерживает бронь).
+            // Платный тариф открывает предбронь; shell по-прежнему может выдать свободный аккаунт.
             $sessionEndsAt = $booking?->ends_at ?? now()->addHours(1);
 
             $walkInAccount = GameAccount::query()

@@ -46,6 +46,15 @@ Route::get('/', [HomeController::class, 'index'])->name('home');
 Route::get('/booking/{slug?}', [ClubController::class, 'show'])->name('booking');
 Route::get('/terminal/{slug?}', [TerminalController::class, 'index'])->name('terminal.booking');
 
+Route::match(['get', 'post'], '/api/booking/tariff-grid', [BookingController::class, 'tariffGrid']);
+Route::get('/api/booking/tariffs', [BookingController::class, 'tariffsShowcase']);
+
+// Расчёт и доступность — только чтение, доступны гостю: цену и занятые места
+// человек должен видеть до входа по SMS. Само бронирование остаётся под auth.
+Route::post('/api/booking/computers/availability', [BookingController::class, 'computersAvailability']);
+Route::post('/api/booking/games/availability', [BookingController::class, 'availability']);
+Route::post('/api/booking/calculate-price', [BookingController::class, 'calculatePrice']);
+
 /*
 |--------------------------------------------------------------------------
 | АВТОРИЗАЦИЯ ИГРОКОВ (SMS)
@@ -88,9 +97,6 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/api/promo/apply', [PromoCodeController::class, 'apply']);
 
     // --- РОУТЫ СИСТЕМЫ БРОНИРОВАНИЯ ---
-    Route::post('/api/booking/computers/availability', [BookingController::class, 'computersAvailability']);
-    Route::post('/api/booking/games/availability', [BookingController::class, 'availability']);
-    Route::post('/api/booking/calculate-price', [BookingController::class, 'calculatePrice']);
     Route::post('/api/booking/reserve', [BookingController::class, 'reserve']);
     Route::post('/api/booking/{bookingGroup}/cancel', [BookingController::class, 'cancel']);
 

@@ -3,18 +3,24 @@
 namespace App\Http\Controllers;
 
 use App\Models\BookingGroup;
+use App\Models\Club;
 use App\Models\Computer;
-use App\Models\Tariff;
 use App\Services\GameBookingService;
+use App\Services\MapZoneResolver;
+use App\Services\TariffService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class BookingController extends Controller
 {
-    public function __construct(private readonly GameBookingService $bookings)
-    {
+    public function __construct(
+        private readonly GameBookingService $bookings,
+        private readonly TariffService $tariffs,
+        private readonly MapZoneResolver $zones,
+    ) {
     }
 
     public function computersAvailability(Request $request)
@@ -68,38 +74,100 @@ class BookingController extends Controller
         ]);
     }
 
+    public function tariffGrid(Request $request)
+    {
+        $validated = $request->validate([
+            'club_id' => 'required|integer|exists:clubs,id',
+            'pc_ids' => 'nullable|array|min:1',
+            'pc_ids.*' => 'integer|distinct|exists:computers,id',
+            'category' => 'nullable|string|max:64',
+            'starts_at' => 'nullable|date',
+        ]);
+
+        $club = Club::query()->findOrFail((int) $validated['club_id']);
+        $startsAt = ! empty($validated['starts_at'])
+            ? CarbonImmutable::parse($validated['starts_at'])->timezone(config('app.timezone'))
+            : null;
+
+        $category = strtolower(trim((string) ($validated['category'] ?? '')));
+
+        if ($category === '' && ! empty($validated['pc_ids'])) {
+            $computers = Computer::query()
+                ->where('club_id', $club->id)
+                ->whereIn('id', $validated['pc_ids'])
+                ->get();
+
+            if ($computers->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'pc_ids' => 'Компьютеры не найдены в этом клубе.',
+                ]);
+            }
+
+            $resolved = $this->zones->resolveForComputers($club, $computers);
+            $categories = array_values(array_unique(array_values($resolved)));
+            $category = $categories[0] ?? MapZoneResolver::FALLBACK_CATEGORY;
+        }
+
+        if ($category === '') {
+            $category = MapZoneResolver::FALLBACK_CATEGORY;
+        }
+
+        $grid = $this->tariffs->gridForCategory($category, $startsAt);
+
+        return response()->json([
+            'club_id' => $club->id,
+            ...$grid,
+        ]);
+    }
+
+    public function tariffsShowcase()
+    {
+        return response()->json($this->tariffs->showcase());
+    }
+
     public function calculatePrice(Request $request)
     {
         $validated = $request->validate([
             'club_id' => 'nullable|integer|exists:clubs,id',
             'pc_ids' => 'required|array|min:1',
             'pc_ids.*' => 'integer|distinct|exists:computers,id',
-            'game_ids' => 'nullable|array',
+            'game_ids' => 'nullable|array|max:1',
             'game_ids.*' => 'integer|distinct|exists:games,id',
             'starts_at' => 'nullable|date|required_with:ends_at',
             'ends_at' => 'nullable|date|required_with:starts_at',
             'date' => 'nullable|string',
             'start_h' => 'nullable|numeric',
             'duration' => 'required_without_all:starts_at,ends_at|nullable|numeric|min:0.25',
+            'mode' => ['nullable', Rule::in(['hourly', 'packages'])],
+            'tariff_id' => 'nullable|integer|exists:tariffs,id',
         ]);
 
-        if (!isset($validated['starts_at']) && !isset($validated['date'])) {
-            $duration = (float) $validated['duration'];
-            $hoursForTariff = max(1, (int) floor($duration));
-            $tariff = Tariff::query()
-                ->where('is_active', true)
-                ->where('threshold_hours', $hoursForTariff)
-                ->first();
-            $pricePerHour = $tariff
-                ? ((float) $tariff->price_per_package / $tariff->threshold_hours)
-                : 250;
-            $totalPrice = (int) round($pricePerHour * $duration * count($validated['pc_ids']));
+        $mode = ($validated['mode'] ?? 'hourly') === 'packages' ? 'packages' : 'hourly';
+        $tariffId = isset($validated['tariff_id']) ? (int) $validated['tariff_id'] : null;
+
+        if (! isset($validated['starts_at']) && ! isset($validated['date'])) {
+            $clubId = $this->resolveClubId($validated);
+            $club = Club::query()->findOrFail($clubId);
+            $computers = Computer::query()
+                ->where('club_id', $clubId)
+                ->whereIn('id', $validated['pc_ids'])
+                ->get();
+            $zones = $this->zones->resolveForComputers($club, $computers);
+            $seatQuote = $this->tariffs->quoteSeats(
+                $zones,
+                (float) $validated['duration'],
+                $mode,
+                $tariffId
+            );
 
             return response()->json([
-                'total_price' => $totalPrice,
-                'total_minor' => $totalPrice * 100,
-                'computers_total_minor' => $totalPrice * 100,
+                'total_price' => $seatQuote['total_rub'],
+                'total_minor' => $seatQuote['total_minor'],
+                'computers_total_minor' => $seatQuote['total_minor'],
                 'games_total_minor' => 0,
+                'mode' => $mode,
+                'tariff_id' => $tariffId,
+                'tariff' => $seatQuote,
                 'games' => [],
             ]);
         }
@@ -112,7 +180,9 @@ class BookingController extends Controller
             $validated['pc_ids'],
             $validated['game_ids'] ?? [],
             $startsAt,
-            $endsAt
+            $endsAt,
+            $mode,
+            $tariffId
         ));
     }
 
@@ -122,14 +192,19 @@ class BookingController extends Controller
             'club_id' => 'nullable|integer|exists:clubs,id',
             'pc_ids' => 'required|array|min:1',
             'pc_ids.*' => 'integer|distinct|exists:computers,id',
-            'game_ids' => 'nullable|array',
+            'game_ids' => 'nullable|array|max:1',
             'game_ids.*' => 'integer|distinct|exists:games,id',
             'starts_at' => 'nullable|date|required_with:ends_at',
             'ends_at' => 'nullable|date|required_with:starts_at',
             'date' => 'required_without:starts_at|nullable|string',
             'start_h' => 'required_without:starts_at|nullable|numeric',
             'duration' => 'required_without:starts_at|nullable|numeric|min:0.25',
+            'mode' => ['nullable', Rule::in(['hourly', 'packages'])],
+            'tariff_id' => 'nullable|integer|exists:tariffs,id',
         ]);
+
+        $mode = ($validated['mode'] ?? 'hourly') === 'packages' ? 'packages' : 'hourly';
+        $tariffId = isset($validated['tariff_id']) ? (int) $validated['tariff_id'] : null;
 
         [$startsAt, $endsAt] = $this->resolvePeriod($validated);
         try {
@@ -139,7 +214,9 @@ class BookingController extends Controller
                 $validated['pc_ids'],
                 $validated['game_ids'] ?? [],
                 $startsAt,
-                $endsAt
+                $endsAt,
+                $mode,
+                $tariffId
             );
         } catch (QueryException $exception) {
             if (in_array($exception->getCode(), ['23P01', '23505', '23000'], true)) {
@@ -174,7 +251,7 @@ class BookingController extends Controller
 
     private function resolveClubId(array $validated): int
     {
-        if (!empty($validated['club_id'])) {
+        if (! empty($validated['club_id'])) {
             return (int) $validated['club_id'];
         }
 
@@ -187,7 +264,7 @@ class BookingController extends Controller
     {
         $tz = config('app.timezone');
 
-        if (!empty($validated['starts_at']) && !empty($validated['ends_at'])) {
+        if (! empty($validated['starts_at']) && ! empty($validated['ends_at'])) {
             // Переводим в TZ клуба до записи в PG: PDO пишет naive timestamp,
             // а сессия БД (Europe/Moscow) иначе сдвигает UTC-инстант на -3 часа.
             return [

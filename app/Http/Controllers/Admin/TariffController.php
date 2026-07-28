@@ -27,6 +27,17 @@ class TariffController extends Controller
             'category' => 'required|string',
         ]);
 
+        $exists = Tariff::query()
+            ->where('category', $data['category'])
+            ->where('threshold_hours', (int) $data['threshold_hours'])
+            ->exists();
+
+        if ($exists) {
+            return back()->withErrors([
+                'threshold_hours' => 'Для этой зоны уже есть тариф с таким количеством часов.',
+            ]);
+        }
+
         Tariff::create($data);
         return back();
     }

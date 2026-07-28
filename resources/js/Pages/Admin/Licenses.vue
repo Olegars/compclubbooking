@@ -307,7 +307,7 @@ const getStatusBadge = (status) => {
                                 <div>
                                     <div class="text-[10px] text-[#22c55e] font-black uppercase tracking-widest">Тариф игры в клубе</div>
                                     <p class="mt-1 text-[8px] text-white/30 uppercase tracking-widest leading-relaxed">
-                                        «Бесплатно» — только shell. Платный режим — появляется в бронировании ПК.
+                                        «Бесплатно» — только shell. «Платно» — можно бронировать заранее, в shell игра всё равно доступна бесплатно (если аккаунт свободен).
                                     </p>
                                 </div>
                                 <label class="flex items-center gap-2 text-[9px] uppercase text-white/50 font-black">
@@ -325,10 +325,10 @@ const getStatusBadge = (status) => {
                                 <select v-model="offerForm.billing_mode"
                                         class="bg-black border border-white/10 rounded-xl p-3 text-xs text-white">
                                     <option value="free">Бесплатно (только shell)</option>
-                                    <option value="per_seat_hour">Платная: место / период</option>
-                                    <option value="per_seat_booking">Платная: место / бронь</option>
-                                    <option value="per_booking_hour">Платная: бронь / период</option>
-                                    <option value="fixed">Платная: фикс</option>
+                                    <option value="per_seat_hour">Платная: место / период (+ shell)</option>
+                                    <option value="per_seat_booking">Платная: место / бронь (+ shell)</option>
+                                    <option value="per_booking_hour">Платная: бронь / период (+ shell)</option>
+                                    <option value="fixed">Платная: фикс (+ shell)</option>
                                 </select>
                                 <input v-model.number="offerForm.unit_price_rubles" type="number" min="0" step="0.01"
                                        placeholder="Цена, ₽"
@@ -350,7 +350,7 @@ const getStatusBadge = (status) => {
                                                offerForm.billing_mode !== 'free'
                                                  ? 'bg-[#22c55e]/15 text-[#22c55e] border border-[#22c55e]/30'
                                                  : 'bg-white/5 text-white/40 border border-white/10']">
-                                    {{ offerForm.billing_mode !== 'free' ? 'Платная · бронь ПК' : 'Бесплатная · только shell' }}
+                                    {{ offerForm.billing_mode !== 'free' ? 'Платная · бронь + shell' : 'Бесплатная · только shell' }}
                                 </span>
                             </div>
                         </form>
