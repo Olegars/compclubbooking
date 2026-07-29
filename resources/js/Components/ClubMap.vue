@@ -50,7 +50,7 @@
                         />
                         <text
                             :x="zoneBadge(r).cx"
-                            :y="zoneBadge(r).cy"
+                            :y="zoneBadge(r).titleY"
                             text-anchor="middle"
                             dominant-baseline="central"
                             fill="#ffffff"
@@ -60,7 +60,21 @@
                             font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
                             letter-spacing="0.04em"
                             class="uppercase"
-                        >{{ zoneBadge(r).text }}</text>
+                        >{{ zoneBadge(r).title }}</text>
+                        <text
+                            v-if="zoneBadge(r).sub"
+                            :x="zoneBadge(r).cx"
+                            :y="zoneBadge(r).subY"
+                            text-anchor="middle"
+                            dominant-baseline="central"
+                            fill="#ffffff"
+                            fill-opacity="0.78"
+                            :font-size="ZONE_BADGE_SUB_FONT"
+                            font-weight="700"
+                            font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
+                            letter-spacing="0.04em"
+                            class="uppercase"
+                        >{{ zoneBadge(r).sub }}</text>
                     </g>
                 </g>
             </g>
@@ -143,12 +157,49 @@
                     letter-spacing="0.06em"
                 >опция</text>
             </g>
+
+            <!-- Знак «?» на краю комнаты, выходящем в проход (поверх мест) -->
+            <g v-for="m in roomInfoMarkers" :key="'info-'+m.key"
+               class="cursor-pointer"
+               @click.stop="emit('show-info', m.payload)">
+                <circle
+                    :cx="m.cx" :cy="m.cy" :r="INFO_MARKER_R"
+                    fill="#0a0a0a"
+                    stroke="rgba(255,255,255,0.55)"
+                    stroke-width="0.18"
+                    class="transition-opacity hover:opacity-90"
+                />
+                <text
+                    :x="m.cx" :y="m.cy + 0.15"
+                    text-anchor="middle"
+                    dominant-baseline="central"
+                    fill="#ffffff"
+                    font-size="1.55"
+                    font-weight="800"
+                    font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
+                    class="pointer-events-none"
+                >?</text>
+            </g>
         </svg>
     </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import {
+    INFO_MARKER_R,
+    infoMarkerCenter,
+    isTvZone,
+    resolveInfoEdge,
+    type RoomInfoFields,
+} from '@/utils/roomInfoEdge'
+
+export type RoomInfoShowPayload = {
+    title: string
+    color: string
+    kind: 'pc' | 'tv'
+    info: RoomInfoFields
+}
 
 const props = withDefaults(defineProps<{
     selectedIds?: string[],
@@ -168,6 +219,7 @@ const emit = defineEmits<{
     (e: 'toggle-seat', id: string): void
     (e: 'toggle-addon-seats', payload: { addonId: number; seatIds: string[] }): void
     (e: 'seat-error'): void
+    (e: 'show-info', payload: RoomInfoShowPayload): void
 }>()
 
 const PC_W = 6
@@ -192,10 +244,33 @@ const drawableZones = computed(() =>
     )
 )
 
+const roomInfoMarkers = computed(() => {
+    const zones = drawableZones.value
+    return zones.map((r: any, i: number) => {
+        const others = zones.filter((_: any, j: number) => j !== i)
+        const override = r.info_edge || r.info?.info_edge || null
+        const edge = resolveInfoEdge(r, others, override)
+        const { cx, cy } = infoMarkerCenter(r, edge)
+        const title = zoneTitle(r) || 'Комната'
+        const kind: 'pc' | 'tv' = (r.info_kind === 'tv' || isTvZone(r)) ? 'tv' : 'pc'
+        return {
+            key: `${i}-${edge}`,
+            cx,
+            cy,
+            payload: {
+                title,
+                color: String(r.c || '#22c55e'),
+                kind,
+                info: (r.info && typeof r.info === 'object') ? r.info : {},
+            } satisfies RoomInfoShowPayload,
+        }
+    })
+})
+
 const HIDDEN_MANUAL_LABELS = new Set([
     'STANDART', 'STANDARD', 'СТАНДАРТ',
     'VIP', 'SOLO', 'SINGL', 'DUO', 'TRIO', 'KVATRO',
-    'BOOTCAMP', 'BOOTKAMP', 'BOTKAMP', 'BOTKAMP-PROFI', 'BOOTKAMP-PROFI', 'BOOTCAMP-PROFI',
+    'BOOTCAMP', 'BOOTCAMP PRO', 'BOOTCAMP-PRO', 'BOOTKAMP', 'BOTKAMP', 'BOTKAMP-PROFI', 'BOOTKAMP-PROFI', 'BOOTCAMP-PROFI',
     'TV', 'PS5', 'PS', 'WC', 'ТЕКСТ', 'TEXT',
 ])
 
@@ -206,43 +281,62 @@ const isPlaceholderLabel = (content: unknown) => {
 
 const zoneTitle = (r: any) => {
     const label = String(r?.label || '').trim()
-    if (label) return label.toUpperCase()
+    if (label) return label.replace(/[-_]/g, ' ').toUpperCase()
     const type = String(r?.type || '').trim()
-    return type ? type.replace(/_/g, ' ').toUpperCase() : ''
+    return type ? type.replace(/[-_]/g, ' ').toUpperCase() : ''
 }
 
-const ZONE_BADGE_FONT = 1.35
+const ZONE_BADGE_FONT = 1.3
+const ZONE_BADGE_SUB_FONT = 1.1
 const ZONE_BADGE_INSET = 0.85
-const ZONE_BADGE_PAD_X = 0.65
-const ZONE_BADGE_PAD_Y = 0.38
+const ZONE_BADGE_PAD_X = 0.75
+const ZONE_BADGE_PAD_Y = 0.4
 const ZONE_BADGE_RX = 0.55
-const ZONE_BADGE_CHAR_W = 0.62
+const ZONE_BADGE_CHAR_W = 0.7
+
+const estimateBadgeTextWidth = (text: string, fontSize: number) => {
+    const t = text.trim()
+    if (!t) return 0
+    const letters = t.length * fontSize * ZONE_BADGE_CHAR_W
+    const tracking = Math.max(0, t.length - 1) * fontSize * 0.04
+    return letters + tracking
+}
 
 const zoneBadge = (r: any) => {
     const title = zoneTitle(r)
     if (!title) return null
     const extras = alwaysAddons(r)
-        .map((a: any) => String(a?.name || '+').trim().toUpperCase())
+        .map((a: any) => String(a?.name || '').trim().toUpperCase())
         .filter(Boolean)
-    const text = extras.length ? `${title} ${extras.join(' ')}` : title
-    const tw = Math.max(text.length, 2) * ZONE_BADGE_FONT * ZONE_BADGE_CHAR_W
-    const w = tw + ZONE_BADGE_PAD_X * 2
-    const h = ZONE_BADGE_FONT + ZONE_BADGE_PAD_Y * 2
+    const sub = extras.length ? extras.join(' ') : ''
+    const titleW = estimateBadgeTextWidth(title, ZONE_BADGE_FONT)
+    const subW = sub ? estimateBadgeTextWidth(sub, ZONE_BADGE_SUB_FONT) : 0
+    const w = Math.max(titleW, subW) + ZONE_BADGE_PAD_X * 2
+    const lineGap = sub ? 0.35 : 0
+    const contentH = sub
+        ? ZONE_BADGE_FONT + lineGap + ZONE_BADGE_SUB_FONT
+        : ZONE_BADGE_FONT
+    const h = contentH + ZONE_BADGE_PAD_Y * 2
     const zw = Number(r.w) || 0
     const zh = Number(r.h) || 0
-    // Не прижимаем к контуру; если комната узкая — всё равно оставляем inset по возможности.
     const insetX = Math.min(ZONE_BADGE_INSET, Math.max(0.35, zw * 0.08))
     const insetY = Math.min(ZONE_BADGE_INSET, Math.max(0.35, zh * 0.1))
     const x = Number(r.x) + zw - insetX - w
     const y = Number(r.y) + insetY
+    const titleY = sub
+        ? y + ZONE_BADGE_PAD_Y + ZONE_BADGE_FONT / 2
+        : y + h / 2
+    const subY = y + ZONE_BADGE_PAD_Y + ZONE_BADGE_FONT + lineGap + ZONE_BADGE_SUB_FONT / 2
     return {
-        text,
+        title,
+        sub,
         x,
         y,
         w,
         h,
         cx: x + w / 2,
-        cy: y + h / 2,
+        titleY,
+        subY,
     }
 }
 

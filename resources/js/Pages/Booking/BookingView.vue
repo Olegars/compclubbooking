@@ -166,7 +166,12 @@ const showInfoModal = ref(false)
 const showTariffsModal = ref(false)
 const showGamesModal = ref(false)
 
-const selectedZoneForInfo = ref('PRO')
+const selectedRoomInfo = ref<{
+    title?: string
+    color?: string
+    kind?: 'pc' | 'tv'
+    info?: Record<string, string | null | undefined> | null
+} | null>(null)
 const userPhone = ref('')
 const isProcessing = ref(false)
 
@@ -634,7 +639,7 @@ const priceBreakdown = computed(() => {
     for (const addon of pricedAddonLines.value) {
         if (addon.total_minor > 0) {
             lines.push({
-                label: `${addon.name.toUpperCase()}, ${formatDuration(duration.value)}`,
+                label: `${String(addon.name || '').toUpperCase()}, ${formatDuration(duration.value)}`,
                 value: addon.total_minor / 100,
             })
         }
@@ -980,7 +985,7 @@ onUnmounted(() => {
                         :zoneRects="props.zoneRectsList"
                         :mapConfig="cleanMapConfig"
                         :viewbox="cleanMapConfig.viewbox || props.clubData.viewbox"
-                        @show-info="(id) => { selectedZoneForInfo = id; showOverlay = true; showInfoModal = true }"
+                        @show-info="(room) => { selectedRoomInfo = room; showOverlay = true; showInfoModal = true }"
                         @seat-error="handleSeatError"
                         @toggle-seat="toggleSeatSelection"
                         @toggle-addon-seats="toggleAddonSeats"
@@ -1162,7 +1167,7 @@ onUnmounted(() => {
                 <ConfirmModal v-if="showConfirmModal" :isOpen="showConfirmModal" :mode="isTerminal ? 'auth' : 'booking'" :data="bookingDataForModal" @close="closeAllModals" @confirm="handleConfirmBooking" />
                 <SmsModal v-if="showSmsModal" :is-open="showSmsModal" :phone="userPhone" :is-terminal="isTerminal" @close="showSmsModal = false" @verify="() => { showSmsModal = false; showSuccessModal = true }" />
                 <PaymentModal v-if="showSuccessModal" :isOpen="showSuccessModal" mode="booking" :data="bookingDataForModal" @close="handleFinalClose" />
-                <ZoneInfoModal v-if="showInfoModal" :isOpen="showInfoModal" :zoneId="selectedZoneForInfo" @close="closeAllModals" />
+                <ZoneInfoModal v-if="showInfoModal" :isOpen="showInfoModal" :room="selectedRoomInfo" @close="closeAllModals" />
                 <TariffsModal v-if="showTariffsModal" :isOpen="showTariffsModal" :showcase="tariffShowcase" @close="closeAllModals" />
                 <GamesBookingModal
                     :isOpen="showGamesModal"

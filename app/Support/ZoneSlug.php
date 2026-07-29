@@ -13,9 +13,11 @@ final class ZoneSlug
         'standard' => 'singl',
         'bootkamp' => 'bootcamp',
         'botkamp' => 'bootcamp',
-        'botkamp-profi' => 'bootcamp',
-        'bootkamp-profi' => 'bootcamp',
-        'bootcamp-profi' => 'bootcamp',
+        'botkamp-profi' => 'bootcamp-pro',
+        'bootkamp-profi' => 'bootcamp-pro',
+        'bootcamp-profi' => 'bootcamp-pro',
+        'bootcamp_pro' => 'bootcamp-pro',
+        'bootcamp_profi' => 'bootcamp-pro',
     ];
 
     public static function normalize(?string $slug): string

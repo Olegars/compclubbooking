@@ -8,6 +8,7 @@ use App\Models\Computer;
 use App\Models\SeatClass;
 use App\Models\Space;
 use App\Models\Zone;
+use App\Support\RoomInfoEdge;
 use App\Support\ZoneSlug;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -121,7 +122,7 @@ class MapController extends Controller
             ->where('club_id', $clubId)
             ->get();
 
-        // Подмешиваем addon_ids из БД в прямоугольники карты.
+        // Подмешиваем addon_ids и info комнаты из БД в прямоугольники карты.
         if (is_array($rects)) {
             foreach ($rects as &$rect) {
                 $space = $this->matchSpace($spaces, $rect);
@@ -129,6 +130,13 @@ class MapController extends Controller
                     ? $space->addons->pluck('id')->map(fn ($id) => (int) $id)->values()->all()
                     : array_values(array_map('intval', $rect['addon_ids'] ?? []));
                 $rect['space_id'] = $space?->id;
+                if ($space) {
+                    $rect['info'] = RoomInfoEdge::normalizeInfo($space->roomInfo());
+                } else {
+                    $rect['info'] = RoomInfoEdge::normalizeInfo(
+                        is_array($rect['info'] ?? null) ? $rect['info'] : null
+                    );
+                }
             }
             unset($rect);
             $config['zoneRects'] = $rects;
@@ -186,6 +194,9 @@ class MapController extends Controller
             }
 
             $zone = Zone::query()->find($zoneId);
+            $info = RoomInfoEdge::normalizeInfo(
+                is_array($rect['info'] ?? null) ? $rect['info'] : null
+            );
             $space = Space::query()->create([
                 'club_id' => $clubId,
                 'zone_id' => $zoneId,
@@ -195,6 +206,12 @@ class MapController extends Controller
                 'w' => (float) ($rect['w'] ?? 0),
                 'h' => (float) ($rect['h'] ?? 0),
                 'surcharge_per_hour' => 0,
+                'cpu' => $info['cpu'],
+                'gpu' => $info['gpu'],
+                'monitor' => $info['monitor'],
+                'screen_diagonal' => $info['screen_diagonal'],
+                'ps_model' => $info['ps_model'],
+                'info_edge' => $info['info_edge'],
                 'sort' => $index,
             ]);
 

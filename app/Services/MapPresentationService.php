@@ -4,11 +4,12 @@ namespace App\Services;
 
 use App\Models\Space;
 use App\Models\Zone;
+use App\Support\RoomInfoEdge;
 use App\Support\ZoneSlug;
 use Illuminate\Support\Collection;
 
 /**
- * Готовит map_config для гостевых экранов: автоподпись зоны и допы на комнате.
+ * Готовит map_config для гостевых экранов: автоподпись зоны, допы, info комнаты.
  */
 class MapPresentationService
 {
@@ -27,6 +28,8 @@ class MapPresentationService
         'TRIO',
         'KVATRO',
         'BOOTCAMP',
+        'BOOTCAMP PRO',
+        'BOOTCAMP-PRO',
         'BOOTKAMP',
         'BOTKAMP',
         'BOTKAMP-PROFI',
@@ -60,17 +63,19 @@ class MapPresentationService
             ->where('club_id', $clubId)
             ->get();
 
-        $decorated = [];
+        $drawable = [];
         foreach ($rects as $rect) {
             if (! is_array($rect)) {
                 continue;
             }
-
-            // Битая зона (часто остаток после правок): w/h ≈ 0, но автоподпись всё равно всплывает.
             if ((float) ($rect['w'] ?? 0) < 0.5 || (float) ($rect['h'] ?? 0) < 0.5) {
                 continue;
             }
+            $drawable[] = $rect;
+        }
 
+        $decorated = [];
+        foreach ($drawable as $index => $rect) {
             $slug = ZoneSlug::normalize($rect['type'] ?? '');
             $zone = $slug !== '' ? $zonesBySlug->get($slug) : null;
             $space = $this->matchSpace($spaces, $rect);
@@ -86,27 +91,44 @@ class MapPresentationService
                     ];
                 }
             } elseif (! empty($rect['addon_ids']) && is_array($rect['addon_ids'])) {
-                // Fallback до первой синхронизации spaces — только id из JSON.
                 $addons = array_map(
                     fn ($id) => ['id' => (int) $id, 'name' => '+', 'color' => '#22c55e', 'billing_mode' => 'always'],
                     $rect['addon_ids']
                 );
             }
 
-            // На карте — латиница из slug (SINGL / DUO), name зоны оставляем для админки.
             $label = $slug !== ''
-                ? strtoupper(str_replace('_', ' ', $slug))
+                ? strtoupper(str_replace(['_', '-'], ' ', $slug))
                 : ($zone?->name ? mb_strtoupper(trim((string) $zone->name)) : null);
+
+            $infoFromSpace = $space?->roomInfo();
+            $infoFromRect = is_array($rect['info'] ?? null) ? $rect['info'] : [];
+            $info = RoomInfoEdge::normalizeInfo(array_merge(
+                $infoFromRect,
+                array_filter($infoFromSpace ?? [], fn ($v) => $v !== null && $v !== '')
+            ));
+
+            $others = array_values(array_filter(
+                $drawable,
+                fn ($other, $i) => $i !== $index,
+                ARRAY_FILTER_USE_BOTH
+            ));
+            $infoEdge = RoomInfoEdge::resolve($rect, $others, $info['info_edge'] ?? null);
+
+            $kind = $slug === 'tv' ? 'tv' : 'pc';
 
             $decorated[] = array_merge($rect, [
                 'label' => $label,
                 'addons' => $addons,
+                'info' => $info,
+                'info_edge' => $infoEdge,
+                'info_kind' => $kind,
+                'space_id' => $space?->id,
             ]);
         }
 
         $config['zoneRects'] = $decorated;
 
-        // Ручные подписи: дубли типов зон + старые заголовки вроде STANDART — скрываем.
         $hidden = collect($decorated)
             ->pluck('label')
             ->filter()

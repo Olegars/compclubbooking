@@ -23,6 +23,12 @@ class Space extends Model
         'w',
         'h',
         'surcharge_per_hour',
+        'cpu',
+        'gpu',
+        'monitor',
+        'screen_diagonal',
+        'ps_model',
+        'info_edge',
         'sort',
     ];
 
@@ -34,6 +40,24 @@ class Space extends Model
         'surcharge_per_hour' => 'decimal:2',
         'sort' => 'integer',
     ];
+
+    /**
+     * @return array{
+     *   cpu:?string,gpu:?string,monitor:?string,
+     *   screen_diagonal:?string,ps_model:?string,info_edge:?string
+     * }
+     */
+    public function roomInfo(): array
+    {
+        return [
+            'cpu' => $this->cpu,
+            'gpu' => $this->gpu,
+            'monitor' => $this->monitor,
+            'screen_diagonal' => $this->screen_diagonal,
+            'ps_model' => $this->ps_model,
+            'info_edge' => $this->info_edge,
+        ];
+    }
 
     public function club(): BelongsTo
     {

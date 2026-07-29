@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import {
+    INFO_MARKER_R,
+    emptyRoomInfo,
+    infoMarkerCenter,
+    isTvZone,
+    normalizeRoomInfo,
+    resolveInfoEdge,
+} from '@/utils/roomInfoEdge'
 
 // --- ПРОПСЫ ---
 const props = defineProps<{
@@ -35,11 +43,13 @@ const isDragging = ref(false)
 const dragTarget = ref<any>(null)
 /** Перетаскивание маркера optional-допа: { zone, addonId } */
 const dragAddon = ref<{ zone: any; addonId: number } | null>(null)
+const selectedAddon = ref<{ zone: any; addonId: number } | null>(null)
 const draftZone = ref({ x: 0, y: 0, w: 0, h: 0 })
 const startDragPos = ref({ x: 0, y: 0 })
 
 const selectedLabel = ref<any>(null)
 const selectedPc = ref<any>(null)
+const selectedZone = ref<any>(null)
 const currentSeatKind = ref<'pc' | 'tv' | 'ps5'>('pc')
 const mapAddons = ref<{ id: number, name: string, color: string, billing_mode: string, price_per_hour: number }[]>([])
 const currentAddonId = ref<number | null>(null)
@@ -111,7 +121,8 @@ const isLayerInteractive = (type: 'wall' | 'zone' | 'label' | 'pc') => {
     if (mode.value === 'pcs') return type === 'pc'
     if (mode.value === 'labels') return type === 'label'
     if (mode.value === 'addons') return type === 'zone'
-    // walls / zones — только холст принимает события (рисование поверх)
+    if (mode.value === 'zones') return type === 'zone'
+    // walls — только холст принимает события (рисование поверх)
     return false
 }
 
@@ -119,7 +130,7 @@ const isLayerInteractive = (type: 'wall' | 'zone' | 'label' | 'pc') => {
 const OBSOLATE_LABELS = new Set([
     'STANDART', 'STANDARD', 'СТАНДАРТ',
     'VIP', 'SOLO', 'SINGL', 'DUO', 'TRIO', 'KVATRO',
-    'BOOTCAMP', 'BOOTKAMP', 'BOTKAMP', 'BOTKAMP-PROFI', 'BOOTKAMP-PROFI', 'BOOTCAMP-PROFI',
+    'BOOTCAMP', 'BOOTCAMP PRO', 'BOOTCAMP-PRO', 'BOOTKAMP', 'BOTKAMP', 'BOTKAMP-PROFI', 'BOOTKAMP-PROFI', 'BOOTCAMP-PROFI',
     'TV', 'PS5', 'PS', 'WC', 'ТЕКСТ', 'TEXT',
 ])
 
@@ -249,7 +260,10 @@ const handleItemMouseDown = (e: MouseEvent, item: any, type: 'zone' | 'wall' | '
     e.stopPropagation(); // Блокируем всплытие клика!
 
     if (mode.value === 'erase') {
-        if (type === 'zone') zones.value = zones.value.filter(z => z !== item);
+        if (type === 'zone') {
+            if (selectedZone.value === item) selectedZone.value = null
+            zones.value = zones.value.filter(z => z !== item);
+        }
         if (type === 'wall') walls.value = walls.value.filter(w => w !== item);
         if (type === 'pc') computers.value = computers.value.filter(p => p !== item);
         if (type === 'label') labels.value = labels.value.filter(l => l !== item);
@@ -261,14 +275,27 @@ const handleItemMouseDown = (e: MouseEvent, item: any, type: 'zone' | 'wall' | '
         return
     }
 
+    if (mode.value === 'zones' && type === 'zone') {
+        ensureZoneInfo(item)
+        selectedZone.value = item
+        selectedPc.value = null
+        selectedLabel.value = null
+        selectedAddon.value = null
+        return
+    }
+
     if (mode.value === 'pcs' && type === 'pc') {
         dragTarget.value = item;
         selectedPc.value = item;
         selectedLabel.value = null;
+        selectedAddon.value = null;
+        selectedZone.value = null;
     } else if (mode.value === 'labels' && type === 'label') {
         dragTarget.value = item;
         selectedLabel.value = item;
         selectedPc.value = null;
+        selectedAddon.value = null;
+        selectedZone.value = null;
     }
 }
 
@@ -337,9 +364,71 @@ const startAddonDrag = (e: MouseEvent, zone: any, badge: any, index: number) => 
     if (mode.value === 'erase') return
     e.stopPropagation()
     ensureAddonPosition(zone, badge, index)
-    dragAddon.value = { zone, addonId: Number(badge.id) }
+    const sel = { zone, addonId: Number(badge.id) }
+    dragAddon.value = sel
+    selectedAddon.value = sel
     selectedPc.value = null
     selectedLabel.value = null
+    selectedZone.value = null
+}
+
+const nudgeStep = (shift: boolean) => {
+    const svg = svgRef.value
+    const ctm = svg?.getScreenCTM()
+    // 1 экранный пиксель в единицах карты
+    const px = ctm ? (1 / (Math.hypot(ctm.a, ctm.b) || 1)) : 0.05
+    return shift ? px * 10 : px
+}
+
+const applyNudgeCoord = (value: number, delta: number) =>
+    // Без snap: иначе магнит съедает мелкий шаг
+    Math.round((Number(value) + delta) * 1000) / 1000
+
+const nudgeSelectedMarker = (dx: number, dy: number) => {
+    if (selectedPc.value) {
+        selectedPc.value.x = applyNudgeCoord(selectedPc.value.x, dx)
+        selectedPc.value.y = applyNudgeCoord(selectedPc.value.y, dy)
+        if (selectedPc.value.kind === 'tv' || selectedPc.value.kind === 'ps5') {
+            selectedPc.value.booth_id = boothIdForPoint(
+                Number(selectedPc.value.x),
+                Number(selectedPc.value.y),
+            )
+        }
+        return true
+    }
+    if (selectedAddon.value) {
+        const { zone, addonId } = selectedAddon.value
+        if (!zone.addon_positions || typeof zone.addon_positions !== 'object') zone.addon_positions = {}
+        const key = String(addonId)
+        const cur = zone.addon_positions[key] || { x: 0, y: 0 }
+        zone.addon_positions[key] = {
+            x: applyNudgeCoord(cur.x, dx),
+            y: applyNudgeCoord(cur.y, dy),
+        }
+        return true
+    }
+    return false
+}
+
+const handleArrowKey = (e: KeyboardEvent) => {
+    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return
+
+    const target = e.target as HTMLElement | null
+    const tag = target?.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return
+    if (mode.value === 'erase') return
+
+    let dx = 0
+    let dy = 0
+    const step = nudgeStep(e.shiftKey)
+    if (e.key === 'ArrowLeft') dx = -step
+    if (e.key === 'ArrowRight') dx = step
+    if (e.key === 'ArrowUp') dy = -step
+    if (e.key === 'ArrowDown') dy = step
+
+    if (nudgeSelectedMarker(dx, dy)) {
+        e.preventDefault()
+    }
 }
 
 const ZONE_SLUG_ALIASES: Record<string, string> = {
@@ -348,9 +437,11 @@ const ZONE_SLUG_ALIASES: Record<string, string> = {
     standard: 'singl',
     bootkamp: 'bootcamp',
     botkamp: 'bootcamp',
-    'botkamp-profi': 'bootcamp',
-    'bootkamp-profi': 'bootcamp',
-    'bootcamp-profi': 'bootcamp',
+    'botkamp-profi': 'bootcamp-pro',
+    'bootkamp-profi': 'bootcamp-pro',
+    'bootcamp-profi': 'bootcamp-pro',
+    bootcamp_pro: 'bootcamp-pro',
+    bootcamp_profi: 'bootcamp-pro',
 }
 
 const normalizeZoneType = (type: unknown) => {
@@ -360,32 +451,68 @@ const normalizeZoneType = (type: unknown) => {
 }
 
 const zoneAutoTitle = (zone: any) =>
-    normalizeZoneType(zone.type).replace(/_/g, ' ').toUpperCase()
+    normalizeZoneType(zone.type).replace(/[-_]/g, ' ').toUpperCase()
 
-const ZONE_BADGE_FONT = 1.35
+const ensureZoneInfo = (zone: any) => {
+    zone.info = normalizeRoomInfo(zone.info)
+    return zone.info
+}
+
+const zoneInfoEdge = (zone: any, index: number) => {
+    const others = zones.value.filter((z, i) => i !== index)
+    return resolveInfoEdge(zone, others, zone.info?.info_edge)
+}
+
+const roomInfoMarkers = computed(() =>
+    zones.value.map((z, i) => {
+        const edge = zoneInfoEdge(z, i)
+        const { cx, cy } = infoMarkerCenter(z, edge)
+        return { key: `info-${i}`, zone: z, cx, cy, edge }
+    })
+)
+
+const ZONE_BADGE_FONT = 1.3
+const ZONE_BADGE_SUB_FONT = 1.1
 const ZONE_BADGE_INSET = 0.85
-const ZONE_BADGE_PAD_X = 0.65
-const ZONE_BADGE_PAD_Y = 0.38
+const ZONE_BADGE_PAD_X = 0.75
+const ZONE_BADGE_PAD_Y = 0.4
 const ZONE_BADGE_RX = 0.55
-const ZONE_BADGE_CHAR_W = 0.62
+const ZONE_BADGE_CHAR_W = 0.7
+
+const estimateBadgeTextWidth = (text: string, fontSize: number) => {
+    const t = text.trim()
+    if (!t) return 0
+    const letters = t.length * fontSize * ZONE_BADGE_CHAR_W
+    const tracking = Math.max(0, t.length - 1) * fontSize * 0.04
+    return letters + tracking
+}
 
 const zoneBadgeMeta = (zone: any) => {
     const title = zoneAutoTitle(zone)
     if (!title) return null
     const extras = zoneAlwaysAddonBadges(zone)
-        .map((a: any) => String(a?.name || '+').trim().toUpperCase())
+        .map((a: any) => String(a?.name || '').trim().toUpperCase())
         .filter(Boolean)
-    const text = extras.length ? `${title} ${extras.join(' ')}` : title
-    const tw = Math.max(text.length, 2) * ZONE_BADGE_FONT * ZONE_BADGE_CHAR_W
-    const w = tw + ZONE_BADGE_PAD_X * 2
-    const h = ZONE_BADGE_FONT + ZONE_BADGE_PAD_Y * 2
+    const sub = extras.length ? extras.join(' ') : ''
+    const titleW = estimateBadgeTextWidth(title, ZONE_BADGE_FONT)
+    const subW = sub ? estimateBadgeTextWidth(sub, ZONE_BADGE_SUB_FONT) : 0
+    const w = Math.max(titleW, subW) + ZONE_BADGE_PAD_X * 2
+    const lineGap = sub ? 0.35 : 0
+    const contentH = sub
+        ? ZONE_BADGE_FONT + lineGap + ZONE_BADGE_SUB_FONT
+        : ZONE_BADGE_FONT
+    const h = contentH + ZONE_BADGE_PAD_Y * 2
     const zw = safeNum(zone.w)
     const zh = safeNum(zone.h)
     const insetX = Math.min(ZONE_BADGE_INSET, Math.max(0.35, zw * 0.08))
     const insetY = Math.min(ZONE_BADGE_INSET, Math.max(0.35, zh * 0.1))
     const x = safeNum(zone.x) + zw - insetX - w
     const y = safeNum(zone.y) + insetY
-    return { text, x, y, w, h, cx: x + w / 2, cy: y + h / 2 }
+    const titleY = sub
+        ? y + ZONE_BADGE_PAD_Y + ZONE_BADGE_FONT / 2
+        : y + h / 2
+    const subY = y + ZONE_BADGE_PAD_Y + ZONE_BADGE_FONT + lineGap + ZONE_BADGE_SUB_FONT / 2
+    return { title, sub, x, y, w, h, cx: x + w / 2, titleY, subY }
 }
 
 const eraseAddonAtPoint = (x: number, y: number): boolean => {
@@ -510,6 +637,7 @@ const eraseAtPoint = (x: number, y: number) => {
     )
     if (zone) {
         // Доп уже проверен выше. Клик по комнате без допа / мимо бейджа — удалить зону.
+        if (selectedZone.value === zone) selectedZone.value = null
         zones.value = zones.value.filter(z => z !== zone)
         return
     }
@@ -521,6 +649,8 @@ const handleSvgMouseDown = (e: MouseEvent) => {
     const pt = getSVGPoint(e)
     selectedLabel.value = null;
     selectedPc.value = null;
+    selectedAddon.value = null;
+    selectedZone.value = null;
 
     // Ластик: попадание в тонкий SVG-текст почти невозможно — ищем ближайший объект.
     if (mode.value === 'erase') {
@@ -587,7 +717,10 @@ const handleMouseUp = () => {
             type: currentZoneType.value,
             addon_ids: [],
             addon_positions: {},
+            info: emptyRoomInfo(),
         })
+        selectedZone.value = zones.value[zones.value.length - 1]
+        ensureZoneInfo(selectedZone.value)
     }
     if (dragTarget.value && (dragTarget.value.kind === 'tv' || dragTarget.value.kind === 'ps5')) {
         dragTarget.value.booth_id = boothIdForPoint(
@@ -657,6 +790,7 @@ const loadFromDB = async () => {
                 addon_positions: (z.addon_positions && typeof z.addon_positions === 'object')
                     ? { ...z.addon_positions }
                     : {},
+                info: normalizeRoomInfo(z.info),
             })).filter(z => safeNum(z.w) >= 0.5 && safeNum(z.h) >= 0.5);
             labels.value = cleanArray(rawConfig.labels).filter(keepManualLabel);
             if (rawConfig.viewbox) viewbox.value = rawConfig.viewbox;
@@ -679,6 +813,8 @@ const loadFromDB = async () => {
         isLoading.value = false;
         selectedPc.value = null;
         selectedLabel.value = null;
+        selectedAddon.value = null;
+        selectedZone.value = null;
     }
 }
 
@@ -698,6 +834,7 @@ const saveToDB = async () => {
                     addon_positions: (z.addon_positions && typeof z.addon_positions === 'object')
                         ? z.addon_positions
                         : {},
+                    info: normalizeRoomInfo(z.info),
                 })),
                 labels: labels.value.filter(keepManualLabel),
                 viewbox: viewbox.value,
@@ -735,6 +872,11 @@ onMounted(() => {
         activeClubId.value = 1;
     }
     loadFromDB();
+    window.addEventListener('keydown', handleArrowKey)
+})
+
+onUnmounted(() => {
+    window.removeEventListener('keydown', handleArrowKey)
 })
 </script>
 
@@ -882,8 +1024,8 @@ onMounted(() => {
                                @mousedown.stop="isLayerInteractive('zone') && handleItemMouseDown($event, z, 'zone')">
                                 <rect :x="safeNum(z.x)" :y="safeNum(z.y)" :width="safeNum(z.w)" :height="safeNum(z.h)"
                                       :fill="z.c || '#22c55e'" :fill-opacity="z.c === '#4d4d4d' ? 0.8 : 0.2"
-                                      :stroke="mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId) ? '#fff' : (z.c || '#22c55e')"
-                                      :stroke-width="mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId) ? 0.35 : 0.15"
+                                      :stroke="selectedZone === z ? '#fff' : (mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId) ? '#fff' : (z.c || '#22c55e'))"
+                                      :stroke-width="selectedZone === z || (mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId)) ? 0.35 : 0.15"
                                       :class="['transition-opacity', isLayerInteractive('zone') ? 'hover:fill-opacity-50 cursor-pointer' : '']" />
                                 <g v-if="zoneBadgeMeta(z)" class="pointer-events-none">
                                     <rect
@@ -899,7 +1041,7 @@ onMounted(() => {
                                     />
                                     <text
                                         :x="zoneBadgeMeta(z).cx"
-                                        :y="zoneBadgeMeta(z).cy"
+                                        :y="zoneBadgeMeta(z).titleY"
                                         text-anchor="middle"
                                         dominant-baseline="central"
                                         fill="#ffffff"
@@ -909,7 +1051,21 @@ onMounted(() => {
                                         font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
                                         letter-spacing="0.04em"
                                         class="uppercase"
-                                    >{{ zoneBadgeMeta(z).text }}</text>
+                                    >{{ zoneBadgeMeta(z).title }}</text>
+                                    <text
+                                        v-if="zoneBadgeMeta(z).sub"
+                                        :x="zoneBadgeMeta(z).cx"
+                                        :y="zoneBadgeMeta(z).subY"
+                                        text-anchor="middle"
+                                        dominant-baseline="central"
+                                        fill="#ffffff"
+                                        fill-opacity="0.78"
+                                        :font-size="ZONE_BADGE_SUB_FONT"
+                                        font-weight="700"
+                                        font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
+                                        letter-spacing="0.04em"
+                                        class="uppercase"
+                                    >{{ zoneBadgeMeta(z).sub }}</text>
                                 </g>
                                 <g v-for="(badge, bi) in zoneOptionalAddonBadges(z)" :key="'op'+i+'-'+badge.id"
                                    :class="mode === 'erase' ? 'pointer-events-none' : 'cursor-move pointer-events-auto'"
@@ -920,7 +1076,7 @@ onMounted(() => {
                                         width="6" height="4.5"
                                         rx="0.55" ry="0.55"
                                         fill="#001100"
-                                        :stroke="dragAddon?.addonId === badge.id && dragAddon?.zone === z ? '#fff' : '#22c55e'"
+                                        :stroke="(selectedAddon?.addonId === badge.id && selectedAddon?.zone === z) || (dragAddon?.addonId === badge.id && dragAddon?.zone === z) ? '#fff' : '#22c55e'"
                                         stroke-width="0.2"
                                     />
                                     <text
@@ -946,6 +1102,24 @@ onMounted(() => {
                                         class="uppercase pointer-events-none"
                                     >опция</text>
                                 </g>
+                            </g>
+
+                            <g v-for="m in roomInfoMarkers" :key="m.key" class="pointer-events-none">
+                                <circle
+                                    :cx="m.cx" :cy="m.cy" :r="INFO_MARKER_R"
+                                    fill="#0a0a0a"
+                                    :stroke="selectedZone === m.zone ? '#fff' : 'rgba(255,255,255,0.55)'"
+                                    stroke-width="0.18"
+                                />
+                                <text
+                                    :x="m.cx" :y="m.cy + 0.15"
+                                    text-anchor="middle"
+                                    dominant-baseline="central"
+                                    fill="#ffffff"
+                                    font-size="1.55"
+                                    font-weight="800"
+                                    font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
+                                >?</text>
                             </g>
                         </g>
 
@@ -1000,6 +1174,55 @@ onMounted(() => {
                         </div>
                     </div>
 
+                    <div v-if="selectedZone" class="p-4 bg-white/5 border border-white/10 rounded-2xl animate-in zoom-in duration-200 flex flex-col gap-3">
+                        <p class="text-[10px] text-cyan-500 font-black uppercase tracking-widest">
+                            Комната · {{ zoneAutoTitle(selectedZone) || 'ZONE' }}
+                        </p>
+
+                        <template v-if="isTvZone(selectedZone)">
+                            <div>
+                                <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Диагональ экрана</label>
+                                <input v-model="selectedZone.info.screen_diagonal" type="text" placeholder="55&quot;"
+                                       class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500" />
+                            </div>
+                            <div>
+                                <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Модель PS</label>
+                                <input v-model="selectedZone.info.ps_model" type="text" placeholder="PlayStation 5"
+                                       class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500" />
+                            </div>
+                        </template>
+                        <template v-else>
+                            <div>
+                                <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Процессор</label>
+                                <input v-model="selectedZone.info.cpu" type="text" placeholder="AMD Ryzen…"
+                                       class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500" />
+                            </div>
+                            <div>
+                                <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Видеокарта</label>
+                                <input v-model="selectedZone.info.gpu" type="text" placeholder="RTX…"
+                                       class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500" />
+                            </div>
+                            <div>
+                                <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Монитор</label>
+                                <input v-model="selectedZone.info.monitor" type="text" placeholder="27&quot; 240Hz"
+                                       class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500" />
+                            </div>
+                        </template>
+
+                        <div>
+                            <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Край «?»</label>
+                            <select v-model="selectedZone.info.info_edge"
+                                    class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-black uppercase">
+                                <option value="">Авто (проход)</option>
+                                <option value="right">Справа</option>
+                                <option value="left">Слева</option>
+                                <option value="top">Сверху</option>
+                                <option value="bottom">Снизу</option>
+                            </select>
+                        </div>
+                        <p class="text-[9px] opacity-40 italic">Клик по зоне в режиме «Зоны». Сохраняется с картой.</p>
+                    </div>
+
                     <div v-if="selectedPc" class="p-4 bg-cyan-500/5 border border-cyan-500/20 rounded-2xl animate-in zoom-in duration-200 flex flex-col gap-3">
                         <p class="text-[10px] text-cyan-500 font-black uppercase tracking-widest">Маркер</p>
                         <div>
@@ -1020,7 +1243,15 @@ onMounted(() => {
                                    class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-mono" />
                             <p class="text-[9px] opacity-40 italic mt-1">Одинаковый booth у TV и PS одной зоны</p>
                         </div>
-                        <p class="text-[9px] opacity-40 italic">Зажмите и потяните мышь на холсте.</p>
+                        <p class="text-[9px] opacity-40 italic">Мышь или стрелки (1px; Shift — ×10).</p>
+                    </div>
+
+                    <div v-if="selectedAddon" class="p-4 bg-[#22c55e]/5 border border-[#22c55e]/20 rounded-2xl animate-in zoom-in duration-200 flex flex-col gap-2">
+                        <p class="text-[10px] text-[#22c55e] font-black uppercase tracking-widest">Опция на карте</p>
+                        <p class="text-[11px] text-white/70 font-bold uppercase">
+                            {{ mapAddons.find(a => a.id === selectedAddon.addonId)?.name || 'PS' }}
+                        </p>
+                        <p class="text-[9px] opacity-40 italic">Мышь или стрелки (1px; Shift — ×10).</p>
                     </div>
 
                     <div v-if="selectedLabel" class="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col gap-4 animate-in zoom-in duration-200">
