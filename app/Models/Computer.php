@@ -8,7 +8,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Computer extends Model
 {
-    protected $fillable = ['club_id', 'name', 'x', 'y', 'type', 'kind', 'booth_id', 'status', 'hwid'];
+    protected $fillable = [
+        'club_id', 'name', 'x', 'y', 'type', 'seat_class_id', 'space_id',
+        'kind', 'booth_id', 'status', 'hwid',
+    ];
 
     public const KIND_PC = 'pc';
     public const KIND_TV = 'tv';
@@ -22,6 +25,16 @@ class Computer extends Model
     public function club(): BelongsTo
     {
         return $this->belongsTo(Club::class);
+    }
+
+    public function seatClass(): BelongsTo
+    {
+        return $this->belongsTo(SeatClass::class);
+    }
+
+    public function space(): BelongsTo
+    {
+        return $this->belongsTo(Space::class);
     }
 
     public function gameAccountCaches(): HasMany

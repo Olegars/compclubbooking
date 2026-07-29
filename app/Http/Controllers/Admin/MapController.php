@@ -3,6 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Addon;
+use App\Models\Computer;
+use App\Models\SeatClass;
+use App\Models\Space;
+use App\Models\Zone;
+use App\Support\ZoneSlug;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -10,13 +16,19 @@ class MapController extends Controller
 {
     public function save(Request $request)
     {
-        $clubId = $request->input('club_id', 4);
+        $clubId = (int) $request->input('club_id');
         $config = $request->input('config');
-        $pcs = $request->input('pcs'); // Массив компьютеров из Vue
+        $pcs = $request->input('pcs', []);
+
+        if (! $clubId) {
+            return response()->json(['status' => 'error', 'message' => 'club_id required'], 422);
+        }
 
         try {
             DB::transaction(function () use ($clubId, $config, $pcs) {
-                // 1. Обновляем конфиг стен и зон в таблице клубов
+                if (is_array($config)) {
+                    $config = ZoneSlug::normalizeMapConfig($config);
+                }
                 $viewbox = is_array($config) ? ($config['viewbox'] ?? null) : null;
                 DB::table('clubs')->where('id', $clubId)->update(array_filter([
                     'map_config' => json_encode($config),
@@ -24,23 +36,33 @@ class MapController extends Controller
                     'updated_at' => now(),
                 ], fn ($v) => $v !== null));
 
-                // 2. УДАЛЯЕМ все старые компьютеры этого клуба
+                $spaceIds = $this->syncSpaces($clubId, is_array($config) ? ($config['zoneRects'] ?? []) : []);
+
                 DB::table('computers')->where('club_id', $clubId)->delete();
 
-                // 3. ЗАПИСЫВАЕМ новые компьютеры с нуля
-                if (!empty($pcs)) {
+                if (! empty($pcs) && is_array($pcs)) {
+                    $pcClassId = SeatClass::query()->where('slug', 'pc')->value('id');
+                    $tvClassId = SeatClass::query()->where('slug', 'tv')->value('id');
+                    $spaces = Space::query()->where('club_id', $clubId)->get();
+
                     $insertData = [];
                     foreach ($pcs as $pc) {
                         $kind = in_array($pc['kind'] ?? 'pc', ['pc', 'tv', 'ps5'], true)
                             ? $pc['kind']
                             : 'pc';
+                        $x = (float) ($pc['x'] ?? 0);
+                        $y = (float) ($pc['y'] ?? 0);
+                        $spaceId = $this->spaceIdForPoint($spaces, $x, $y);
+
                         $insertData[] = [
-                            'club_id'    => $clubId,
-                            'name'       => $pc['name'],
-                            'x'          => $pc['x'],
-                            'y'          => $pc['y'],
-                            'kind'       => $kind,
-                            'booth_id'   => !empty($pc['booth_id']) ? (string) $pc['booth_id'] : null,
+                            'club_id' => $clubId,
+                            'name' => $pc['name'],
+                            'x' => $x,
+                            'y' => $y,
+                            'kind' => $kind,
+                            'booth_id' => ! empty($pc['booth_id']) ? (string) $pc['booth_id'] : null,
+                            'seat_class_id' => in_array($kind, ['tv', 'ps5'], true) ? $tvClassId : $pcClassId,
+                            'space_id' => $spaceId,
                             'created_at' => now(),
                             'updated_at' => now(),
                         ];
@@ -65,35 +87,167 @@ class MapController extends Controller
                         DB::table('computer_games')->insert($installations);
                     }
                 }
+
+                unset($spaceIds);
             });
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Старые данные удалены, новые записаны успешно!'
+                'message' => 'Карта сохранена, комнаты и допы синхронизированы.',
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
             ], 500);
         }
     }
+
     public function getMap(Request $request)
     {
-        $clubId = $request->query('club_id');
-
-        // Получаем клуб (конфиг стен и зон)
+        $clubId = (int) $request->query('club_id');
         $club = DB::table('clubs')->where('id', $clubId)->first();
 
-        // Получаем список компьютеров этого клуба
-        $pcs = DB::table('computers')->where('club_id', $clubId)->get();
-
-        if (!$club) {
+        if (! $club) {
             return response()->json(['error' => 'Club not found'], 404);
         }
+
+        $config = json_decode($club->map_config, true) ?: [];
+        $config = ZoneSlug::normalizeMapConfig($config);
+        $rects = $config['zoneRects'] ?? [];
+
+        $spaces = Space::query()
+            ->with('addons:id')
+            ->where('club_id', $clubId)
+            ->get();
+
+        // Подмешиваем addon_ids из БД в прямоугольники карты.
+        if (is_array($rects)) {
+            foreach ($rects as &$rect) {
+                $space = $this->matchSpace($spaces, $rect);
+                $rect['addon_ids'] = $space
+                    ? $space->addons->pluck('id')->map(fn ($id) => (int) $id)->values()->all()
+                    : array_values(array_map('intval', $rect['addon_ids'] ?? []));
+                $rect['space_id'] = $space?->id;
+            }
+            unset($rect);
+            $config['zoneRects'] = $rects;
+        }
+
+        $addons = Addon::query()
+            ->where('is_active', true)
+            ->with(['prices' => fn ($q) => $q->where('club_id', $clubId)])
+            ->orderBy('sort')
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (Addon $addon) => $addon->prices->isNotEmpty())
+            ->map(fn (Addon $addon) => [
+                'id' => $addon->id,
+                'name' => $addon->name,
+                'slug' => $addon->slug,
+                'color' => $addon->color,
+                'billing_mode' => $addon->billing_mode,
+                'price_per_hour' => (float) $addon->prices->first()->price_per_hour,
+            ])
+            ->values();
+
         return response()->json([
-            'config' => json_decode($club->map_config),
-            'pcs' => $pcs
+            'config' => $config,
+            'pcs' => Computer::query()->where('club_id', $clubId)->get(),
+            'addons' => $addons,
         ]);
+    }
+
+    /**
+     * Пересоздаёт spaces клуба из zoneRects и вешает допы.
+     *
+     * @param  list<array<string, mixed>>  $rects
+     * @return list<int>
+     */
+    private function syncSpaces(int $clubId, array $rects): array
+    {
+        $zoneIdBySlug = Zone::query()->pluck('id', 'slug')
+            ->mapWithKeys(fn ($id, $slug) => [strtolower((string) $slug) => (int) $id]);
+
+        Space::query()->where('club_id', $clubId)->each(function (Space $space) {
+            $space->addons()->detach();
+            $space->delete();
+        });
+
+        $ids = [];
+        foreach (array_values($rects) as $index => $rect) {
+            if (! is_array($rect)) {
+                continue;
+            }
+            $slug = ZoneSlug::normalize($rect['type'] ?? '');
+            $zoneId = $zoneIdBySlug[$slug] ?? null;
+            if (! $zoneId) {
+                continue;
+            }
+
+            $zone = Zone::query()->find($zoneId);
+            $space = Space::query()->create([
+                'club_id' => $clubId,
+                'zone_id' => $zoneId,
+                'name' => $zone?->name ?? $slug,
+                'x' => (float) ($rect['x'] ?? 0),
+                'y' => (float) ($rect['y'] ?? 0),
+                'w' => (float) ($rect['w'] ?? 0),
+                'h' => (float) ($rect['h'] ?? 0),
+                'surcharge_per_hour' => 0,
+                'sort' => $index,
+            ]);
+
+            $addonIds = array_values(array_unique(array_filter(array_map(
+                'intval',
+                $rect['addon_ids'] ?? []
+            ))));
+            if ($addonIds !== []) {
+                $space->addons()->sync($addonIds);
+            }
+
+            $ids[] = $space->id;
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, Space>  $spaces
+     */
+    private function spaceIdForPoint($spaces, float $x, float $y): ?int
+    {
+        $best = null;
+        $bestArea = null;
+        foreach ($spaces as $space) {
+            if (! $space->containsPoint($x, $y)) {
+                continue;
+            }
+            $area = $space->w * $space->h;
+            if ($best === null || $area < $bestArea) {
+                $best = $space;
+                $bestArea = $area;
+            }
+        }
+
+        return $best?->id;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, Space>  $spaces
+     */
+    private function matchSpace($spaces, array $rect): ?Space
+    {
+        $x = round((float) ($rect['x'] ?? 0), 2);
+        $y = round((float) ($rect['y'] ?? 0), 2);
+        $w = round((float) ($rect['w'] ?? 0), 2);
+        $h = round((float) ($rect['h'] ?? 0), 2);
+
+        return $spaces->first(function (Space $space) use ($x, $y, $w, $h) {
+            return abs(round($space->x, 2) - $x) < 0.05
+                && abs(round($space->y, 2) - $y) < 0.05
+                && abs(round($space->w, 2) - $w) < 0.05
+                && abs(round($space->h, 2) - $h) < 0.05;
+        });
     }
 }

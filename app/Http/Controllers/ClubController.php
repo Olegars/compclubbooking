@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use App\Services\MapPresentationService;
 use App\Services\TariffService;
 
 class ClubController extends Controller
@@ -31,6 +32,10 @@ class ClubController extends Controller
         // 3. Получаем данные
         $computers = DB::table('computers')->where('club_id', $club->id)->get();
         $mapConfig = json_decode($club->map_config, true);
+        if (! is_array($mapConfig)) {
+            $mapConfig = [];
+        }
+        $mapConfig = app(MapPresentationService::class)->decorate($mapConfig, (int) $club->id);
         $zoneRects = $mapConfig['zoneRects'] ?? [];
 
         // Переход с лендинга и возврат после входа: ?seat=<id>[,<id>] предвыбирает места.
@@ -49,6 +54,8 @@ class ClubController extends Controller
         $duration = (float) $request->query('dur', 0);
         $preselectDuration = ($duration >= 0.25 && $duration <= 24) ? $duration : null;
 
+        $club->map_config = $mapConfig;
+
         // 4. Рендерим страницу (ИСПРАВЛЕННЫЙ БЛОК GIZMO)
         return Inertia::render('Booking/BookingView', [
             'clubData' => $club,
@@ -58,7 +65,7 @@ class ClubController extends Controller
             'preselectSeatIds' => $preselectSeatIds,
             'preselectStart' => $preselectStart,
             'preselectDuration' => $preselectDuration,
-            'tariffShowcase' => app(TariffService::class)->showcase(),
+            'tariffShowcase' => app(TariffService::class)->showcase((int) $club->id),
 
             // Same balance field the shell / user cabinet use (deposit, not raw wallet JSON).
             'gizmo' => auth()->check() ? [

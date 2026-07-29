@@ -26,6 +26,16 @@ class Club extends Model
         return $this->hasMany(Computer::class);
     }
 
+    public function spaces(): HasMany
+    {
+        return $this->hasMany(Space::class);
+    }
+
+    public function tariffPrices(): HasMany
+    {
+        return $this->hasMany(TariffPrice::class);
+    }
+
     public function gameOffers(): HasMany
     {
         return $this->hasMany(ClubGame::class);

@@ -147,6 +147,17 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     Route::post('/tariffs', [TariffController::class, 'store']);
     Route::put('/tariffs/{tariff}', [TariffController::class, 'update']);
     Route::delete('/tariffs/{tariff}', [TariffController::class, 'destroy']);
+    Route::post('/tariffs/{tariff}/rules', [TariffController::class, 'storeRule']);
+    Route::put('/tariff-prices/{tariffPrice}', [TariffController::class, 'updateRule']);
+    Route::delete('/tariff-prices/{tariffPrice}', [TariffController::class, 'destroyRule']);
+    Route::post('/day-groups', [TariffController::class, 'storeDayGroup']);
+    Route::put('/day-groups/{dayGroup}', [TariffController::class, 'updateDayGroup']);
+    Route::delete('/day-groups/{dayGroup}', [TariffController::class, 'destroyDayGroup']);
+    Route::post('/calendar-overrides', [TariffController::class, 'storeOverride']);
+    Route::delete('/calendar-overrides/{calendarDayOverride}', [TariffController::class, 'destroyOverride']);
+    Route::post('/addons', [TariffController::class, 'storeAddon']);
+    Route::put('/addons/{addon}', [TariffController::class, 'updateAddon']);
+    Route::delete('/addons/{addon}', [TariffController::class, 'destroyAddon']);
 
     Route::get('/zones', [ZoneController::class, 'index'])->name('admin.zones');
     Route::post('/zones', [ZoneController::class, 'store']);

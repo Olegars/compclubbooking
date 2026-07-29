@@ -26,16 +26,43 @@
                 />
             </g>
 
-            <g v-if="safeConfig?.zoneRects?.length" class="zones-layer">
-                <rect
-                    v-for="(r, i) in safeConfig.zoneRects" :key="'zr-'+i"
-                    :x="Number(r.x)" :y="Number(r.y)" :width="Number(r.w)" :height="Number(r.h)"
-                    :fill="r.c || '#22c55e'"
-                    :fill-opacity="r.c === '#4d4d4d' ? 1 : 0.25"
-                    :stroke="r.c || '#22c55e'"
-                    stroke-width="0.15"
-                    rx="0"
-                />
+            <g v-if="drawableZones.length" class="zones-layer">
+                <g v-for="(r, i) in drawableZones" :key="'zr-'+i">
+                    <rect
+                        :x="Number(r.x)" :y="Number(r.y)" :width="Number(r.w)" :height="Number(r.h)"
+                        :fill="r.c || '#22c55e'"
+                        :fill-opacity="r.c === '#4d4d4d' ? 1 : 0.25"
+                        :stroke="r.c || '#22c55e'"
+                        stroke-width="0.15"
+                        rx="0"
+                    />
+                    <g v-if="zoneBadge(r)" class="pointer-events-none">
+                        <rect
+                            :x="zoneBadge(r).x"
+                            :y="zoneBadge(r).y"
+                            :width="zoneBadge(r).w"
+                            :height="zoneBadge(r).h"
+                            :rx="ZONE_BADGE_RX"
+                            :ry="ZONE_BADGE_RX"
+                            fill="rgba(0,0,0,0.72)"
+                            stroke="rgba(255,255,255,0.28)"
+                            stroke-width="0.12"
+                        />
+                        <text
+                            :x="zoneBadge(r).cx"
+                            :y="zoneBadge(r).cy"
+                            text-anchor="middle"
+                            dominant-baseline="central"
+                            fill="#ffffff"
+                            fill-opacity="0.92"
+                            :font-size="ZONE_BADGE_FONT"
+                            font-weight="700"
+                            font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
+                            letter-spacing="0.04em"
+                            class="uppercase"
+                        >{{ zoneBadge(r).text }}</text>
+                    </g>
+                </g>
             </g>
 
             <g v-if="visibleLabels.length" class="labels-layer">
@@ -80,6 +107,42 @@
                     {{ pc.name }}
                 </text>
             </g>
+
+            <!-- Опциональные допы (PS): зелёный квадрат в свободном месте зоны -->
+            <g v-for="m in optionalAddonMarkers" :key="'addon-'+m.key"
+               :class="m.blocked ? 'cursor-not-allowed opacity-55' : 'cursor-pointer group'"
+               @click.stop="handleAddonClick(m)">
+                <rect
+                    :x="m.x" :y="m.y"
+                    :width="PC_W" :height="PC_H"
+                    rx="0.55" ry="0.55"
+                    :fill="addonFill(m)"
+                    :stroke="addonStroke(m)"
+                    stroke-width="0.2"
+                    class="transition-colors duration-300"
+                    :class="m.blocked ? '' : 'group-hover:stroke-white'"
+                />
+                <text
+                    :x="m.x + PC_W / 2" :y="m.y + 1.85"
+                    font-size="1.65"
+                    font-weight="800"
+                    font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
+                    text-anchor="middle"
+                    :fill="addonText(m)"
+                    class="uppercase pointer-events-none transition-colors duration-300"
+                >{{ m.label }}</text>
+                <text
+                    :x="m.x + PC_W / 2" :y="m.y + 3.45"
+                    font-size="0.95"
+                    font-weight="700"
+                    font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
+                    text-anchor="middle"
+                    :fill="addonText(m)"
+                    fill-opacity="0.75"
+                    class="uppercase pointer-events-none transition-colors duration-300"
+                    letter-spacing="0.06em"
+                >опция</text>
+            </g>
         </svg>
     </div>
 </template>
@@ -89,6 +152,7 @@ import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{
     selectedIds?: string[],
+    selectedAddonKeys?: string[],
     occupiedIds?: string[],
     computers?: any[],
     mapConfig?: any,
@@ -96,11 +160,13 @@ const props = withDefaults(defineProps<{
 }>(), {
     computers: () => [],
     selectedIds: () => [],
+    selectedAddonKeys: () => [],
     occupiedIds: () => []
 })
 
 const emit = defineEmits<{
     (e: 'toggle-seat', id: string): void
+    (e: 'toggle-addon-seats', payload: { addonId: number; seatIds: string[] }): void
     (e: 'seat-error'): void
 }>()
 
@@ -120,10 +186,177 @@ const safeConfig = computed(() => {
     return data;
 })
 
+const drawableZones = computed(() =>
+    (safeConfig.value?.zoneRects || []).filter((z: any) =>
+        z && Number(z.w) >= 0.5 && Number(z.h) >= 0.5
+    )
+)
+
+const HIDDEN_MANUAL_LABELS = new Set([
+    'STANDART', 'STANDARD', 'СТАНДАРТ',
+    'VIP', 'SOLO', 'SINGL', 'DUO', 'TRIO', 'KVATRO',
+    'BOOTCAMP', 'BOOTKAMP', 'BOTKAMP', 'BOTKAMP-PROFI', 'BOOTKAMP-PROFI', 'BOOTCAMP-PROFI',
+    'TV', 'PS5', 'PS', 'WC', 'ТЕКСТ', 'TEXT',
+])
+
 const isPlaceholderLabel = (content: unknown) => {
     const text = String(content ?? '').trim().toUpperCase()
-    return text === '' || text === 'ТЕКСТ' || text === 'TEXT'
+    return text === '' || HIDDEN_MANUAL_LABELS.has(text)
 }
+
+const zoneTitle = (r: any) => {
+    const label = String(r?.label || '').trim()
+    if (label) return label.toUpperCase()
+    const type = String(r?.type || '').trim()
+    return type ? type.replace(/_/g, ' ').toUpperCase() : ''
+}
+
+const ZONE_BADGE_FONT = 1.35
+const ZONE_BADGE_INSET = 0.85
+const ZONE_BADGE_PAD_X = 0.65
+const ZONE_BADGE_PAD_Y = 0.38
+const ZONE_BADGE_RX = 0.55
+const ZONE_BADGE_CHAR_W = 0.62
+
+const zoneBadge = (r: any) => {
+    const title = zoneTitle(r)
+    if (!title) return null
+    const extras = alwaysAddons(r)
+        .map((a: any) => String(a?.name || '+').trim().toUpperCase())
+        .filter(Boolean)
+    const text = extras.length ? `${title} ${extras.join(' ')}` : title
+    const tw = Math.max(text.length, 2) * ZONE_BADGE_FONT * ZONE_BADGE_CHAR_W
+    const w = tw + ZONE_BADGE_PAD_X * 2
+    const h = ZONE_BADGE_FONT + ZONE_BADGE_PAD_Y * 2
+    const zw = Number(r.w) || 0
+    const zh = Number(r.h) || 0
+    // Не прижимаем к контуру; если комната узкая — всё равно оставляем inset по возможности.
+    const insetX = Math.min(ZONE_BADGE_INSET, Math.max(0.35, zw * 0.08))
+    const insetY = Math.min(ZONE_BADGE_INSET, Math.max(0.35, zh * 0.1))
+    const x = Number(r.x) + zw - insetX - w
+    const y = Number(r.y) + insetY
+    return {
+        text,
+        x,
+        y,
+        w,
+        h,
+        cx: x + w / 2,
+        cy: y + h / 2,
+    }
+}
+
+const zoneAddons = (r: any) =>
+    Array.isArray(r?.addons) ? r.addons : []
+
+const alwaysAddons = (r: any) =>
+    zoneAddons(r).filter((a: any) => a?.billing_mode !== 'optional')
+
+const optionalAddons = (r: any) =>
+    zoneAddons(r).filter((a: any) => a?.billing_mode === 'optional')
+
+const pointInZone = (x: number, y: number, zone: any) => {
+    const zx = Number(zone.x)
+    const zy = Number(zone.y)
+    const zw = Number(zone.w)
+    const zh = Number(zone.h)
+    return x >= zx && x <= zx + zw && y >= zy && y <= zy + zh
+}
+
+const seatsInZone = (zone: any) =>
+    (props.computers || []).filter((pc: any) =>
+        pointInZone(Number(pc.x) + PC_W / 2, Number(pc.y) + PC_H / 2, zone)
+    )
+
+const rectsOverlap = (ax: number, ay: number, aw: number, ah: number, bx: number, by: number, bw: number, bh: number) =>
+    ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
+
+const findFreeSpot = (zone: any, seats: any[], used: Array<{ x: number; y: number }>) => {
+    const zx = Number(zone.x)
+    const zy = Number(zone.y)
+    const zw = Number(zone.w)
+    const zh = Number(zone.h)
+    const pad = 0.6
+    const candidates: Array<{ x: number; y: number }> = [
+        // Свободная середина справа — типичная TV-комната: место слева, PS справа
+        { x: zx + zw - PC_W - pad, y: zy + Math.max(pad, (zh - PC_H) / 2) },
+        { x: zx + zw - PC_W - pad, y: zy + pad },
+        { x: zx + zw - PC_W - pad, y: zy + zh - PC_H - pad },
+        { x: zx + pad, y: zy + zh - PC_H - pad },
+        { x: zx + Math.max(pad, (zw - PC_W) / 2), y: zy + zh - PC_H - pad },
+        { x: zx + pad, y: zy + Math.max(pad, (zh - PC_H) / 2) },
+    ]
+
+    const blocked = [
+        ...seats.map((pc: any) => ({ x: Number(pc.x), y: Number(pc.y), w: PC_W, h: PC_H })),
+        ...used.map(u => ({ x: u.x, y: u.y, w: PC_W, h: PC_H })),
+    ]
+
+    for (const c of candidates) {
+        if (c.x < zx + 0.2 || c.y < zy + 0.2) continue
+        if (c.x + PC_W > zx + zw - 0.2 || c.y + PC_H > zy + zh - 0.2) continue
+        const hits = blocked.some(b => rectsOverlap(c.x, c.y, PC_W, PC_H, b.x, b.y, b.w, b.h))
+        if (!hits) return c
+    }
+
+    // Fallback — правый край, даже если тесно
+    return {
+        x: zx + Math.max(pad, zw - PC_W - pad),
+        y: zy + Math.max(pad, (zh - PC_H) / 2),
+    }
+}
+
+type AddonMarker = {
+    key: string
+    addonId: number
+    label: string
+    x: number
+    y: number
+    seatIds: string[]
+    blocked: boolean
+    active: boolean
+}
+
+const addonLinkKey = (addonId: number, seatIds: string[]) =>
+    `${addonId}:${[...seatIds].map(String).sort().join(',')}`
+
+const optionalAddonMarkers = computed<AddonMarker[]>(() => {
+    const markers: AddonMarker[] = []
+
+    drawableZones.value.forEach((zone: any, zi: number) => {
+        const seats = seatsInZone(zone)
+        const used: Array<{ x: number; y: number }> = []
+        optionalAddons(zone).forEach((addon: any, ai: number) => {
+            const saved = zone.addon_positions?.[String(addon.id)] ?? zone.addon_positions?.[addon.id]
+            const spot = (saved && Number.isFinite(Number(saved.x)) && Number.isFinite(Number(saved.y)))
+                ? { x: Number(saved.x), y: Number(saved.y) }
+                : findFreeSpot(zone, seats, used)
+            used.push(spot)
+            const allSeatIds = seats.map((pc: any) => pc.id.toString())
+            const freeSeatIds = allSeatIds.filter((id: string) => !isOccupied(id))
+            const preferred = freeSeatIds.filter((id: string) => {
+                const pc = seats.find((s: any) => s.id.toString() === id)
+                const kind = String(pc?.kind || 'pc')
+                return kind === 'tv' || kind === 'ps5'
+            })
+            const targetIds = preferred.length ? preferred : freeSeatIds
+            const active = targetIds.length > 0
+                && props.selectedAddonKeys.includes(addonLinkKey(Number(addon.id) || 0, targetIds))
+            markers.push({
+                key: `${zi}-${addon.id || ai}`,
+                addonId: Number(addon.id) || 0,
+                label: String(addon.name || 'PS').trim().toUpperCase() || 'PS',
+                x: spot.x,
+                y: spot.y,
+                seatIds: allSeatIds,
+                blocked: freeSeatIds.length === 0,
+                active,
+            })
+        })
+    })
+
+    return markers
+})
 
 const visibleLabels = computed(() =>
     (safeConfig.value?.labels || []).filter((l: any) => l && !isPlaceholderLabel(l.content))
@@ -154,7 +387,7 @@ const contentBounds = computed(() => {
         for (let i = 0; i + 1 < nums.length; i += 2) include(nums[i], nums[i + 1])
     }
 
-    for (const z of safeConfig.value?.zoneRects || []) {
+    for (const z of drawableZones.value) {
         include(Number(z.x), Number(z.y), Number(z.w), Number(z.h))
     }
 
@@ -208,12 +441,38 @@ const seatText = (pc: any) => {
     return accentOf(pc)
 }
 
+const addonFill = (m: AddonMarker) => {
+    if (m.blocked) return '#1a1a1a'
+    if (m.active) return '#22c55e'
+    return '#001100'
+}
+
+const addonStroke = (m: AddonMarker) => {
+    if (m.blocked) return '#444'
+    if (m.active) return '#fff'
+    return '#22c55e'
+}
+
+const addonText = (m: AddonMarker) => {
+    if (m.blocked) return '#666'
+    if (m.active) return '#000'
+    return '#22c55e'
+}
+
 const handleClick = (pc: any) => {
     if (isOccupied(pc.id)) {
         emit('seat-error')
         return
     }
     emit('toggle-seat', pc.id.toString())
+}
+
+const handleAddonClick = (m: AddonMarker) => {
+    if (m.blocked || !m.seatIds.length) {
+        emit('seat-error')
+        return
+    }
+    emit('toggle-addon-seats', { addonId: m.addonId, seatIds: m.seatIds })
 }
 </script>
 

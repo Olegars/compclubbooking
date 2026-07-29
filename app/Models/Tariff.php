@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Tariff extends Model
 {
@@ -24,4 +25,9 @@ class Tariff extends Model
         'threshold_hours' => 'integer',
         'price_per_package' => 'decimal:2', // Цена всегда с двумя знаками после запятой
     ];
+
+    public function prices(): HasMany
+    {
+        return $this->hasMany(TariffPrice::class);
+    }
 }

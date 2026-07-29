@@ -6,7 +6,6 @@ use App\Models\BookingGroup;
 use App\Models\Club;
 use App\Models\Computer;
 use App\Services\GameBookingService;
-use App\Services\MapZoneResolver;
 use App\Services\TariffService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
@@ -19,7 +18,6 @@ class BookingController extends Controller
     public function __construct(
         private readonly GameBookingService $bookings,
         private readonly TariffService $tariffs,
-        private readonly MapZoneResolver $zones,
     ) {
     }
 
@@ -80,7 +78,6 @@ class BookingController extends Controller
             'club_id' => 'required|integer|exists:clubs,id',
             'pc_ids' => 'nullable|array|min:1',
             'pc_ids.*' => 'integer|distinct|exists:computers,id',
-            'category' => 'nullable|string|max:64',
             'starts_at' => 'nullable|date',
         ]);
 
@@ -89,10 +86,12 @@ class BookingController extends Controller
             ? CarbonImmutable::parse($validated['starts_at'])->timezone(config('app.timezone'))
             : null;
 
-        $category = strtolower(trim((string) ($validated['category'] ?? '')));
+        $zoneId = null;
+        $surcharge = 0.0;
 
-        if ($category === '' && ! empty($validated['pc_ids'])) {
+        if (! empty($validated['pc_ids'])) {
             $computers = Computer::query()
+                ->with(['space.addons.prices'])
                 ->where('club_id', $club->id)
                 ->whereIn('id', $validated['pc_ids'])
                 ->get();
@@ -103,26 +102,39 @@ class BookingController extends Controller
                 ]);
             }
 
-            $resolved = $this->zones->resolveForComputers($club, $computers);
-            $categories = array_values(array_unique(array_values($resolved)));
-            $category = $categories[0] ?? MapZoneResolver::FALLBACK_CATEGORY;
+            $zoneId = $computers
+                ->map(fn (Computer $computer) => $computer->space?->zone_id)
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->first();
+
+            // Для сетки пакетов берём макс. «+» среди выбранных — чтобы не занизить цену.
+            $surcharge = (float) $computers
+                ->map(fn (Computer $computer) => $computer->space
+                    ? $computer->space->effectiveAlwaysSurchargePerHour((int) $club->id)
+                    : 0.0)
+                ->max();
         }
 
-        if ($category === '') {
-            $category = MapZoneResolver::FALLBACK_CATEGORY;
-        }
-
-        $grid = $this->tariffs->gridForCategory($category, $startsAt);
+        $grid = $this->tariffs->gridForZone($club->id, $zoneId, $startsAt, $surcharge);
 
         return response()->json([
             'club_id' => $club->id,
+            'category' => $grid['zone_slug'],
             ...$grid,
         ]);
     }
 
-    public function tariffsShowcase()
+    public function tariffsShowcase(Request $request)
     {
-        return response()->json($this->tariffs->showcase());
+        $validated = $request->validate([
+            'club_id' => 'nullable|integer|exists:clubs,id',
+        ]);
+
+        return response()->json($this->tariffs->showcase(
+            isset($validated['club_id']) ? (int) $validated['club_id'] : null
+        ));
     }
 
     public function calculatePrice(Request $request)
@@ -131,6 +143,8 @@ class BookingController extends Controller
             'club_id' => 'nullable|integer|exists:clubs,id',
             'pc_ids' => 'required|array|min:1',
             'pc_ids.*' => 'integer|distinct|exists:computers,id',
+            'addon_ids' => 'nullable|array',
+            'addon_ids.*' => 'integer|distinct|exists:addons,id',
             'game_ids' => 'nullable|array|max:1',
             'game_ids.*' => 'integer|distinct|exists:games,id',
             'starts_at' => 'nullable|date|required_with:ends_at',
@@ -144,26 +158,75 @@ class BookingController extends Controller
 
         $mode = ($validated['mode'] ?? 'hourly') === 'packages' ? 'packages' : 'hourly';
         $tariffId = isset($validated['tariff_id']) ? (int) $validated['tariff_id'] : null;
+        $addonIds = array_values(array_unique(array_map('intval', $validated['addon_ids'] ?? [])));
 
         if (! isset($validated['starts_at']) && ! isset($validated['date'])) {
             $clubId = $this->resolveClubId($validated);
-            $club = Club::query()->findOrFail($clubId);
+            $hours = (float) $validated['duration'];
             $computers = Computer::query()
+                ->with(['space.addons.prices'])
                 ->where('club_id', $clubId)
                 ->whereIn('id', $validated['pc_ids'])
                 ->get();
-            $zones = $this->zones->resolveForComputers($club, $computers);
+
+            $seats = $computers
+                ->mapWithKeys(fn (Computer $computer) => [
+                    (int) $computer->id => [
+                        'zone_id' => $computer->space?->zone_id ? (int) $computer->space->zone_id : null,
+                        'surcharge_per_hour' => $computer->space
+                            ? $computer->space->effectiveAlwaysSurchargePerHour($clubId)
+                            : 0.0,
+                    ],
+                ])
+                ->all();
+
             $seatQuote = $this->tariffs->quoteSeats(
-                $zones,
-                (float) $validated['duration'],
+                $clubId,
+                $seats,
+                $hours,
                 $mode,
                 $tariffId
             );
 
+            $addonLines = [];
+            $addonRub = 0.0;
+            $seenSpaces = [];
+            foreach ($computers as $computer) {
+                $space = $computer->space;
+                if (! $space || isset($seenSpaces[$space->id])) {
+                    continue;
+                }
+                $seenSpaces[$space->id] = true;
+                foreach ($space->addons as $addon) {
+                    if (! $addon->is_active || ! $addon->isOptional() || ! in_array((int) $addon->id, $addonIds, true)) {
+                        continue;
+                    }
+                    $rate = $addon->priceForClub($clubId);
+                    if ($rate === null || $rate <= 0) {
+                        continue;
+                    }
+                    $lineRub = round($rate * $hours, 2);
+                    $addonRub += $lineRub;
+                    $addonLines[] = [
+                        'addon_id' => (int) $addon->id,
+                        'space_id' => (int) $space->id,
+                        'name' => (string) $addon->name,
+                        'total_rub' => $lineRub,
+                        'total_minor' => (int) round($lineRub * 100),
+                    ];
+                }
+            }
+
+            $addonsMinor = (int) round($addonRub * 100);
+            $computersMinor = (int) $seatQuote['total_minor'] + $addonsMinor;
+
             return response()->json([
-                'total_price' => $seatQuote['total_rub'],
-                'total_minor' => $seatQuote['total_minor'],
-                'computers_total_minor' => $seatQuote['total_minor'],
+                'total_price' => $computersMinor / 100,
+                'total_minor' => $computersMinor,
+                'computers_base_minor' => (int) $seatQuote['total_minor'],
+                'computers_total_minor' => $computersMinor,
+                'addons_total_minor' => $addonsMinor,
+                'addons' => $addonLines,
                 'games_total_minor' => 0,
                 'mode' => $mode,
                 'tariff_id' => $tariffId,
@@ -182,7 +245,8 @@ class BookingController extends Controller
             $startsAt,
             $endsAt,
             $mode,
-            $tariffId
+            $tariffId,
+            $addonIds
         ));
     }
 
@@ -192,6 +256,8 @@ class BookingController extends Controller
             'club_id' => 'nullable|integer|exists:clubs,id',
             'pc_ids' => 'required|array|min:1',
             'pc_ids.*' => 'integer|distinct|exists:computers,id',
+            'addon_ids' => 'nullable|array',
+            'addon_ids.*' => 'integer|distinct|exists:addons,id',
             'game_ids' => 'nullable|array|max:1',
             'game_ids.*' => 'integer|distinct|exists:games,id',
             'starts_at' => 'nullable|date|required_with:ends_at',
@@ -205,6 +271,7 @@ class BookingController extends Controller
 
         $mode = ($validated['mode'] ?? 'hourly') === 'packages' ? 'packages' : 'hourly';
         $tariffId = isset($validated['tariff_id']) ? (int) $validated['tariff_id'] : null;
+        $addonIds = array_values(array_unique(array_map('intval', $validated['addon_ids'] ?? [])));
 
         [$startsAt, $endsAt] = $this->resolvePeriod($validated);
         try {
@@ -216,7 +283,8 @@ class BookingController extends Controller
                 $startsAt,
                 $endsAt,
                 $mode,
-                $tariffId
+                $tariffId,
+                $addonIds
             );
         } catch (QueryException $exception) {
             if (in_array($exception->getCode(), ['23P01', '23505', '23000'], true)) {

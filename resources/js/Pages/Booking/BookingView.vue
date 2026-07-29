@@ -73,11 +73,17 @@ const cleanMapConfig = computed(() => {
         return {
             ...config,
             walls: Array.isArray(config.walls) ? config.walls.filter((w: any) => w && w.d) : [],
-            zoneRects: Array.isArray(config.zoneRects) ? config.zoneRects.filter((z: any) => z && z.w) : [],
+            zoneRects: Array.isArray(config.zoneRects)
+                ? config.zoneRects.filter((z: any) => z && Number(z.w) >= 0.5 && Number(z.h) >= 0.5)
+                : [],
             labels: Array.isArray(config.labels)
                 ? config.labels.filter((l: any) => {
                     const t = String(l?.content ?? '').trim().toUpperCase()
-                    return l && t && t !== 'ТЕКСТ' && t !== 'TEXT'
+                    if (!l || !t || t === 'ТЕКСТ' || t === 'TEXT') return false
+                    // Старые заголовки секций / дубли типов — автоподпись зон их заменяет.
+                    return !['STANDART', 'STANDARD', 'СТАНДАРТ', 'VIP', 'SOLO', 'SINGL', 'DUO', 'TRIO', 'KVATRO',
+                        'BOOTCAMP', 'BOOTKAMP', 'BOTKAMP', 'BOTKAMP-PROFI', 'BOOTKAMP-PROFI', 'BOOTCAMP-PROFI',
+                        'TV', 'PS5', 'PS', 'WC'].includes(t)
                 })
                 : [],
             viewbox: config.viewbox || props.clubData.viewbox || '-10 -10 120 200',
@@ -101,6 +107,17 @@ const occupiedIds = computed(() =>
 const selectedIds = ref<string[]>(
     (props.preselectSeatIds || []).filter(id => !staticOccupiedIds.value.includes(id))
 )
+/** Выбранные optional-допы (PS). Привязка к местам комнаты. */
+const selectedAddonLinks = ref<Array<{ addonId: number; seatIds: string[] }>>([])
+const addonLinkKey = (addonId: number, seatIds: string[]) =>
+    `${addonId}:${[...seatIds].map(String).sort().join(',')}`
+const selectedAddonIds = computed(() =>
+    [...new Set(selectedAddonLinks.value.map(l => l.addonId))]
+)
+const selectedAddonKeys = computed(() =>
+    selectedAddonLinks.value.map(l => addonLinkKey(l.addonId, l.seatIds))
+)
+
 const seatError = ref(false)
 let errorTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -230,6 +247,7 @@ let availabilityRequestId = 0
 const bookingPayload = computed(() => ({
     club_id: props.clubData.id,
     pc_ids: [...selectedIds.value],
+    addon_ids: [...selectedAddonIds.value],
     game_ids: [...selectedGameIds.value],
     mode: bookingMode.value,
     tariff_id: bookingMode.value === 'packages' ? selectedPackage.value?.id ?? null : null,
@@ -339,6 +357,8 @@ const fetchGamesAvailability = async () => {
 
 const totalAmount = ref(0)
 const computersTotalMinor = ref(0)
+const addonsTotalMinor = ref(0)
+const pricedAddonLines = ref<Array<{ name: string; total_minor: number }>>([])
 const gamesTotalMinor = ref(0)
 const isPriceLoading = ref(false)
 const priceError = ref('')
@@ -352,6 +372,8 @@ const fetchServerPrice = async () => {
         if (selectedIds.value.length === 0 || duration.value <= 0) {
             totalAmount.value = 0
             computersTotalMinor.value = 0
+            addonsTotalMinor.value = 0
+            pricedAddonLines.value = []
             gamesTotalMinor.value = 0
         }
         return
@@ -364,13 +386,27 @@ const fetchServerPrice = async () => {
 
         const totalMinor = Number(response.data?.total_minor ?? 0)
         totalAmount.value = Number(response.data?.total_price ?? totalMinor / 100)
-        computersTotalMinor.value = Number(response.data?.computers_total_minor ?? 0)
+        const addonsMinor = Number(response.data?.addons_total_minor ?? 0)
+        addonsTotalMinor.value = addonsMinor
+        pricedAddonLines.value = Array.isArray(response.data?.addons)
+            ? response.data.addons.map((a: any) => ({
+                name: String(a.name || 'Доп'),
+                total_minor: Number(a.total_minor || 0),
+            }))
+            : []
+        // База мест без допов (если сервер отдал computers_base_minor).
+        const baseMinor = response.data?.computers_base_minor != null
+            ? Number(response.data.computers_base_minor)
+            : Math.max(0, Number(response.data?.computers_total_minor ?? 0) - addonsMinor)
+        computersTotalMinor.value = baseMinor
         gamesTotalMinor.value = Number(response.data?.games_total_minor ?? 0)
     } catch (e: any) {
         if (requestId !== priceRequestId) return
         console.error('Ошибка расчета стоимости', e)
         totalAmount.value = 0
         computersTotalMinor.value = 0
+        addonsTotalMinor.value = 0
+        pricedAddonLines.value = []
         gamesTotalMinor.value = 0
         if (e?.response?.status === 401) {
             priceError.value = 'Войдите по номеру телефона, чтобы продолжить'
@@ -378,6 +414,7 @@ const fetchServerPrice = async () => {
         }
         const errors = e?.response?.data?.errors
         priceError.value = errors?.pc_ids?.[0]
+            || errors?.addon_ids?.[0]
             || errors?.tariff_id?.[0]
             || errors?.duration?.[0]
             || errors?.starts_at?.[0]
@@ -506,7 +543,7 @@ watch([() => props.clubData.id, selectedIds, selectedDate, startH], fetchTariffG
     deep: true,
 })
 
-watch([() => props.clubData.id, selectedIds, selectedGameIds, selectedDate, startH, duration, bookingMode, selectedPackage, isGamesLoading], fetchServerPrice, {
+watch([() => props.clubData.id, selectedIds, selectedAddonIds, selectedGameIds, selectedDate, startH, duration, bookingMode, selectedPackage, isGamesLoading], fetchServerPrice, {
 
     deep: true,
     immediate: true
@@ -594,28 +631,97 @@ const priceBreakdown = computed(() => {
             : `Место, ${formatDuration(duration.value)}`
         lines.push({ label, value: computersTotalMinor.value / 100 })
     }
+    for (const addon of pricedAddonLines.value) {
+        if (addon.total_minor > 0) {
+            lines.push({
+                label: `${addon.name.toUpperCase()}, ${formatDuration(duration.value)}`,
+                value: addon.total_minor / 100,
+            })
+        }
+    }
     if (gamesTotalMinor.value > 0) {
         lines.push({ label: 'Платная игра', value: gamesTotalMinor.value / 100 })
     }
     return lines
 })
 
+const clearAddonsForSeats = (seatIds: string[]) => {
+    const drop = new Set(seatIds.map(String))
+    selectedAddonLinks.value = selectedAddonLinks.value.filter(
+        link => !link.seatIds.some(id => drop.has(String(id)))
+    )
+}
+
 const toggleSeatSelection = (id: string) => {
     const index = selectedIds.value.indexOf(id)
     if (index !== -1) {
         selectedIds.value.splice(index, 1)
+        // Сняли комнату → доп этой комнаты тоже убираем
+        clearAddonsForSeats([id])
         return
     }
 
     const pc = props.computersList.find(c => c.id.toString() === id)
     const boothId = pc?.booth_id ? String(pc.booth_id) : null
     if (boothId) {
+        const removed: string[] = []
         selectedIds.value = selectedIds.value.filter((selectedId) => {
             const other = props.computersList.find(c => c.id.toString() === selectedId)
-            return !other?.booth_id || String(other.booth_id) !== boothId
+            const sameBooth = other?.booth_id && String(other.booth_id) === boothId
+            if (sameBooth) removed.push(selectedId)
+            return !sameBooth
         })
+        if (removed.length) clearAddonsForSeats(removed)
     }
     selectedIds.value.push(id)
+    // Клик по месту / TV — только комната, без допа
+}
+
+/** Клик по PS → комната + доп. Повторный клик снимает только доп (комната остаётся). */
+const toggleAddonSeats = (payload: { addonId: number; seatIds: string[] }) => {
+    const freeIds = (payload.seatIds || []).filter(id => !occupiedIds.value.includes(id))
+    if (!freeIds.length) {
+        handleSeatError()
+        return
+    }
+
+    const preferred = freeIds.filter((id) => {
+        const pc = props.computersList.find(c => c.id.toString() === id)
+        const kind = String(pc?.kind || 'pc')
+        return kind === 'tv' || kind === 'ps5'
+    })
+    const targetIds = preferred.length ? preferred : freeIds
+    const key = addonLinkKey(payload.addonId, targetIds)
+    const existingIdx = selectedAddonLinks.value.findIndex(
+        l => addonLinkKey(l.addonId, l.seatIds) === key
+    )
+
+    if (existingIdx >= 0) {
+        selectedAddonLinks.value.splice(existingIdx, 1)
+        return
+    }
+
+    for (const id of targetIds) {
+        const pc = props.computersList.find(c => c.id.toString() === id)
+        const boothId = pc?.booth_id ? String(pc.booth_id) : null
+        if (boothId) {
+            const removed: string[] = []
+            selectedIds.value = selectedIds.value.filter((selectedId) => {
+                const other = props.computersList.find(c => c.id.toString() === selectedId)
+                const sameBooth = other?.booth_id && String(other.booth_id) === boothId
+                if (sameBooth && !targetIds.includes(selectedId)) removed.push(selectedId)
+                return !sameBooth || targetIds.includes(selectedId)
+            })
+            if (removed.length) clearAddonsForSeats(removed)
+        }
+    }
+    for (const id of targetIds) {
+        if (!selectedIds.value.includes(id)) selectedIds.value.push(id)
+    }
+
+    // Убираем прошлый доп на тех же местах (один optional на комнату).
+    clearAddonsForSeats(targetIds)
+    selectedAddonLinks.value.push({ addonId: payload.addonId, seatIds: [...targetIds] })
 }
 
 const selectedPlacesText = computed(() =>
@@ -867,6 +973,7 @@ onUnmounted(() => {
                 <div class="w-full flex-1 min-h-[280px] h-[min(62vh,560px)] lg:h-auto lg:min-h-0">
                     <ClubMap
                         :selectedIds="selectedIds"
+                        :selectedAddonKeys="selectedAddonKeys"
                         :occupiedIds="occupiedIds"
                         :computers="props.computersList"
                         :zones="props.zonesList"
@@ -876,6 +983,7 @@ onUnmounted(() => {
                         @show-info="(id) => { selectedZoneForInfo = id; showOverlay = true; showInfoModal = true }"
                         @seat-error="handleSeatError"
                         @toggle-seat="toggleSeatSelection"
+                        @toggle-addon-seats="toggleAddonSeats"
                     />
                 </div>
             </section>

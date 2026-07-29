@@ -49,12 +49,10 @@ const props = withDefaults(defineProps<{
         occupied_ids: string[]
     } | null
     contacts: any
-    ps5SurchargePerHour?: number
     minAge?: number
 }>(), {
     zones: () => [],
     games: () => [],
-    ps5SurchargePerHour: 0,
     minAge: 0,
 })
 
@@ -99,10 +97,6 @@ const allPackages = computed(() =>
     )
 )
 
-const hasPs5 = computed(() =>
-    Object.keys(props.occupancy?.kinds || {}).includes('ps5') && (props.ps5SurchargePerHour || 0) > 0
-)
-
 const FREE_GAMES_SHOWN = 12
 
 const paidGames = computed(() => props.games.filter((g) => g.is_paid))
@@ -124,6 +118,11 @@ const gamePriceLabel = (game: LandingGame) => {
 }
 
 const openSeat = (seatId: string) => router.visit(bookingUrl(seatId))
+const openAddonSeats = (payload: { seatIds: string[] }) => {
+    const occupied = props.map?.occupied_ids || []
+    const free = (payload.seatIds || []).find(id => !occupied.includes(id))
+    if (free) openSeat(free)
+}
 
 const steps = [
     {
@@ -319,10 +318,6 @@ const steps = [
                         </Link>
                     </div>
                 </div>
-
-                <p v-if="hasPs5" class="mt-4 text-[12px] text-white/40">
-                    PlayStation 5 в ТВ-зоне — доплата {{ formatMoney(ps5SurchargePerHour) }} ₽ в час к тарифу места.
-                </p>
             </section>
 
             <!-- КАРТА -->
@@ -352,6 +347,7 @@ const steps = [
                         :viewbox="map.viewbox"
                         :occupied-ids="map.occupied_ids"
                         @toggle-seat="openSeat"
+                        @toggle-addon-seats="openAddonSeats"
                     />
                 </div>
                 <p class="mt-3 text-[12px] text-white/40">Нажмите на свободное место, чтобы перейти к бронированию.</p>

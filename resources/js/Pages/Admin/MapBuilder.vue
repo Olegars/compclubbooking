@@ -13,7 +13,7 @@ const props = defineProps<{
 }>()
 
 // --- СОСТОЯНИЕ ---
-const mode = ref<'walls' | 'zones' | 'labels' | 'pcs' | 'erase'>('walls')
+const mode = ref<'walls' | 'zones' | 'labels' | 'pcs' | 'addons' | 'erase'>('walls')
 const viewbox = ref('-10 -10 120 200')
 const svgRef = ref<SVGSVGElement | null>(null)
 const gridSize = ref(2 / 3)
@@ -33,12 +33,16 @@ const computers = ref<any[]>([])
 const currentPoints = ref<any[]>([])
 const isDragging = ref(false)
 const dragTarget = ref<any>(null)
+/** Перетаскивание маркера optional-допа: { zone, addonId } */
+const dragAddon = ref<{ zone: any; addonId: number } | null>(null)
 const draftZone = ref({ x: 0, y: 0, w: 0, h: 0 })
 const startDragPos = ref({ x: 0, y: 0 })
 
 const selectedLabel = ref<any>(null)
 const selectedPc = ref<any>(null)
 const currentSeatKind = ref<'pc' | 'tv' | 'ps5'>('pc')
+const mapAddons = ref<{ id: number, name: string, color: string, billing_mode: string, price_per_hour: number }[]>([])
+const currentAddonId = ref<number | null>(null)
 
 const seatKindOptions = [
     { id: 'pc', label: 'ПК', color: '#06b6d4', prefix: 'PC' },
@@ -102,12 +106,32 @@ const isLoading = ref(false)
 // В режимах рисования клики должны проходить сквозь уже нарисованные объекты,
 // иначе нельзя поставить текст/зону поверх существующей зоны.
 const isLayerInteractive = (type: 'wall' | 'zone' | 'label' | 'pc') => {
-    if (mode.value === 'erase') return true
+    // Ластик: все клики на холст → eraseAtPoint (иначе стены ловят клик сквозь зоны).
+    if (mode.value === 'erase') return false
     if (mode.value === 'pcs') return type === 'pc'
     if (mode.value === 'labels') return type === 'label'
+    if (mode.value === 'addons') return type === 'zone'
     // walls / zones — только холст принимает события (рисование поверх)
     return false
 }
+
+// --- БЕЗОПАСНЫЕ ПАРСЕРЫ (ЗАЩИТА ОТ КРАША VUE) ---
+const OBSOLATE_LABELS = new Set([
+    'STANDART', 'STANDARD', 'СТАНДАРТ',
+    'VIP', 'SOLO', 'SINGL', 'DUO', 'TRIO', 'KVATRO',
+    'BOOTCAMP', 'BOOTKAMP', 'BOTKAMP', 'BOTKAMP-PROFI', 'BOOTKAMP-PROFI', 'BOOTCAMP-PROFI',
+    'TV', 'PS5', 'PS', 'WC', 'ТЕКСТ', 'TEXT',
+])
+
+const normalizeLabelText = (content: unknown) =>
+    String(content ?? '').trim().toUpperCase().replace(/\s+/g, ' ')
+
+const isObsoleteLabel = (content: unknown) => {
+    const t = normalizeLabelText(content)
+    return !t || OBSOLATE_LABELS.has(t)
+}
+
+const keepManualLabel = (l: any) => l && !isObsoleteLabel(l.content)
 
 // --- БЕЗОПАСНЫЕ ПАРСЕРЫ (ЗАЩИТА ОТ КРАША VUE) ---
 const safeNum = (val: any, def = 0) => {
@@ -232,6 +256,11 @@ const handleItemMouseDown = (e: MouseEvent, item: any, type: 'zone' | 'wall' | '
         return;
     }
 
+    if (mode.value === 'addons' && type === 'zone') {
+        toggleAddonOnZone(item)
+        return
+    }
+
     if (mode.value === 'pcs' && type === 'pc') {
         dragTarget.value = item;
         selectedPc.value = item;
@@ -243,10 +272,261 @@ const handleItemMouseDown = (e: MouseEvent, item: any, type: 'zone' | 'wall' | '
     }
 }
 
+const toggleAddonOnZone = (zone: any) => {
+    if (!currentAddonId.value) return
+    if (!Array.isArray(zone.addon_ids)) zone.addon_ids = []
+    if (!zone.addon_positions || typeof zone.addon_positions !== 'object') zone.addon_positions = {}
+    const id = currentAddonId.value
+    const idx = zone.addon_ids.indexOf(id)
+    if (idx >= 0) {
+        zone.addon_ids.splice(idx, 1)
+        delete zone.addon_positions[String(id)]
+        delete zone.addon_positions[id]
+        return
+    }
+    zone.addon_ids.push(id)
+    const key = String(id)
+    if (!zone.addon_positions[key]) {
+        const optionalsBefore = zoneOptionalAddonBadges(zone).filter((a: any) => a.id !== id)
+        const spot = defaultOptionalAddonSpot(zone, optionalsBefore.length)
+        zone.addon_positions[key] = { x: spot.x, y: spot.y }
+    }
+}
+
+const zoneHasAddon = (zone: any, addonId: number) =>
+    Array.isArray(zone.addon_ids) && zone.addon_ids.includes(addonId)
+
+const zoneAddonBadges = (zone: any) => {
+    const ids = Array.isArray(zone.addon_ids) ? zone.addon_ids : []
+    return mapAddons.value.filter(a => ids.includes(a.id))
+}
+
+const zoneAlwaysAddonBadges = (zone: any) =>
+    zoneAddonBadges(zone).filter((a: any) => a.billing_mode !== 'optional')
+
+const zoneOptionalAddonBadges = (zone: any) =>
+    zoneAddonBadges(zone).filter((a: any) => a.billing_mode === 'optional')
+
+const defaultOptionalAddonSpot = (zone: any, index: number) => {
+    const pad = 0.6
+    const x = safeNum(zone.x) + safeNum(zone.w) - 6 - pad
+    const y = safeNum(zone.y) + Math.max(pad, (safeNum(zone.h) - 4.5) / 2) + index * 5
+    return { x, y }
+}
+
+const zoneOptionalAddonSpot = (zone: any, badge: any, index: number) => {
+    const key = String(badge?.id ?? '')
+    const saved = zone.addon_positions?.[key] ?? zone.addon_positions?.[badge?.id]
+    if (saved && Number.isFinite(Number(saved.x)) && Number.isFinite(Number(saved.y))) {
+        return { x: safeNum(saved.x), y: safeNum(saved.y) }
+    }
+    return defaultOptionalAddonSpot(zone, index)
+}
+
+const ensureAddonPosition = (zone: any, badge: any, index: number) => {
+    if (!zone.addon_positions || typeof zone.addon_positions !== 'object') zone.addon_positions = {}
+    const key = String(badge.id)
+    if (!zone.addon_positions[key]) {
+        const spot = defaultOptionalAddonSpot(zone, index)
+        zone.addon_positions[key] = { x: spot.x, y: spot.y }
+    }
+    return zoneOptionalAddonSpot(zone, badge, index)
+}
+
+const startAddonDrag = (e: MouseEvent, zone: any, badge: any, index: number) => {
+    if (mode.value === 'erase') return
+    e.stopPropagation()
+    ensureAddonPosition(zone, badge, index)
+    dragAddon.value = { zone, addonId: Number(badge.id) }
+    selectedPc.value = null
+    selectedLabel.value = null
+}
+
+const ZONE_SLUG_ALIASES: Record<string, string> = {
+    solo: 'singl',
+    standart: 'singl',
+    standard: 'singl',
+    bootkamp: 'bootcamp',
+    botkamp: 'bootcamp',
+    'botkamp-profi': 'bootcamp',
+    'bootkamp-profi': 'bootcamp',
+    'bootcamp-profi': 'bootcamp',
+}
+
+const normalizeZoneType = (type: unknown) => {
+    const slug = String(type || '').trim().toLowerCase()
+    if (!slug) return ''
+    return ZONE_SLUG_ALIASES[slug] || slug
+}
+
+const zoneAutoTitle = (zone: any) =>
+    normalizeZoneType(zone.type).replace(/_/g, ' ').toUpperCase()
+
+const ZONE_BADGE_FONT = 1.35
+const ZONE_BADGE_INSET = 0.85
+const ZONE_BADGE_PAD_X = 0.65
+const ZONE_BADGE_PAD_Y = 0.38
+const ZONE_BADGE_RX = 0.55
+const ZONE_BADGE_CHAR_W = 0.62
+
+const zoneBadgeMeta = (zone: any) => {
+    const title = zoneAutoTitle(zone)
+    if (!title) return null
+    const extras = zoneAlwaysAddonBadges(zone)
+        .map((a: any) => String(a?.name || '+').trim().toUpperCase())
+        .filter(Boolean)
+    const text = extras.length ? `${title} ${extras.join(' ')}` : title
+    const tw = Math.max(text.length, 2) * ZONE_BADGE_FONT * ZONE_BADGE_CHAR_W
+    const w = tw + ZONE_BADGE_PAD_X * 2
+    const h = ZONE_BADGE_FONT + ZONE_BADGE_PAD_Y * 2
+    const zw = safeNum(zone.w)
+    const zh = safeNum(zone.h)
+    const insetX = Math.min(ZONE_BADGE_INSET, Math.max(0.35, zw * 0.08))
+    const insetY = Math.min(ZONE_BADGE_INSET, Math.max(0.35, zh * 0.1))
+    const x = safeNum(zone.x) + zw - insetX - w
+    const y = safeNum(zone.y) + insetY
+    return { text, x, y, w, h, cx: x + w / 2, cy: y + h / 2 }
+}
+
+const eraseAddonAtPoint = (x: number, y: number): boolean => {
+    // Сначала пробуем снять доп с зоны (не удаляя саму комнату / стены).
+    for (let zi = zones.value.length - 1; zi >= 0; zi--) {
+        const z = zones.value[zi]
+        const zx = safeNum(z.x)
+        const zy = safeNum(z.y)
+        const zw = safeNum(z.w)
+        const zh = safeNum(z.h)
+        if (x < zx || x > zx + zw || y < zy || y > zy + zh) continue
+
+        const optionals = zoneOptionalAddonBadges(z)
+        for (let bi = optionals.length - 1; bi >= 0; bi--) {
+            const spot = zoneOptionalAddonSpot(z, optionals[bi], bi)
+            if (x >= spot.x - 0.5 && x <= spot.x + 6.5 && y >= spot.y - 0.5 && y <= spot.y + 5) {
+                if (!Array.isArray(z.addon_ids)) return true
+                z.addon_ids = z.addon_ids.filter((id: number) => id !== optionals[bi].id)
+                if (z.addon_positions) {
+                    delete z.addon_positions[String(optionals[bi].id)]
+                    delete z.addon_positions[optionals[bi].id]
+                }
+                return true
+            }
+        }
+
+        // Always-допы живут в бейдже SINGL + — попадание по рамке снимает только допы.
+        const always = zoneAlwaysAddonBadges(z)
+        if (always.length) {
+            const badge = zoneBadgeMeta(z)
+            if (
+                badge
+                && x >= badge.x - 0.3
+                && x <= badge.x + badge.w + 0.3
+                && y >= badge.y - 0.3
+                && y <= badge.y + badge.h + 0.3
+            ) {
+                const alwaysIds = new Set(always.map((a: any) => a.id))
+                z.addon_ids = (z.addon_ids || []).filter((id: number) => !alwaysIds.has(id))
+                return true
+            }
+        }
+    }
+    return false
+}
+
+const eraseWallAtPoint = (x: number, y: number): boolean => {
+    const svg = svgRef.value
+    if (!svg || !walls.value.length) return false
+
+    const pt = svg.createSVGPoint()
+    pt.x = x
+    pt.y = y
+
+    const paths = svg.querySelectorAll('.layer-walls path')
+    for (let i = paths.length - 1; i >= 0; i--) {
+        const path = paths[i] as SVGGeometryElement & {
+            isPointInStroke?: (p: DOMPoint) => boolean
+        }
+        if (typeof path.isPointInStroke !== 'function') continue
+
+        const prev = path.getAttribute('stroke-width') || '0.2'
+        // Чуть шире hit-area, иначе в контур почти не попасть.
+        path.setAttribute('stroke-width', '1.6')
+        const hit = path.isPointInStroke(pt)
+        path.setAttribute('stroke-width', prev)
+        if (!hit) continue
+
+        const d = path.getAttribute('d') || ''
+        const wall = walls.value.find(w => w.d === d)
+        if (wall) {
+            walls.value = walls.value.filter(w => w !== wall)
+            return true
+        }
+    }
+    return false
+}
+
+const eraseAtPoint = (x: number, y: number) => {
+    if (eraseAddonAtPoint(x, y)) return
+
+    const labelHit = 8
+    let bestLabel: any = null
+    let bestLabelDist = labelHit
+    for (const l of labels.value) {
+        const size = safeNum(l.size, 6)
+        const lx = safeNum(l.x)
+        const ly = safeNum(l.y)
+        const dx = Math.max(0, Math.abs(x - lx) - size * 1.6)
+        const dy = Math.max(0, Math.abs(y - ly) - size * 0.6)
+        const d = Math.hypot(dx, dy)
+        if (d < bestLabelDist) {
+            bestLabelDist = d
+            bestLabel = l
+        }
+    }
+    if (bestLabel) {
+        labels.value = labels.value.filter(l => l !== bestLabel)
+        return
+    }
+
+    const pcHit = 5
+    let bestPc: any = null
+    let bestPcDist = pcHit
+    for (const pc of computers.value) {
+        const cx = safeNum(pc.x) + 3
+        const cy = safeNum(pc.y) + 2.25
+        const d = Math.hypot(x - cx, y - cy)
+        if (d < bestPcDist) {
+            bestPcDist = d
+            bestPc = pc
+        }
+    }
+    if (bestPc) {
+        computers.value = computers.value.filter(p => p !== bestPc)
+        return
+    }
+
+    const zone = zones.value.find(z =>
+        x >= safeNum(z.x) && x <= safeNum(z.x) + safeNum(z.w)
+        && y >= safeNum(z.y) && y <= safeNum(z.y) + safeNum(z.h)
+    )
+    if (zone) {
+        // Доп уже проверен выше. Клик по комнате без допа / мимо бейджа — удалить зону.
+        zones.value = zones.value.filter(z => z !== zone)
+        return
+    }
+
+    eraseWallAtPoint(x, y)
+}
+
 const handleSvgMouseDown = (e: MouseEvent) => {
     const pt = getSVGPoint(e)
     selectedLabel.value = null;
     selectedPc.value = null;
+
+    // Ластик: попадание в тонкий SVG-текст почти невозможно — ищем ближайший объект.
+    if (mode.value === 'erase') {
+        eraseAtPoint(pt.x, pt.y)
+        return
+    }
 
     if (mode.value === 'labels') {
         const newLabel = { x: pt.x, y: pt.y, content: 'ТЕКСТ', rotate: 0, size: 6, color: '#ffffff' };
@@ -284,7 +564,11 @@ const handleSvgMouseDown = (e: MouseEvent) => {
 
 const handleMouseMove = (e: MouseEvent) => {
     const pt = getSVGPoint(e)
-    if (dragTarget.value) {
+    if (dragAddon.value) {
+        const { zone, addonId } = dragAddon.value
+        if (!zone.addon_positions || typeof zone.addon_positions !== 'object') zone.addon_positions = {}
+        zone.addon_positions[String(addonId)] = { x: pt.x, y: pt.y }
+    } else if (dragTarget.value) {
         dragTarget.value.x = pt.x; dragTarget.value.y = pt.y
     } else if (isDragging.value && mode.value === 'zones') {
         draftZone.value.x = Math.min(startDragPos.value.x, pt.x)
@@ -301,6 +585,8 @@ const handleMouseUp = () => {
             ...draftZone.value,
             c: color,
             type: currentZoneType.value,
+            addon_ids: [],
+            addon_positions: {},
         })
     }
     if (dragTarget.value && (dragTarget.value.kind === 'tv' || dragTarget.value.kind === 'ps5')) {
@@ -309,7 +595,9 @@ const handleMouseUp = () => {
             Number(dragTarget.value.y),
         )
     }
-    isDragging.value = false; dragTarget.value = null
+    isDragging.value = false
+    dragTarget.value = null
+    dragAddon.value = null
 }
 
 const finishWall = () => {
@@ -349,6 +637,7 @@ const loadFromDB = async () => {
 
     isLoading.value = true;
     walls.value = []; zones.value = []; labels.value = []; computers.value = [];
+    mapAddons.value = [];
 
     try {
         const { data } = await axios.get(`/admin/get-map?club_id=${activeClubId.value}`);
@@ -361,8 +650,15 @@ const loadFromDB = async () => {
 
         if (rawConfig) {
             walls.value = cleanArray(rawConfig.walls).filter(w => w && w.d);
-            zones.value = cleanArray(rawConfig.zoneRects).filter(z => z && z.w !== undefined);
-            labels.value = cleanArray(rawConfig.labels).filter(l => l && l.content && String(l.content).trim().toUpperCase() !== 'ТЕКСТ' && String(l.content).trim().toUpperCase() !== 'TEXT');
+            zones.value = cleanArray(rawConfig.zoneRects).filter(z => z && z.w !== undefined).map(z => ({
+                ...z,
+                type: normalizeZoneType(z.type) || z.type,
+                addon_ids: Array.isArray(z.addon_ids) ? z.addon_ids.map(Number) : [],
+                addon_positions: (z.addon_positions && typeof z.addon_positions === 'object')
+                    ? { ...z.addon_positions }
+                    : {},
+            })).filter(z => safeNum(z.w) >= 0.5 && safeNum(z.h) >= 0.5);
+            labels.value = cleanArray(rawConfig.labels).filter(keepManualLabel);
             if (rawConfig.viewbox) viewbox.value = rawConfig.viewbox;
         }
 
@@ -371,6 +667,11 @@ const loadFromDB = async () => {
             kind: pc.kind || 'pc',
             booth_id: pc.booth_id || null,
         }));
+
+        mapAddons.value = Array.isArray(data.addons) ? data.addons : []
+        if (!mapAddons.value.some(a => a.id === currentAddonId.value)) {
+            currentAddonId.value = mapAddons.value[0]?.id ?? null
+        }
 
     } catch (e) {
         console.error("Ошибка загрузки карты с сервера:", e);
@@ -388,11 +689,17 @@ const saveToDB = async () => {
             club_id: activeClubId.value,
             config: {
                 walls: walls.value,
-                zoneRects: zones.value,
-                labels: labels.value.filter(l => {
-                    const t = String(l?.content ?? '').trim().toUpperCase()
-                    return t && t !== 'ТЕКСТ' && t !== 'TEXT'
-                }),
+                zoneRects: zones.value
+                    .filter(z => safeNum(z.w) >= 0.5 && safeNum(z.h) >= 0.5)
+                    .map(z => ({
+                    x: z.x, y: z.y, w: z.w, h: z.h, c: z.c,
+                    type: normalizeZoneType(z.type) || z.type,
+                    addon_ids: Array.isArray(z.addon_ids) ? z.addon_ids : [],
+                    addon_positions: (z.addon_positions && typeof z.addon_positions === 'object')
+                        ? z.addon_positions
+                        : {},
+                })),
+                labels: labels.value.filter(keepManualLabel),
                 viewbox: viewbox.value,
             },
             pcs: computers.value.map(pc => ({
@@ -445,7 +752,7 @@ onMounted(() => {
             <header class="h-16 border-b border-white/10 flex justify-between items-center px-6 bg-[#0a0a0a] z-50 shrink-0">
                 <div class="flex gap-4 items-center">
                     <div class="flex bg-white/5 p-1 rounded-xl border border-white/10">
-                        <button v-for="m in [{id: 'walls', n: 'Стены'}, {id: 'zones', n: 'Зоны'}, {id: 'labels', n: 'Текст'}, {id: 'pcs', n: 'ПК'}, {id: 'erase', n: 'Ластик'}]"
+                        <button v-for="m in [{id: 'walls', n: 'Стены'}, {id: 'zones', n: 'Зоны'}, {id: 'addons', n: 'Допы'}, {id: 'labels', n: 'Текст'}, {id: 'pcs', n: 'ПК'}, {id: 'erase', n: 'Ластик'}]"
                                 :key="m.id" @click="mode = m.id as any"
                                 :class="['px-4 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all', mode === m.id ? (m.id === 'erase' ? 'bg-red-500 text-black' : 'bg-cyan-500 text-black shadow-[0_0_10px_rgba(6,182,212,0.4)]') : 'text-white/40 hover:text-white']">
                             {{ m.n }}
@@ -468,6 +775,22 @@ onMounted(() => {
                         </template>
                         <span v-else class="text-[10px] text-amber-400/90 font-black uppercase tracking-widest">
                             Сначала добавьте зоны в «Топология залов»
+                        </span>
+                    </div>
+
+                    <div v-if="mode === 'addons'" class="flex items-center gap-3 ml-2 px-4 border-l border-white/10 shrink-0">
+                        <template v-if="mapAddons.length">
+                            <select :value="currentAddonId ?? ''"
+                                    @change="currentAddonId = Number(($event.target as HTMLSelectElement).value) || null"
+                                    class="bg-black border border-white/10 text-cyan-500 font-bold text-[10px] py-1.5 px-3 rounded-lg uppercase outline-none focus:border-cyan-500">
+                                <option v-for="a in mapAddons" :key="a.id" :value="a.id">
+                                    {{ a.name }} · {{ Math.round(a.price_per_hour) }}₽/ч{{ a.billing_mode === 'optional' ? ' · опция' : '' }}
+                                </option>
+                            </select>
+                            <span class="text-[9px] text-white/35 uppercase tracking-widest hidden lg:inline">клик по зоне · тяни PS</span>
+                        </template>
+                        <span v-else class="text-[10px] text-amber-400/90 font-black uppercase tracking-widest">
+                            Создайте доп с ценой на странице тарифов
                         </span>
                     </div>
 
@@ -559,21 +882,93 @@ onMounted(() => {
                                @mousedown.stop="isLayerInteractive('zone') && handleItemMouseDown($event, z, 'zone')">
                                 <rect :x="safeNum(z.x)" :y="safeNum(z.y)" :width="safeNum(z.w)" :height="safeNum(z.h)"
                                       :fill="z.c || '#22c55e'" :fill-opacity="z.c === '#4d4d4d' ? 0.8 : 0.2"
-                                      :stroke="z.c || '#22c55e'" stroke-width="0.15"
+                                      :stroke="mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId) ? '#fff' : (z.c || '#22c55e')"
+                                      :stroke-width="mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId) ? 0.35 : 0.15"
                                       :class="['transition-opacity', isLayerInteractive('zone') ? 'hover:fill-opacity-50 cursor-pointer' : '']" />
+                                <g v-if="zoneBadgeMeta(z)" class="pointer-events-none">
+                                    <rect
+                                        :x="zoneBadgeMeta(z).x"
+                                        :y="zoneBadgeMeta(z).y"
+                                        :width="zoneBadgeMeta(z).w"
+                                        :height="zoneBadgeMeta(z).h"
+                                        :rx="ZONE_BADGE_RX"
+                                        :ry="ZONE_BADGE_RX"
+                                        fill="rgba(0,0,0,0.72)"
+                                        stroke="rgba(255,255,255,0.28)"
+                                        stroke-width="0.12"
+                                    />
+                                    <text
+                                        :x="zoneBadgeMeta(z).cx"
+                                        :y="zoneBadgeMeta(z).cy"
+                                        text-anchor="middle"
+                                        dominant-baseline="central"
+                                        fill="#ffffff"
+                                        fill-opacity="0.92"
+                                        :font-size="ZONE_BADGE_FONT"
+                                        font-weight="700"
+                                        font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
+                                        letter-spacing="0.04em"
+                                        class="uppercase"
+                                    >{{ zoneBadgeMeta(z).text }}</text>
+                                </g>
+                                <g v-for="(badge, bi) in zoneOptionalAddonBadges(z)" :key="'op'+i+'-'+badge.id"
+                                   :class="mode === 'erase' ? 'pointer-events-none' : 'cursor-move pointer-events-auto'"
+                                   @mousedown.stop="startAddonDrag($event, z, badge, bi)">
+                                    <rect
+                                        :x="zoneOptionalAddonSpot(z, badge, bi).x"
+                                        :y="zoneOptionalAddonSpot(z, badge, bi).y"
+                                        width="6" height="4.5"
+                                        rx="0.55" ry="0.55"
+                                        fill="#001100"
+                                        :stroke="dragAddon?.addonId === badge.id && dragAddon?.zone === z ? '#fff' : '#22c55e'"
+                                        stroke-width="0.2"
+                                    />
+                                    <text
+                                        :x="zoneOptionalAddonSpot(z, badge, bi).x + 3"
+                                        :y="zoneOptionalAddonSpot(z, badge, bi).y + 1.85"
+                                        text-anchor="middle"
+                                        font-size="1.65"
+                                        font-weight="800"
+                                        font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
+                                        fill="#22c55e"
+                                        class="uppercase pointer-events-none"
+                                    >{{ badge.name }}</text>
+                                    <text
+                                        :x="zoneOptionalAddonSpot(z, badge, bi).x + 3"
+                                        :y="zoneOptionalAddonSpot(z, badge, bi).y + 3.45"
+                                        text-anchor="middle"
+                                        font-size="0.95"
+                                        font-weight="700"
+                                        font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
+                                        fill="#22c55e"
+                                        fill-opacity="0.75"
+                                        letter-spacing="0.06em"
+                                        class="uppercase pointer-events-none"
+                                    >опция</text>
+                                </g>
                             </g>
                         </g>
 
                         <g class="layer-labels">
-                            <text v-for="(l, i) in labels" :key="'l'+i" :x="safeNum(l.x)" :y="safeNum(l.y)"
-                                  :class="[
-                                      'uppercase select-none transition-all',
-                                      isLayerInteractive('label') ? 'cursor-move hover:opacity-80' : 'pointer-events-none',
-                                      selectedLabel === l ? 'drop-shadow-[0_0_10px_rgba(255,255,255,0.8)] fill-white' : ''
-                                  ]"
-                                  @mousedown.stop="isLayerInteractive('label') && handleItemMouseDown($event, l, 'label')"
-                                  :transform="l.rotate ? `rotate(${l.rotate} ${safeNum(l.x)} ${safeNum(l.y)})` : ''"
-                                  :fill="l.color || '#ffffff'" :font-size="safeNum(l.size, 6)" font-weight="900">{{ l.content || 'ТЕКСТ' }}</text>
+                            <g v-for="(l, i) in labels" :key="'l'+i"
+                               :class="isLayerInteractive('label') ? 'cursor-pointer' : 'pointer-events-none'"
+                               @mousedown.stop="isLayerInteractive('label') && handleItemMouseDown($event, l, 'label')">
+                                <!-- Невидимая зона клика: по глифам текста почти не попасть -->
+                                <rect
+                                    :x="safeNum(l.x) - safeNum(l.size, 6) * 0.2"
+                                    :y="safeNum(l.y) - safeNum(l.size, 6) * 0.85"
+                                    :width="Math.max(safeNum(l.size, 6) * Math.max(2, String(l.content || '').length * 0.65), 6)"
+                                    :height="safeNum(l.size, 6) * 1.2"
+                                    fill="transparent"
+                                />
+                                <text :x="safeNum(l.x)" :y="safeNum(l.y)"
+                                      :class="[
+                                          'uppercase select-none transition-all pointer-events-none',
+                                          selectedLabel === l ? 'drop-shadow-[0_0_10px_rgba(255,255,255,0.8)] fill-white' : ''
+                                      ]"
+                                      :transform="l.rotate ? `rotate(${l.rotate} ${safeNum(l.x)} ${safeNum(l.y)})` : ''"
+                                      :fill="l.color || '#ffffff'" :font-size="safeNum(l.size, 6)" font-weight="900">{{ l.content || 'ТЕКСТ' }}</text>
+                            </g>
                         </g>
 
                         <g class="layer-pcs">

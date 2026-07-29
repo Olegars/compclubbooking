@@ -4,8 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Club;
 use App\Models\Computer;
-use App\Models\Tariff;
+use App\Models\Zone;
 use App\Services\ClubOccupancyService;
+use App\Services\MapPresentationService;
 use App\Services\TariffService;
 use Inertia\Inertia;
 
@@ -14,6 +15,7 @@ class HomeController extends Controller
     public function __construct(
         private readonly TariffService $tariffs,
         private readonly ClubOccupancyService $occupancy,
+        private readonly MapPresentationService $mapPresentation,
     ) {}
 
     public function index()
@@ -33,6 +35,8 @@ class HomeController extends Controller
 
         $occupancy = $this->occupancy->summary($club);
         $computers = $club->computers()->orderBy('name')->get();
+        $mapConfig = is_array($club->map_config) ? $club->map_config : [];
+        $mapConfig = $this->mapPresentation->decorate($mapConfig, (int) $club->id);
 
         return Inertia::render('Home/Index', [
             'club' => [
@@ -46,10 +50,10 @@ class HomeController extends Controller
                 'busy' => $occupancy['busy'],
                 'kinds' => $occupancy['kinds'],
             ],
-            'zones' => $this->zonesWithPricing($occupancy['zones']),
+            'zones' => $this->zonesWithPricing((int) $club->id, $occupancy['zones']),
             'games' => $this->games($club),
             'map' => [
-                'config' => $club->map_config,
+                'config' => $mapConfig,
                 'viewbox' => (string) $club->viewbox,
                 'computers' => $computers->map(fn (Computer $c) => [
                     'id' => (int) $c->id,
@@ -61,43 +65,42 @@ class HomeController extends Controller
                 'occupied_ids' => array_map('strval', $occupancy['occupied_seat_ids']),
             ],
             'contacts' => $this->contacts($club),
-            'ps5SurchargePerHour' => (float) config('booking.ps5_surcharge_per_hour', 0),
             'minAge' => (int) config('club.min_age'),
         ]);
     }
 
     /**
-     * Занятость зон + реальные цены из тарифной сетки.
-     * Зона без активного тарифа отдаёт price_per_hour = null, чтобы фронт
-     * не показывал вымышленную цифру.
+     * Занятость зон + базовые цены типа помещения (без «+» конкретных комнат).
      *
      * @param  list<array<string, mixed>>  $occupancyZones
      * @return list<array<string, mixed>>
      */
-    private function zonesWithPricing(array $occupancyZones): array
+    private function zonesWithPricing(int $clubId, array $occupancyZones): array
     {
-        $zones = collect($occupancyZones)->map(function (array $zone) {
-            $slug = (string) $zone['slug'];
-            $grid = $this->tariffs->gridForCategory($slug);
-            $hasTariff = Tariff::query()
-                ->where('is_active', true)
-                ->where('category', $slug)
-                ->exists();
+        $zoneIdBySlug = Zone::query()->pluck('id', 'slug');
 
-            $hourly = (float) $grid['hourly_rate'];
+        $zones = collect($occupancyZones)->map(function (array $zone) use ($clubId, $zoneIdBySlug) {
+            $zoneId = $zoneIdBySlug->get(strtolower((string) $zone['slug']));
+            $zoneId = $zoneId ? (int) $zoneId : null;
+
+            $grid = $this->tariffs->gridForZone($clubId, $zoneId);
+            $hasTariff = $this->tariffs->hasPricing($clubId, $zoneId);
+            $hourly = (float) $grid['base_hourly_rate'];
 
             $packages = collect($grid['packages'])->map(function (array $package) use ($hourly) {
                 $full = $hourly * (int) $package['hours'];
                 $discount = $full > 0
-                    ? (int) round(max(0, (1 - ((float) $package['cost'] / $full)) * 100))
+                    ? (int) round(max(0, (1 - ((float) $package['base_cost'] / $full)) * 100))
                     : 0;
 
                 return [
                     'id' => (int) $package['id'],
                     'title' => (string) $package['title'],
                     'hours' => (int) $package['hours'],
-                    'cost' => (float) $package['cost'],
-                    'hourly_equivalent' => (float) $package['hourly_equivalent'],
+                    'cost' => (float) $package['base_cost'],
+                    'hourly_equivalent' => (int) $package['hours'] > 0
+                        ? round((float) $package['base_cost'] / (int) $package['hours'], 2)
+                        : $hourly,
                     'discount_pct' => $discount,
                 ];
             })->values()->all();
