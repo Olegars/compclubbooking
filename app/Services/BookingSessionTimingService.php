@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\Booking;
+use App\Models\BookingGroup;
 use App\Models\GameAccount;
 use App\Models\GameAccountReservation;
+use App\Services\AchievementService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -112,6 +114,85 @@ class BookingSessionTimingService
         }
 
         return $count;
+    }
+
+    /**
+     * Закрывает брони, у которых ends_at уже прошёл (или legacy-окно истекло).
+     * Возвращает число закрытых booking id.
+     */
+    public function completeExpiredSessions(?CarbonImmutable $now = null): int
+    {
+        $now = $now ?? CarbonImmutable::now();
+        $nowIso = $now->utc()->toIso8601String();
+        $today = $now->timezone(config('app.timezone'))->toDateString();
+        $local = $now->timezone(config('app.timezone'));
+        $nowH = $local->hour + ($local->minute / 60);
+
+        // Eloquent where('ends_at', '<=', $now) на timestamptz в PG даёт ложные промахи —
+        // сравниваем через ::timestamptz.
+        $expiredIds = Booking::query()
+            ->whereIn('status', ['confirmed', 'active'])
+            ->where(function ($query) use ($nowIso, $today, $nowH) {
+                $query->where(function ($modern) use ($nowIso) {
+                    $modern->whereNotNull('ends_at')
+                        ->whereRaw('ends_at <= ?::timestamptz', [$nowIso]);
+                })->orWhere(function ($legacy) use ($today, $nowH) {
+                    $legacy->whereNull('ends_at')
+                        ->where('date', '<=', $today)
+                        ->whereRaw('(start_time + duration) <= ?', [$nowH]);
+                });
+            })
+            ->pluck('id');
+
+        if ($expiredIds->isEmpty()) {
+            return 0;
+        }
+
+        $expiredBookings = Booking::query()->whereIn('id', $expiredIds)->get();
+
+        Booking::query()
+            ->whereIn('id', $expiredIds)
+            ->update([
+                'status' => 'completed',
+                'actual_ended_at' => $now,
+            ]);
+
+        $reservations = GameAccountReservation::query()
+            ->whereIn('booking_id', $expiredIds)
+            ->whereIn('status', ['held', 'confirmed', 'active'])
+            ->get();
+
+        foreach ($reservations as $reservation) {
+            $booking = $expiredBookings->firstWhere('id', $reservation->booking_id);
+            GameAccount::query()
+                ->whereKey($reservation->game_account_id)
+                ->where('current_pc_id', $booking?->computer_id)
+                ->update(['status' => 'free', 'current_pc_id' => null]);
+            $reservation->update(['status' => 'completed', 'released_at' => $now]);
+        }
+
+        Booking::query()
+            ->whereNull('starts_at')
+            ->where('date', '<=', $today)
+            ->where('status', 'active')
+            ->whereRaw('(start_time + duration) <= ?', [$nowH])
+            ->update([
+                'status' => 'completed',
+                'actual_ended_at' => $now,
+            ]);
+
+        BookingGroup::query()
+            ->whereIn('status', ['confirmed', 'active'])
+            ->whereRaw('ends_at <= ?::timestamptz', [$nowIso])
+            ->update(['status' => 'completed']);
+
+        try {
+            app(AchievementService::class)->evaluateForBookings($expiredBookings);
+        } catch (\Throwable $e) {
+            Log::warning('Achievement evaluate after session expiry failed: '.$e->getMessage());
+        }
+
+        return $expiredIds->count();
     }
 
     /**

@@ -119,18 +119,59 @@ const minReviewLength = computed(() => Number(reviewMeta.value.min_text_length ?
 const isTopUpInputOpen = ref(false)
 const isQuickStartOpen = ref(false)
 const isReviewModalOpen = ref(false)
+const isGameRequestOpen = ref(false)
 const isPaymentProcessing = ref(false)
 const isReviewSubmitting = ref(false)
+const isGameRequestSubmitting = ref(false)
 const topUpAmount = ref(500)
 const quickStartPc = ref('')
 const reviewText = ref('')
 const reviewError = ref('')
+const gameRequestTitle = ref('')
+const gameRequestComment = ref('')
+const gameRequestError = ref('')
+const gameRequestSuccess = ref('')
 const paymentData = ref<any>({})
 
 const openReviewModal = () => {
     reviewError.value = ''
     reviewText.value = ''
     isReviewModalOpen.value = true
+}
+
+const openGameRequestModal = () => {
+    gameRequestError.value = ''
+    gameRequestSuccess.value = ''
+    gameRequestTitle.value = ''
+    gameRequestComment.value = ''
+    isGameRequestOpen.value = true
+}
+
+const submitGameRequest = async () => {
+    if (isGameRequestSubmitting.value) return
+    const title = gameRequestTitle.value.trim()
+    if (!title) {
+        gameRequestError.value = 'Укажите название игры'
+        return
+    }
+    isGameRequestSubmitting.value = true
+    gameRequestError.value = ''
+    try {
+        const { data } = await axios.post('/api/game-requests', {
+            title,
+            comment: gameRequestComment.value.trim() || null,
+        })
+        gameRequestSuccess.value = data.message || 'Заявка принята'
+        gameRequestTitle.value = ''
+        gameRequestComment.value = ''
+        setTimeout(() => { isGameRequestOpen.value = false }, 1200)
+    } catch (e: any) {
+        gameRequestError.value = e.response?.data?.message
+            || e.response?.data?.errors?.title?.[0]
+            || 'Не удалось отправить заявку'
+    } finally {
+        isGameRequestSubmitting.value = false
+    }
 }
 
 const submitReview = async () => {
@@ -221,12 +262,13 @@ onMounted(() => {
                         <span class="text-3xl font-bold text-[#22c55e] uppercase italic">RUB</span>
                     </div>
 
-                    <div class="mt-10 grid grid-cols-2 sm:grid-cols-5 gap-3 relative z-10">
+                    <div class="mt-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 relative z-10">
                         <button @click="isTopUpInputOpen = true" class="py-4 bg-[#22c55e] text-black font-black rounded-xl text-[9px] tracking-widest hover:scale-105 transition-all uppercase italic">Пополнить</button>
                         <button @click="isQuickStartOpen = true" class="py-4 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-xl text-[9px] tracking-widest hover:bg-[#22c55e]/10 transition-all uppercase italic">Сесть за ПК</button>
                         <Link href="/booking" class="py-4 bg-white/5 border border-white/10 text-white font-black rounded-xl text-[9px] flex items-center justify-center tracking-widest hover:bg-white/10 transition-all uppercase italic">Бронь</Link>
                         <Link href="/shop" class="py-4 bg-white/5 border border-white/10 text-white font-black rounded-xl text-[9px] flex items-center justify-center tracking-widest hover:bg-white/10 transition-all uppercase italic">Маркет</Link>
                         <button @click="openReviewModal" class="py-4 bg-white/5 border border-yellow-500/40 text-yellow-500 font-black rounded-xl text-[9px] tracking-widest hover:bg-yellow-500/10 transition-all uppercase italic">Бонус</button>
+                        <button @click="openGameRequestModal" class="py-4 bg-white/5 border border-cyan-500/40 text-cyan-400 font-black rounded-xl text-[9px] tracking-widest hover:bg-cyan-500/10 transition-all uppercase italic">Хочу игру</button>
                     </div>
                 </div>
 
@@ -301,7 +343,7 @@ onMounted(() => {
                 </div>
 
                 <div v-if="achievements.length > 0" class="bg-[#0a0a0a] border border-purple-500/20 rounded-[3rem] p-8 shadow-xl">
-                    <span class="text-[10px] uppercase text-purple-400 tracking-[0.4em] font-black italic block mb-6">Квесты и ачивки</span>
+                    <span class="text-[10px] uppercase text-purple-400 tracking-[0.4em] font-black italic block mb-6">Достижения и трофеи</span>
                     <div class="space-y-4">
                         <div v-for="a in achievements" :key="a.id"
                              class="border rounded-2xl p-4 transition-colors"
@@ -424,6 +466,44 @@ onMounted(() => {
                     >
                         Закрыть
                     </button>
+                </div>
+            </div>
+
+            <div v-if="isGameRequestOpen" class="fixed inset-0 flex items-center justify-center z-[9998] p-6 animate-in fade-in duration-300">
+                <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="isGameRequestOpen = false"></div>
+                <div class="relative max-w-md w-full bg-[#0a0a0a] border border-cyan-500/30 rounded-[3.5rem] p-10 sm:p-12 text-center shadow-[0_0_120px_rgba(34,211,238,0.12)]">
+                    <h2 class="text-cyan-400 text-4xl font-black uppercase italic mb-3 tracking-tighter">Хочу игру</h2>
+                    <p class="text-white/30 text-[10px] uppercase tracking-[0.25em] font-black italic mb-8 leading-relaxed">
+                        Напиши тайтл, которого нет на дисках. Если наберётся спрос — поставим.
+                    </p>
+                    <div v-if="gameRequestSuccess" class="mb-6 p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-[10px] uppercase font-black italic tracking-widest">
+                        {{ gameRequestSuccess }}
+                    </div>
+                    <template v-else>
+                        <input
+                            v-model="gameRequestTitle"
+                            type="text"
+                            maxlength="120"
+                            placeholder="Название игры"
+                            class="w-full bg-black border-2 border-white/5 rounded-[2rem] py-5 px-6 text-sm font-mono text-white mb-4 outline-none focus:border-cyan-500/50 transition-colors placeholder:text-white/15 text-left"
+                        />
+                        <textarea
+                            v-model="gameRequestComment"
+                            rows="3"
+                            maxlength="500"
+                            placeholder="Комментарий (необязательно)"
+                            class="w-full bg-black border-2 border-white/5 rounded-[2rem] py-5 px-6 text-sm font-mono text-white mb-4 outline-none focus:border-cyan-500/50 transition-colors placeholder:text-white/15 resize-none text-left"
+                        />
+                        <div v-if="gameRequestError" class="mb-4 text-red-400 text-[10px] uppercase font-black italic tracking-widest">{{ gameRequestError }}</div>
+                        <button
+                            type="button"
+                            :disabled="isGameRequestSubmitting"
+                            @click="submitGameRequest"
+                            class="w-full py-7 bg-cyan-400 text-black font-black uppercase rounded-[2.5rem] italic hover:bg-cyan-300 transition-colors disabled:opacity-40"
+                        >
+                            {{ isGameRequestSubmitting ? 'Отправка...' : 'Отправить заявку' }}
+                        </button>
+                    </template>
                 </div>
             </div>
 

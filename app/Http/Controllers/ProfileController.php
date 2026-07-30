@@ -171,4 +171,26 @@ class ProfileController extends Controller
             'server_time' => $now->toIso8601String(),
         ]);
     }
+
+    public function edit()
+    {
+        return Inertia::render('User/Profile');
+    }
+
+    public function update(Request $request)
+    {
+        $user = Auth::user();
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:50'],
+            'email' => ['nullable', 'email', 'max:255', 'unique:users,email,'.$user->id],
+        ]);
+
+        $user->update([
+            'name' => $validated['name'],
+            'email' => $validated['email'] ?? null,
+        ]);
+
+        return back();
+    }
 }

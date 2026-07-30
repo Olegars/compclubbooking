@@ -13,6 +13,7 @@ use App\Models\GameAccountReservation;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
+use App\Services\BookingSessionTimingService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -754,38 +755,6 @@ class GameBookingService
 
     private function closeExpiredBookings(): void
     {
-        app(BookingSessionTimingService::class)->cancelNoShows();
-
-        $nowIso = now()->utc()->toIso8601String();
-
-        $expiredIds = Booking::query()
-            ->whereIn('status', ['confirmed', 'active'])
-            ->whereNotNull('ends_at')
-            ->whereRaw('ends_at <= ?::timestamptz', [$nowIso])
-            ->pluck('id');
-
-        if ($expiredIds->isEmpty()) {
-            return;
-        }
-
-        Booking::query()
-            ->whereIn('id', $expiredIds)
-            ->update([
-                'status' => 'completed',
-                'actual_ended_at' => now(),
-            ]);
-
-        GameAccountReservation::query()
-            ->whereIn('booking_id', $expiredIds)
-            ->whereIn('status', ['held', 'confirmed', 'active'])
-            ->update([
-                'status' => 'completed',
-                'released_at' => now(),
-            ]);
-
-        BookingGroup::query()
-            ->whereIn('status', ['confirmed', 'active'])
-            ->whereRaw('ends_at <= ?::timestamptz', [$nowIso])
-            ->update(['status' => 'completed']);
+        app(BookingSessionTimingService::class)->completeExpiredSessions();
     }
 }

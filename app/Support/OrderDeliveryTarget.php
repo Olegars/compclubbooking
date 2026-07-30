@@ -46,9 +46,27 @@ class OrderDeliveryTarget
 
     public static function activeBookingForUser(int $userId): ?Booking
     {
+        $now = now();
+        $nowIso = $now->utc()->toIso8601String();
+        $today = $now->toDateString();
+        $nowH = $now->hour + ($now->minute / 60);
+
+        // status=active недостаточно: просроченные брони могут оставаться active,
+        // пока не отработает reactor:update-statuses. Для доставки смотрим окно времени.
         return Booking::query()
             ->where('user_id', $userId)
             ->where('status', 'active')
+            ->where(function ($query) use ($nowIso, $today, $nowH) {
+                $query->where(function ($modern) use ($nowIso) {
+                    $modern->whereNotNull('ends_at')
+                        ->whereRaw('ends_at > ?::timestamptz', [$nowIso]);
+                })->orWhere(function ($legacy) use ($today, $nowH) {
+                    $legacy->whereNull('ends_at')
+                        ->where('date', $today)
+                        ->where('start_time', '<=', $nowH)
+                        ->whereRaw('(start_time + duration) > ?', [$nowH]);
+                });
+            })
             ->orderByDesc('id')
             ->first();
     }

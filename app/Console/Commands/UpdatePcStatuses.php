@@ -4,12 +4,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use App\Models\Booking;
-use App\Models\BookingGroup;
-use App\Models\GameAccount;
-use App\Models\GameAccountReservation;
-use App\Services\AchievementService;
 use App\Services\BookingSessionTimingService;
 
 class UpdatePcStatuses extends Command
@@ -20,24 +15,32 @@ class UpdatePcStatuses extends Command
     public function handle()
     {
         $now = now();
+        $nowIso = $now->utc()->toIso8601String();
         $nowH = $now->hour + ($now->minute / 60);
         $today = $now->toDateString();
 
-        $noShows = app(BookingSessionTimingService::class)->cancelNoShows();
+        $timing = app(BookingSessionTimingService::class);
+
+        $noShows = $timing->cancelNoShows();
         if ($noShows > 0) {
             $this->info('No-show отменено: '.$noShows);
+        }
+
+        $closed = $timing->completeExpiredSessions();
+        if ($closed > 0) {
+            $this->info('Закрыто просроченных сессий: '.$closed);
         }
 
         // 1. Сначала сбрасываем всех в available (кто не занят прямо сейчас)
         DB::table('computers')->update(['status' => 'available']);
 
         // 2. Ищем все активные брони на текущий момент (новая и legacy-схема).
-        // Active + ends_at > now covers early starts (starts_at already shifted to actual).
+        // timestamptz: не использовать Eloquent where(ends_at, '>', $now) — ложные промахи.
         $activeBookings = Booking::where('status', 'active')
-            ->where(function ($query) use ($now, $today, $nowH) {
-                $query->where(function ($modern) use ($now) {
+            ->where(function ($query) use ($nowIso, $today, $nowH) {
+                $query->where(function ($modern) use ($nowIso) {
                     $modern->whereNotNull('ends_at')
-                        ->where('ends_at', '>', $now);
+                        ->whereRaw('ends_at > ?::timestamptz', [$nowIso]);
                 })->orWhere(function ($legacy) use ($today, $nowH) {
                     $legacy->whereNull('ends_at')
                         ->where('date', $today)
@@ -54,58 +57,6 @@ class UpdatePcStatuses extends Command
 
             $this->info('Обновлено узлов: ' . $activeBookings->count());
         }
-
-        // 3. Закрываем старые брони и принудительно освобождаем игровые аккаунты.
-        $nowIso = $now->utc()->toIso8601String();
-        $expiredIds = Booking::whereIn('status', ['confirmed', 'active'])
-            ->where(function ($query) use ($nowIso, $today, $nowH) {
-                $query->where(function ($modern) use ($nowIso) {
-                    $modern->whereNotNull('ends_at')
-                        ->whereRaw('ends_at <= ?::timestamptz', [$nowIso]);
-                })->orWhere(function ($legacy) use ($today, $nowH) {
-                    $legacy->whereNull('ends_at')
-                        ->where('date', '<=', $today)
-                        ->whereRaw('(start_time + duration) <= ?', [$nowH]);
-                });
-            })
-            ->pluck('id');
-
-        if ($expiredIds->isNotEmpty()) {
-            $expiredBookings = Booking::whereIn('id', $expiredIds)->get();
-
-            Booking::whereIn('id', $expiredIds)
-                ->update(['status' => 'completed', 'actual_ended_at' => $now]);
-
-            $reservations = GameAccountReservation::query()
-                ->whereIn('booking_id', $expiredIds)
-                ->whereIn('status', ['held', 'confirmed', 'active'])
-                ->get();
-
-            foreach ($reservations as $reservation) {
-                GameAccount::query()
-                    ->whereKey($reservation->game_account_id)
-                    ->where('current_pc_id', $reservation->booking?->computer_id)
-                    ->update(['status' => 'free', 'current_pc_id' => null]);
-                $reservation->update(['status' => 'completed', 'released_at' => $now]);
-            }
-
-            try {
-                app(AchievementService::class)->evaluateForBookings($expiredBookings);
-            } catch (\Throwable $e) {
-                Log::warning('Achievement evaluate after status update failed: '.$e->getMessage());
-            }
-        }
-
-        Booking::whereNull('starts_at')
-            ->where('date', '<=', $today)
-            ->where('status', 'active')
-            ->whereRaw('(start_time + duration) <= ?', [$nowH])
-            ->update(['status' => 'completed']);
-
-        BookingGroup::query()
-            ->whereIn('status', ['confirmed', 'active'])
-            ->whereRaw('ends_at <= ?::timestamptz', [$nowIso])
-            ->update(['status' => 'completed']);
 
         return Command::SUCCESS;
     }

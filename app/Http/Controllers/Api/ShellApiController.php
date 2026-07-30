@@ -20,11 +20,14 @@ use App\Models\ComputerInputAlert;
 use App\Models\ComputerSosAlert;
 use App\Services\AchievementService;
 use App\Services\BookingSessionTimingService;
+use App\Services\GameRequestService;
 use App\Services\ProductStockService;
+use App\Services\UserCloudSettingsService;
 use App\Services\VideoMarkerService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
 use RuntimeException;
 
 class ShellApiController extends Controller
@@ -135,6 +138,9 @@ class ShellApiController extends Controller
             // Sync legacy users.balance / wallets.balance into deposit_balance so shell matches admin.
             $balance = $user->syncBalanceToWallet();
 
+            // Cloud Saves: pack for Shell to restore on this PC (may be null if never saved).
+            $cloud = app(UserCloudSettingsService::class)->getPackWithMeta($user);
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Авторизация успешна.',
@@ -146,7 +152,9 @@ class ShellApiController extends Controller
                     'deposit_balance' => $balance,
                     'total_balance' => $balance,
                     'time_remaining' => $formattedTime
-                ]
+                ],
+                'settings_pack' => $cloud['payload'],
+                'settings_updated_at' => $cloud['updated_at'],
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -168,6 +176,10 @@ class ShellApiController extends Controller
     public function getBalance(Request $request)
     {
         try {
+            // Пока шелл поллит баланс — закрываем просроченные сессии сразу,
+            // не дожидаясь минуты scheduler'а.
+            app(BookingSessionTimingService::class)->completeExpiredSessions();
+
             $bookingId = (int) $request->query('booking_id', 0);
             $terminalId = (int) $request->query('terminal_id', 0);
             $userId = (int) $request->query('user_id', 0);
@@ -1293,7 +1305,10 @@ class ShellApiController extends Controller
     {
         try {
             $request->validate([
-                'terminal_id' => 'required'
+                'terminal_id' => 'required',
+                // Cloud Saves: optional full pack collected by Shell before session end.
+                'settings_pack' => 'nullable|array',
+                'settings_merge' => 'nullable|boolean',
             ]);
 
             $termId = (string)$request->terminal_id;
@@ -1304,6 +1319,34 @@ class ShellApiController extends Controller
                 })->first();
 
             if ($booking) {
+                $settingsSaved = false;
+                $settingsError = null;
+
+                // Persist cloud pack BEFORE closing the session (user_id still known).
+                if ($booking->user_id && $request->filled('settings_pack')) {
+                    try {
+                        $user = User::find($booking->user_id);
+                        if ($user) {
+                            $service = app(UserCloudSettingsService::class);
+                            if ($request->boolean('settings_merge')) {
+                                $service->mergePack($user, $request->input('settings_pack'));
+                            } else {
+                                $service->savePack($user, $request->input('settings_pack'));
+                            }
+                            $settingsSaved = true;
+                        }
+                    } catch (InvalidArgumentException $e) {
+                        $settingsError = $e->getMessage();
+                        Log::warning('Cloud settings reject on logout', [
+                            'user_id' => $booking->user_id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    } catch (\Throwable $e) {
+                        $settingsError = 'Не удалось сохранить настройки';
+                        Log::warning('Cloud settings save on logout failed: '.$e->getMessage());
+                    }
+                }
+
                 DB::transaction(function () use ($booking, $termId) {
                     $booking->update([
                         'status' => 'completed',
@@ -1340,7 +1383,9 @@ class ShellApiController extends Controller
 
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Сессия успешно закрыта. Терминал освобожден.'
+                    'message' => 'Сессия успешно закрыта. Терминал освобожден.',
+                    'settings_saved' => $settingsSaved,
+                    'settings_error' => $settingsError,
                 ], 200);
             }
 
@@ -1357,6 +1402,181 @@ class ShellApiController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * GET cloud settings pack for the player on the active terminal session.
+     * Shell can also re-fetch mid-session (e.g. after reconnect).
+     */
+    public function getCloudSettings(Request $request)
+    {
+        try {
+            $request->validate([
+                'terminal_id' => 'required|integer',
+                'user_id' => 'nullable|integer',
+            ]);
+
+            $user = $this->resolveShellSessionUser(
+                (int) $request->terminal_id,
+                $request->filled('user_id') ? (int) $request->user_id : null
+            );
+
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Активная сессия не найдена',
+                ], 200);
+            }
+
+            $cloud = app(UserCloudSettingsService::class)->getPackWithMeta($user);
+
+            return response()->json([
+                'status' => 'success',
+                'user_id' => $user->id,
+                'settings_pack' => $cloud['payload'],
+                'settings_updated_at' => $cloud['updated_at'],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $msg = collect($e->errors())->flatten()->first() ?: 'Некорректный запрос';
+
+            return response()->json(['status' => 'error', 'message' => $msg], 200);
+        } catch (\Throwable $e) {
+            Log::error('Shell API getCloudSettings: '.$e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ошибка сервера при чтении настроек',
+            ], 500);
+        }
+    }
+
+    /**
+     * POST cloud settings pack mid-session (or before logout as a dedicated call).
+     * Body: terminal_id, settings_pack (object), optional settings_merge=true for per-game merge.
+     */
+    public function saveCloudSettings(Request $request)
+    {
+        try {
+            $request->validate([
+                'terminal_id' => 'required|integer',
+                'user_id' => 'nullable|integer',
+                'settings_pack' => 'required|array',
+                'settings_merge' => 'nullable|boolean',
+            ]);
+
+            $user = $this->resolveShellSessionUser(
+                (int) $request->terminal_id,
+                $request->filled('user_id') ? (int) $request->user_id : null
+            );
+
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Активная сессия не найдена',
+                ], 200);
+            }
+
+            $service = app(UserCloudSettingsService::class);
+            if ($request->boolean('settings_merge')) {
+                $row = $service->mergePack($user, $request->input('settings_pack'));
+            } else {
+                $row = $service->savePack($user, $request->input('settings_pack'));
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Настройки сохранены в облако клуба',
+                'user_id' => $user->id,
+                'settings_updated_at' => $row->updated_at?->toIso8601String(),
+            ]);
+        } catch (InvalidArgumentException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $msg = collect($e->errors())->flatten()->first() ?: 'Некорректный запрос';
+
+            return response()->json(['status' => 'error', 'message' => $msg], 200);
+        } catch (\Throwable $e) {
+            Log::error('Shell API saveCloudSettings: '.$e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ошибка сервера при сохранении настроек',
+            ], 500);
+        }
+    }
+
+    /**
+     * Resolve player from active booking on terminal; optional user_id must match.
+     */
+    private function resolveShellSessionUser(int $terminalId, ?int $userId = null): ?User
+    {
+        $termId = (string) $terminalId;
+        $booking = Booking::where('status', 'active')
+            ->where(function ($query) use ($termId, $terminalId) {
+                $query->whereJsonContains('pc_ids', $termId)
+                    ->orWhere('computer_id', $terminalId);
+            })
+            ->first();
+
+        if (!$booking?->user_id) {
+            return null;
+        }
+
+        if ($userId !== null && $userId > 0 && (int) $booking->user_id !== $userId) {
+            return null;
+        }
+
+        return User::find($booking->user_id);
+    }
+
+    public function storeGameRequest(Request $request, GameRequestService $service)
+    {
+        $data = $request->validate([
+            'terminal_id' => 'required|integer',
+            'title' => 'required|string|max:120',
+            'comment' => 'nullable|string|max:500',
+            'user_id' => 'nullable|integer',
+        ]);
+
+        $booking = Booking::where('status', 'active')
+            ->where(function ($query) use ($data) {
+                $query->whereJsonContains('pc_ids', (string) $data['terminal_id'])
+                    ->orWhere('computer_id', $data['terminal_id']);
+            })
+            ->first();
+
+        $userId = $booking?->user_id ?: (int) ($data['user_id'] ?? 0);
+        if ($userId < 1) {
+            return response()->json(['message' => 'Активная сессия не найдена'], 403);
+        }
+
+        $user = User::find($userId);
+        if (! $user) {
+            return response()->json(['message' => 'Пользователь не найден'], 404);
+        }
+
+        try {
+            $row = $service->create(
+                $user,
+                $data['title'],
+                $data['comment'] ?? null,
+                \App\Models\GameRequest::SOURCE_SHELL
+            );
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $msg = collect($e->errors())->flatten()->first() ?: 'Не удалось создать заявку';
+
+            return response()->json(['message' => $msg], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Заявка принята',
+            'request_id' => $row->id,
+        ], 201);
+    }
+
     public function updateAccountVdf(Request $request)
     {
         try {

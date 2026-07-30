@@ -223,4 +223,30 @@ class BookingSessionTimingTest extends TestCase
             'ends_at' => $endsAt,
         ]);
     }
+
+    public function test_complete_expired_sessions_closes_active_past_ends_at(): void
+    {
+        $now = CarbonImmutable::parse('2026-07-31 00:30:00', 'Europe/Moscow');
+        CarbonImmutable::setTestNow($now);
+        $this->travelTo($now);
+
+        $booking = $this->makeBooking(
+            $now->subHour(),
+            $now->subMinutes(10),
+            '1111'
+        );
+        $booking->update([
+            'status' => 'active',
+            'actual_started_at' => $now->subHour(),
+        ]);
+
+        $closed = $this->timing->completeExpiredSessions($now);
+
+        $this->assertSame(1, $closed);
+        $booking->refresh();
+        $this->assertSame('completed', $booking->status);
+        $this->assertNotNull($booking->actual_ended_at);
+
+        CarbonImmutable::setTestNow();
+    }
 }

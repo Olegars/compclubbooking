@@ -38,6 +38,10 @@ use App\Http\Controllers\Admin\PromoCodeAdminController;
 use App\Http\Controllers\Admin\AchievementAdminController;
 use App\Http\Controllers\Admin\OverlayAdminController;
 use App\Http\Controllers\Admin\VideoSurveillanceController;
+use App\Http\Controllers\Admin\SystemDocsController;
+use App\Http\Controllers\Admin\GameRequestAdminController;
+use App\Http\Controllers\Admin\AnalyticsController;
+use App\Http\Controllers\GameRequestController;
 
 /*
 |--------------------------------------------------------------------------
@@ -105,6 +109,8 @@ Route::middleware(['auth'])->group(function () {
 
     Route::post('/api/billing/topup', [BillingController::class, 'topUp']);
     Route::post('/api/admin/call', [ChatController::class, 'callAdmin']);
+    Route::get('/api/game-requests/mine', [GameRequestController::class, 'mine']);
+    Route::post('/api/game-requests', [GameRequestController::class, 'store']);
 
     Route::prefix('api/queue')->group(function () {
         Route::post('/join', [QueueController::class, 'join']);
@@ -150,6 +156,7 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 
     // Инциденты: просмотр всем, закрытие — supervisor+
     Route::get('/incidents', [AdminController::class, 'incidents'])->name('admin.incidents');
+    Route::get('/docs', [SystemDocsController::class, 'index'])->name('admin.docs');
 
     // API АДМИНКИ (операционный контур)
     Route::prefix('api')->group(function () {
@@ -251,6 +258,12 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::put('/achievements/{achievement}', [AchievementAdminController::class, 'update']);
         Route::patch('/achievements/{achievement}/toggle', [AchievementAdminController::class, 'toggle']);
         Route::delete('/achievements/{achievement}', [AchievementAdminController::class, 'destroy']);
+
+        Route::get('/game-requests', [GameRequestAdminController::class, 'index'])->name('admin.game-requests.index');
+        Route::patch('/game-requests/{gameRequest}/status', [GameRequestAdminController::class, 'updateStatus']);
+        Route::post('/game-requests/bulk-status', [GameRequestAdminController::class, 'bulkStatus']);
+
+        Route::get('/analytics', [AnalyticsController::class, 'index'])->name('admin.analytics.index');
     });
 
     // УРОВЕНЬ: OWNER
@@ -310,6 +323,12 @@ Route::prefix('api/shell')->group(function () {
     // --- ПОСТАНОВКА НА ПАУЗУ С ГЕНЕРАЦИЕЙ НОВОГО ПИНА ---
     Route::post('/games/pause', [ShellApiController::class, 'setPause']);
     Route::post('/games/unpause', [ShellApiController::class, 'clearPause']);
+
+    Route::post('/game-requests', [ShellApiController::class, 'storeGameRequest']);
+
+    // --- CLOUD SAVES: индивидуальные настройки игрока (CS2/Valorant/…) ---
+    Route::get('/settings', [ShellApiController::class, 'getCloudSettings']);
+    Route::post('/settings', [ShellApiController::class, 'saveCloudSettings']);
 
     // --- ЗАКРЫТИЕ СЕССИИ (Полное гашение брони ПК в базе клуба) ---
     Route::post('/logout', [ShellApiController::class, 'logout']);

@@ -126,7 +126,12 @@ const shiftLabel = computed(() => {
                     <Link href="/admin/achievements"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/achievements') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
-                        <span>⭐</span> Квесты и ачивки
+                        <span>⭐</span> Достижения и трофеи
+                    </Link>
+                    <Link href="/admin/game-requests"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/game-requests') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🎮</span> Заявки на игры
                     </Link>
                     <Link href="/admin/bonuses"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
@@ -147,6 +152,11 @@ const shiftLabel = computed(() => {
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/tariffs') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>🏷️</span> Тарифы и пакеты
+                    </Link>
+                    <Link href="/admin/analytics"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/analytics') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>📊</span> Аналитика
                     </Link>
                     <Link v-if="isOwner"
                           href="/admin/taxes"
@@ -204,6 +214,16 @@ const shiftLabel = computed(() => {
                               :class="counts.sos > 0 ? 'animate-pulse' : ''">
                             {{ counts.incidents }}
                         </span>
+                    </Link>
+                </div>
+
+                <!-- СЕКЦИЯ: СПРАВКА -->
+                <div class="space-y-2">
+                    <div class="text-[10px] text-white/30 font-black uppercase tracking-[0.3em] italic pl-4 mb-3">Справка</div>
+                    <Link href="/admin/docs"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/docs') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>📖</span> О системе
                     </Link>
                 </div>
 
