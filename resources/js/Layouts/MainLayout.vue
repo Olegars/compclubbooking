@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import axios from 'axios' // <--- Прямой импорт (решает проблему с window.axios)
 
@@ -26,12 +26,74 @@ const localBalance = ref<number | null>(null)
 const displayBalance = computed(() => {
     if (localBalance.value !== null) return localBalance.value
     const props = page.props as any
-    const fromGizmo = props.gizmo?.balance
     const fromAuth = props.auth?.user?.balance
-    return parseFloat(String(fromGizmo ?? fromAuth ?? 0)) || 0
+    return parseFloat(String(fromAuth ?? 0)) || 0
 })
 
 const isAuthenticated = computed(() => !!(page.props.auth?.user || page.props.user))
+
+type ActiveOrder = {
+    id: number
+    status: string
+    status_label: string
+    product_name?: string
+    pc_name?: string
+}
+
+const activeOrders = ref<ActiveOrder[]>([])
+const hasActiveOrder = computed(() => activeOrders.value.length > 0)
+const activeOrderLabel = computed(() => {
+    if (!activeOrders.value.length) return ''
+    if (activeOrders.value.length > 1) {
+        return `Заказ в работе · ${activeOrders.value.length}`
+    }
+    return 'Заказ в работе'
+})
+const activeOrderHint = computed(() => {
+    const first = activeOrders.value[0]
+    if (!first) return ''
+    const name = first.product_name || ''
+    const pc = first.pc_name ? ` → ${first.pc_name}` : ''
+    return `${name}${pc}`.trim()
+})
+
+let orderPollTimer: ReturnType<typeof setInterval> | null = null
+
+const fetchActiveOrders = async () => {
+    if (!isAuthenticated.value) {
+        activeOrders.value = []
+        return
+    }
+    try {
+        const { data } = await axios.get('/api/shop/active-orders')
+        activeOrders.value = Array.isArray(data?.orders) ? data.orders : []
+    } catch {
+        // тихо — индикатор не критичен
+    }
+}
+
+const startOrderPolling = () => {
+    stopOrderPolling()
+    fetchActiveOrders()
+    orderPollTimer = setInterval(fetchActiveOrders, 5000)
+    window.addEventListener('shop-order-placed', fetchActiveOrders)
+}
+
+const stopOrderPolling = () => {
+    if (orderPollTimer) {
+        clearInterval(orderPollTimer)
+        orderPollTimer = null
+    }
+    window.removeEventListener('shop-order-placed', fetchActiveOrders)
+}
+
+watch(isAuthenticated, (ok) => {
+    if (ok) startOrderPolling()
+    else {
+        stopOrderPolling()
+        activeOrders.value = []
+    }
+}, { immediate: true })
 
 const openTopUp = () => {
     if (!isAuthenticated.value) {
@@ -62,7 +124,7 @@ const proceedToPayment = async () => {
         })
         const next = parseFloat(String(data.new_balance ?? data.deposit_balance ?? data.balance ?? 0))
         if (!isNaN(next)) localBalance.value = next
-        router.reload({ only: ['gizmo', 'auth', 'transactions'], preserveScroll: true })
+        router.reload({ only: ['auth', 'transactions'], preserveScroll: true })
     } catch (e: any) {
         isPaymentProcessing.value = false
         alert(e.response?.data?.message || 'Сбой транзакции пополнения')
@@ -123,6 +185,10 @@ const triggerRoll = async () => {
 onMounted(() => {
     setTimeout(() => { triggerRoll() }, 500)
 })
+
+onUnmounted(() => {
+    stopOrderPolling()
+})
 </script>
 
 <template>
@@ -130,7 +196,7 @@ onMounted(() => {
 
         <div class="fixed inset-0 pointer-events-none z-[100] opacity-[0.02] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,0,0.06))] bg-[length:100%_4px,3px_100%]"></div>
 
-        <header class="border-b border-white/5 bg-black/80 backdrop-blur-2xl sticky top-0 z-50 py-4 sm:py-6 flex-shrink-0">
+        <header class="bg-black/80 backdrop-blur-2xl sticky top-0 z-50 py-4 sm:py-6 flex-shrink-0">
             <div class="max-w-[1600px] mx-auto px-4 sm:px-6 flex flex-col items-center gap-4 sm:gap-5 relative text-center">
 
                 <Link href="/" class="flex items-center justify-center cursor-pointer select-none" @click="triggerRoll">
@@ -154,44 +220,42 @@ onMounted(() => {
 
                     <template v-if="isAuthenticated">
                         <Link href="/account/dashboard" class="nav-btn" :class="{ 'active': $page.url.startsWith('/account') }">Кабинет</Link>
-                        <button @click="handleLogout" class="nav-btn !text-red-500 !border-red-500/20 hover:!bg-red-500 hover:!text-white">Выйти</button>
+                        <div class="nav-meta">
+                            <span class="nav-meta-name">
+                                {{ $page.props.auth?.user?.name || $page.props.user?.name || '—' }}
+                            </span>
+                            <span class="nav-meta-balance">
+                                {{ Math.floor(displayBalance) }}<span class="text-[#22c55e] ml-0.5">₽</span>
+                            </span>
+                            <button
+                                type="button"
+                                @click="openTopUp"
+                                title="Пополнить баланс"
+                                class="nav-meta-plus"
+                            >+</button>
+                        </div>
+                        <button type="button" @click="handleLogout" class="nav-btn !text-red-500 !border-red-500/20 hover:!bg-red-500 hover:!text-white">Выйти</button>
                     </template>
 
                     <template v-else>
-                        <button @click="isPhoneModalOpen = true" class="nav-btn !text-[#22c55e] !border-[#22c55e]/30 hover:!bg-[#22c55e] hover:!text-black">Войти</button>
+                        <button type="button" @click="isPhoneModalOpen = true" class="nav-btn !text-[#22c55e] !border-[#22c55e]/30 hover:!bg-[#22c55e] hover:!text-black">Войти</button>
                     </template>
                 </nav>
             </div>
         </header>
 
         <div class="flex-grow w-full py-6 sm:py-10 flex flex-col items-center px-4 sm:px-6">
-            <div v-if="isAuthenticated"
-                 class="w-full max-w-[1400px] flex flex-wrap justify-between items-center gap-4 mb-8 border-b border-white/10 pb-6 text-left">
-                <div>
-                    <div class="text-[10px] uppercase text-white/30 tracking-[0.3em] mb-1 italic">Оператор</div>
-                    <div class="font-bold text-sm tracking-widest uppercase text-white">
-                        {{ $page.props.auth?.user?.name || $page.props.user?.name || '—' }}
+            <div
+                v-if="isAuthenticated && hasActiveOrder"
+                class="order-live-bar w-full max-w-xl mb-6 rounded-2xl overflow-hidden"
+            >
+                <div class="order-live-inner px-4 sm:px-6 py-3 flex items-center justify-center gap-3 sm:gap-4">
+                    <span class="order-live-dot" aria-hidden="true"></span>
+                    <div class="text-center min-w-0">
+                        <div class="order-live-title">{{ activeOrderLabel }}</div>
+                        <div v-if="activeOrderHint" class="order-live-hint truncate">{{ activeOrderHint }}</div>
                     </div>
-                </div>
-
-                <div class="bg-white/5 border border-white/10 py-4 px-5 rounded-2xl flex items-center gap-5 backdrop-blur-md">
-                    <div>
-                        <span class="block text-[10px] uppercase text-white/30 tracking-[0.2em] mb-0.5 italic font-black">Баланс</span>
-                        <span class="text-3xl font-black italic tracking-tighter text-white font-bomber">
-                            {{ Math.floor(displayBalance) }}
-                            <span class="text-[#22c55e] text-xl font-mono ml-1">₽</span>
-                        </span>
-                    </div>
-                    <button
-                        type="button"
-                        @click="openTopUp"
-                        title="Пополнить баланс"
-                        class="w-11 h-11 rounded-xl bg-white/5 border border-white/10 text-[#22c55e] flex items-center justify-center hover:bg-[#22c55e] hover:text-black transition-all group"
-                    >
-                        <svg class="w-5 h-5 group-hover:scale-125 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                        </svg>
-                    </button>
+                    <span class="order-live-dot" aria-hidden="true"></span>
                 </div>
             </div>
 
@@ -314,8 +378,70 @@ onMounted(() => {
 
 .nav-btn {
     @apply px-4 py-2.5 sm:px-6 sm:py-3 border border-white/10 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer uppercase tracking-widest italic;
-    font-family: 'BomberEscort', sans-serif;
+    font-family: Arial, Helvetica, sans-serif;
 }
 @media (min-width: 1024px) { .nav-btn { min-width: 170px; } }
 .nav-btn.active { @apply bg-[#22c55e] text-black border-transparent shadow-[0_0_20px_rgba(34,197,94,0.4)]; }
+
+.nav-meta {
+    @apply inline-flex items-center gap-2 sm:gap-3 px-4 py-2.5 sm:px-6 sm:py-3 border border-white/10 rounded-xl
+           text-[10px] sm:text-[11px] font-black uppercase tracking-widest italic text-white/70 bg-white/[0.03] box-border;
+    font-family: Arial, Helvetica, sans-serif;
+}
+.nav-meta-name {
+    @apply truncate max-w-[9rem] sm:max-w-[14rem];
+    font-family: inherit;
+}
+.nav-meta-balance {
+    @apply text-white whitespace-nowrap;
+    font-family: inherit;
+}
+.nav-meta-plus {
+    @apply -my-1 w-6 h-6 sm:w-7 sm:h-7 rounded-md border border-[#22c55e]/30 bg-[#22c55e]/10 text-[#22c55e]
+           text-base leading-none font-black flex items-center justify-center shrink-0
+           hover:bg-[#22c55e] hover:text-black transition-all cursor-pointer not-italic;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+.order-live-bar {
+    background: linear-gradient(90deg, rgba(34, 197, 94, 0.08), rgba(34, 197, 94, 0.22), rgba(34, 197, 94, 0.08));
+    border: 1px solid rgba(34, 197, 94, 0.35);
+    animation: order-live-glow 2.8s ease-in-out infinite;
+}
+.order-live-inner {
+    font-family: Arial, Helvetica, sans-serif;
+}
+.order-live-title {
+    @apply text-[11px] sm:text-sm font-black uppercase tracking-[0.25em] text-[#22c55e];
+    animation: order-live-pulse 2.8s ease-in-out infinite;
+}
+.order-live-hint {
+    @apply text-[10px] sm:text-xs text-white/55 mt-0.5 font-semibold tracking-wide;
+}
+.order-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+    background: #22c55e;
+    box-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
+    animation: order-live-dot 2.8s ease-in-out infinite;
+    flex-shrink: 0;
+}
+@keyframes order-live-glow {
+    0%, 100% { background-color: rgba(34, 197, 94, 0.06); }
+    50% { background-color: rgba(34, 197, 94, 0.16); }
+}
+@keyframes order-live-pulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+}
+@keyframes order-live-dot {
+    0%, 100% { opacity: 0.35; transform: scale(0.85); }
+    50% { opacity: 1; transform: scale(1.15); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .order-live-bar,
+    .order-live-title,
+    .order-live-dot { animation: none !important; opacity: 1; }
+}
 </style>

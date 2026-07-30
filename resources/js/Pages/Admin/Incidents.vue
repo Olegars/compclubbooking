@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Head, router } from '@inertiajs/vue3'
+import { Head, router, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AdminConfirm from '@/Components/AdminConfirm.vue'
 import { useToast } from '@/Composables/useToast'
@@ -10,6 +10,10 @@ import axios from 'axios'
 const props = defineProps<{
     incidents: any[]
 }>()
+
+const page = usePage()
+const adminRole = computed(() => (page.props.admin_user as any)?.role || null)
+const canResolve = computed(() => adminRole.value === 'supervisor' || adminRole.value === 'owner')
 
 const { success, error } = useToast()
 const { setCounts } = useAdminAlerts()
@@ -39,7 +43,7 @@ const resolveMessage = computed(() => {
 })
 
 const resolveIncident = async () => {
-    if (!resolveTarget.value || isProcessing.value) return
+    if (!canResolve.value || !resolveTarget.value || isProcessing.value) return
 
     const id = resolveTarget.value.id
     isProcessing.value = true
@@ -80,7 +84,7 @@ const formatDate = (dateStr: string) => {
                         </h1>
                     </div>
                     <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-bold">
-                        Центральный реестр нарушений протокола обслуживания
+                        {{ canResolve ? 'Центральный реестр нарушений протокола обслуживания' : 'Просмотр реестра — закрытие записей у старшего администратора' }}
                     </p>
                 </div>
 
@@ -147,11 +151,13 @@ const formatDate = (dateStr: string) => {
                             </td>
 
                             <td class="p-8 text-right">
-                                <button @click="resolveTarget = incident"
+                                <button v-if="canResolve"
+                                        @click="resolveTarget = incident"
                                         :disabled="isProcessing"
                                         class="p-4 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white/30 hover:bg-red-600 hover:text-white hover:border-red-600 transition-all active:scale-95 disabled:opacity-30">
                                     Отработано
                                 </button>
+                                <span v-else class="text-[9px] uppercase font-black tracking-widest text-white/20">Только просмотр</span>
                             </td>
                         </tr>
                         </tbody>

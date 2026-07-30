@@ -34,9 +34,5 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
-    'gizmo' => [
-        'url' => env('GIZMO_API_URL', 'http://192.168.1.100:8080/api'),
-        'key' => env('GIZMO_API_KEY', 'your-secret-key'),
-    ],
 
 ];

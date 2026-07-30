@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { Link } from '@inertiajs/vue3'
+import { Link, usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { useToast } from '@/Composables/useToast'
@@ -10,6 +10,10 @@ const props = defineProps<{
     stats: { TOTAL_REVENUE: number | string, ACTIVE_SESSIONS: number, NEW_USERS_TODAY: number },
     computers: any[]
 }>()
+
+const page = usePage()
+const adminRole = computed(() => (page.props.admin_user as any)?.role || null)
+const isSupervisorPlus = computed(() => adminRole.value === 'supervisor' || adminRole.value === 'owner')
 
 const { success, error, warning } = useToast()
 const { setCounts } = useAdminAlerts()
@@ -238,7 +242,7 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                 </div>
 
                 <div class="lg:col-span-4 space-y-6">
-                    <div class="bg-[#0a0a0a] border border-cyan-500/10 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden group">
+                    <div v-if="isSupervisorPlus" class="bg-[#0a0a0a] border border-cyan-500/10 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden group">
                         <h3 class="text-lg font-black text-cyan-500 uppercase italic mb-6 flex items-center gap-3">
                             <span class="w-1.5 h-6 bg-cyan-500 rounded-full"></span> Настройка цен
                         </h3>

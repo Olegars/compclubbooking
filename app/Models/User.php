@@ -54,15 +54,9 @@ class User extends Authenticatable
         return $this->hasMany(UserGameStat::class);
     }
 
-    // --- НОВЫЕ СВЯЗИ ДЛЯ REACTOR ---
-
-    /**
-     * Ищем активную сессию в Gizmo (через твою таблицу сессий)
-     */
-    public function activeSession() {
-        // Предполагаем, что у тебя есть таблица или модель GizmoSession
-        // и в ней есть поле host_name (номер ПК)
-        return $this->hasOne(GizmoSession::class)->where('is_active', true);
+    public function userAchievements()
+    {
+        return $this->hasMany(UserAchievement::class);
     }
 
     /**

@@ -13,13 +13,19 @@ use App\Models\GameAccountReservation;
 use App\Models\GameAccountMachineCache;
 use App\Models\Game;
 use App\Models\Computer;
+use App\Support\OrderDeliveryTarget;
 use App\Models\UserGameStat;
 use App\Models\ComputerInputDevice;
 use App\Models\ComputerInputAlert;
 use App\Models\ComputerSosAlert;
+use App\Services\AchievementService;
+use App\Services\BookingSessionTimingService;
+use App\Services\ProductStockService;
+use App\Services\VideoMarkerService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 class ShellApiController extends Controller
 {
@@ -38,54 +44,89 @@ class ShellApiController extends Controller
     public function login(Request $request)
     {
         try {
+            Log::info('Shell login request', [
+                'payload' => $request->all(),
+                'content_type' => $request->header('Content-Type'),
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+
             $request->validate([
                 'phone' => 'required|string',
                 'pin' => 'required|string|size:4',
                 'terminal_id' => 'required|integer'
             ]);
 
-            $user = User::where('phone', $request->phone)->first();
+            $phone = (string) $request->phone;
+            $pin = (string) $request->pin;
+            $terminalId = (int) $request->terminal_id;
+
+            $user = User::where('phone', $phone)->first();
             if (!$user) {
-                return response()->json(['status' => 'error', 'message' => 'Пользователь не найден'], 404);
+                Log::warning('Shell login: user not found', ['phone' => $phone]);
+                // HTTP 200: QML показывает reply->errorString() на 4xx и глотает JSON.
+                return response()->json(['status' => 'error', 'message' => 'Пользователь не найден']);
             }
 
+            $candidates = Booking::query()
+                ->where('user_id', $user->id)
+                ->whereIn('status', ['paid', 'confirmed', 'active', 'pending', 'pending_payment', 'waiting', 'new'])
+                ->orderByDesc('id')
+                ->limit(10)
+                ->get(['id', 'status', 'pin_code', 'computer_id', 'pc_ids', 'starts_at', 'ends_at'])
+                ->map(fn ($b) => [
+                    'id' => $b->id,
+                    'status' => $b->status,
+                    'computer_id' => $b->computer_id,
+                    'pc_ids' => $b->pc_ids,
+                    'pin_code' => $b->pin_code,
+                    'pin_match' => (string) ($b->pin_code ?? '') === $pin,
+                    'pc_match' => (int) $b->computer_id === $terminalId,
+                    'starts_at' => optional($b->starts_at)?->toDateTimeString(),
+                    'ends_at' => optional($b->ends_at)?->toDateTimeString(),
+                ])
+                ->all();
+
+            Log::info('Shell login: booking candidates', [
+                'user_id' => $user->id,
+                'phone' => $phone,
+                'pin' => $pin,
+                'terminal_id' => $terminalId,
+                'candidates' => $candidates,
+            ]);
+
             $booking = Booking::where('user_id', $user->id)
-                ->where('pin_code', $request->pin)
-                ->where('computer_id', (int) $request->terminal_id)
+                ->where('pin_code', $pin)
+                ->where('computer_id', $terminalId)
                 ->whereIn('status', ['paid', 'confirmed', 'active'])
                 ->first();
 
             if (!$booking) {
+                Log::warning('Shell login: no matching booking', [
+                    'user_id' => $user->id,
+                    'phone' => $phone,
+                    'pin' => $pin,
+                    'terminal_id' => $terminalId,
+                    'candidates' => $candidates,
+                ]);
+
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Неверный PIN-код, либо сессия уже была активирована.'
-                ], 401);
+                    'message' => 'Неверный PIN-код, либо сессия уже была активирована.',
+                ]);
             }
 
-            $now = now();
-            if ($booking->starts_at && $now->lt($booking->starts_at->subMinutes(10))) {
+            try {
+                $activation = app(BookingSessionTimingService::class)->activate($booking);
+            } catch (RuntimeException $e) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Бронь ещё не началась.',
-                ], 422);
-            }
-            if ($booking->ends_at && $now->gte($booking->ends_at)) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Время брони уже закончилось.',
-                ], 422);
+                    'message' => $e->getMessage(),
+                ]);
             }
 
-            $durationMinutes = $booking->ends_at
-                ? max(0, $now->diffInMinutes($booking->ends_at, false))
-                : ((float) $booking->duration * 60);
-
-            $booking->update([
-                'status' => 'active',
-                'actual_started_at' => $now,
-                'pin_code' => null,
-            ]);
-            $booking->group?->update(['status' => 'active']);
+            $booking = $activation['booking'];
+            $durationMinutes = $activation['time_remaining_minutes'];
 
             $hours = floor($durationMinutes / 60);
             $minutes = floor($durationMinutes % 60);
@@ -108,12 +149,15 @@ class ShellApiController extends Controller
                 ]
             ]);
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $msg = collect($e->errors())->flatten()->first() ?: 'Некорректные данные входа';
+            return response()->json(['status' => 'error', 'message' => $msg]);
         } catch (\Throwable $e) {
             Log::error("Shell API Login Error: " . $e->getMessage());
             return response()->json([
                 'status' => 'error',
                 'message' => 'Ошибка сервера: ' . $e->getMessage()
-            ], 500);
+            ]);
         }
     }
 
@@ -292,6 +336,30 @@ class ShellApiController extends Controller
                 'severity' => $alert->severity,
             ]);
 
+            // Метка на видеосервер (если в админке создано событие с этим триггером)
+            $trigger = match ($alert->type) {
+                ComputerInputAlert::TYPE_DISCONNECTED => 'hid.disconnected',
+                ComputerInputAlert::TYPE_DEVICE_CHANGED => 'hid.device_changed',
+                ComputerInputAlert::TYPE_UNSTABLE => 'hid.unstable',
+                default => null,
+            };
+            if ($trigger) {
+                try {
+                    $pc = Computer::query()->find($alert->computer_id);
+                    app(VideoMarkerService::class)->placeMarkerForTrigger($trigger, [
+                        'title' => ($trigger === 'hid.disconnected' ? 'Отключение периферии' : 'HID').' · '.($pc?->name ?: 'PC#'.$alert->computer_id),
+                        'meta' => [
+                            'computer_id' => $alert->computer_id,
+                            'alert_id' => $alert->id,
+                            'booking_id' => $alert->booking_id,
+                            'hid_type' => $alert->type,
+                        ],
+                    ], $pc?->club_id ? (int) $pc->club_id : null);
+                } catch (\Throwable $markerError) {
+                    Log::warning('Video marker after HID alert failed: '.$markerError->getMessage());
+                }
+            }
+
             return response()->json([
                 'status' => 'success',
                 'alert_id' => $alert->id,
@@ -464,7 +532,7 @@ class ShellApiController extends Controller
 
     private function ordersForTerminal(int $terminalId)
     {
-        return DB::table('orders')->where('pc_name', 'ПК №' . $terminalId);
+        return DB::table('orders')->whereIn('pc_name', OrderDeliveryTarget::matchLabels($terminalId));
     }
 
     /**
@@ -521,7 +589,7 @@ class ShellApiController extends Controller
             'order_id' => $snapshot['order_id'],
             'status' => $snapshot['status'],
             'orders' => $snapshot['orders'],
-            'products' => Product::where('stock', '>', 0)->get(),
+            'products' => Product::query()->orderBy('name')->get(),
         ]);
     }
 
@@ -666,15 +734,16 @@ class ShellApiController extends Controller
                 return response()->json(['message' => 'Товар не найден'], 404);
             }
 
+            $stockService = app(ProductStockService::class);
             $lineItems = [];
             $totalPrice = 0.0;
             foreach ($qtyByProduct as $pid => $qty) {
                 /** @var Product $product */
                 $product = $products[$pid];
-                if ((int) $product->stock < $qty) {
-                    return response()->json([
-                        'message' => "Недостаточно «{$product->name}» на складе (нужно {$qty}, есть {$product->stock})",
-                    ], 422);
+                try {
+                    $stockService->assertAvailable($product, $qty);
+                } catch (\Throwable $e) {
+                    return response()->json(['message' => $e->getMessage()], 422);
                 }
                 $unit = (float) $product->price;
                 $lineTotal = $unit * $qty;
@@ -717,6 +786,7 @@ class ShellApiController extends Controller
                 $products,
                 $totalPrice,
                 $summary,
+                $stockService,
                 &$newBalance,
                 &$orderId,
                 &$orderStatus
@@ -724,7 +794,7 @@ class ShellApiController extends Controller
                 $newBalance = $wallet->debitSpendable($totalPrice);
 
                 foreach ($qtyByProduct as $pid => $qty) {
-                    $products[$pid]->decrement('stock', $qty);
+                    $stockService->decrementUnmarked($products[$pid], $qty);
                 }
 
                 $orderStatus = 'pending';
@@ -733,11 +803,13 @@ class ShellApiController extends Controller
                     'product_name' => $summary,
                     'items' => json_encode($lineItems, JSON_UNESCAPED_UNICODE),
                     'price' => $totalPrice,
-                    'pc_name' => 'ПК №' . $request->terminal_id,
+                    'pc_name' => OrderDeliveryTarget::labelForComputerId((int) $request->terminal_id),
                     'status' => $orderStatus,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
+
+                $stockService->reserveMarkedForOrder($orderId, $lineItems);
             });
 
             Log::info('Shell shop checkout OK', [
@@ -928,20 +1000,6 @@ class ShellApiController extends Controller
         ];
         $hasMachineCache = !empty($machineCache?->local_vdf);
 
-        \Log::info('[shell.take-account]', [
-            'game_id' => $game->id,
-            'title' => $game->title,
-            'platform_raw' => $platformRaw,
-            'platform' => $platform,
-            'platform_source' => $platformSource,
-            'exe_path' => $exePath,
-            'args' => $finalArgs,
-            'account_id' => $account->id,
-            'login' => $account->login,
-            'terminal_id' => (int) $request->terminal_id,
-            'has_machine_cache' => $hasMachineCache,
-        ]);
-
         return response()->json([
             'status'           => 'success',
             'platform'         => $platform,
@@ -1108,7 +1166,7 @@ class ShellApiController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Неверный PIN-код.',
-                ], 401);
+                ]);
             }
 
             // Как при обычном входе — одноразовый PIN сгорает
@@ -1130,34 +1188,45 @@ class ShellApiController extends Controller
                 'name'      => 'required|string'
             ]);
 
-            $zoneType = strtolower($request->zone_type);
-            $computer = Computer::where('hwid', $request->hwid)->first();
+            $hwid = strtolower(trim((string) $request->hwid));
+            $zoneType = strtolower(trim((string) $request->zone_type));
+            $name = trim((string) $request->name);
+
+            // Только HWID: нашли → update (в т.ч. имя на карте), не нашли → create
+            $computer = Computer::query()
+                ->whereRaw('LOWER(hwid) = ?', [$hwid])
+                ->first();
 
             if ($computer) {
-                if ($computer->type !== $zoneType || $computer->name !== $request->name) {
-                    $computer->update([
-                        'type' => $zoneType,
-                        'name' => $request->name
-                    ]);
-                }
+                $computer->update([
+                    'type' => $zoneType,
+                    'name' => $name,
+                    'hwid' => $hwid,
+                ]);
+
+                Log::info('Shell registerTerminal: updated by hwid', [
+                    'computer_id' => $computer->id,
+                    'hwid' => $hwid,
+                    'name' => $name,
+                ]);
 
                 return response()->json([
                     'status' => 'success',
                     'terminal_id' => $computer->id,
-                    'message' => 'Конфигурация обновлена. ПК №' . $computer->name . ' изменен на ' . strtoupper($zoneType)
-                ], 200);
+                    'message' => 'Конфигурация обновлена. ПК '.$computer->name.' (id '.$computer->id.')',
+                ]);
             }
 
             $defaultClubId = \App\Models\Club::first()?->id ?? 1;
 
-            $newComputer = Computer::updateOrCreate(
-                ['hwid' => $request->hwid],
-                [
-                    'club_id'   => $defaultClubId,
-                    'type'      => $zoneType,
-                    'name'      => $request->name
-                ]
-            );
+            $newComputer = Computer::create([
+                'club_id' => $defaultClubId,
+                'hwid' => $hwid,
+                'type' => $zoneType,
+                'name' => $name,
+                'kind' => Computer::KIND_PC,
+                'status' => 'available',
+            ]);
 
             Game::query()->pluck('id')->each(fn ($gameId) =>
                 \App\Models\ComputerGame::firstOrCreate(
@@ -1166,11 +1235,17 @@ class ShellApiController extends Controller
                 )
             );
 
+            Log::warning('Shell registerTerminal: created new PC (hwid not found)', [
+                'computer_id' => $newComputer->id,
+                'hwid' => $hwid,
+                'name' => $name,
+            ]);
+
             return response()->json([
                 'status' => 'success',
                 'terminal_id' => $newComputer->id,
-                'message' => 'Успешная автоматическая генерация ПК №' . $newComputer->name
-            ], 200);
+                'message' => 'Создан новый ПК '.$newComputer->name.' (id '.$newComputer->id.'). При необходимости поставьте его на карту в админке.',
+            ]);
 
         } catch (\Throwable $e) {
             Log::error("Shell API Register Terminal Error: " . $e->getMessage());
@@ -1188,7 +1263,10 @@ class ShellApiController extends Controller
                 'hwid' => 'required|string'
             ]);
 
-            $computer = Computer::where('hwid', $request->hwid)->first();
+            $hwid = strtolower(trim((string) $request->hwid));
+            $computer = Computer::query()
+                ->whereRaw('LOWER(hwid) = ?', [$hwid])
+                ->first();
 
             if ($computer) {
                 return response()->json([
@@ -1248,6 +1326,17 @@ class ShellApiController extends Controller
                         $booking->group->update(['status' => 'completed']);
                     }
                 });
+
+                if ($booking->user_id) {
+                    try {
+                        $user = User::find($booking->user_id);
+                        if ($user) {
+                            app(AchievementService::class)->evaluateForUser($user);
+                        }
+                    } catch (\Throwable $e) {
+                        Log::warning('Achievement evaluate after logout failed: '.$e->getMessage());
+                    }
+                }
 
                 return response()->json([
                     'status' => 'success',
@@ -1348,8 +1437,6 @@ class ShellApiController extends Controller
                 $cache->local_vdf = $request->local_vdf;
             }
             $cache->save();
-
-            Log::info("[SHELL-API] Обновлен кэш VDF для {$account->login} (account_id={$account->id}, game_id={$account->game_id}) на PC#{$computer->id}");
 
             return response()->json([
                 'status'  => 'success',

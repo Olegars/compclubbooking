@@ -39,54 +39,82 @@ class MapController extends Controller
 
                 $spaceIds = $this->syncSpaces($clubId, is_array($config) ? ($config['zoneRects'] ?? []) : []);
 
-                DB::table('computers')->where('club_id', $clubId)->delete();
+                $pcClassId = SeatClass::query()->where('slug', 'pc')->value('id');
+                $tvClassId = SeatClass::query()->where('slug', 'tv')->value('id');
+                $spaces = Space::query()->where('club_id', $clubId)->get();
 
-                if (! empty($pcs) && is_array($pcs)) {
-                    $pcClassId = SeatClass::query()->where('slug', 'pc')->value('id');
-                    $tvClassId = SeatClass::query()->where('slug', 'tv')->value('id');
-                    $spaces = Space::query()->where('club_id', $clubId)->get();
+                $existing = Computer::query()
+                    ->where('club_id', $clubId)
+                    ->get()
+                    ->keyBy('id');
 
-                    $insertData = [];
-                    foreach ($pcs as $pc) {
-                        $kind = in_array($pc['kind'] ?? 'pc', ['pc', 'tv', 'ps5'], true)
-                            ? $pc['kind']
-                            : 'pc';
-                        $x = (float) ($pc['x'] ?? 0);
-                        $y = (float) ($pc['y'] ?? 0);
-                        $spaceId = $this->spaceIdForPoint($spaces, $x, $y);
+                $keepIds = [];
+                $pcs = is_array($pcs) ? $pcs : [];
 
-                        $insertData[] = [
-                            'club_id' => $clubId,
-                            'name' => $pc['name'],
-                            'x' => $x,
-                            'y' => $y,
-                            'kind' => $kind,
-                            'booth_id' => ! empty($pc['booth_id']) ? (string) $pc['booth_id'] : null,
-                            'seat_class_id' => in_array($kind, ['tv', 'ps5'], true) ? $tvClassId : $pcClassId,
-                            'space_id' => $spaceId,
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ];
+                foreach ($pcs as $pc) {
+                    if (! is_array($pc) || empty($pc['name'])) {
+                        continue;
                     }
-                    DB::table('computers')->insert($insertData);
+
+                    $kind = in_array($pc['kind'] ?? 'pc', ['pc', 'tv', 'ps5'], true)
+                        ? $pc['kind']
+                        : 'pc';
+                    $x = (float) ($pc['x'] ?? 0);
+                    $y = (float) ($pc['y'] ?? 0);
+                    $spaceId = $this->spaceIdForPoint($spaces, $x, $y);
+
+                    $attrs = [
+                        'club_id' => $clubId,
+                        'name' => (string) $pc['name'],
+                        'x' => $x,
+                        'y' => $y,
+                        'kind' => $kind,
+                        'booth_id' => ! empty($pc['booth_id']) ? (string) $pc['booth_id'] : null,
+                        'seat_class_id' => in_array($kind, ['tv', 'ps5'], true) ? $tvClassId : $pcClassId,
+                        'space_id' => $spaceId,
+                    ];
+
+                    $id = isset($pc['id']) ? (int) $pc['id'] : 0;
+                    /** @var Computer|null $computer */
+                    $computer = ($id > 0 && $existing->has($id)) ? $existing->get($id) : null;
+
+                    if ($computer) {
+                        // hwid / status / type не трогаем с карты — иначе слетает привязка шелла
+                        $computer->update($attrs);
+                        $keepIds[] = (int) $computer->id;
+                        continue;
+                    }
+
+                    $computer = Computer::query()->create($attrs + [
+                        'status' => 'available',
+                        'type' => 'standard',
+                        'hwid' => null,
+                    ]);
+                    $keepIds[] = (int) $computer->id;
 
                     $now = now();
                     $installations = [];
-                    foreach (DB::table('computers')->where('club_id', $clubId)->pluck('id') as $computerId) {
-                        foreach (DB::table('games')->pluck('id') as $gameId) {
-                            $installations[] = [
-                                'computer_id' => $computerId,
-                                'game_id' => $gameId,
-                                'is_installed' => true,
-                                'verified_at' => $now,
-                                'created_at' => $now,
-                                'updated_at' => $now,
-                            ];
-                        }
+                    foreach (DB::table('games')->pluck('id') as $gameId) {
+                        $installations[] = [
+                            'computer_id' => $computer->id,
+                            'game_id' => $gameId,
+                            'is_installed' => true,
+                            'verified_at' => $now,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ];
                     }
                     if ($installations !== []) {
                         DB::table('computer_games')->insert($installations);
                     }
+                }
+
+                $toDeleteQuery = Computer::query()->where('club_id', $clubId);
+                if ($keepIds !== []) {
+                    $toDeleteQuery->whereNotIn('id', $keepIds);
+                }
+                foreach ($toDeleteQuery->get() as $dead) {
+                    $dead->delete();
                 }
 
                 unset($spaceIds);

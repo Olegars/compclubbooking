@@ -11,9 +11,12 @@ use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use App\Models\User;
 use App\Models\Order;
+use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\ComputerSosAlert;
 use App\Models\ComputerInputAlert;
 use App\Support\AdminAlerts;
+use App\Services\ProductStockService;
 // Если у тебя есть модель BonusLog, раскомментируй:
 // use App\Models\BonusLog;
 
@@ -82,7 +85,7 @@ class AdminController extends Controller
             'updated_at' => now(),
         ]);
 
-        // *Здесь позже будет API-запрос к Gizmo для фактического начисления времени*
+        // Бонусное время залогировано; фактическое начисление — через бронирование/админку
 
         return response()->json(['message' => 'Бонус успешно начислен и залогирован']);
     }
@@ -132,57 +135,82 @@ class AdminController extends Controller
     // ==========================================
     public function inventory()
     {
-        return Inertia::render('Admin/Inventory');
+        $role = auth('admin')->user()?->role;
+        $canManageCatalog = in_array($role, ['supervisor', 'owner'], true);
+
+        return Inertia::render('Admin/Inventory', [
+            'canManageCatalog' => $canManageCatalog,
+            'products' => Product::query()
+                ->orderBy('name')
+                ->get(['id', 'name', 'category', 'price', 'stock', 'barcode', 'image', 'requires_marking']),
+        ]);
+    }
+
+    public function listInventoryProducts()
+    {
+        return response()->json(
+            Product::query()
+                ->orderBy('name')
+                ->get(['id', 'name', 'category', 'price', 'stock', 'barcode', 'image', 'requires_marking'])
+        );
     }
 
     public function saveProduct(Request $request)
     {
         // 1. Валидируем данные. image здесь — это загружаемый файл изображения
         $request->validate([
-            'id'       => 'nullable|integer',
-            'name'     => 'required|string|max:255',
+            'id' => 'nullable|integer',
+            'name' => 'required|string|max:255',
             'category' => 'required|string',
-            'price'    => 'required|numeric',
-            'stock'    => 'nullable|integer|min:0',
-            'image'    => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048' // Проверка файла
+            'price' => 'required|numeric',
+            'stock' => 'nullable|integer|min:0',
+            'barcode' => 'nullable|string|max:64',
+            'requires_marking' => 'nullable|boolean',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
         ]);
 
+        $requiresMarking = filter_var($request->input('requires_marking', false), FILTER_VALIDATE_BOOLEAN);
+
         $data = [
-            'name'     => $request->name,
+            'name' => $request->name,
             'category' => $request->category,
-            'price'    => $request->price,
-            'stock'    => $request->stock ?? 0,
-            'barcode'  => $request->barcode ?? null,
+            'price' => $request->price,
+            'barcode' => $request->barcode ?: null,
+            'requires_marking' => $requiresMarking,
         ];
+
+        // Stock for marked products is derived from units — only allow manual stock for unmarked
+        if (! $requiresMarking) {
+            $data['stock'] = $request->stock ?? 0;
+        }
 
         // 2. ОБРАБОТКА И ЗАГРУЗКА ФАЙЛА КАРТИНКИ
         if ($request->hasFile('image')) {
             $file = $request->file('image');
             $filename = time() . '_' . $file->getClientOriginalName();
 
-            // 1. Физический путь для сохранения на сервере
             $targetPath = public_path('images/shop');
 
-            // Создаем папку, если её нет, и даем права 0755
-            if (!file_exists($targetPath)) {
+            if (! file_exists($targetPath)) {
                 mkdir($targetPath, 0755, true);
             }
 
-            // 2. Перемещаем файл
             $file->move($targetPath, $filename);
-
-            // 3. Сохраняем в базу БЕЗ ведущего слэша (чистый относительный путь)
             $data['image'] = 'images/shop/' . $filename;
         }
 
-        // 3. СОХРАНЕНИЕ В БАЗУ ДАННЫХ
         if ($request->id) {
-            // Если товар редактируется
             DB::table('products')->where('id', $request->id)->update($data);
+            $product = Product::find($request->id);
+            if ($product && $product->requires_marking) {
+                app(ProductStockService::class)->syncMarkedStock($product);
+            }
         } else {
-            // Если создается новый товар и картинка не была загружена — ставим пустую строку вместо null
-            if (!isset($data['image'])) {
+            if (! isset($data['image'])) {
                 $data['image'] = '';
+            }
+            if ($requiresMarking) {
+                $data['stock'] = 0;
             }
             DB::table('products')->insert($data);
         }
@@ -193,7 +221,195 @@ class AdminController extends Controller
     public function deleteProduct($id)
     {
         DB::table('products')->where('id', $id)->delete();
+
         return response()->json(['message' => 'Товар удален']);
+    }
+
+    /**
+     * Scan receive: DataMatrix for marked SKU, or EAN +1 for unmarked.
+     */
+    public function receiveScan(Request $request, ProductStockService $stock)
+    {
+        $request->validate([
+            'code' => 'required|string|max:512',
+            'product_id' => 'nullable|integer|exists:products,id',
+        ]);
+
+        $admin = auth('admin')->user();
+        $code = ProductUnit::normalizeCode($request->code);
+
+        try {
+            // Explicit product (receive mode)
+            if ($request->filled('product_id')) {
+                $product = Product::findOrFail($request->product_id);
+                if ($product->requires_marking) {
+                    $unit = $stock->receiveByMarkingCode($product, $code, (int) $admin->id);
+
+                    return response()->json([
+                        'status' => 'received',
+                        'mode' => 'marking',
+                        'product' => $product->fresh(),
+                        'unit_id' => $unit->id,
+                        'new_stock' => (int) $product->fresh()->stock,
+                    ]);
+                }
+
+                // Unmarked: treat as confirm +1 for selected product
+                $product->increment('stock', 1);
+
+                return response()->json([
+                    'status' => 'received',
+                    'mode' => 'quantity',
+                    'product' => $product->fresh(),
+                    'new_stock' => (int) $product->fresh()->stock,
+                ]);
+            }
+
+            // Auto: try GTIN → marked product, else EAN catalog barcode
+            $gtin = ProductUnit::extractGtin($code);
+            $product = null;
+
+            if ($gtin) {
+                $product = Product::query()
+                    ->where('requires_marking', true)
+                    ->where(function ($q) use ($gtin, $code) {
+                        $q->where('barcode', $gtin)
+                            ->orWhere('barcode', ltrim($gtin, '0'))
+                            ->orWhere('barcode', $code);
+                    })
+                    ->first();
+            }
+
+            if (! $product) {
+                $product = Product::query()->where('barcode', $code)->first();
+            }
+
+            if (! $product) {
+                return response()->json([
+                    'message' => 'Товар не опознан. Укажите позицию или заведите GTIN/штрихкод в карточке.',
+                ], 404);
+            }
+
+            if ($product->requires_marking) {
+                // Full DataMatrix required (not just EAN)
+                if (mb_strlen($code) < 20 && ! str_starts_with($code, '01')) {
+                    return response()->json([
+                        'message' => 'Для маркированной позиции нужен полный DataMatrix (КМ), не только EAN.',
+                        'product_id' => $product->id,
+                    ], 422);
+                }
+
+                $unit = $stock->receiveByMarkingCode($product, $code, (int) $admin->id);
+
+                return response()->json([
+                    'status' => 'received',
+                    'mode' => 'marking',
+                    'product' => $product->fresh(),
+                    'unit_id' => $unit->id,
+                    'new_stock' => (int) $product->fresh()->stock,
+                ]);
+            }
+
+            $product->increment('stock', 1);
+
+            return response()->json([
+                'status' => 'received',
+                'mode' => 'quantity',
+                'product' => $product->fresh(),
+                'new_stock' => (int) $product->fresh()->stock,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function writeOffUnit(Request $request, ProductStockService $stock)
+    {
+        $admin = auth('admin')->user();
+        if (! $admin || ! in_array($admin->role, ['supervisor', 'owner'], true)) {
+            return response()->json(['message' => 'Недостаточно прав'], 403);
+        }
+
+        $request->validate([
+            'code' => 'required|string|max:512',
+            'reason' => 'required|string|max:255',
+        ]);
+
+        try {
+            $unit = $stock->writeOffUnit($request->code, (int) $admin->id, $request->reason);
+
+            return response()->json([
+                'status' => 'written_off',
+                'product' => $unit->product,
+                'new_stock' => (int) ($unit->product?->stock ?? 0),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function updateStock(Request $request)
+    {
+        $request->validate([
+            'id' => 'required|exists:products,id',
+            'amount' => 'required|integer',
+        ]);
+
+        $admin = auth('admin')->user();
+        $amount = (int) $request->amount;
+        $isLead = $admin && in_array($admin->role, ['supervisor', 'owner'], true);
+        $product = Product::findOrFail($request->id);
+
+        if ($product->requires_marking) {
+            return response()->json([
+                'message' => 'Маркированный товар принимается только сканом DataMatrix',
+            ], 422);
+        }
+
+        if (! $isLead && $amount !== 1) {
+            return response()->json([
+                'message' => 'Приёмка немеченого товара — только +1 сканером EAN. Списание — через продажу или старшего.',
+            ], 403);
+        }
+
+        if (! $isLead && $amount < 0) {
+            return response()->json(['message' => 'Списание недоступно'], 403);
+        }
+
+        if (($product->stock + $amount) < 0) {
+            return response()->json(['message' => 'Недостаточно товара на складе'], 422);
+        }
+
+        $product->increment('stock', $amount);
+
+        return response()->json([
+            'status' => 'success',
+            'new_stock' => (int) $product->fresh()->stock,
+        ]);
+    }
+
+    public function findByBarcode(Request $request)
+    {
+        $request->validate(['code' => 'required|string']);
+
+        $code = ProductUnit::normalizeCode($request->code);
+        $gtin = ProductUnit::extractGtin($code);
+
+        $product = Product::query()->where('barcode', $code)->first();
+        if (! $product && $gtin) {
+            $product = Product::query()
+                ->where(function ($q) use ($gtin) {
+                    $q->where('barcode', $gtin)
+                        ->orWhere('barcode', ltrim($gtin, '0'));
+                })
+                ->first();
+        }
+
+        if (! $product) {
+            return response()->json(['message' => 'Объект не опознан. Код отсутствует в базе.'], 404);
+        }
+
+        return response()->json($product);
     }
 
     // ==========================================
@@ -239,7 +455,7 @@ class AdminController extends Controller
     // ==========================================
     // 4. ОЧЕРЕДЬ ЗАКАЗОВ (REACTOR MARKET)
     // ==========================================
-    public function orders()
+    public function orders(ProductStockService $stock)
     {
         // Активная очередь: новые (pending) и в работе (cooking)
         $orders = DB::table('orders')
@@ -252,10 +468,10 @@ class AdminController extends Controller
             ->whereIn('orders.status', ['pending', 'cooking'])
             ->orderBy('orders.created_at', 'asc')
             ->get()
-            ->map(function ($order) {
+            ->map(function ($order) use ($stock) {
                 $labels = [
-                    'pending' => 'Принят',
-                    'cooking' => 'В работе',
+                    'pending' => 'В очереди',
+                    'cooking' => 'В очереди',
                     'delivered' => 'Выполнен',
                     'cancelled' => 'Отменён',
                 ];
@@ -264,6 +480,8 @@ class AdminController extends Controller
                     $order->product_name ?? null,
                     (float) ($order->price ?? 0)
                 );
+                $marking = $stock->markingFulfillmentProgress((int) $order->id, $items);
+
                 return [
                     'id' => $order->id,
                     'product_name' => $order->product_name,
@@ -272,6 +490,8 @@ class AdminController extends Controller
                     'pc_name' => $order->pc_name,
                     'status' => $order->status,
                     'status_label' => $labels[$order->status] ?? $order->status,
+                    'marking_progress' => $marking,
+                    'marking_complete' => $stock->orderMarkingFullyScanned((int) $order->id, $items),
                     'user' => [
                         'name' => $order->user_name,
                         'phone' => $order->user_phone,
@@ -280,22 +500,195 @@ class AdminController extends Controller
             });
 
         return Inertia::render('Admin/Orders', [
-            'orders' => $orders
+            'orders' => $orders,
         ]);
     }
 
-    public function updateOrderStatus(Request $request, $id)
+    public function updateOrderStatus(Request $request, $id, ProductStockService $stock)
     {
         $request->validate([
-            'status' => 'required|in:pending,cooking,delivered,cancelled'
+            'status' => 'required|in:pending,cooking,delivered,cancelled',
         ]);
+
+        $order = DB::table('orders')->where('id', $id)->first();
+        if (! $order) {
+            return back()->withErrors(['status' => 'Заказ не найден']);
+        }
+
+        $items = Order::normalizeItems(
+            $order->items ?? null,
+            $order->product_name ?? null,
+            (float) ($order->price ?? 0)
+        );
+
+        if ($request->status === 'delivered' && ! $stock->orderMarkingFullyScanned((int) $id, $items)) {
+            return back()->withErrors([
+                'status' => 'Сначала отсканируйте коды маркировки всех напитков из заказа',
+            ]);
+        }
+
+        if ($request->status === 'cancelled') {
+            $soldUnits = ProductUnit::query()
+                ->where('sold_order_id', (int) $id)
+                ->where('status', ProductUnit::STATUS_SOLD)
+                ->get();
+
+            foreach ($soldUnits as $unit) {
+                $unit->update([
+                    'status' => ProductUnit::STATUS_AVAILABLE,
+                    'sold_order_id' => null,
+                    'sold_at' => null,
+                ]);
+            }
+
+            $stock->releaseReservationsForOrder((int) $id);
+
+            foreach ($soldUnits->pluck('product_id')->unique() as $productId) {
+                $stock->syncMarkedStock((int) $productId);
+            }
+        }
+
+        if ($request->status === 'delivered') {
+            $stock->releaseReservationsForOrder((int) $id);
+        }
 
         DB::table('orders')->where('id', $id)->update([
             'status' => $request->status,
-            'updated_at' => now()
+            'updated_at' => now(),
         ]);
 
         return back();
+    }
+
+    public function fulfillOrderScan(Request $request, $id, ProductStockService $stock)
+    {
+        $request->validate([
+            'code' => 'required|string|max:512',
+            'product_id' => 'nullable|integer|exists:products,id',
+        ]);
+
+        $order = DB::table('orders')->where('id', $id)->first();
+        if (! $order) {
+            return response()->json(['message' => 'Заказ не найден'], 404);
+        }
+
+        if (! in_array($order->status, ['pending', 'cooking'], true)) {
+            return response()->json(['message' => 'Заказ уже закрыт'], 422);
+        }
+
+        $items = Order::normalizeItems(
+            $order->items ?? null,
+            $order->product_name ?? null,
+            (float) ($order->price ?? 0)
+        );
+
+        $progress = $stock->markingFulfillmentProgress((int) $id, $items);
+        if ($progress === []) {
+            return response()->json(['message' => 'В заказе нет маркированных позиций'], 422);
+        }
+
+        $remainingByProduct = collect($progress)
+            ->filter(fn ($row) => $row['remaining'] > 0)
+            ->keyBy('product_id');
+
+        if ($remainingByProduct->isEmpty()) {
+            return response()->json([
+                'message' => 'Все коды уже отсканированы',
+                'marking_progress' => $progress,
+                'marking_complete' => true,
+            ], 422);
+        }
+
+        try {
+            $code = ProductUnit::normalizeCode($request->code);
+            $unit = ProductUnit::query()->where('marking_code', $code)->first();
+            if (! $unit) {
+                return response()->json(['message' => 'Код маркировки не найден на складе'], 422);
+            }
+
+            if ($request->filled('product_id') && (int) $unit->product_id !== (int) $request->product_id) {
+                return response()->json(['message' => 'Код относится к другому товару'], 422);
+            }
+
+            if (! $remainingByProduct->has((int) $unit->product_id)) {
+                return response()->json([
+                    'message' => 'Этот товар не нужен в заказе или уже полностью отсканирован',
+                ], 422);
+            }
+
+            $stock->sellUnitByMarkingCode((int) $id, $code, (int) $unit->product_id);
+
+            $progressAfter = $stock->markingFulfillmentProgress((int) $id, $items);
+
+            return response()->json([
+                'status' => 'scanned',
+                'order_id' => (int) $id,
+                'product_id' => (int) $unit->product_id,
+                'product_name' => Product::find($unit->product_id)?->name,
+                'marking_progress' => $progressAfter,
+                'marking_complete' => $stock->orderMarkingFullyScanned((int) $id, $items),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * Скан КМ без выбора заказа: вешаем на самый старый открытый заказ, которому нужен этот товар.
+     */
+    public function autoFulfillScan(Request $request, ProductStockService $stock)
+    {
+        $request->validate([
+            'code' => 'required|string|max:512',
+        ]);
+
+        $code = ProductUnit::normalizeCode($request->code);
+        $unit = ProductUnit::query()->where('marking_code', $code)->first();
+        if (! $unit) {
+            return response()->json(['message' => 'Код маркировки не найден на складе'], 422);
+        }
+        if ($unit->status !== ProductUnit::STATUS_AVAILABLE) {
+            return response()->json(['message' => 'Этот код уже выдан или списан'], 422);
+        }
+
+        $productId = (int) $unit->product_id;
+        $orders = DB::table('orders')
+            ->whereIn('status', ['pending', 'cooking'])
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        foreach ($orders as $order) {
+            $items = Order::normalizeItems(
+                $order->items ?? null,
+                $order->product_name ?? null,
+                (float) ($order->price ?? 0)
+            );
+            $progress = $stock->markingFulfillmentProgress((int) $order->id, $items);
+            $remaining = collect($progress)->firstWhere('product_id', $productId);
+            if (! $remaining || (int) $remaining['remaining'] < 1) {
+                continue;
+            }
+
+            try {
+                $stock->sellUnitByMarkingCode((int) $order->id, $code, $productId);
+                $progressAfter = $stock->markingFulfillmentProgress((int) $order->id, $items);
+
+                return response()->json([
+                    'status' => 'scanned',
+                    'order_id' => (int) $order->id,
+                    'product_id' => $productId,
+                    'product_name' => Product::find($productId)?->name,
+                    'marking_progress' => $progressAfter,
+                    'marking_complete' => $stock->orderMarkingFullyScanned((int) $order->id, $items),
+                ]);
+            } catch (\Throwable $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+        }
+
+        return response()->json([
+            'message' => 'Нет открытого заказа, которому нужен этот товар',
+        ], 422);
     }
     public function getPcStatuses()
     {
@@ -313,45 +706,7 @@ class AdminController extends Controller
 
         return response()->json(['count' => $count]);
     }
-    // resources/app/Http/Controllers/Admin/AdminController.php
 
-    public function updateStock(Request $request)
-    {
-        // Важно: integer позволяет принимать отрицательные числа (например, -1)
-        $request->validate([
-            'id' => 'required|exists:products,id',
-            'amount' => 'required|integer',
-        ]);
-
-        $product = DB::table('products')->where('id', $request->id);
-        $current = $product->first();
-
-        // Проверка на уход в минус
-        if (($current->stock + $request->amount) < 0) {
-            return response()->json(['message' => 'Недостаточно товара на складе'], 422);
-        }
-
-        // Используем increment, он отлично понимает отрицательные числа (добавляет -1)
-        $product->increment('stock', (int)$request->amount);
-
-        return response()->json([
-            'status' => 'success',
-            'new_stock' => $current->stock + $request->amount
-        ]);
-    }
-    public function findByBarcode(Request $request)
-    {
-        $request->validate(['code' => 'required|string']);
-
-        // Ищем товар по штрих-коду
-        $product = \App\Models\Product::where('barcode', $request->code)->first();
-
-        if (!$product) {
-            return response()->json(['message' => 'Объект не опознан. Код отсутствует в базе.'], 404);
-        }
-
-        return response()->json($product);
-    }
     // ==========================================
     // 5. SOS И HID-СИГНАЛЫ С ТЕРМИНАЛОВ (QML SHELL)
     // ==========================================

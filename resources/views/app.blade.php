@@ -15,7 +15,7 @@
     <meta property="og:url" content="{{ url()->current() }}" />
     <meta name="twitter:card" content="summary_large_image" />
 
-    @routes @vite(['resources/js/app.js', 'resources/css/app.css'])
+    @routes @vite(['resources/js/app.js'])
     @inertiaHead
 </head>
 <body>

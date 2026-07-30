@@ -118,20 +118,20 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
                     </div>
                 </div>
 
-                <div v-if="isTerminal" class="grid grid-cols-3 gap-3 mb-8">
-                    <button v-for="n in 9" :key="n" @click="addDigit(n)"
-                            class="h-16 bg-white/5 border border-white/10 rounded-2xl text-2xl font-black text-[#22c55e] active:bg-[#22c55e] active:text-black transition-all">
+                <div class="grid grid-cols-3 gap-3 mb-8">
+                    <button type="button" v-for="n in 9" :key="n" @click="addDigit(n)"
+                            class="h-16 bg-white/5 border border-white/10 rounded-2xl text-2xl font-black text-[#22c55e] active:bg-[#22c55e] active:text-black transition-all cursor-pointer">
                         {{ n }}
                     </button>
-                    <button @click="clearPhone" class="h-14 text-red-500 text-[10px] font-black uppercase">Сброс</button>
-                    <button @click="addDigit(0)" class="h-16 bg-white/5 border border-white/10 rounded-2xl text-2xl font-black text-[#22c55e] active:bg-[#22c55e] active:text-black transition-all">0</button>
-                    <button @click="backspace" class="h-16 flex items-center justify-center text-orange-500">
+                    <button type="button" @click="clearPhone" class="h-14 text-red-500 text-[10px] font-black uppercase cursor-pointer">Сброс</button>
+                    <button type="button" @click="addDigit(0)" class="h-16 bg-white/5 border border-white/10 rounded-2xl text-2xl font-black text-[#22c55e] active:bg-[#22c55e] active:text-black transition-all cursor-pointer">0</button>
+                    <button type="button" @click="backspace" class="h-16 flex items-center justify-center text-orange-500 cursor-pointer">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.41-6.41A2 2 0 0110.83 5H21a2 2 0 012 2v10a2 2 0 01-2 2H10.83a2 2 0 01-1.42-.59L3 12z"/></svg>
                     </button>
                 </div>
 
-                <button v-if="rawPhone.length === 10" @click="submitPhone"
-                        class="w-full py-5 mb-4 bg-[#22c55e] hover:bg-[#2ae06d] rounded-2xl text-black font-black uppercase tracking-widest active:scale-95 transition-all shadow-[0_0_20px_rgba(34,197,94,0.3)] italic animate-in zoom-in duration-300">
+                <button type="button" v-if="rawPhone.length === 10" @click="submitPhone"
+                        class="w-full py-5 mb-4 bg-[#22c55e] hover:bg-[#2ae06d] rounded-2xl text-black font-black uppercase tracking-widest active:scale-95 transition-all shadow-[0_0_20px_rgba(34,197,94,0.3)] italic animate-in zoom-in duration-300 cursor-pointer">
                     Отправить SMS код
                 </button>
             </template>

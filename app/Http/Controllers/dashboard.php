@@ -36,7 +36,6 @@ class AccountController extends Controller
         // 3. ПЕРЕДАЕМ ВСЁ В ИНТЕРФЕЙС
         return Inertia::render('Account/Dashboard', [
             'transactions' => $formattedTransactions,
-            'gizmo' => $user->wallet,
             'orders' => $activeOrders, // ВОТ ЭТА СТРОЧКА ОЖИВИТ КАРТОЧКУ
             'active_bookings' => Booking::where('user_id', $user->id)
                 ->where('status', 'active')

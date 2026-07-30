@@ -447,10 +447,16 @@ class GameBookingService
      * @param  array<int, int>  $computerIds
      * @return array<int, int>
      */
+    /**
+     * @param  array<int, int>  $computerIds
+     * @param  array<int, int>  $exceptBookingIds
+     * @return array<int, int>
+     */
     public function occupiedComputerIds(
         array $computerIds,
         CarbonImmutable $startsAt,
-        CarbonImmutable $endsAt
+        CarbonImmutable $endsAt,
+        array $exceptBookingIds = []
     ): array {
         $ids = array_values(array_unique(array_map('intval', $computerIds)));
         if ($ids === []) {
@@ -458,7 +464,7 @@ class GameBookingService
         }
 
         $relatedIds = $this->expandBoothSiblings($ids);
-        $direct = $this->directOccupiedComputerIds($relatedIds, $startsAt, $endsAt);
+        $direct = $this->directOccupiedComputerIds($relatedIds, $startsAt, $endsAt, $exceptBookingIds);
 
         return $this->expandBoothSiblings($direct);
     }
@@ -499,12 +505,14 @@ class GameBookingService
 
     /**
      * @param  array<int, int>  $computerIds
+     * @param  array<int, int>  $exceptBookingIds
      * @return array<int, int>
      */
     private function directOccupiedComputerIds(
         array $computerIds,
         CarbonImmutable $startsAt,
-        CarbonImmutable $endsAt
+        CarbonImmutable $endsAt,
+        array $exceptBookingIds = []
     ): array {
         $ids = array_values(array_unique(array_map('intval', $computerIds)));
         if ($ids === []) {
@@ -520,16 +528,23 @@ class GameBookingService
         $local = $startsAt->timezone(config('app.timezone'));
         $startHour = $local->hour + ($local->minute / 60);
         $endHour = $startHour + ($startsAt->diffInMinutes($endsAt) / 60);
+        $except = array_values(array_unique(array_map('intval', $exceptBookingIds)));
 
         return Booking::query()
             ->whereIn('computer_id', $ids)
             ->whereIn('status', ['confirmed', 'active', 'paid'])
-            ->where(function ($query) use ($startsAtUtc, $endsAtUtc, $local, $startHour, $endHour) {
+            ->when($except !== [], fn ($query) => $query->whereNotIn('id', $except))
+            ->where(function ($query) use ($startsAt, $endsAt, $startsAtUtc, $endsAtUtc, $local, $startHour, $endHour) {
                 $query
-                    ->where(function ($modern) use ($startsAtUtc, $endsAtUtc) {
-                        $modern->whereNotNull('starts_at')
-                            ->whereRaw('starts_at < ?::timestamptz', [$endsAtUtc])
-                            ->whereRaw('ends_at > ?::timestamptz', [$startsAtUtc]);
+                    ->where(function ($modern) use ($startsAt, $endsAt, $startsAtUtc, $endsAtUtc) {
+                        $modern->whereNotNull('starts_at');
+                        if (DB::connection()->getDriverName() === 'pgsql') {
+                            $modern->whereRaw('starts_at < ?::timestamptz', [$endsAtUtc])
+                                ->whereRaw('ends_at > ?::timestamptz', [$startsAtUtc]);
+                        } else {
+                            $modern->where('starts_at', '<', $endsAt)
+                                ->where('ends_at', '>', $startsAt);
+                        }
                     })
                     ->orWhere(function ($legacy) use ($local, $startHour, $endHour) {
                         $legacy->whereNull('starts_at')
@@ -739,6 +754,8 @@ class GameBookingService
 
     private function closeExpiredBookings(): void
     {
+        app(BookingSessionTimingService::class)->cancelNoShows();
+
         $nowIso = now()->utc()->toIso8601String();
 
         $expiredIds = Booking::query()

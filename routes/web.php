@@ -35,7 +35,9 @@ use App\Http\Controllers\Admin\ZoneController;
 use App\Http\Controllers\Admin\LicenseController;
 use App\Http\Controllers\Admin\TournamentController;
 use App\Http\Controllers\Admin\PromoCodeAdminController;
+use App\Http\Controllers\Admin\AchievementAdminController;
 use App\Http\Controllers\Admin\OverlayAdminController;
+use App\Http\Controllers\Admin\VideoSurveillanceController;
 
 /*
 |--------------------------------------------------------------------------
@@ -76,6 +78,7 @@ Route::post('/logout', [LogoutController::class, 'logout'])->name('logout');
 Route::middleware(['auth:web,admin'])->prefix('api/shop')->group(function () {
     Route::get('/products', [ShopController::class, 'getProducts']);
     Route::post('/checkout', [ShopController::class, 'checkout']);
+    Route::get('/active-orders', [ShopController::class, 'activeOrders']);
 });
 
 /*
@@ -101,7 +104,6 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/api/booking/{bookingGroup}/cancel', [BookingController::class, 'cancel']);
 
     Route::post('/api/billing/topup', [BillingController::class, 'topUp']);
-    Route::post('/api/billing/start-session', [BillingController::class, 'startSession']);
     Route::post('/api/admin/call', [ChatController::class, 'callAdmin']);
 
     Route::prefix('api/queue')->group(function () {
@@ -123,7 +125,7 @@ Route::middleware('guest:admin')->prefix('admin')->group(function () {
 
 Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 
-    // ГЛАВНОЕ
+    // ГЛАВНОЕ (все роли: admin / supervisor / owner)
     Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
     Route::post('/give-bonus', [AdminController::class, 'giveBonus']);
     Route::post('/topup', [AdminController::class, 'topUpBalance']);
@@ -133,78 +135,102 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     Route::get('/shifts/transfer', [ShiftController::class, 'transferPage'])->name('admin.shift.transfer');
     Route::post('/api/shifts/complete', [ShiftController::class, 'completeTransfer']);
     Route::get('/shifts/history', [ShiftController::class, 'history'])->name('admin.shift.history');
+
+    // СКЛАД — обычный админ принимает товар (остаток), каталог — supervisor+
+    Route::get('/inventory', [AdminController::class, 'inventory'])->name('admin.inventory');
+    Route::prefix('api/inventory')->group(function () {
+        Route::get('/products', [AdminController::class, 'listInventoryProducts']);
+        Route::post('/receive-scan', [AdminController::class, 'receiveScan']);
+        Route::post('/update-stock', [AdminController::class, 'updateStock']);
+        Route::get('/find-barcode', [AdminController::class, 'findByBarcode']);
+    });
+
+    Route::post('/orders/fulfill-scan', [AdminController::class, 'autoFulfillScan']);
+    Route::post('/orders/{id}/fulfill-scan', [AdminController::class, 'fulfillOrderScan']);
+
+    // Инциденты: просмотр всем, закрытие — supervisor+
     Route::get('/incidents', [AdminController::class, 'incidents'])->name('admin.incidents');
 
-    // КАРТА И ТАРИФЫ
-    Route::get('/map-builder', fn() => Inertia::render('Admin/MapBuilder', [
-        'clubs' => \App\Models\Club::select('id', 'name')->get(),
-        'topologyZones' => \App\Models\Zone::select('id', 'name', 'slug', 'color')->orderBy('name')->get(),
-    ]))->name('admin.map-builder');
-    Route::post('/save-map', [MapController::class, 'save']);
-    Route::get('/get-map', [MapController::class, 'getMap']);
-
-    Route::get('/tariffs', [TariffController::class, 'index'])->name('admin.tariffs');
-    Route::post('/tariffs', [TariffController::class, 'store']);
-    Route::put('/tariffs/{tariff}', [TariffController::class, 'update']);
-    Route::delete('/tariffs/{tariff}', [TariffController::class, 'destroy']);
-    Route::post('/tariffs/{tariff}/rules', [TariffController::class, 'storeRule']);
-    Route::put('/tariff-prices/{tariffPrice}', [TariffController::class, 'updateRule']);
-    Route::delete('/tariff-prices/{tariffPrice}', [TariffController::class, 'destroyRule']);
-    Route::post('/day-groups', [TariffController::class, 'storeDayGroup']);
-    Route::put('/day-groups/{dayGroup}', [TariffController::class, 'updateDayGroup']);
-    Route::delete('/day-groups/{dayGroup}', [TariffController::class, 'destroyDayGroup']);
-    Route::post('/calendar-overrides', [TariffController::class, 'storeOverride']);
-    Route::delete('/calendar-overrides/{calendarDayOverride}', [TariffController::class, 'destroyOverride']);
-    Route::post('/addons', [TariffController::class, 'storeAddon']);
-    Route::put('/addons/{addon}', [TariffController::class, 'updateAddon']);
-    Route::delete('/addons/{addon}', [TariffController::class, 'destroyAddon']);
-
-    Route::get('/zones', [ZoneController::class, 'index'])->name('admin.zones');
-    Route::post('/zones', [ZoneController::class, 'store']);
-    Route::delete('/zones/{zone}', [ZoneController::class, 'destroy']);
-
-    // ОВЕРЛЕИ (Страница)
-    Route::get('/overlays', [OverlayAdminController::class, 'index'])->name('admin.overlays');
-
-    // ЛИЦЕНЗИИ
-    Route::get('/licenses', [LicenseController::class, 'index'])->name('admin.licenses');
-    Route::post('/licenses/games', [LicenseController::class, 'storeGame']);
-    Route::delete('/licenses/games/{game}', [LicenseController::class, 'destroyGame']);
-    Route::post('/licenses/games/{game}/accounts', [LicenseController::class, 'storeAccount']);
-    Route::put('/licenses/games/{game}/offers/{club}', [LicenseController::class, 'updateOffer']);
-    Route::delete('/licenses/accounts/{account}', [LicenseController::class, 'destroyAccount']);
-
-    // API АДМИНКИ
+    // API АДМИНКИ (операционный контур)
     Route::prefix('api')->group(function () {
         Route::get('/pc-statuses', [AdminController::class, 'getPcStatuses']);
         Route::get('/check-orders', [AdminController::class, 'checkNewOrders']);
-        Route::post('/incidents/{id}/resolve', [AdminController::class, 'resolveIncident']);
 
         // --- SOS И HID-СИГНАЛЫ С ТЕРМИНАЛОВ ---
         Route::get('/sos-alerts', [AdminController::class, 'sosAlerts']);
         Route::post('/sos-alerts/{id}/ack', [AdminController::class, 'ackSosAlert']);
         Route::post('/input-alerts/{id}/ack', [AdminController::class, 'ackInputAlert']);
 
-        // --- ОВЕРЛЕИ (Управление и Загрузка) ---
-        Route::get('/overlays', [OverlayAdminController::class, 'getOverlays']);
-        Route::put('/overlays/{id}', [OverlayAdminController::class, 'updateOverlay']);
-        Route::post('/upload-image', [OverlayAdminController::class, 'uploadImage']);
-        Route::post('/upload-video', [OverlayAdminController::class, 'uploadVideo']);
         Route::get('/active-calls', [ChatController::class, 'getActiveCalls']);
         Route::post('/calls/{id}/resolve', [ChatController::class, 'resolveCall']);
     });
 
     // УРОВЕНЬ: SUPERVISOR+
     Route::middleware(['role:supervisor,owner'])->group(function () {
-        Route::get('/inventory', [AdminController::class, 'inventory'])->name('admin.inventory');
         Route::prefix('api/inventory')->group(function () {
             Route::post('/save', [AdminController::class, 'saveProduct']);
             Route::delete('/delete/{id}', [AdminController::class, 'deleteProduct']);
-            Route::post('/update-stock', [AdminController::class, 'updateStock']);
-            Route::get('/find-barcode', [AdminController::class, 'findByBarcode']);
+            Route::post('/write-off', [AdminController::class, 'writeOffUnit']);
+        });
+
+        // КАРТА И ТАРИФЫ
+        Route::get('/map-builder', fn() => Inertia::render('Admin/MapBuilder', [
+            'clubs' => \App\Models\Club::select('id', 'name')->get(),
+            'topologyZones' => \App\Models\Zone::select('id', 'name', 'slug', 'color')->orderBy('name')->get(),
+        ]))->name('admin.map-builder');
+        Route::post('/save-map', [MapController::class, 'save']);
+        Route::get('/get-map', [MapController::class, 'getMap']);
+
+        Route::get('/tariffs', [TariffController::class, 'index'])->name('admin.tariffs');
+        Route::post('/tariffs', [TariffController::class, 'store']);
+        Route::put('/tariffs/{tariff}', [TariffController::class, 'update']);
+        Route::delete('/tariffs/{tariff}', [TariffController::class, 'destroy']);
+        Route::post('/tariffs/{tariff}/rules', [TariffController::class, 'storeRule']);
+        Route::put('/tariff-prices/{tariffPrice}', [TariffController::class, 'updateRule']);
+        Route::delete('/tariff-prices/{tariffPrice}', [TariffController::class, 'destroyRule']);
+        Route::post('/day-groups', [TariffController::class, 'storeDayGroup']);
+        Route::put('/day-groups/{dayGroup}', [TariffController::class, 'updateDayGroup']);
+        Route::delete('/day-groups/{dayGroup}', [TariffController::class, 'destroyDayGroup']);
+        Route::post('/calendar-overrides', [TariffController::class, 'storeOverride']);
+        Route::delete('/calendar-overrides/{calendarDayOverride}', [TariffController::class, 'destroyOverride']);
+        Route::post('/addons', [TariffController::class, 'storeAddon']);
+        Route::put('/addons/{addon}', [TariffController::class, 'updateAddon']);
+        Route::delete('/addons/{addon}', [TariffController::class, 'destroyAddon']);
+
+        Route::get('/zones', [ZoneController::class, 'index'])->name('admin.zones');
+        Route::post('/zones', [ZoneController::class, 'store']);
+        Route::delete('/zones/{zone}', [ZoneController::class, 'destroy']);
+
+        // ОВЕРЛЕИ
+        Route::get('/overlays', [OverlayAdminController::class, 'index'])->name('admin.overlays');
+
+        // ЛИЦЕНЗИИ
+        Route::get('/licenses', [LicenseController::class, 'index'])->name('admin.licenses');
+        Route::post('/licenses/games', [LicenseController::class, 'storeGame']);
+        Route::delete('/licenses/games/{game}', [LicenseController::class, 'destroyGame']);
+        Route::post('/licenses/games/{game}/accounts', [LicenseController::class, 'storeAccount']);
+        Route::put('/licenses/games/{game}/offers/{club}', [LicenseController::class, 'updateOffer']);
+        Route::delete('/licenses/accounts/{account}', [LicenseController::class, 'destroyAccount']);
+
+        // ВИДЕОНАБЛЮДЕНИЕ · МЕТКИ НА ТАЙМЛАЙНЕ
+        Route::get('/video-surveillance', [VideoSurveillanceController::class, 'index'])->name('admin.video-surveillance');
+        Route::put('/video-surveillance', [VideoSurveillanceController::class, 'updateSettings']);
+        Route::post('/video-surveillance/test', [VideoSurveillanceController::class, 'test']);
+        Route::post('/video-surveillance/events', [VideoSurveillanceController::class, 'storeEvent']);
+        Route::put('/video-surveillance/events/{event}', [VideoSurveillanceController::class, 'updateEvent']);
+        Route::delete('/video-surveillance/events/{event}', [VideoSurveillanceController::class, 'destroyEvent']);
+
+        Route::prefix('api')->group(function () {
+            Route::post('/incidents/{id}/resolve', [AdminController::class, 'resolveIncident']);
+            Route::get('/overlays', [OverlayAdminController::class, 'getOverlays']);
+            Route::put('/overlays/{id}', [OverlayAdminController::class, 'updateOverlay']);
+            Route::post('/upload-image', [OverlayAdminController::class, 'uploadImage']);
+            Route::post('/upload-video', [OverlayAdminController::class, 'uploadVideo']);
         });
 
         Route::get('/bonuses', [BonusController::class, 'index'])->name('admin.bonuses.index');
+        Route::post('/bonuses/settings', [BonusController::class, 'updateSettings'])->name('admin.bonuses.settings');
+        Route::post('/bonuses/sync', [BonusController::class, 'sync'])->name('admin.bonuses.sync');
         Route::post('/api/bonuses/verify/{id}', [BonusController::class, 'verify']);
         Route::get('/bonus-logs', [AdminController::class, 'bonusLogs'])->name('admin.bonus-logs');
 
@@ -218,6 +244,13 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::get('/promocodes', [PromoCodeAdminController::class, 'index'])->name('admin.promocodes.index');
         Route::post('/promocodes', [PromoCodeAdminController::class, 'store']);
         Route::delete('/promocodes/{promoCode}', [PromoCodeAdminController::class, 'destroy']);
+
+        // Квесты и ачивки
+        Route::get('/achievements', [AchievementAdminController::class, 'index'])->name('admin.achievements.index');
+        Route::post('/achievements', [AchievementAdminController::class, 'store']);
+        Route::put('/achievements/{achievement}', [AchievementAdminController::class, 'update']);
+        Route::patch('/achievements/{achievement}/toggle', [AchievementAdminController::class, 'toggle']);
+        Route::delete('/achievements/{achievement}', [AchievementAdminController::class, 'destroy']);
     });
 
     // УРОВЕНЬ: OWNER

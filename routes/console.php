@@ -10,3 +10,4 @@ Artisan::command('inspire', function () {
 
 Schedule::command('reactor:check-quality')->everyMinute();
 Schedule::command('reactor:update-statuses')->everyMinute()->withoutOverlapping();
+Schedule::command('reactor:check-reviews')->dailyAt('10:00')->withoutOverlapping();

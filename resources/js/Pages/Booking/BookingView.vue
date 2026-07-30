@@ -957,7 +957,7 @@ onUnmounted(() => {
                               : 'border-[#22c55e]/25 bg-[#22c55e]/[0.04]']">
                     <div class="min-w-0 flex-1">
                         <p class="text-[10px] sm:text-[11px] font-black uppercase tracking-wide text-[#22c55e] leading-snug">
-                            Платную игру лучше забронировать заранее
+                            <span class="text-red-500">Внимание!</span> Платную игру лучше забронировать заранее
                         </p>
                         <p class="mt-1 text-[9px] sm:text-[10px] text-white/45 leading-relaxed">
                             Так аккаунт будет закреплён за вашей сессией — без риска что его займут раньше.
@@ -969,7 +969,7 @@ onUnmounted(() => {
                     </div>
                     <button type="button"
                             @click="openGamesModal"
-                            class="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#22c55e] text-black text-[10px] font-black uppercase tracking-widest hover:bg-[#1ea34d] transition-colors shadow-[0_0_20px_rgba(34,197,94,0.2)]">
+                            class="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#22c55e] text-black text-[10px] font-black uppercase tracking-widest hover:bg-[#1ea34d] transition-colors cursor-pointer shadow-[0_0_20px_rgba(34,197,94,0.2)]">
                         {{ selectedGamesCount ? 'Изменить' : 'Выбрать' }}
                         <span v-if="selectedGamesCount" class="px-1.5 py-0.5 rounded-md bg-black/15 text-[9px]">{{ selectedGamesCount }}</span>
                     </button>

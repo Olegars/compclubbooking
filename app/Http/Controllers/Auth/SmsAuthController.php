@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Wallet;
-use App\Services\GizmoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -32,7 +31,7 @@ class SmsAuthController extends Controller
     }
 
     // === СТАРЫЙ МЕТОД: ПРОВЕРКА КОДА ===
-    public function verifyCode(Request $request, GizmoService $gizmo)
+    public function verifyCode(Request $request)
     {
         $request->validate([
             'phone' => 'required|string',
@@ -56,18 +55,6 @@ class SmsAuthController extends Controller
             $user->password = bcrypt(\Illuminate\Support\Str::random(16));
             $user->avatar = 'avatar_' . rand(1, 10) . '.png';
             $user->save(); // Жестко пишем в БД
-        }
-
-        // --- ПРИВЯЗКА К GIZMO ---
-        if (!$user->gizmo_id) {
-            $gizmoId = $gizmo->createUser([
-                'username' => $user->name,
-                'phone' => $user->phone
-            ]);
-            if ($gizmoId) {
-                $user->gizmo_id = $gizmoId;
-                $user->save();
-            }
         }
 
         // --- СОЗДАНИЕ КОШЕЛЬКА ---

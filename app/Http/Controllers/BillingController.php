@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Transaction;
-use App\Services\GizmoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -58,108 +57,6 @@ class BillingController extends Controller
         } catch (\Exception $e) {
             Log::error("Ошибка пополнения баланса юзера {$user->id}: " . $e->getMessage());
             return response()->json(['message' => 'Ошибка обработки платежа'], 500);
-        }
-    }
-
-    /**
-     * Запуск игровой сессии (Списание + Команда в Gizmo)
-     */
-    public function startSession(Request $request, GizmoService $gizmo)
-    {
-        $request->validate([
-            'hostId' => 'required|integer',
-            'minutes' => 'required|integer|min:30',
-            'price' => 'required|numeric|min:0',
-        ]);
-
-        $user = $request->user();
-        $cost = (float) $request->price;
-        $user->syncBalanceToWallet();
-        $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id]);
-
-        $deposit = $wallet->depositAmount();
-        $bonus = (float) ($wallet->getAttributes()['bonus_balance'] ?? 0);
-        $totalAvailable = $deposit + $bonus;
-
-        if ($totalAvailable < $cost) {
-            return response()->json([
-                'message' => 'Недостаточно средств. Ваш баланс: ' . $totalAvailable . '₽'
-            ], 402);
-        }
-
-        try {
-            DB::transaction(function () use ($user, $wallet, $cost, $request, $gizmo, $bonus) {
-
-                // 1. УМНОЕ СПИСАНИЕ (Сначала жжем бонусы)
-                $payFromBonus = min($bonus, $cost);
-                $payFromDeposit = $cost - $payFromBonus;
-
-                if ($payFromBonus > 0) {
-                    DB::table('wallets')->where('id', $wallet->id)->decrement('bonus_balance', $payFromBonus);
-                    Transaction::create([
-                        'user_id' => $user->id,
-                        'amount' => -$payFromBonus,
-                        'type' => 'withdraw',
-                        'source' => 'bonus_account',
-                        'description' => "Оплата бонусами: ПК {$request->hostId} ({$request->minutes} мин.)",
-                    ]);
-                }
-
-                if ($payFromDeposit > 0) {
-                    $wallet->debitSpendable($payFromDeposit);
-                    DB::table('wallets')->where('id', $wallet->id)->increment('total_spent', $payFromDeposit);
-
-                    Transaction::create([
-                        'user_id' => $user->id,
-                        'amount' => -$payFromDeposit,
-                        'type' => 'withdraw',
-                        'source' => 'deposit_account',
-                        'description' => "Оплата с депозита: ПК {$request->hostId} ({$request->minutes} мин.)",
-                    ]);
-
-                    $cashbackPercent = 0.05;
-                    $cashbackAmount = $payFromDeposit * $cashbackPercent;
-
-                    if ($cashbackAmount > 0) {
-                        DB::table('wallets')->where('id', $wallet->id)->increment('bonus_balance', $cashbackAmount);
-                        Transaction::create([
-                            'user_id' => $user->id,
-                            'amount' => $cashbackAmount,
-                            'type' => 'deposit',
-                            'source' => 'cashback',
-                            'description' => "Кешбэк за сеанс",
-                        ]);
-                    }
-                }
-
-                $isStarted = $gizmo->startSession(
-                    $user->gizmo_id ?? 1,
-                    $request->hostId,
-                    $request->minutes
-                );
-
-                if (!$isStarted) {
-                    throw new \Exception("Gizmo API отклонил запуск сессии");
-                }
-            });
-
-            $wallet->refresh();
-            $newDeposit = $wallet->depositAmount();
-            $newBonus = (float) ($wallet->getAttributes()['bonus_balance'] ?? 0);
-
-            return response()->json([
-                'message' => 'Сеанс запущен!',
-                'deposit_balance' => $newDeposit,
-                'bonus_balance' => $newBonus,
-                'new_balance' => $newDeposit,
-                'balance' => $newDeposit,
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error("Ошибка запуска сессии юзера {$user->id}: " . $e->getMessage());
-            return response()->json([
-                'message' => 'Ошибка системы. Деньги не списаны.'
-            ], 500);
         }
     }
 }

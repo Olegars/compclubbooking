@@ -38,11 +38,6 @@ class TerminalController extends Controller
             'zonesList' => [],
             'zoneRectsList' => $zoneRects,
             'tariffShowcase' => app(TariffService::class)->showcase((int) $club->id),
-            'gizmo' => [
-                'balance' => "0.00",
-                'bonus' => 0,
-                'current_pc' => 'NONE'
-            ]
         ]);
     }
 }

@@ -79,7 +79,7 @@ const runTopUpStub = async () => {
       amount: value,
       method: paymentMethod.value,
     })
-    router.reload({ only: ['gizmo', 'auth', 'transactions'], preserveScroll: true })
+    router.reload({ only: ['auth', 'transactions'], preserveScroll: true })
   } catch (e: any) {
     isSuccessModalOpen.value = false
     alert(e.response?.data?.message || 'Сбой транзакции пополнения')
@@ -101,7 +101,7 @@ const modalData = computed(() => {
   const today = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '').toUpperCase()
   return {
     date: today,
-    price: currentMode.value === 'topup' ? (amount.value || '0') : String((page.props as any).gizmo?.balance ?? (page.props as any).auth?.user?.balance ?? 0),
+    price: currentMode.value === 'topup' ? (amount.value || '0') : String((page.props as any).auth?.user?.balance ?? 0),
     pcNumber: currentMode.value === 'topup' ? 'СЧЕТ: REACTOR' : 'СТАТУС: БАЛАНС'
   }
 })

@@ -30,10 +30,6 @@ class HandleInertiaRequests extends Middleware
                     'balance' => $balance,
                 ]) : null,
             ],
-            // Shared for MainLayout Account Balance + top-up stub on every page
-            'gizmo' => [
-                'balance' => $balance,
-            ],
             // ПЕРСОНАЛ
             // Отдаём только то, что рисует шапка: ставки и тип оплаты на клиенте не нужны.
             'admin_user' => $admin ? [

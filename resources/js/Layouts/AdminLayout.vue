@@ -3,6 +3,10 @@ import { Link, usePage } from '@inertiajs/vue3'
 import { computed, watch } from 'vue'
 import Toast from '@/Components/Toast.vue'
 import { useAdminAlerts } from '@/Composables/useAdminAlerts'
+import { useAdminBarcodeScanner } from '@/Composables/useAdminBarcodeScanner'
+
+// HID-сканер на любой странице админки: по умолчанию списание КМ в заказ
+useAdminBarcodeScanner().attachGlobalListener()
 
 // Определяем текущий маршрут для автоматической подсветки активного пункта меню
 const page = usePage()
@@ -25,6 +29,8 @@ watch(() => page.props.admin_alerts, (next) => setCounts(next), { immediate: tru
 const admin = computed(() => page.props.admin_user as any)
 const adminName = computed(() => admin.value?.name || admin.value?.email || 'Оператор')
 const adminRole = computed(() => admin.value?.role || null)
+const isOwner = computed(() => adminRole.value === 'owner')
+const isSupervisorPlus = computed(() => adminRole.value === 'supervisor' || adminRole.value === 'owner')
 
 // admin_shift приходит только при открытой смене (status != closed)
 const shift = computed(() => page.props.admin_shift as any)
@@ -70,7 +76,7 @@ const shiftLabel = computed(() => {
 
             <div class="flex-1 overflow-y-auto py-8 px-6 space-y-8 custom-scrollbar">
 
-                <!-- СЕКЦИЯ: ОПЕРАЦИИ -->
+                <!-- СЕКЦИЯ: ОПЕРАЦИИ (все роли) -->
                 <div class="space-y-2">
                     <div class="text-[10px] text-white/30 font-black uppercase tracking-[0.3em] italic pl-4 mb-3">Операции</div>
                     <Link href="/admin/dashboard"
@@ -87,10 +93,25 @@ const shiftLabel = computed(() => {
                             {{ counts.pending_orders }}
                         </span>
                     </Link>
+                    <Link href="/admin/inventory"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/inventory') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>📦</span> Склад
+                    </Link>
+                    <Link href="/admin/shifts/transfer"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/shifts/transfer') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🔄</span> Пересменка
+                    </Link>
+                    <Link href="/admin/shifts/history"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/shifts/history') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>📋</span> Архив смен
+                    </Link>
                 </div>
 
-                <!-- СЕКЦИЯ: КИБЕРСПОРТ -->
-                <div class="space-y-2">
+                <!-- СЕКЦИЯ: КИБЕРСПОРТ (supervisor+) -->
+                <div v-if="isSupervisorPlus" class="space-y-2">
                     <div class="text-[10px] text-white/30 font-black uppercase tracking-[0.3em] italic pl-4 mb-3">Киберспорт</div>
                     <Link href="/admin/tournaments"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
@@ -102,27 +123,47 @@ const shiftLabel = computed(() => {
                           :class="isActive('/admin/promocodes') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>🎁</span> Маркетинг
                     </Link>
+                    <Link href="/admin/achievements"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/achievements') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>⭐</span> Квесты и ачивки
+                    </Link>
+                    <Link href="/admin/bonuses"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/bonuses') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>⭐</span> Бонусы за отзывы
+                    </Link>
+                    <Link href="/admin/bonus-logs"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/bonus-logs') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>📜</span> Реестр бонусов
+                    </Link>
                 </div>
 
-                <!-- СЕКЦИЯ: ЭКОНОМИКА -->
-                <div class="space-y-2">
+                <!-- СЕКЦИЯ: ЭКОНОМИКА (supervisor+ / owner) -->
+                <div v-if="isSupervisorPlus" class="space-y-2">
                     <div class="text-[10px] text-white/30 font-black uppercase tracking-[0.3em] italic pl-4 mb-3">Экономика</div>
                     <Link href="/admin/tariffs"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/tariffs') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>🏷️</span> Тарифы и пакеты
                     </Link>
-                    <!-- Налоги доступны только владельцу (middleware role:owner) -->
-                    <Link v-if="adminRole === 'owner'"
+                    <Link v-if="isOwner"
                           href="/admin/taxes"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/taxes') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>🧾</span> Налоги
                     </Link>
+                    <Link v-if="isOwner"
+                          href="/admin/staff"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/staff') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>👥</span> Штат
+                    </Link>
                 </div>
 
-                <!-- СЕКЦИЯ: КОНФИГУРАЦИЯ -->
-                <div class="space-y-2">
+                <!-- СЕКЦИЯ: КОНФИГУРАЦИЯ (supervisor+) -->
+                <div v-if="isSupervisorPlus" class="space-y-2">
                     <div class="text-[10px] text-white/30 font-black uppercase tracking-[0.3em] italic pl-4 mb-3">Конфигурация</div>
                     <Link href="/admin/zones"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
@@ -139,15 +180,15 @@ const shiftLabel = computed(() => {
                           :class="isActive('/admin/overlays') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>🖥️</span> Shell Оверлеи
                     </Link>
-                    <Link href="/admin/inventory"
-                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
-                          :class="isActive('/admin/inventory') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
-                        <span>📦</span> Склад
-                    </Link>
                     <Link href="/admin/licenses"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/licenses') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>🎮</span> Игры и лицензии
+                    </Link>
+                    <Link href="/admin/video-surveillance"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/video-surveillance') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>📹</span> Видео-метки
                     </Link>
                 </div>
 

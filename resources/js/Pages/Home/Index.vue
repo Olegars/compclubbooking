@@ -50,10 +50,21 @@ const props = withDefaults(defineProps<{
     } | null
     contacts: any
     minAge?: number
+    reviews?: Array<{
+        id: number
+        author: string
+        text: string
+        rating: number
+        source: string
+        url?: string | null
+    }>
+    reviews_map_url?: string | null
 }>(), {
     zones: () => [],
     games: () => [],
+    reviews: () => [],
     minAge: 0,
+    reviews_map_url: null,
 })
 
 const KIND_LABELS: Record<string, string> = {
@@ -391,6 +402,29 @@ const steps = [
                             и ещё {{ freeGamesRest }}
                         </span>
                     </div>
+                </div>
+            </section>
+
+            <!-- ОТЗЫВЫ С ЯНДЕКС.КАРТ -->
+            <section v-if="reviews.length" class="mb-16">
+                <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+                    <h3 class="text-xl sm:text-2xl font-black italic uppercase tracking-tight text-white">
+                        Отзывы гостей
+                    </h3>
+                    <a v-if="reviews_map_url" :href="reviews_map_url" target="_blank" rel="noopener"
+                       class="text-[11px] font-black uppercase tracking-[0.2em] text-[#22c55e] hover:text-[#2ae06d] transition-colors italic">
+                        Все на Яндекс.Картах →
+                    </a>
+                </div>
+                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <article v-for="review in reviews" :key="review.id"
+                             class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-6 flex flex-col">
+                        <div class="flex items-center justify-between gap-3 mb-4">
+                            <div class="text-sm font-black uppercase italic text-white tracking-tight truncate">{{ review.author }}</div>
+                            <div class="text-yellow-500 text-xs font-black shrink-0">{{ '★'.repeat(Math.min(5, Math.round(review.rating || 0))) }}</div>
+                        </div>
+                        <p class="text-[13px] text-white/55 leading-relaxed line-clamp-6 flex-1">{{ review.text }}</p>
+                    </article>
                 </div>
             </section>
 

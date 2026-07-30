@@ -56,7 +56,6 @@ class ClubController extends Controller
 
         $club->map_config = $mapConfig;
 
-        // 4. Рендерим страницу (ИСПРАВЛЕННЫЙ БЛОК GIZMO)
         return Inertia::render('Booking/BookingView', [
             'clubData' => $club,
             'computersList' => $computers,
@@ -66,17 +65,6 @@ class ClubController extends Controller
             'preselectStart' => $preselectStart,
             'preselectDuration' => $preselectDuration,
             'tariffShowcase' => app(TariffService::class)->showcase((int) $club->id),
-
-            // Same balance field the shell / user cabinet use (deposit, not raw wallet JSON).
-            'gizmo' => auth()->check() ? [
-                'balance' => auth()->user()->availableBalance(),
-                'bonus' => (float) (auth()->user()->wallet?->bonus_balance ?? 0),
-                'current_pc' => 'NONE',
-            ] : [
-                'balance' => 0,
-                'bonus' => 0,
-                'current_pc' => 'NONE',
-            ]
         ]);
     }
 }

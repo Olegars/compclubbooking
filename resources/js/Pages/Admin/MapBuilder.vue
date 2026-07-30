@@ -741,18 +741,18 @@ const finishWall = () => {
     }
 }
 
-const syncWithGizmo = () => {
-    const externalPcs = [
+const syncDefaultPcs = () => {
+    const templatePcs = [
         { name: 'PC-01' }, { name: 'PC-02' }, { name: 'PC-03' }, { name: 'PC-04' }, { name: 'PC-05' },
         { name: 'PRO-01' }, { name: 'PRO-02' }, { name: 'PRO-03' },
         { name: 'VIP-01' }, { name: 'VIP-02' }, { name: 'STREAM-01' }
     ]
     let addedCount = 0;
-    externalPcs.forEach(gizmoPc => {
-        if (!computers.value.some(pc => pc.name === gizmoPc.name)) {
+    templatePcs.forEach(templatePc => {
+        if (!computers.value.some(pc => pc.name === templatePc.name)) {
             computers.value.push({
                 id: Date.now() + Math.random(),
-                name: gizmoPc.name,
+                name: templatePc.name,
                 x: 50,
                 y: 50,
                 kind: 'pc',
@@ -840,6 +840,7 @@ const saveToDB = async () => {
                 viewbox: viewbox.value,
             },
             pcs: computers.value.map(pc => ({
+                id: pc.id ?? null,
                 name: pc.name,
                 x: pc.x,
                 y: pc.y,
@@ -847,6 +848,7 @@ const saveToDB = async () => {
                 booth_id: pc.booth_id || null,
             }))
         });
+        await loadFromDB();
         alert('Данные карты успешно сохранены!');
     } catch (e) {
         console.error(e);
@@ -948,7 +950,7 @@ onUnmounted(() => {
                         Замкнуть контур
                         <span v-if="currentPoints.length" class="ml-1 opacity-70">({{ currentPoints.length }})</span>
                     </button>
-                    <button v-if="mode === 'pcs'" @click="syncWithGizmo" class="bg-purple-500/20 text-purple-400 border border-purple-500/30 px-4 py-1.5 text-[10px] uppercase font-black rounded-lg hover:bg-purple-500 hover:text-white transition-all shrink-0">🔄 GIZMO SYNC</button>
+                    <button v-if="mode === 'pcs'" @click="syncDefaultPcs" class="bg-purple-500/20 text-purple-400 border border-purple-500/30 px-4 py-1.5 text-[10px] uppercase font-black rounded-lg hover:bg-purple-500 hover:text-white transition-all shrink-0">ДОБАВИТЬ ПК</button>
                     <div v-if="mode === 'pcs'" class="flex items-center gap-2 ml-2 px-3 border-l border-white/10 shrink-0">
                         <button v-for="opt in seatKindOptions" :key="opt.id"
                                 @click="currentSeatKind = opt.id"

@@ -68,7 +68,7 @@ const toggleGame = (game: BookingGameItem) => {
                     </div>
 
                     <div class="flex-1 min-h-0 overflow-y-auto custom-scroll -mx-1 px-1">
-                        <p v-if="!hasSeats" class="py-10 text-center text-[10px] text-white/30 uppercase tracking-widest leading-relaxed">
+                        <p v-if="!hasSeats" class="py-10 text-center text-[10px] text-red-500 font-black uppercase tracking-widest leading-relaxed">
                             Сначала выберите места на карте,<br>затем можно добавить игры
                         </p>
                         <p v-else-if="isLoading" class="py-10 text-center text-[10px] text-white/30 uppercase tracking-widest animate-pulse">
@@ -132,8 +132,8 @@ const toggleGame = (game: BookingGameItem) => {
                         <button
                             type="button"
                             @click="emit('confirm')"
-                            :disabled="!hasSeats || isLoading"
-                            class="w-full p-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all disabled:opacity-30 disabled:grayscale"
+                            :disabled="isLoading || (selectedCount > 0 && !hasSeats)"
+                            class="w-full p-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all cursor-pointer disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
                             :class="selectedCount
                                 ? 'bg-[#22c55e] text-black hover:bg-[#1ea34d] shadow-[0_0_24px_rgba(34,197,94,0.25)]'
                                 : 'bg-white/5 border border-white/10 text-white hover:border-[#22c55e]/40'"

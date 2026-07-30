@@ -10,6 +10,7 @@ use Inertia\Inertia;
 use App\Models\Order;
 use Carbon\Carbon;
 use App\Models\ReviewClaim;
+use App\Services\AchievementService;
 
 class ProfileController extends Controller
 {
@@ -141,10 +142,19 @@ class ProfileController extends Controller
             ->filter(fn ($b) => ! $b->is_expired)
             ->values();
 
-        // 5. Бонусы
-        $latestReview = ReviewClaim::where('user_id', $user->id)->latest()->first();
+        // 5. Бонусы за отзыв (pending имеет приоритет для статуса в UI)
+        $latestReview = ReviewClaim::where('user_id', $user->id)
+            ->where('status', ReviewClaim::STATUS_PENDING)
+            ->latest()
+            ->first()
+            ?? ReviewClaim::where('user_id', $user->id)->latest()->first();
 
-        // 6. Рендер (Все ключи приведены к соответствию с Vue)
+        $reviewMeta = app(\App\Services\ReviewBonusService::class)->clientMeta();
+
+        // 6. Квесты / ачивки
+        $achievements = app(AchievementService::class)->progressForUser($user);
+
+        // 7. Рендер (Все ключи приведены к соответствию с Vue)
         return Inertia::render('User/Dashboard', [
             'user' => [
                 'id' => $user->id,
@@ -152,14 +162,12 @@ class ProfileController extends Controller
                 'phone' => $user->phone,
                 'avatar' => $user->avatar,
             ],
-            'gizmo' => [
-                'balance' => $user->availableBalance(),
-                'spent_total' => (float) abs($user->transactions()->where('amount', '<', 0)->sum('amount')),
-            ],
             'transactions' => $transactions,
             'active_bookings' => $activeBookings,
             'orders' => $activeOrders,
             'latest_review' => $latestReview,
+            'review_meta' => $reviewMeta,
+            'achievements' => $achievements,
             'server_time' => $now->toIso8601String(),
         ]);
     }

@@ -7,6 +7,7 @@ use App\Models\Computer;
 use App\Models\Zone;
 use App\Services\ClubOccupancyService;
 use App\Services\MapPresentationService;
+use App\Services\ReviewBonusService;
 use App\Services\TariffService;
 use Inertia\Inertia;
 
@@ -16,11 +17,20 @@ class HomeController extends Controller
         private readonly TariffService $tariffs,
         private readonly ClubOccupancyService $occupancy,
         private readonly MapPresentationService $mapPresentation,
+        private readonly ReviewBonusService $reviews,
     ) {}
 
     public function index()
     {
         $club = Club::query()->orderBy('id')->first();
+        $siteReviews = $this->reviews->siteReviews()->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'author' => (string) ($r->author_name ?: 'Гость'),
+            'text' => (string) $r->text,
+            'rating' => (float) $r->rating,
+            'source' => (string) $r->source,
+            'url' => $r->url,
+        ])->values()->all();
 
         if (! $club) {
             return Inertia::render('Home/Index', [
@@ -30,6 +40,8 @@ class HomeController extends Controller
                 'games' => [],
                 'map' => null,
                 'contacts' => $this->contacts(null),
+                'reviews' => $siteReviews,
+                'reviews_map_url' => config('club.reviews.yandex_maps_url') ?: config('club.map_url') ?: null,
             ]);
         }
 
@@ -66,6 +78,8 @@ class HomeController extends Controller
             ],
             'contacts' => $this->contacts($club),
             'minAge' => (int) config('club.min_age'),
+            'reviews' => $siteReviews,
+            'reviews_map_url' => config('club.reviews.yandex_maps_url') ?: config('club.map_url') ?: null,
         ]);
     }
 

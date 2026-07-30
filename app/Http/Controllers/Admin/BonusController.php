@@ -3,87 +3,106 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\MapReview;
 use App\Models\ReviewClaim;
+use App\Services\ReviewBonusService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class BonusController extends Controller
 {
-    // Метод для ИГРОКА: отправить текст на проверку
-    // app/Http/Controllers/Admin/BonusController.php
-
-    public function submitReview(Request $request)
+    public function submitReview(Request $request, ReviewBonusService $service)
     {
-        // Требуем валидный URL
+        $minLen = $service->minTextLength();
+
         $request->validate([
-            'link' => 'required|url|max:500',
+            'text' => "required|string|min:{$minLen}|max:5000",
+        ], [
+            'text.required' => 'Вставьте текст отзыва',
+            'text.min' => "Текст отзыва слишком короткий (минимум {$minLen} символов)",
         ]);
 
-        // Проверяем, что это именно Яндекс
-        if (!str_contains(strtolower($request->link), 'yandex.ru') && !str_contains(strtolower($request->link), 'yandex.com')) {
-            return response()->json(['message' => 'Принимаются только ссылки с Яндекс.Карт.'], 422);
+        try {
+            $claim = $service->submitClaim((int) auth()->id(), (string) $request->input('text'));
+        } catch (\InvalidArgumentException|\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        // Проверяем, нет ли уже активной заявки на проверке
-        $hasPending = ReviewClaim::where('user_id', auth()->id())
-            ->where('status', 'pending')
-            ->exists();
-
-        if ($hasPending) {
-            return response()->json(['message' => 'У вас уже есть заявка на проверке.'], 422);
-        }
-
-        // Проверяем, не использовал ли кто-то (или этот же юзер) эту ссылку ранее
-        $isUsedLink = ReviewClaim::where('review_link', $request->link)->exists();
-
-        if ($isUsedLink) {
-            return response()->json(['message' => 'Этот отзыв уже был оплачен системой.'], 422);
-        }
-
-        // Создаем заявку
-        ReviewClaim::create([
-            'user_id' => auth()->id(),
-            'review_link' => $request->link,
-            'bonus_amount' => 100, // Платим только за 5 звезд
-            'status' => 'pending'
+        return response()->json([
+            'message' => 'Заявка принята. Проверим публикацию отзыва в течение суток.',
+            'claim' => $claim,
         ]);
-
-        return response()->json(['message' => 'Review claim submitted']);
     }
 
-    // Метод для АДМИНА: список заявок
-    public function index()
+    public function index(ReviewBonusService $service)
     {
+        $settings = $service->settings();
+
         $claims = ReviewClaim::with('user:id,name,phone')
-            ->orderBy('created_at', 'desc')
+            ->orderByRaw("CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END")
+            ->orderByDesc('created_at')
             ->get();
 
-        return Inertia::render('Admin/Bonuses', [ // Убедись, что путь к Vue файлу верный
-            'claims' => $claims
+        $mapReviews = MapReview::with('rewardedUser:id,name,phone')
+            ->orderByDesc('reviewed_at')
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get();
+
+        return Inertia::render('Admin/Bonuses', [
+            'claims' => $claims,
+            'map_reviews' => $mapReviews,
+            'settings' => [
+                'bonus_amount' => (float) $settings->bonus_amount,
+                'site_reviews_limit' => (int) $settings->site_reviews_limit,
+                'show_on_site' => (bool) $settings->show_on_site,
+            ],
+            'review_meta' => $service->clientMeta(),
         ]);
     }
 
-    // Метод для АДМИНА: подтверждение/отклонение
-    public function verify(Request $request, $id)
+    public function updateSettings(Request $request, ReviewBonusService $service)
     {
+        $data = $request->validate([
+            'bonus_amount' => 'required|numeric|min:0|max:100000',
+            'site_reviews_limit' => 'nullable|integer|min:1|max:24',
+            'show_on_site' => 'nullable|boolean',
+        ]);
+
+        $service->updateBonusAmount((float) $data['bonus_amount']);
+        $service->updateSiteSettings(
+            isset($data['site_reviews_limit']) ? (int) $data['site_reviews_limit'] : null,
+            array_key_exists('show_on_site', $data) ? (bool) $data['show_on_site'] : null,
+        );
+
+        return back()->with('success', 'Настройки бонуса сохранены');
+    }
+
+    public function sync(ReviewBonusService $service)
+    {
+        $result = $service->processPendingClaims();
+
+        return back()->with('success', sprintf(
+            'Синхронизация: отзывов %d, совпадений %d',
+            $result['fetched'],
+            $result['matched']
+        ));
+    }
+
+    public function verify(Request $request, $id, ReviewBonusService $service)
+    {
+        $request->validate([
+            'status' => 'required|in:approved,rejected',
+        ]);
+
         $claim = ReviewClaim::findOrFail($id);
 
-        if ($request->status === 'approved') {
-            // Credit club wallet (deposit_balance), not legacy users.balance — shell reads the wallet.
-            $user = $claim->user;
-            $user->syncBalanceToWallet();
-            $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id]);
-            if (array_key_exists('deposit_balance', $wallet->getAttributes())) {
-                $wallet->increment('deposit_balance', (float) $claim->bonus_amount);
-            } else {
-                $wallet->increment('balance', (float) $claim->bonus_amount);
-            }
-            $claim->update(['status' => 'approved', 'verified_at' => now()]);
-        } else {
-            $claim->update(['status' => 'rejected']);
+        if ($claim->status !== ReviewClaim::STATUS_PENDING) {
+            return back()->withErrors(['status' => 'Заявка уже обработана']);
         }
+
+        $service->verifyManually($claim, $request->status);
 
         return back();
     }
-
 }
