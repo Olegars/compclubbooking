@@ -14,7 +14,7 @@ class BillingController extends Controller
     }
 
     /**
-     * Создать платёж ЮKassa и вернуть confirmation_url для редиректа.
+     * Создать платёж ЮKassa и вернуть токен встроенного Checkout Widget.
      */
     public function topUp(Request $request)
     {
@@ -30,16 +30,24 @@ class BillingController extends Controller
         $returnTo = $request->input('return_to');
 
         try {
-            $payment = $this->yookassa->createTopUp($user, $amount, $method, $returnTo);
+            $payment = $this->yookassa->createTopUp(
+                $user,
+                $amount,
+                $method,
+                $returnTo,
+                'embedded',
+            );
+            $confirmationToken = $payment->confirmationToken();
 
-            if (!$payment->confirmation_url) {
-                return response()->json(['message' => 'ЮKassa не вернула ссылку на оплату'], 502);
+            if (!$confirmationToken) {
+                return response()->json(['message' => 'ЮKassa не вернула токен платежного виджета'], 502);
             }
 
             return response()->json([
-                'message' => 'Перенаправление на оплату',
+                'message' => 'Платёжный виджет готов',
                 'payment_id' => $payment->uuid,
-                'confirmation_url' => $payment->confirmation_url,
+                'confirmation_token' => $confirmationToken,
+                'sync_url' => route('billing.yookassa.sync', ['payment' => $payment->uuid]),
                 'amount' => $payment->amount,
                 'status' => $payment->status,
             ]);

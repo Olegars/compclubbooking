@@ -254,7 +254,12 @@ class YooKassaService
         $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id]);
         $wallet->creditSpendable((float) $payment->amount);
 
-        $source = $payment->method === 'sbp' ? 'sbp' : 'card';
+        $remoteMethod = $remote->getPaymentMethod()?->getType();
+        $source = match ($remoteMethod) {
+            'bank_card' => 'card',
+            'sbp' => 'sbp',
+            default => $remoteMethod ?: ($payment->method === 'sbp' ? 'sbp' : 'card'),
+        };
 
         $transaction = Transaction::create([
             'user_id' => $user->id,
@@ -272,6 +277,7 @@ class YooKassaService
         $payment->update([
             'status' => Payment::STATUS_SUCCEEDED,
             'provider_payment_id' => $remote->getId() ?: $payment->provider_payment_id,
+            'method' => $source,
             'transaction_id' => $transaction->id,
             'paid_at' => now(),
             'payload' => $payload,

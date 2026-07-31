@@ -5,6 +5,7 @@ import axios from 'axios'
 import ConfirmModal from './ConfirmModal.vue'
 import SmsModal from './SmsModal.vue'
 import PaymentModal from './PaymentModal.vue'
+import YooKassaWidgetModal from './YooKassaWidgetModal.vue'
 
 const page = usePage()
 const amount = ref('')
@@ -15,6 +16,9 @@ const showOverlay = ref(false)
 const isConfirmModalOpen = ref(false)
 const isSmsModalOpen = ref(false)
 const isSuccessModalOpen = ref(false)
+const isPaymentWidgetOpen = ref(false)
+const paymentToken = ref('')
+const paymentId = ref('')
 const userPhone = ref('')
 const isSubmitting = ref(false)
 
@@ -40,6 +44,9 @@ const closeAll = () => {
   isConfirmModalOpen.value = false
   isSmsModalOpen.value = false
   isSuccessModalOpen.value = false
+  isPaymentWidgetOpen.value = false
+  paymentToken.value = ''
+  paymentId.value = ''
   isSubmitting.value = false
 }
 
@@ -72,7 +79,6 @@ const runTopUpStub = async () => {
   }
   if (isSubmitting.value) return
   isSubmitting.value = true
-  isSuccessModalOpen.value = true
 
   try {
     const { data } = await axios.post('/api/billing/topup', {
@@ -80,20 +86,27 @@ const runTopUpStub = async () => {
       method: paymentMethod.value,
       return_to: window.location.pathname + window.location.search,
     })
-    if (data.confirmation_url) {
-      window.location.href = data.confirmation_url
+    if (data.confirmation_token && data.payment_id) {
+      paymentToken.value = data.confirmation_token
+      paymentId.value = data.payment_id
+      isPaymentWidgetOpen.value = true
       return
     }
-    isSuccessModalOpen.value = false
-    alert('Не удалось получить ссылку на оплату')
+    alert('Не удалось открыть форму оплаты')
     closeAll()
   } catch (e: any) {
-    isSuccessModalOpen.value = false
     alert(e.response?.data?.message || 'Сбой транзакции пополнения')
     closeAll()
   } finally {
     isSubmitting.value = false
   }
+}
+
+const handlePaymentPaid = () => {
+  closeAll()
+  amount.value = ''
+  paymentMethod.value = 'card'
+  router.reload({ only: ['auth', 'transactions'], preserveScroll: true })
 }
 
 const handleSuccessClose = () => {
@@ -144,7 +157,7 @@ const modalData = computed(() => {
 
     <div class="mb-8 shrink-0">
       <label class="block text-[10px] text-slate-500 font-black uppercase mb-3 tracking-widest italic ml-1">Метод оплаты</label>
-      <p class="text-[9px] text-white/30 uppercase tracking-widest mb-3 ml-1">Тестовая ЮKassa: только карта (СБП/QR недоступны)</p>
+      <p class="text-[9px] text-white/30 uppercase tracking-widest mb-3 ml-1">Тестовая ЮKassa: карта или ЮMoney (СБП недоступен)</p>
       <div class="grid grid-cols-2 gap-4">
         <button disabled class="group relative bg-[#0a0a0a] border border-white/5 rounded-2xl p-5 overflow-hidden flex flex-col items-center justify-center gap-3 opacity-30 cursor-not-allowed">
           <svg class="w-7 h-7 text-white/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -156,7 +169,7 @@ const modalData = computed(() => {
           <svg class="w-7 h-7" :class="paymentMethod === 'card' ? 'text-[#22c55e]' : 'text-white/20'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20M7 15h2" />
           </svg>
-          <span class="block font-black uppercase tracking-widest text-sm italic" :class="paymentMethod === 'card' ? 'text-[#22c55e]' : 'text-white'">Карта</span>
+          <span class="block font-black uppercase tracking-widest text-sm italic" :class="paymentMethod === 'card' ? 'text-[#22c55e]' : 'text-white'">Карта / ЮMoney</span>
         </button>
       </div>
     </div>
@@ -182,6 +195,14 @@ const modalData = computed(() => {
       <ConfirmModal v-if="isConfirmModalOpen" :isOpen="isConfirmModalOpen" :data="modalData" mode="auth" :paymentMethod="paymentMethod" @close="closeAll" @confirm="handleConfirm" />
       <SmsModal v-if="isSmsModalOpen" :isOpen="isSmsModalOpen" :phone="userPhone" @close="closeAll" @verify="handleSmsVerify" />
       <PaymentModal v-if="isSuccessModalOpen" :isOpen="isSuccessModalOpen" :data="modalData" :mode="currentMode" @close="handleSuccessClose" />
+      <YooKassaWidgetModal
+        :is-open="isPaymentWidgetOpen"
+        :confirmation-token="paymentToken"
+        :payment-id="paymentId"
+        :amount="Number(amount) || 0"
+        @close="closeAll"
+        @paid="handlePaymentPaid"
+      />
     </Teleport>
   </div>
 </template>

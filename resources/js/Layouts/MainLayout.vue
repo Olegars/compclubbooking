@@ -5,8 +5,8 @@ import axios from 'axios' // <--- Прямой импорт (решает про
 
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import SmsModal from '@/Components/SmsModal.vue'
-import PaymentModal from '@/Components/PaymentModal.vue'
 import FlashToast from '@/Components/FlashToast.vue'
+import YooKassaWidgetModal from '@/Components/YooKassaWidgetModal.vue'
 
 const page = usePage()
 
@@ -19,9 +19,11 @@ const smsModalRef = ref<InstanceType<typeof SmsModal> | null>(null)
 // --- ПОПОЛНЕНИЕ (ЮKassa) ---
 const isTopUpInputOpen = ref(false)
 const isPaymentProcessing = ref(false)
+const isPaymentWidgetOpen = ref(false)
+const paymentToken = ref('')
+const paymentId = ref('')
 const topUpAmount = ref(500)
 const paymentMethod = ref<'card' | 'sbp'>('card')
-const paymentData = ref<any>({})
 const localBalance = ref<number | null>(null)
 
 const displayBalance = computed(() => {
@@ -111,11 +113,6 @@ const proceedToPayment = async () => {
 
     isTopUpInputOpen.value = false
     isPaymentProcessing.value = true
-    paymentData.value = {
-        mode: 'topup',
-        price: topUpAmount.value,
-        date: new Date().toLocaleDateString('ru-RU'),
-    }
 
     try {
         const { data } = await axios.post('/api/billing/topup', {
@@ -123,16 +120,32 @@ const proceedToPayment = async () => {
             method: paymentMethod.value,
             return_to: window.location.pathname + window.location.search,
         })
-        if (data.confirmation_url) {
-            window.location.href = data.confirmation_url
+        if (data.confirmation_token && data.payment_id) {
+            paymentToken.value = data.confirmation_token
+            paymentId.value = data.payment_id
+            isPaymentWidgetOpen.value = true
             return
         }
-        isPaymentProcessing.value = false
-        alert('Не удалось получить ссылку на оплату')
+        alert('Не удалось открыть форму оплаты')
     } catch (e: any) {
-        isPaymentProcessing.value = false
         alert(e.response?.data?.message || 'Сбой транзакции пополнения')
+    } finally {
+        isPaymentProcessing.value = false
     }
+}
+
+const closePaymentWidget = () => {
+    isPaymentWidgetOpen.value = false
+    paymentToken.value = ''
+    paymentId.value = ''
+}
+
+const handlePaymentPaid = () => {
+    closePaymentWidget()
+    router.reload({
+        only: ['auth', 'transactions'],
+        preserveScroll: true,
+    })
 }
 
 const handleLogout = () => {
@@ -324,23 +337,25 @@ onUnmounted(() => {
                             type="button"
                             @click="paymentMethod = 'card'"
                             :class="['py-3 rounded-xl font-black uppercase text-[10px] tracking-widest italic border', paymentMethod === 'card' ? 'bg-[#22c55e]/10 border-[#22c55e] text-[#22c55e]' : 'border-white/10 text-white/40']"
-                        >Карта</button>
+                        >Карта / ЮMoney</button>
                     </div>
-                    <p class="text-[9px] text-white/30 uppercase tracking-widest mb-6">Тестовая ЮKassa: только карта</p>
+                    <p class="text-[9px] text-white/30 uppercase tracking-widest mb-6">Тестовая ЮKassa: карта или ЮMoney</p>
                     <button
                         type="button"
                         @click="proceedToPayment"
-                        class="w-full py-7 bg-[#22c55e] text-black font-black uppercase rounded-[1rem] italic hover:bg-[#2ae06d] transition-colors shadow-[0_0_20px_rgba(34,197,94,0.3)]"
-                    >Оплатить</button>
+                        :disabled="isPaymentProcessing"
+                        class="w-full py-7 bg-[#22c55e] text-black font-black uppercase rounded-[1rem] italic hover:bg-[#2ae06d] transition-colors shadow-[0_0_20px_rgba(34,197,94,0.3)] disabled:cursor-wait disabled:opacity-60"
+                    >{{ isPaymentProcessing ? 'Подготовка...' : 'Оплатить' }}</button>
                 </div>
             </div>
 
-            <PaymentModal
-                v-if="isPaymentProcessing"
-                :is-open="isPaymentProcessing"
-                mode="topup"
-                :data="paymentData"
-                @close="isPaymentProcessing = false"
+            <YooKassaWidgetModal
+                :is-open="isPaymentWidgetOpen"
+                :confirmation-token="paymentToken"
+                :payment-id="paymentId"
+                :amount="topUpAmount"
+                @close="closePaymentWidget"
+                @paid="handlePaymentPaid"
             />
         </Teleport>
 
