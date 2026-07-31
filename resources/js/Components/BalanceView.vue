@@ -8,7 +8,7 @@ import PaymentModal from './PaymentModal.vue'
 
 const page = usePage()
 const amount = ref('')
-const paymentMethod = ref<'card' | 'sbp' | null>(null)
+const paymentMethod = ref<'card' | 'sbp' | null>('card')
 const currentMode = ref<'topup' | 'view'>('topup')
 
 const showOverlay = ref(false)
@@ -144,12 +144,13 @@ const modalData = computed(() => {
 
     <div class="mb-8 shrink-0">
       <label class="block text-[10px] text-slate-500 font-black uppercase mb-3 tracking-widest italic ml-1">Метод оплаты</label>
+      <p class="text-[9px] text-white/30 uppercase tracking-widest mb-3 ml-1">Тестовая ЮKassa: только карта (СБП/QR недоступны)</p>
       <div class="grid grid-cols-2 gap-4">
-        <button @click="paymentMethod = 'sbp'" :class="['group relative bg-[#0a0a0a] border rounded-2xl p-5 overflow-hidden flex flex-col items-center justify-center gap-3 transition-all active:scale-95', paymentMethod === 'sbp' ? 'border-[#22c55e] bg-[#22c55e]/5' : 'border-white/5 hover:border-white/20']">
-          <svg class="w-7 h-7" :class="paymentMethod === 'sbp' ? 'text-[#22c55e]' : 'text-white/20'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <button disabled class="group relative bg-[#0a0a0a] border border-white/5 rounded-2xl p-5 overflow-hidden flex flex-col items-center justify-center gap-3 opacity-30 cursor-not-allowed">
+          <svg class="w-7 h-7 text-white/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="2" y="2" width="8" height="8" rx="1" /><rect x="14" y="2" width="8" height="8" rx="1" /><rect x="2" y="14" width="8" height="8" rx="1" /><path d="M14 14h2m4 0h2M14 18h2m0 4h2M20 18h2" />
           </svg>
-          <span class="block font-black uppercase tracking-widest text-sm italic" :class="paymentMethod === 'sbp' ? 'text-[#22c55e]' : 'text-white'">СБП</span>
+          <span class="block font-black uppercase tracking-widest text-sm italic text-white/40">СБП</span>
         </button>
         <button @click="paymentMethod = 'card'" :class="['group relative bg-[#0a0a0a] border rounded-2xl p-5 overflow-hidden flex flex-col items-center justify-center gap-3 transition-all active:scale-95', paymentMethod === 'card' ? 'border-[#22c55e] bg-[#22c55e]/5' : 'border-white/5 hover:border-white/20']">
           <svg class="w-7 h-7" :class="paymentMethod === 'card' ? 'text-[#22c55e]' : 'text-white/20'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">

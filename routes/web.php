@@ -303,6 +303,7 @@ Route::prefix('api/shell')->group(function () {
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
     Route::post('/login', [ShellApiController::class, 'login']);
     Route::get('/balance', [ShellApiController::class, 'getBalance']);
+    Route::post('/billing/topup', [ShellApiController::class, 'topUp']);
     Route::get('/games', [ShellApiController::class, 'getGames']);
     Route::get('/games/tops', [ShellApiController::class, 'getGameTops']);
     Route::post('/games/record-launch', [ShellApiController::class, 'recordGameLaunch']);

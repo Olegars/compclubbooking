@@ -20,7 +20,7 @@ const smsModalRef = ref<InstanceType<typeof SmsModal> | null>(null)
 const isTopUpInputOpen = ref(false)
 const isPaymentProcessing = ref(false)
 const topUpAmount = ref(500)
-const paymentMethod = ref<'card' | 'sbp'>('sbp')
+const paymentMethod = ref<'card' | 'sbp'>('card')
 const paymentData = ref<any>({})
 const localBalance = ref<number | null>(null)
 
@@ -102,7 +102,7 @@ const openTopUp = () => {
         return
     }
     topUpAmount.value = 500
-    paymentMethod.value = 'sbp'
+    paymentMethod.value = 'card'
     isTopUpInputOpen.value = true
 }
 
@@ -316,8 +316,9 @@ onUnmounted(() => {
                     <div class="grid grid-cols-2 gap-3 mb-8">
                         <button
                             type="button"
-                            @click="paymentMethod = 'sbp'"
-                            :class="['py-3 rounded-xl font-black uppercase text-[10px] tracking-widest italic border', paymentMethod === 'sbp' ? 'bg-[#22c55e]/10 border-[#22c55e] text-[#22c55e]' : 'border-white/10 text-white/40']"
+                            disabled
+                            class="py-3 rounded-xl font-black uppercase text-[10px] tracking-widest italic border border-white/5 text-white/20 cursor-not-allowed"
+                            title="СБП недоступен в тестовом режиме ЮKassa"
                         >СБП</button>
                         <button
                             type="button"
@@ -325,6 +326,7 @@ onUnmounted(() => {
                             :class="['py-3 rounded-xl font-black uppercase text-[10px] tracking-widest italic border', paymentMethod === 'card' ? 'bg-[#22c55e]/10 border-[#22c55e] text-[#22c55e]' : 'border-white/10 text-white/40']"
                         >Карта</button>
                     </div>
+                    <p class="text-[9px] text-white/30 uppercase tracking-widest mb-6">Тестовая ЮKassa: только карта</p>
                     <button
                         type="button"
                         @click="proceedToPayment"

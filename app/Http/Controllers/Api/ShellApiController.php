@@ -24,6 +24,7 @@ use App\Services\GameRequestService;
 use App\Services\ProductStockService;
 use App\Services\UserCloudSettingsService;
 use App\Services\VideoMarkerService;
+use App\Services\YooKassaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -166,6 +167,87 @@ class ShellApiController extends Controller
                 'status' => 'error',
                 'message' => 'Ошибка сервера: ' . $e->getMessage()
             ]);
+        }
+    }
+
+    /**
+     * Create YooKassa top-up for the player on the active terminal session.
+     * Test shop: card only (SBP/QR is not available).
+     */
+    public function topUp(Request $request, YooKassaService $yookassa)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|min:1',
+            'amount' => 'required|numeric|min:100|max:100000',
+            'booking_id' => 'nullable|integer|min:1',
+            'user_id' => 'nullable|integer|min:1',
+        ]);
+
+        $terminalId = (int) $request->input('terminal_id');
+        $amount = round((float) $request->input('amount'), 2);
+
+        $user = null;
+        $bookingId = (int) $request->input('booking_id', 0);
+        if ($bookingId > 0) {
+            $booking = Booking::where('id', $bookingId)
+                ->where('status', 'active')
+                ->where(function ($query) use ($terminalId) {
+                    $query->where('computer_id', $terminalId)
+                        ->orWhereJsonContains('pc_ids', $terminalId)
+                        ->orWhereJsonContains('pc_ids', (string) $terminalId);
+                })
+                ->first();
+            if ($booking?->user_id) {
+                $user = User::find($booking->user_id);
+            }
+        }
+
+        if (!$user) {
+            $user = $this->resolveShellSessionUser(
+                $terminalId,
+                $request->filled('user_id') ? (int) $request->user_id : null
+            );
+        }
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Активная сессия не найдена.',
+            ], 403);
+        }
+
+        try {
+            // Shell UI opens confirmation_url in the system browser (card checkout).
+            $payment = $yookassa->createTopUp($user, $amount, 'card', '/account/dashboard');
+
+            if (!$payment->confirmation_url) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'ЮKassa не вернула ссылку на оплату',
+                ], 502);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Откройте ссылку и оплатите картой',
+                'payment_id' => $payment->uuid,
+                'confirmation_url' => $payment->confirmation_url,
+                'amount' => $payment->amount,
+                'method' => 'card',
+                'payment_status' => $payment->status,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell top-up failed', [
+                'user_id' => $user->id,
+                'terminal_id' => $terminalId,
+                'amount' => $amount,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Не удалось создать платёж: '.$e->getMessage(),
+            ], 502);
         }
     }
 
