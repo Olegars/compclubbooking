@@ -48,6 +48,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'http://localhost:22222/api/shell/login',
             'http://127.0.0.1:22222/api/shell/login',
             'api/billing/yookassa/webhook',
+            'api/billing/yookassa/sync/*',
             'admin/yookassaStatusSave',
         ]);
     })

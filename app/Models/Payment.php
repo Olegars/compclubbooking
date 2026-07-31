@@ -66,4 +66,18 @@ class Payment extends Model
     {
         return in_array($this->status, [self::STATUS_SUCCEEDED, self::STATUS_CANCELED], true);
     }
+
+    public function confirmationToken(): ?string
+    {
+        $token = $this->payload['confirmation_token'] ?? null;
+
+        return is_string($token) && $token !== '' ? $token : null;
+    }
+
+    public function confirmationType(): string
+    {
+        $type = $this->payload['confirmation_type'] ?? null;
+
+        return in_array($type, ['redirect', 'embedded'], true) ? $type : 'redirect';
+    }
 }

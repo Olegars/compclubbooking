@@ -80,6 +80,12 @@ Route::post('/api/billing/yookassa/webhook', [BillingController::class, 'webhook
 // Адрес, прописанный в ЛК ЮKassa; вне admin-гарда, иначе уведомление получит редирект на логин.
 Route::post('/admin/yookassaStatusSave', [BillingController::class, 'webhook']);
 
+// Embedded widget for Shell (uuid = capability token)
+Route::get('/billing/yookassa/widget/{payment}', [BillingController::class, 'widget'])
+    ->name('billing.yookassa.widget');
+Route::post('/api/billing/yookassa/sync/{payment}', [BillingController::class, 'sync'])
+    ->name('billing.yookassa.sync');
+
 /*
 |--------------------------------------------------------------------------
 | ОБЩИЕ API (ИГРОКИ + АДМИНЫ)

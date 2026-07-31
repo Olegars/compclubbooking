@@ -217,21 +217,23 @@ class ShellApiController extends Controller
         }
 
         try {
-            // Shell UI opens confirmation_url in the system browser (card checkout).
-            $payment = $yookassa->createTopUp($user, $amount, 'card', '/account/dashboard');
+            // Shell embeds YooKassa Checkout Widget (confirmation=embedded).
+            $payment = $yookassa->createTopUp($user, $amount, 'card', '/account/dashboard', 'embedded');
+            $token = $payment->confirmationToken();
 
-            if (!$payment->confirmation_url) {
+            if (!$token) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'ЮKassa не вернула ссылку на оплату',
+                    'message' => 'ЮKassa не вернула confirmation_token для виджета',
                 ], 502);
             }
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Откройте ссылку и оплатите картой',
+                'message' => 'Виджет оплаты готов',
                 'payment_id' => $payment->uuid,
-                'confirmation_url' => $payment->confirmation_url,
+                'confirmation_token' => $token,
+                'widget_url' => url('/billing/yookassa/widget/'.$payment->uuid),
                 'amount' => $payment->amount,
                 'method' => 'card',
                 'payment_status' => $payment->status,

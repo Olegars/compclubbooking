@@ -32,15 +32,23 @@ class YooKassaService
 
     /**
      * Create a YooKassa payment and persist a local Payment row.
+     *
+     * @param  string  $confirmation  redirect|embedded
      */
-    public function createTopUp(User $user, float $amount, string $method = 'card', ?string $returnTo = null): Payment
-    {
+    public function createTopUp(
+        User $user,
+        float $amount,
+        string $method = 'card',
+        ?string $returnTo = null,
+        string $confirmation = 'redirect',
+    ): Payment {
         if (!$this->isConfigured()) {
             throw new \RuntimeException('ЮKassa не настроена: укажите YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY.');
         }
 
         $amount = round($amount, 2);
         $method = in_array($method, ['card', 'sbp'], true) ? $method : 'card';
+        $confirmation = in_array($confirmation, ['redirect', 'embedded'], true) ? $confirmation : 'redirect';
 
         $payment = Payment::create([
             'user_id' => $user->id,
@@ -49,7 +57,10 @@ class YooKassaService
             'status' => Payment::STATUS_PENDING,
             'provider' => 'yookassa',
             'method' => $method,
-            'payload' => ['return_to' => $this->sanitizeReturnTo($returnTo)],
+            'payload' => [
+                'return_to' => $this->sanitizeReturnTo($returnTo),
+                'confirmation_type' => $confirmation,
+            ],
         ]);
 
         $returnUrl = route('billing.yookassa.return', ['payment' => $payment->uuid], absolute: true);
@@ -58,10 +69,6 @@ class YooKassaService
             'amount' => [
                 'value' => number_format($amount, 2, '.', ''),
                 'currency' => 'RUB',
-            ],
-            'confirmation' => [
-                'type' => 'redirect',
-                'return_url' => $returnUrl,
             ],
             'capture' => true,
             'description' => 'Пополнение депозита REACTOR #' . $payment->id,
@@ -72,10 +79,21 @@ class YooKassaService
             ],
         ];
 
-        // Prefer the method chosen in UI; YooKassa may still show alternatives in test.
-        $request['payment_method_data'] = [
-            'type' => $method === 'sbp' ? 'sbp' : 'bank_card',
-        ];
+        if ($confirmation === 'embedded') {
+            // Widget mode: no payment_method_data — restrict methods in the widget UI.
+            $request['confirmation'] = [
+                'type' => 'embedded',
+                'locale' => 'ru_RU',
+            ];
+        } else {
+            $request['confirmation'] = [
+                'type' => 'redirect',
+                'return_url' => $returnUrl,
+            ];
+            $request['payment_method_data'] = [
+                'type' => $method === 'sbp' ? 'sbp' : 'bank_card',
+            ];
+        }
 
         try {
             $response = $this->client->createPayment($request, $payment->idempotency_key);
@@ -87,14 +105,34 @@ class YooKassaService
             throw $e;
         }
 
-        $confirmationUrl = $response->getConfirmation()?->getConfirmationUrl();
+        $confirmationObj = $response->getConfirmation();
+        $confirmationUrl = null;
+        $confirmationToken = null;
+        if ($confirmationObj) {
+            if (method_exists($confirmationObj, 'getConfirmationUrl')) {
+                $confirmationUrl = $confirmationObj->getConfirmationUrl();
+            }
+            if (method_exists($confirmationObj, 'getConfirmationToken')) {
+                $confirmationToken = $confirmationObj->getConfirmationToken();
+            }
+        }
+
+        $asArray = json_decode(json_encode($response), true) ?: [];
+        if (!$confirmationUrl) {
+            $confirmationUrl = $asArray['confirmation']['confirmation_url'] ?? null;
+        }
+        if (!$confirmationToken) {
+            $confirmationToken = $asArray['confirmation']['confirmation_token'] ?? null;
+        }
 
         $payment->update([
             'provider_payment_id' => $response->getId(),
             'confirmation_url' => $confirmationUrl,
             'status' => $this->mapStatus((string) $response->getStatus()),
             'payload' => array_merge($payment->payload ?? [], [
-                'created' => json_decode(json_encode($response), true),
+                'created' => $asArray,
+                'confirmation_token' => $confirmationToken,
+                'confirmation_type' => $confirmation,
             ]),
         ]);
 

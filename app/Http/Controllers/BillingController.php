@@ -105,4 +105,49 @@ class BillingController extends Controller
         return redirect($returnTo)
             ->with('info', 'Платёж ещё обрабатывается. Баланс обновится в течение минуты.');
     }
+
+    /**
+     * Embedded widget page for Shell (no auth — uuid is the capability token).
+     */
+    public function widget(string $payment)
+    {
+        $local = Payment::query()->where('uuid', $payment)->firstOrFail();
+        $token = $local->confirmationToken();
+
+        if (!$token && !$local->isFinal()) {
+            abort(409, 'Платёж ещё не готов к отображению виджета');
+        }
+
+        return response()
+            ->view('billing.yookassa-widget', [
+                'payment' => $local,
+                'confirmationToken' => $token,
+                'syncUrl' => url('/api/billing/yookassa/sync/'.$local->uuid),
+            ])
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate');
+    }
+
+    /**
+     * Shell/widget asks backend to sync payment status after checkout events.
+     */
+    public function sync(string $payment)
+    {
+        $local = Payment::query()->where('uuid', $payment)->firstOrFail();
+
+        try {
+            $local = $this->yookassa->syncAndFulfill($local);
+        } catch (\Throwable $e) {
+            Log::warning('YooKassa sync failed: '.$e->getMessage(), [
+                'payment_uuid' => $local->uuid,
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'payment_id' => $local->uuid,
+            'payment_status' => $local->status,
+            'amount' => $local->amount,
+            'paid' => $local->isSucceeded(),
+        ]);
+    }
 }
