@@ -10,7 +10,8 @@
         html, body {
             margin: 0;
             height: 100%;
-            background: #080808;
+            /* Совпадает с фоном попапов шелла (Theme.bgPanel). */
+            background: #0a0a0a;
             color: #f5f5f5;
             font-family: Inter, Segoe UI, system-ui, sans-serif;
             overflow: hidden;
