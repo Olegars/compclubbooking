@@ -10,6 +10,7 @@ Route::prefix('shell')->group(function () {
     Route::post('/login', [ShellApiController::class, 'login']);
     Route::get('/balance', [ShellApiController::class, 'getBalance']);
     Route::get('/games', [ShellApiController::class, 'getGames']);
+    Route::get('/quick-apps', [ShellApiController::class, 'getQuickApps']);
     Route::get('/games/tops', [ShellApiController::class, 'getGameTops']);
     Route::post('/games/record-launch', [ShellApiController::class, 'recordGameLaunch']);
     Route::post('/hid/snapshot', [ShellApiController::class, 'saveHidSnapshot']);

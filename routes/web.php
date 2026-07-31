@@ -33,6 +33,7 @@ use App\Http\Controllers\Admin\StaffController;
 use App\Http\Controllers\Admin\TariffController;
 use App\Http\Controllers\Admin\ZoneController;
 use App\Http\Controllers\Admin\LicenseController;
+use App\Http\Controllers\Admin\QuickAppController;
 use App\Http\Controllers\Admin\TournamentController;
 use App\Http\Controllers\Admin\PromoCodeAdminController;
 use App\Http\Controllers\Admin\AchievementAdminController;
@@ -235,6 +236,10 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::put('/licenses/games/{game}/offers/{club}', [LicenseController::class, 'updateOffer']);
         Route::delete('/licenses/accounts/{account}', [LicenseController::class, 'destroyAccount']);
 
+        Route::get('/quick-apps', [QuickAppController::class, 'index'])->name('admin.quick-apps');
+        Route::post('/quick-apps', [QuickAppController::class, 'store']);
+        Route::delete('/quick-apps/{quickApp}', [QuickAppController::class, 'destroy']);
+
         // ВИДЕОНАБЛЮДЕНИЕ · МЕТКИ НА ТАЙМЛАЙНЕ
         Route::get('/video-surveillance', [VideoSurveillanceController::class, 'index'])->name('admin.video-surveillance');
         Route::put('/video-surveillance', [VideoSurveillanceController::class, 'updateSettings']);
@@ -311,6 +316,7 @@ Route::prefix('api/shell')->group(function () {
     Route::get('/balance', [ShellApiController::class, 'getBalance']);
     Route::post('/billing/topup', [ShellApiController::class, 'topUp']);
     Route::get('/games', [ShellApiController::class, 'getGames']);
+    Route::get('/quick-apps', [ShellApiController::class, 'getQuickApps']);
     Route::get('/games/tops', [ShellApiController::class, 'getGameTops']);
     Route::post('/games/record-launch', [ShellApiController::class, 'recordGameLaunch']);
 

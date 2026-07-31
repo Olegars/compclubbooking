@@ -12,6 +12,7 @@ use App\Models\GameAccount;
 use App\Models\GameAccountReservation;
 use App\Models\GameAccountMachineCache;
 use App\Models\Game;
+use App\Models\QuickApp;
 use App\Models\Computer;
 use App\Support\OrderDeliveryTarget;
 use App\Models\UserGameStat;
@@ -338,6 +339,35 @@ class ShellApiController extends Controller
         } catch (\Exception $e) {
             Log::error('Shell API getGames: '.$e->getMessage());
             return response()->json([]);
+        }
+    }
+
+    public function getQuickApps()
+    {
+        try {
+            return response()->json([
+                'status' => 'success',
+                'apps' => QuickApp::query()
+                    ->where('is_enabled', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('title')
+                    ->get()
+                    ->map(fn (QuickApp $app) => [
+                        'id' => $app->id,
+                        'title' => $app->title,
+                        'exe_path' => $app->exe_path,
+                        'args' => $app->launch_args ?? '',
+                    ])
+                    ->values(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API getQuickApps: '.$e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'apps' => [],
+                'message' => 'Не удалось загрузить быстрый софт',
+            ], 500);
         }
     }
 
