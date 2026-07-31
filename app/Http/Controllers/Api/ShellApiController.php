@@ -20,6 +20,7 @@ use App\Models\ComputerInputAlert;
 use App\Models\ComputerSosAlert;
 use App\Services\AchievementService;
 use App\Services\BookingSessionTimingService;
+use App\Services\ComputerStatusService;
 use App\Services\GameRequestService;
 use App\Services\ProductStockService;
 use App\Services\UserCloudSettingsService;
@@ -1453,6 +1454,8 @@ class ShellApiController extends Controller
                         $booking->group->update(['status' => 'completed']);
                     }
                 });
+
+                app(ComputerStatusService::class)->syncFor((int) $termId);
 
                 if ($booking->user_id) {
                     try {

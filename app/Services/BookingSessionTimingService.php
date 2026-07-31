@@ -16,6 +16,7 @@ class BookingSessionTimingService
 {
     public function __construct(
         private readonly GameBookingService $bookings,
+        private readonly ComputerStatusService $computerStatuses,
     ) {
     }
 
@@ -186,6 +187,8 @@ class BookingSessionTimingService
             ->whereRaw('ends_at <= ?::timestamptz', [$nowIso])
             ->update(['status' => 'completed']);
 
+        $this->computerStatuses->syncFor($expiredBookings->pluck('computer_id'), $now);
+
         try {
             app(AchievementService::class)->evaluateForBookings($expiredBookings);
         } catch (\Throwable $e) {
@@ -237,6 +240,7 @@ class BookingSessionTimingService
 
         $this->shiftReservations($booking, $now, $newEndsAt);
         $this->syncGroupWindow($booking, 'active');
+        $this->computerStatuses->syncFor($computerId, $now);
 
         return [
             'booking' => $booking->fresh(),
@@ -269,6 +273,7 @@ class BookingSessionTimingService
             ]);
 
         $booking->group?->update(['status' => 'active']);
+        $this->computerStatuses->syncFor((int) $booking->computer_id, $now);
 
         return [
             'booking' => $booking->fresh(),
@@ -289,6 +294,7 @@ class BookingSessionTimingService
             'pin_code' => null,
         ]);
         $booking->group?->update(['status' => 'active']);
+        $this->computerStatuses->syncFor((int) $booking->computer_id, $now);
 
         return [
             'booking' => $booking->fresh(),
@@ -323,6 +329,8 @@ class BookingSessionTimingService
                 ->where('current_pc_id', $booking->computer_id)
                 ->update(['status' => 'free', 'current_pc_id' => null]);
         }
+
+        $this->computerStatuses->syncFor((int) $booking->computer_id, $now);
 
         $group = $booking->group;
         if (! $group) {

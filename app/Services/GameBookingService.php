@@ -360,6 +360,8 @@ class GameBookingService
                 );
             }
 
+            $computerIds = $group->bookings()->pluck('computer_id');
+
             $group->bookings()->update(['status' => 'cancelled']);
             GameAccountReservation::query()
                 ->whereHas('bookingGame', fn ($query) => $query->where('booking_group_id', $group->id))
@@ -371,6 +373,8 @@ class GameBookingService
                 'refunded_total_minor' => $group->refunded_total_minor + $refundMinor,
                 'cancelled_at' => now(),
             ]);
+
+            app(ComputerStatusService::class)->syncFor($computerIds);
 
             return $group->fresh();
         }, 3);
