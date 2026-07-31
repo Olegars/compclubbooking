@@ -100,10 +100,48 @@
     const syncUrl = @json($syncUrl);
     const statusEl = document.getElementById('status');
 
+    // Накопитель ошибок: статус-строку перетирает успешный render(),
+    // а шелл читает именно этот список через runJavaScript.
+    window.__payErrors = [];
+    function logError(where, text) {
+        window.__payErrors.push(where + ': ' + text);
+    }
+
+    window.addEventListener('error', function (e) {
+        logError('window.error', (e && e.message) || 'unknown');
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+        logError('unhandledrejection', describe(e && e.reason));
+    });
+
     function show(type, text) {
+        if (type === 'err') logError('widget', text);
         if (!statusEl) return;
         statusEl.className = 'banner show ' + type;
         statusEl.textContent = text;
+    }
+
+    // Ошибку виджета отдаём читаемой строкой: шелл снимает текст этого блока
+    // через runJavaScript, а '' + object превращался в "[object Object]".
+    function describe(value) {
+        if (value === null || value === undefined) return 'unknown';
+        if (typeof value === 'string') return value;
+        try {
+            var seen = [];
+            var json = JSON.stringify(value, function (k, v) {
+                if (typeof v === 'object' && v !== null) {
+                    if (seen.indexOf(v) !== -1) return '[circular]';
+                    seen.push(v);
+                }
+                return v;
+            });
+            if (json && json !== '{}') return json;
+        } catch (e) { /* ниже фолбэк */ }
+        var parts = [];
+        for (var k in value) {
+            try { parts.push(k + '=' + value[k]); } catch (e) { /* пропускаем */ }
+        }
+        return parts.length ? parts.join(', ') : Object.prototype.toString.call(value);
     }
 
     function syncPayment() {
@@ -120,12 +158,9 @@
 
     const checkout = new window.YooMoneyCheckoutWidget({
         confirmation_token: @json($confirmationToken),
-        customization: {
-            // Test shop: card only
-            payment_methods: ['bank_card']
-        },
+        return_url: @json($returnUrl),
         error_callback: function (error) {
-            show('err', 'Ошибка виджета: ' + (error || 'unknown'));
+            show('err', 'Ошибка виджета: ' + describe(error));
         }
     });
 
@@ -152,7 +187,7 @@
     checkout.render('payment-form').then(function () {
         show('info', 'Введите данные карты тестового магазина ЮKassa.');
     }).catch(function (e) {
-        show('err', 'Не удалось показать форму: ' + (e && e.message ? e.message : e));
+        show('err', 'Не удалось показать форму: ' + describe(e));
     });
 })();
 </script>

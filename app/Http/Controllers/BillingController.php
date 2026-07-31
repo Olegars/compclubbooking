@@ -123,6 +123,9 @@ class BillingController extends Controller
                 'payment' => $local,
                 'confirmationToken' => $token,
                 'syncUrl' => url('/api/billing/yookassa/sync/'.$local->uuid),
+                // Обязательный параметр виджета ЮKassa (см. quick-start).
+                // Берём host из текущего запроса (как syncUrl), а не APP_URL.
+                'returnUrl' => url('/billing/yookassa/return/'.$local->uuid),
             ])
             ->header('Cache-Control', 'no-store, no-cache, must-revalidate');
     }
