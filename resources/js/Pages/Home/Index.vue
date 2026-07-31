@@ -3,7 +3,8 @@ import { computed, ref } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 
 import MainLayout from '@/Layouts/MainLayout.vue'
-import ClubMap from '@/Components/ClubMap.vue'
+import ClubMap, { type RoomInfoShowPayload } from '@/Components/ClubMap.vue'
+import ZoneInfoModal from '@/Components/ZoneInfoModal.vue'
 import SiteFooter from '@/Components/SiteFooter.vue'
 
 type SeatKinds = Record<string, { total: number; free: number }>
@@ -126,6 +127,14 @@ const gamePriceLabel = (game: LandingGame) => {
     if (!game.price_rub) return 'Включено в тариф'
     const unit = game.unit_minutes === 60 ? 'час' : `${game.unit_minutes} мин`
     return `${formatMoney(game.price_rub)} ₽ / ${unit}`
+}
+
+const selectedRoomInfo = ref<RoomInfoShowPayload | null>(null)
+const showInfoModal = ref(false)
+
+const openRoomInfo = (room: RoomInfoShowPayload) => {
+    selectedRoomInfo.value = room
+    showInfoModal.value = true
 }
 
 const openSeat = (seatId: string) => router.visit(bookingUrl(seatId))
@@ -359,6 +368,7 @@ const steps = [
                         :occupied-ids="map.occupied_ids"
                         @toggle-seat="openSeat"
                         @toggle-addon-seats="openAddonSeats"
+                        @show-info="openRoomInfo"
                     />
                 </div>
                 <p class="mt-3 text-[12px] text-white/40">Нажмите на свободное место, чтобы перейти к бронированию.</p>
@@ -455,6 +465,8 @@ const steps = [
 
             <SiteFooter :contacts="contacts" />
         </div>
+
+        <ZoneInfoModal :isOpen="showInfoModal" :room="selectedRoomInfo" @close="showInfoModal = false" />
     </MainLayout>
 </template>
 
