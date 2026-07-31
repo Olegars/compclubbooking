@@ -38,6 +38,16 @@
         }
         #payment-form { min-height: 320px; }
 
+        /* Фон под блоками формы виджет не красит — по документации это фон
+           контейнера, то есть наш. Просвечивать он будет только через
+           прозрачный iframe, а Chromium делает встроенный документ
+           непрозрачно-белым, когда у страницы color-scheme: dark, а у
+           документа ЮKassa схема не задана. Возвращаем фрейму normal. */
+        #payment-form iframe {
+            color-scheme: normal;
+            background-color: transparent !important;
+        }
+
         .loader {
             display: flex;
             min-height: 340px;
