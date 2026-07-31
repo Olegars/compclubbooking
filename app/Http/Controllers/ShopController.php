@@ -276,10 +276,6 @@ class ShopController extends Controller
                     ]);
                 }
 
-                foreach ($qtyByProduct as $pid => $qty) {
-                    $stockService->decrementUnmarked($products[$pid], $qty);
-                }
-
                 $order = Order::create([
                     'user_id'      => $user ? $user->id : null,
                     'product_name' => $summary,
@@ -288,6 +284,10 @@ class ShopController extends Controller
                     'pc_name'      => $pcName,
                     'status'       => 'pending',
                 ]);
+
+                foreach ($qtyByProduct as $pid => $qty) {
+                    $stockService->decrementUnmarked($products[$pid], $qty, (int) $order->id);
+                }
 
                 $stockService->reserveMarkedForOrder((int) $order->id, $lineItems);
             });

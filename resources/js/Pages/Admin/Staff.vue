@@ -34,7 +34,7 @@ const formatMoney = (val: number | string | null) => {
 
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div v-for="person in staff" :key="person.id"
-                     class="bg-[#050505] border border-white/5 rounded-[2rem] p-8 relative group hover:border-purple-500/30 transition-all shadow-xl">
+                     class="bg-[#050505] border border-white/5 rounded-[0.875rem] p-8 relative group hover:border-purple-500/30 transition-all shadow-xl">
 
                     <div class="absolute top-6 right-6 text-[9px] uppercase font-black tracking-widest px-3 py-1 rounded-full border"
                          :class="{

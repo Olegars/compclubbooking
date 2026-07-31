@@ -209,18 +209,20 @@ const proceedToPayment = async () => {
     paymentData.value = { mode: 'topup', price: topUpAmount.value, date: new Date().toLocaleDateString('ru-RU') };
 
     try {
-        // Payment stub: fake success UI + real deposit_balance credit
-        const { data } = await axios.post('/api/billing/topup', { amount: topUpAmount.value, method: 'system' });
-        const next = parseFloat(String(data.new_balance ?? data.deposit_balance ?? data.balance ?? 0));
-        if (!isNaN(next) && next !== currentBalance.value) {
-            const old = currentBalance.value;
-            currentBalance.value = next;
-            animateValue(old, next);
+        const { data } = await axios.post('/api/billing/topup', {
+            amount: topUpAmount.value,
+            method: 'card',
+            return_to: window.location.pathname + window.location.search,
+        });
+        if (data.confirmation_url) {
+            window.location.href = data.confirmation_url;
+            return;
         }
-        fetchDashboardData();
-    } catch (e) {
         isPaymentProcessing.value = false;
-        alert('Сбой транзакции пополнения');
+        alert('Не удалось получить ссылку на оплату');
+    } catch (e: any) {
+        isPaymentProcessing.value = false;
+        alert(e.response?.data?.message || 'Сбой транзакции пополнения');
     }
 }
 
@@ -249,7 +251,7 @@ onMounted(() => {
 
             <div class="md:col-span-2 space-y-8">
 
-                <div class="bg-[#0a0a0a] border border-[#22c55e]/20 rounded-[3rem] p-10 relative overflow-hidden shadow-2xl shadow-[#22c55e]/5">
+                <div class="bg-[#0a0a0a] border border-[#22c55e]/20 rounded-[1.125rem] p-10 relative overflow-hidden shadow-2xl shadow-[#22c55e]/5">
                     <div class="absolute top-0 right-0 p-8 opacity-10">
                         <svg class="w-32 h-32 text-[#22c55e]" fill="currentColor" viewBox="0 0 24 24"><path d="M21 18l-3-3h-5l-2 2h-3l-2-2H4l-3 3V5l3-3h5l2 2h3l2-2h5l3 3v13z"/></svg>
                     </div>
@@ -273,7 +275,7 @@ onMounted(() => {
                 </div>
 
                 <div v-if="activeBookings.length > 0" class="space-y-4">
-                    <div v-for="b in activeBookings" :key="b.id" class="bg-[#0a0a0a] border border-[#3b82f6]/40 rounded-[2.5rem] p-8 relative overflow-hidden group hover:border-[#3b82f6] transition-colors">
+                    <div v-for="b in activeBookings" :key="b.id" class="bg-[#0a0a0a] border border-[#3b82f6]/40 rounded-[1rem] p-8 relative overflow-hidden group hover:border-[#3b82f6] transition-colors">
                         <div class="absolute inset-0 bg-gradient-to-r from-[#3b82f6]/5 to-transparent pointer-events-none"></div>
 
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-6 relative z-10">
@@ -310,7 +312,7 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <div class="bg-[#0a0a0a] border border-white/5 rounded-[3rem] p-10 shadow-xl">
+                <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-10 shadow-xl">
                     <span class="text-[10px] uppercase text-white/40 tracking-[0.4em] font-black italic block mb-10">Лог транзакций</span>
                     <div v-if="transactions.length > 0" class="space-y-6">
                         <div v-for="tx in transactions" :key="tx.id" class="flex items-center justify-between group transition-all">
@@ -333,7 +335,7 @@ onMounted(() => {
             </div>
 
             <div class="space-y-8 md:sticky md:top-28 md:self-start">
-                <div class="bg-[#0a0a0a] border border-white/5 rounded-[3rem] p-10 flex flex-col items-center shadow-xl">
+                <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-10 flex flex-col items-center shadow-xl">
                     <div class="w-32 h-32 rounded-full bg-black flex items-center justify-center text-5xl font-black text-[#22c55e] italic border-2 border-[#22c55e]/30 mb-6 overflow-hidden shadow-[0_0_40px_rgba(34,197,94,0.1)]">
                         <img v-if="page.props.user?.avatar" :src="`/images/avatars/${page.props.user.avatar}`" class="w-full h-full object-cover" />
                         <span v-else>{{ (page.props.user?.name || 'S')[0] }}</span>
@@ -342,7 +344,7 @@ onMounted(() => {
                     <div class="mt-4 px-6 py-2 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[10px] text-[#22c55e] font-black uppercase italic tracking-widest">СТАЛКЕР</div>
                 </div>
 
-                <div v-if="achievements.length > 0" class="bg-[#0a0a0a] border border-purple-500/20 rounded-[3rem] p-8 shadow-xl">
+                <div v-if="achievements.length > 0" class="bg-[#0a0a0a] border border-purple-500/20 rounded-[1.125rem] p-8 shadow-xl">
                     <span class="text-[10px] uppercase text-purple-400 tracking-[0.4em] font-black italic block mb-6">Достижения и трофеи</span>
                     <div class="space-y-4">
                         <div v-for="a in achievements" :key="a.id"
@@ -375,11 +377,11 @@ onMounted(() => {
                 </div>
 
                 <nav class="flex flex-col gap-4">
-                    <Link href="/account/profile" class="p-6 bg-[#0a0a0a] border border-white/5 rounded-[2rem] flex items-center justify-between hover:bg-white/5 transition-all group">
+                    <Link href="/account/profile" class="p-6 bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] flex items-center justify-between hover:bg-white/5 transition-all group">
                         <span class="text-[10px] font-black uppercase text-white/40 group-hover:text-white transition-colors italic tracking-widest">Настройки профиля</span>
                         <svg class="w-6 h-6 text-[#22c55e] transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
                     </Link>
-                    <button @click="router.post('/logout')" class="p-6 bg-[#0a0a0a] border border-white/5 rounded-[2rem] flex items-center justify-between hover:bg-red-500/10 transition-all group">
+                    <button @click="router.post('/logout')" class="p-6 bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] flex items-center justify-between hover:bg-red-500/10 transition-all group">
                         <span class="text-[10px] font-black uppercase text-white/40 group-hover:text-red-500 transition-colors italic tracking-widest">Завершить рейд</span>
                         <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M17 16l4-4m0 0l-4-4m4 4H7"/></svg>
                     </button>
@@ -390,7 +392,7 @@ onMounted(() => {
         <Teleport to="body">
             <div v-if="isTopUpInputOpen" class="fixed inset-0 flex items-center justify-center z-[9998] p-6 animate-in fade-in duration-300">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="isTopUpInputOpen = false"></div>
-                <div class="relative max-w-md w-full bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3.5rem] p-12 text-center shadow-[0_0_120px_rgba(34,197,94,0.2)]">
+                <div class="relative max-w-md w-full bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1.25rem] p-12 text-center shadow-[0_0_120px_rgba(34,197,94,0.2)]">
                     <h2 class="text-[#22c55e] text-4xl font-black uppercase italic mb-10 tracking-tighter">Reactor Pay</h2>
                     <div class="grid grid-cols-3 gap-3 mb-8">
                         <button v-for="amount in [500, 1000, 2000]" :key="amount" @click="topUpAmount = amount"
@@ -398,23 +400,23 @@ onMounted(() => {
                             {{ amount }}
                         </button>
                     </div>
-                    <input v-model="topUpAmount" type="number" class="w-full bg-black border-2 border-white/5 rounded-[2.5rem] py-8 text-6xl font-black text-center text-white mb-10 outline-none focus:border-[#22c55e]/50 transition-colors" />
-                    <button @click="proceedToPayment" class="w-full py-7 bg-[#22c55e] text-black font-black uppercase rounded-[2.5rem] italic hover:bg-[#2ae06d] transition-colors shadow-[0_0_20px_rgba(34,197,94,0.3)]">Подтвердить</button>
+                    <input v-model="topUpAmount" type="number" class="w-full bg-black border-2 border-white/5 rounded-[1rem] py-8 text-6xl font-black text-center text-white mb-10 outline-none focus:border-[#22c55e]/50 transition-colors" />
+                    <button @click="proceedToPayment" class="w-full py-7 bg-[#22c55e] text-black font-black uppercase rounded-[1rem] italic hover:bg-[#2ae06d] transition-colors shadow-[0_0_20px_rgba(34,197,94,0.3)]">Подтвердить</button>
                 </div>
             </div>
 
             <div v-if="isQuickStartOpen" class="fixed inset-0 flex items-center justify-center z-[9998] p-6 animate-in zoom-in duration-300">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="isQuickStartOpen = false"></div>
-                <div class="relative max-w-md w-full bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3.5rem] p-12 text-center shadow-[0_0_80px_rgba(34,197,94,0.1)]">
+                <div class="relative max-w-md w-full bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1.25rem] p-12 text-center shadow-[0_0_80px_rgba(34,197,94,0.1)]">
                     <h2 class="text-[#22c55e] text-4xl font-black uppercase italic mb-10 tracking-tighter">Вход в узел</h2>
-                    <input v-model="quickStartPc" type="number" placeholder="№ ПК" class="w-full bg-black border-2 border-white/5 rounded-[2.5rem] py-10 text-7xl font-black text-center text-[#22c55e] mb-12 outline-none focus:border-[#22c55e]/50 transition-colors" />
-                    <button @click="isQuickStartOpen = false" class="w-full py-7 bg-[#22c55e] text-black font-black uppercase rounded-[2.5rem] italic shadow-[0_0_20px_rgba(34,197,94,0.2)]">Подключиться</button>
+                    <input v-model="quickStartPc" type="number" placeholder="№ ПК" class="w-full bg-black border-2 border-white/5 rounded-[1rem] py-10 text-7xl font-black text-center text-[#22c55e] mb-12 outline-none focus:border-[#22c55e]/50 transition-colors" />
+                    <button @click="isQuickStartOpen = false" class="w-full py-7 bg-[#22c55e] text-black font-black uppercase rounded-[1rem] italic shadow-[0_0_20px_rgba(34,197,94,0.2)]">Подключиться</button>
                 </div>
             </div>
 
             <div v-if="isReviewModalOpen" class="fixed inset-0 flex items-center justify-center z-[9998] p-6 animate-in fade-in duration-300">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="isReviewModalOpen = false"></div>
-                <div class="relative max-w-md w-full bg-[#0a0a0a] border border-yellow-500/30 rounded-[3.5rem] p-10 sm:p-12 text-center shadow-[0_0_120px_rgba(234,179,8,0.15)]">
+                <div class="relative max-w-md w-full bg-[#0a0a0a] border border-yellow-500/30 rounded-[1.25rem] p-10 sm:p-12 text-center shadow-[0_0_120px_rgba(234,179,8,0.15)]">
                     <h2 class="text-yellow-500 text-4xl font-black uppercase italic mb-3 tracking-tighter">Бонус +{{ bonusAmount }}₽</h2>
                     <p class="text-white/30 text-[10px] uppercase tracking-[0.25em] font-black italic mb-6 leading-relaxed">
                         Оставь отзыв 5★ на картах и вставь сюда его текст. Проверяем раз в сутки.
@@ -446,14 +448,14 @@ onMounted(() => {
                             v-model="reviewText"
                             rows="5"
                             :placeholder="`Текст отзыва как на картах (от ${minReviewLength} символов)`"
-                            class="w-full bg-black border-2 border-white/5 rounded-[2rem] py-5 px-6 text-sm font-mono text-white mb-4 outline-none focus:border-yellow-500/50 transition-colors placeholder:text-white/15 resize-none text-left"
+                            class="w-full bg-black border-2 border-white/5 rounded-[0.875rem] py-5 px-6 text-sm font-mono text-white mb-4 outline-none focus:border-yellow-500/50 transition-colors placeholder:text-white/15 resize-none text-left"
                         />
                         <div v-if="reviewError" class="mb-4 text-red-400 text-[10px] uppercase font-black italic tracking-widest">{{ reviewError }}</div>
                         <button
                             type="button"
                             :disabled="isReviewSubmitting"
                             @click="submitReview"
-                            class="w-full py-7 bg-yellow-500 text-black font-black uppercase rounded-[2.5rem] italic hover:bg-yellow-400 transition-colors shadow-[0_0_20px_rgba(234,179,8,0.3)] disabled:opacity-50"
+                            class="w-full py-7 bg-yellow-500 text-black font-black uppercase rounded-[1rem] italic hover:bg-yellow-400 transition-colors shadow-[0_0_20px_rgba(234,179,8,0.3)] disabled:opacity-50"
                         >
                             {{ isReviewSubmitting ? 'Отправка...' : 'Отправить на проверку' }}
                         </button>
@@ -462,7 +464,7 @@ onMounted(() => {
                         v-else
                         type="button"
                         @click="isReviewModalOpen = false"
-                        class="w-full py-7 bg-white/5 border border-white/10 text-white/50 font-black uppercase rounded-[2.5rem] italic hover:bg-white/10 transition-colors"
+                        class="w-full py-7 bg-white/5 border border-white/10 text-white/50 font-black uppercase rounded-[1rem] italic hover:bg-white/10 transition-colors"
                     >
                         Закрыть
                     </button>
@@ -471,7 +473,7 @@ onMounted(() => {
 
             <div v-if="isGameRequestOpen" class="fixed inset-0 flex items-center justify-center z-[9998] p-6 animate-in fade-in duration-300">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="isGameRequestOpen = false"></div>
-                <div class="relative max-w-md w-full bg-[#0a0a0a] border border-cyan-500/30 rounded-[3.5rem] p-10 sm:p-12 text-center shadow-[0_0_120px_rgba(34,211,238,0.12)]">
+                <div class="relative max-w-md w-full bg-[#0a0a0a] border border-cyan-500/30 rounded-[1.25rem] p-10 sm:p-12 text-center shadow-[0_0_120px_rgba(34,211,238,0.12)]">
                     <h2 class="text-cyan-400 text-4xl font-black uppercase italic mb-3 tracking-tighter">Хочу игру</h2>
                     <p class="text-white/30 text-[10px] uppercase tracking-[0.25em] font-black italic mb-8 leading-relaxed">
                         Напиши тайтл, которого нет на дисках. Если наберётся спрос — поставим.
@@ -485,21 +487,21 @@ onMounted(() => {
                             type="text"
                             maxlength="120"
                             placeholder="Название игры"
-                            class="w-full bg-black border-2 border-white/5 rounded-[2rem] py-5 px-6 text-sm font-mono text-white mb-4 outline-none focus:border-cyan-500/50 transition-colors placeholder:text-white/15 text-left"
+                            class="w-full bg-black border-2 border-white/5 rounded-[0.875rem] py-5 px-6 text-sm font-mono text-white mb-4 outline-none focus:border-cyan-500/50 transition-colors placeholder:text-white/15 text-left"
                         />
                         <textarea
                             v-model="gameRequestComment"
                             rows="3"
                             maxlength="500"
                             placeholder="Комментарий (необязательно)"
-                            class="w-full bg-black border-2 border-white/5 rounded-[2rem] py-5 px-6 text-sm font-mono text-white mb-4 outline-none focus:border-cyan-500/50 transition-colors placeholder:text-white/15 resize-none text-left"
+                            class="w-full bg-black border-2 border-white/5 rounded-[0.875rem] py-5 px-6 text-sm font-mono text-white mb-4 outline-none focus:border-cyan-500/50 transition-colors placeholder:text-white/15 resize-none text-left"
                         />
                         <div v-if="gameRequestError" class="mb-4 text-red-400 text-[10px] uppercase font-black italic tracking-widest">{{ gameRequestError }}</div>
                         <button
                             type="button"
                             :disabled="isGameRequestSubmitting"
                             @click="submitGameRequest"
-                            class="w-full py-7 bg-cyan-400 text-black font-black uppercase rounded-[2.5rem] italic hover:bg-cyan-300 transition-colors disabled:opacity-40"
+                            class="w-full py-7 bg-cyan-400 text-black font-black uppercase rounded-[1rem] italic hover:bg-cyan-300 transition-colors disabled:opacity-40"
                         >
                             {{ isGameRequestSubmitting ? 'Отправка...' : 'Отправить заявку' }}
                         </button>

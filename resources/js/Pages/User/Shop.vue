@@ -233,7 +233,7 @@ onMounted(fetchProducts)
 
             <div v-if="filteredProducts.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div v-for="item in filteredProducts" :key="item.id"
-                     class="bg-[#0a0a0a] border border-white/5 rounded-[2.5rem] p-6 transition-all relative overflow-hidden flex flex-col shadow-xl"
+                     class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-6 transition-all relative overflow-hidden flex flex-col shadow-xl"
                      :class="{'opacity-40 grayscale': item.stock <= 0, 'hover:border-[#22c55e]/40 group': item.stock > 0}">
 
                     <div v-if="item.stock <= 0" class="absolute top-4 left-0 right-0 z-10 flex justify-center">
@@ -242,7 +242,7 @@ onMounted(fetchProducts)
                         </span>
                     </div>
 
-                    <div class="aspect-square bg-gradient-to-br from-white/5 to-transparent rounded-[2rem] mb-6 flex items-center justify-center overflow-hidden border border-white/5 relative">
+                    <div class="aspect-square bg-gradient-to-br from-white/5 to-transparent rounded-[0.875rem] mb-6 flex items-center justify-center overflow-hidden border border-white/5 relative">
                         <img :src="item.image || '/images/shop/default.png'"
                              @error="handleImageError"
                              class="w-3/4 h-3/4 object-contain transition-transform duration-500"
@@ -272,7 +272,7 @@ onMounted(fetchProducts)
                 </div>
             </div>
 
-            <div v-else class="py-20 text-center border border-dashed border-white/5 rounded-[3rem]">
+            <div v-else class="py-20 text-center border border-dashed border-white/5 rounded-[1.125rem]">
                 <p class="text-white/10 uppercase font-black italic tracking-[0.5em]">Товары в этой категории временно отсутствуют</p>
             </div>
         </div>
@@ -349,7 +349,7 @@ onMounted(fetchProducts)
 
             <div v-if="confirmCheckout" class="fixed inset-0 z-[999999] flex items-center justify-center p-4">
                 <div class="absolute inset-0 bg-black/90 backdrop-blur-md" @click="confirmCheckout = false"></div>
-                <div class="relative w-full max-w-sm bg-[#050505] border-2 border-[#22c55e]/30 rounded-[3rem] p-10 shadow-[0_0_100px_rgba(34,197,94,0.2)] text-center animate-in zoom-in duration-300">
+                <div class="relative w-full max-w-sm bg-[#050505] border-2 border-[#22c55e]/30 rounded-[1.125rem] p-10 shadow-[0_0_100px_rgba(34,197,94,0.2)] text-center animate-in zoom-in duration-300">
                     <div class="text-[10px] text-[#22c55e] uppercase font-black tracking-[0.4em] mb-4 italic">Подтверждение заказа</div>
                     <div class="text-2xl font-black text-white uppercase italic leading-tight mb-2">{{ cartCount }} поз. · {{ Math.floor(cartTotal) }} ₽</div>
                     <ul class="text-left space-y-1 mb-8 max-h-40 overflow-y-auto">
@@ -370,7 +370,7 @@ onMounted(fetchProducts)
 
             <div v-if="successData.show" class="fixed inset-0 z-[999999] flex items-center justify-center p-4">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl"></div>
-                <div class="relative w-full max-w-sm bg-[#050505] border-2 border-[#22c55e] rounded-[3rem] p-10 text-center animate-in zoom-in duration-500">
+                <div class="relative w-full max-w-sm bg-[#050505] border-2 border-[#22c55e] rounded-[1.125rem] p-10 text-center animate-in zoom-in duration-500">
                     <div class="w-20 h-20 bg-[#22c55e]/10 border-2 border-[#22c55e] rounded-full flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(34,197,94,0.2)]">
                         <svg class="w-10 h-10 text-[#22c55e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
                     </div>
@@ -384,7 +384,7 @@ onMounted(fetchProducts)
 
             <div v-if="errorData.show" class="fixed inset-0 z-[999999] flex items-center justify-center p-4">
                 <div class="absolute inset-0 bg-black/90 backdrop-blur-md" @click="errorData.show = false"></div>
-                <div class="relative w-full max-w-sm bg-[#050505] border-2 border-red-500/30 rounded-[3rem] p-10 text-center shadow-[0_0_100px_rgba(239,68,68,0.2)]">
+                <div class="relative w-full max-w-sm bg-[#050505] border-2 border-red-500/30 rounded-[1.125rem] p-10 text-center shadow-[0_0_100px_rgba(239,68,68,0.2)]">
                     <h2 class="text-red-500 text-2xl font-black uppercase italic mb-4 tracking-tighter">Ошибка Транзакции</h2>
                     <p class="text-white/70 text-sm font-mono mb-8 italic leading-relaxed">{{ errorData.text }}</p>
                     <button type="button" @click="errorData.show = false" class="w-full py-5 bg-red-500/20 hover:bg-red-500 border border-red-500/50 hover:text-black rounded-2xl text-red-500 font-black uppercase transition-all italic tracking-widest cursor-pointer">ПОНЯТНО</button>

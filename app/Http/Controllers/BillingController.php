@@ -2,61 +2,107 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Transaction;
+use App\Models\Payment;
+use App\Services\YooKassaService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class BillingController extends Controller
 {
+    public function __construct(protected YooKassaService $yookassa)
+    {
+    }
+
     /**
-     * Пополнение баланса (заглушка оплаты → credit deposit_balance).
-     * В будущем здесь будет вызов API эквайринга (ЮKassa / СБП).
+     * Создать платёж ЮKassa и вернуть confirmation_url для редиректа.
      */
     public function topUp(Request $request)
     {
         $request->validate([
-            'amount' => 'required|numeric|min:100',
-            'method' => 'nullable|string|in:card,sbp,system',
+            'amount' => 'required|numeric|min:100|max:100000',
+            'method' => 'nullable|string|in:card,sbp',
+            'return_to' => 'nullable|string|max:2048',
         ]);
 
         $user = $request->user();
-        $amount = (float) $request->amount;
-        $source = $request->input('method', 'system');
+        $amount = round((float) $request->amount, 2);
+        $method = $request->input('method', 'card');
+        $returnTo = $request->input('return_to');
 
         try {
-            $newBalance = 0.0;
-            $bonusBalance = 0.0;
+            $payment = $this->yookassa->createTopUp($user, $amount, $method, $returnTo);
 
-            DB::transaction(function () use ($user, $amount, $source, &$newBalance, &$bonusBalance) {
-                // Payment stub: treat request as successful charge, then credit wallet.
-                $user->syncBalanceToWallet();
-                $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id]);
-                $newBalance = $wallet->creditSpendable($amount);
-
-                Transaction::create([
-                    'user_id' => $user->id,
-                    'amount' => $amount,
-                    'type' => 'deposit',
-                    'source' => $source ?: 'system',
-                    'description' => 'Пополнение депозита REACTOR',
-                ]);
-
-                $wallet->refresh();
-                $bonusBalance = (float) ($wallet->getAttributes()['bonus_balance'] ?? 0);
-            });
+            if (!$payment->confirmation_url) {
+                return response()->json(['message' => 'ЮKassa не вернула ссылку на оплату'], 502);
+            }
 
             return response()->json([
-                'message' => 'Баланс успешно пополнен',
-                'new_balance' => $newBalance,
-                'deposit_balance' => $newBalance,
-                'bonus_balance' => $bonusBalance,
-                'balance' => $newBalance,
+                'message' => 'Перенаправление на оплату',
+                'payment_id' => $payment->uuid,
+                'confirmation_url' => $payment->confirmation_url,
+                'amount' => $payment->amount,
+                'status' => $payment->status,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('YooKassa top-up failed', [
+                'user_id' => $user->id,
+                'amount' => $amount,
+                'error' => $e->getMessage(),
             ]);
 
-        } catch (\Exception $e) {
-            Log::error("Ошибка пополнения баланса юзера {$user->id}: " . $e->getMessage());
-            return response()->json(['message' => 'Ошибка обработки платежа'], 500);
+            return response()->json([
+                'message' => 'Не удалось создать платёж: ' . $e->getMessage(),
+            ], 502);
         }
+    }
+
+    /**
+     * HTTP-уведомления ЮKassa (webhook).
+     */
+    public function webhook(Request $request)
+    {
+        try {
+            $this->yookassa->handleNotification($request->all());
+        } catch (\Throwable $e) {
+            Log::error('YooKassa webhook error: ' . $e->getMessage(), [
+                'body' => $request->all(),
+            ]);
+        }
+
+        // Always 200 so YooKassa does not retry forever on our bugs.
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Return URL после оплаты на стороне ЮKassa.
+     */
+    public function returnFromYooKassa(Request $request, string $payment)
+    {
+        $local = Payment::query()
+            ->where('uuid', $payment)
+            ->where('user_id', $request->user()->id)
+            ->firstOrFail();
+
+        try {
+            $local = $this->yookassa->syncAndFulfill($local);
+        } catch (\Throwable $e) {
+            Log::warning('YooKassa return sync failed: ' . $e->getMessage(), [
+                'payment_uuid' => $local->uuid,
+            ]);
+        }
+
+        $returnTo = $local->payload['return_to'] ?? '/account/dashboard';
+
+        if ($local->isSucceeded()) {
+            return redirect($returnTo)
+                ->with('success', 'Баланс пополнен на ' . number_format((float) $local->amount, 0, '.', ' ') . ' ₽');
+        }
+
+        if ($local->status === Payment::STATUS_CANCELED) {
+            return redirect($returnTo)->with('error', 'Оплата отменена');
+        }
+
+        return redirect($returnTo)
+            ->with('info', 'Платёж ещё обрабатывается. Баланс обновится в течение минуты.');
     }
 }

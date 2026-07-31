@@ -37,7 +37,7 @@ const submit = () => {
             <div v-if="isOpen" class="fixed inset-0 flex items-center justify-center z-[99990] p-4">
                 <div class="absolute inset-0 bg-black/90 backdrop-blur-md" @click="emit('close')"></div>
 
-                <div class="relative bg-[#0a0a0a] border border-cyan-500/30 p-8 rounded-[30px] w-full max-w-sm shadow-[0_0_50px_rgba(6,182,212,0.15)] animate-in zoom-in-95 duration-200">
+                <div class="relative bg-[#0a0a0a] border border-cyan-500/30 p-8 rounded-[14px] w-full max-w-sm shadow-[0_0_50px_rgba(6,182,212,0.15)] animate-in zoom-in-95 duration-200">
                     <div class="flex justify-between items-start mb-6">
                         <div>
                             <h3 class="text-cyan-500 font-black uppercase italic tracking-tighter text-xl">Коррекция сеанса</h3>

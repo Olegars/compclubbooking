@@ -71,7 +71,7 @@ const sourceLabel = (source: string | null | undefined) => {
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
 
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-2xl gap-6">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-2xl gap-6">
                 <div>
                     <h1 class="text-3xl font-black uppercase italic text-yellow-500 tracking-tighter">Бонусы <span class="text-white">за отзывы</span></h1>
                     <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">Сумма · заявки · лента Яндекс/2ГИС · вывод на сайт</p>
@@ -92,7 +92,7 @@ const sourceLabel = (source: string | null | undefined) => {
                 </div>
             </div>
 
-            <div class="bg-[#0a0a0a] border border-yellow-500/20 rounded-[2.5rem] p-8 grid md:grid-cols-[1fr_auto] gap-6 items-end">
+            <div class="bg-[#0a0a0a] border border-yellow-500/20 rounded-[1rem] p-8 grid md:grid-cols-[1fr_auto] gap-6 items-end">
                 <div class="grid sm:grid-cols-3 gap-4">
                     <div>
                         <label class="text-[10px] text-yellow-500/70 uppercase font-black tracking-widest block mb-2">Сумма бонуса, ₽</label>
@@ -120,7 +120,7 @@ const sourceLabel = (source: string | null | undefined) => {
             <div class="space-y-4">
                 <h2 class="text-sm font-black uppercase italic tracking-[0.3em] text-white/40">Заявки игроков</h2>
                 <div v-for="claim in claims" :key="claim.id"
-                     class="bg-[#050505] border border-white/5 rounded-[2rem] p-6 flex flex-col md:flex-row gap-8 items-start transition-all hover:border-white/10"
+                     class="bg-[#050505] border border-white/5 rounded-[0.875rem] p-6 flex flex-col md:flex-row gap-8 items-start transition-all hover:border-white/10"
                      :class="{'opacity-50 grayscale': claim.status !== 'pending'}">
 
                     <div class="w-full md:w-64 shrink-0">
@@ -163,7 +163,7 @@ const sourceLabel = (source: string | null | undefined) => {
                         </button>
                     </div>
                 </div>
-                <div v-if="claims.length === 0" class="py-16 text-center border border-dashed border-white/5 rounded-[2rem] text-white/20 text-[10px] uppercase tracking-widest">
+                <div v-if="claims.length === 0" class="py-16 text-center border border-dashed border-white/5 rounded-[0.875rem] text-white/20 text-[10px] uppercase tracking-widest">
                     Заявок пока нет
                 </div>
             </div>
@@ -191,7 +191,7 @@ const sourceLabel = (source: string | null | undefined) => {
                             {{ review.reviewed_at ? new Date(review.reviewed_at).toLocaleDateString('ru-RU') : '—' }}
                         </div>
                     </div>
-                    <div v-if="map_reviews.length === 0" class="py-16 text-center border border-dashed border-white/5 rounded-[2rem] text-white/20 text-[10px] uppercase tracking-widest">
+                    <div v-if="map_reviews.length === 0" class="py-16 text-center border border-dashed border-white/5 rounded-[0.875rem] text-white/20 text-[10px] uppercase tracking-widest">
                         Лента пуста — нажмите «Синхронизировать сейчас»
                     </div>
                 </div>

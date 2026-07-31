@@ -81,7 +81,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 <template>
     <div v-if="isOpen" class="fixed inset-0 flex items-center justify-center z-[9999999] p-4 pointer-events-none">
         <div class="absolute inset-0 bg-black/80 backdrop-blur-sm pointer-events-auto" @click="$emit('close')"></div>
-        <div class="w-full max-w-md bg-[#050505] border-2 border-[#22c55e]/30 rounded-[3rem] p-8 relative shadow-[0_0_100px_rgba(34,197,94,0.3)] pointer-events-auto z-10">
+        <div class="w-full max-w-md bg-[#050505] border-2 border-[#22c55e]/30 rounded-[1.125rem] p-8 relative shadow-[0_0_100px_rgba(34,197,94,0.3)] pointer-events-auto z-10">
 
             <div v-if="mode === 'booking' && data" class="mb-6 p-4 bg-[#22c55e]/5 border border-[#22c55e]/10 rounded-2xl text-center">
                 <div class="text-[10px] text-white/40 uppercase mb-1">Сумма к оплате</div>

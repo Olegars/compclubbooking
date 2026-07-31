@@ -28,7 +28,7 @@ const updateProfile = () => {
 
 <template>
     <MainLayout>
-        <div class="max-w-2xl mx-auto w-full bg-[#0a0a0a] border border-white/5 rounded-[2.5rem] p-10 shadow-2xl relative">
+        <div class="max-w-2xl mx-auto w-full bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-10 shadow-2xl relative">
 
             <div v-if="showSuccess" class="absolute top-8 right-8 bg-[#22c55e]/20 border border-[#22c55e]/50 text-[#22c55e] px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest animate-pulse">
                 Обновлено

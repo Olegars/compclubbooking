@@ -40,7 +40,7 @@ watch(() => props.isOpen, (val) => {
     <div v-if="isOpen" class="fixed inset-0 flex items-center justify-center p-4" style="z-index: 9999999 !important;">
       <div class="absolute inset-0 bg-black/90 backdrop-blur-xl"></div>
 
-      <div class="relative w-full max-w-md bg-[#0a0a0a] border border-white/5 rounded-[40px] overflow-hidden shadow-[0_0_100px_rgba(0,0,0,0.8)] text-center">
+      <div class="relative w-full max-w-md bg-[#0a0a0a] border border-white/5 rounded-[16px] overflow-hidden shadow-[0_0_100px_rgba(0,0,0,0.8)] text-center">
 
         <div class="h-1 w-full bg-white/5">
           <div class="h-full bg-[#22c55e] transition-all duration-300" :style="{ width: progress + '%' }"></div>

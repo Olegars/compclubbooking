@@ -7,10 +7,13 @@ import { useAdminBarcodeScanner } from '@/Composables/useAdminBarcodeScanner'
 
 const props = defineProps<{
     canManageCatalog?: boolean
+    canAdjustStock?: boolean
+    reasonCodes?: { code: string, label: string }[]
     products?: any[]
 }>()
 
 const canManageCatalog = computed(() => Boolean(props.canManageCatalog))
+const canAdjustStock = computed(() => props.canAdjustStock !== false)
 const { receiveMode, enableReceiveMode, disableReceiveMode } = useAdminBarcodeScanner()
 
 const cloneProducts = (list: any[] = []) => list.map((p) => ({
@@ -31,11 +34,38 @@ const receiveProductId = ref<number | null>(null)
 
 const isModalOpen = ref(false)
 const isWriteOffOpen = ref(false)
+const adjustMode = ref<'write_off' | 'comp'>('write_off')
 const writeOffCode = ref('')
-const writeOffReason = ref('Брак / порча')
+const writeOffProductId = ref<number | null>(null)
+const writeOffQty = ref(1)
+const writeOffReasonCode = ref('spoilage')
+const writeOffReason = ref('')
 const isProcessing = ref(false)
 const imagePreview = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+
+const reasonOptions = computed(() => {
+    const list = props.reasonCodes?.length
+        ? props.reasonCodes
+        : [
+            { code: 'spoilage', label: 'Брак / порча' },
+            { code: 'expired', label: 'Просрочка' },
+            { code: 'broken', label: 'Разбито / бой' },
+            { code: 'comp', label: 'Угощение / бесплатно' },
+            { code: 'other', label: 'Иное' },
+        ]
+    if (adjustMode.value === 'comp') {
+        return list.filter(r => r.code === 'comp' || r.code === 'other')
+    }
+    return list.filter(r => r.code !== 'comp')
+})
+
+const writeOffProduct = computed(() =>
+    products.value.find(p => Number(p.id) === Number(writeOffProductId.value)) || null
+)
+
+const writeOffNeedsKm = computed(() => Boolean(writeOffProduct.value?.requires_marking))
+
 
 const form = ref({
     id: null as number | null,
@@ -207,17 +237,55 @@ const deleteProduct = async (id: number) => {
     }
 }
 
+const openAdjustModal = (mode: 'write_off' | 'comp' = 'write_off', product: any = null) => {
+    if (!canAdjustStock.value) return
+    adjustMode.value = mode
+    writeOffCode.value = ''
+    writeOffQty.value = 1
+    writeOffReason.value = ''
+    writeOffReasonCode.value = mode === 'comp' ? 'comp' : 'spoilage'
+    writeOffProductId.value = product?.id ?? null
+    isWriteOffOpen.value = true
+}
+
 const submitWriteOff = async () => {
-    if (!writeOffCode.value.trim()) return
+    if (!writeOffProductId.value && !writeOffCode.value.trim()) {
+        alert('Выберите товар или отсканируйте КМ')
+        return
+    }
+    if (writeOffNeedsKm.value || (!writeOffProduct.value && writeOffCode.value.trim())) {
+        if (!writeOffCode.value.trim()) {
+            alert('Отсканируйте DataMatrix списываемой единицы')
+            return
+        }
+    } else if (!writeOffProductId.value) {
+        alert('Выберите товар')
+        return
+    }
+
     isProcessing.value = true
     try {
-        const { data } = await axios.post('/admin/api/inventory/write-off', {
-            code: writeOffCode.value.trim(),
-            reason: writeOffReason.value || 'Списание',
-        })
-        applyProductStock(data.product)
+        if (writeOffNeedsKm.value || (!writeOffProduct.value && writeOffCode.value.trim())) {
+            const { data } = await axios.post('/admin/api/inventory/write-off', {
+                code: writeOffCode.value.trim(),
+                type: adjustMode.value,
+                reason_code: writeOffReasonCode.value,
+                reason: writeOffReason.value || undefined,
+            })
+            applyProductStock(data.product)
+        } else {
+            const { data } = await axios.post('/admin/api/inventory/adjust', {
+                product_id: writeOffProductId.value,
+                qty: writeOffQty.value,
+                type: adjustMode.value,
+                reason_code: adjustMode.value === 'comp' ? 'comp' : writeOffReasonCode.value,
+                reason: writeOffReason.value || undefined,
+            })
+            applyProductStock(data.product)
+        }
         isWriteOffOpen.value = false
         writeOffCode.value = ''
+        writeOffProductId.value = null
     } catch (e: any) {
         alert(e?.response?.data?.message || 'Ошибка списания')
     } finally {
@@ -265,7 +333,7 @@ const receiveTargetName = computed(() => {
                 </div>
             </Transition>
 
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-2xl relative overflow-hidden">
                 <div class="absolute inset-0 bg-gradient-to-r from-cyan-500/5 to-transparent pointer-events-none"></div>
                 <div class="relative z-10">
                     <h1 class="text-4xl font-black uppercase italic text-cyan-500 tracking-tighter">Reactor <span class="text-white">Warehouse</span></h1>
@@ -301,9 +369,13 @@ const receiveTargetName = computed(() => {
                             class="px-5 py-3 border border-white/10 text-white/40 hover:text-white rounded-2xl text-[10px] font-black uppercase cursor-pointer">
                         Сброс цели
                     </button>
-                    <button v-if="canManageCatalog" type="button" @click="isWriteOffOpen = true"
+                    <button v-if="canAdjustStock" type="button" @click="openAdjustModal('write_off')"
                             class="px-5 py-3 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-black rounded-2xl text-[10px] font-black uppercase cursor-pointer">
-                        Списание КМ
+                        Списание
+                    </button>
+                    <button v-if="canAdjustStock" type="button" @click="openAdjustModal('comp')"
+                            class="px-5 py-3 border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black rounded-2xl text-[10px] font-black uppercase cursor-pointer">
+                        Угощение
                     </button>
                     <button v-if="canManageCatalog" type="button" @click="openModal()"
                             class="px-8 py-4 bg-cyan-500 hover:bg-cyan-400 text-black font-black uppercase rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.2)] transition-all italic text-xs cursor-pointer">
@@ -318,7 +390,7 @@ const receiveTargetName = computed(() => {
 
             <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
                 <div v-for="item in filteredProducts" :key="item.id" :id="`product-${item.id}`"
-                     class="bg-[#050505] border rounded-[3rem] p-8 group transition-all duration-500 flex flex-col relative overflow-hidden"
+                     class="bg-[#050505] border rounded-[1.125rem] p-8 group transition-all duration-500 flex flex-col relative overflow-hidden"
                      :class="[
                         receiveProductId === item.id ? 'border-cyan-500 ring-2 ring-cyan-500/40' : '',
                         item.stock <= 0 ? 'border-red-500/50 bg-red-950/20 opacity-80' : item.stock <= 5 ? 'border-red-500/40 bg-red-900/5' : 'border-white/5',
@@ -333,7 +405,7 @@ const receiveTargetName = computed(() => {
                         Нет в наличии
                     </div>
 
-                    <div class="aspect-square bg-white/5 rounded-[2.5rem] mb-6 flex items-center justify-center border border-white/5 relative overflow-hidden group-hover:bg-cyan-500/5 transition-all">
+                    <div class="aspect-square bg-white/5 rounded-[1rem] mb-6 flex items-center justify-center border border-white/5 relative overflow-hidden group-hover:bg-cyan-500/5 transition-all">
                         <img :src="item.image ? (item.image.startsWith('/') ? item.image : '/' + item.image) : '/images/shop/default.png'"
                              :alt="item.name" loading="lazy" decoding="async"
                              class="w-3/4 h-3/4 object-contain transition-transform duration-700 group-hover:scale-110" />
@@ -361,9 +433,10 @@ const receiveTargetName = computed(() => {
                         {{ item.requires_marking ? 'Приёмка: уникальный DataMatrix' : 'Приёмка: EAN → +1' }}
                     </div>
 
-                    <div v-if="canManageCatalog" class="mt-auto flex gap-3">
-                        <button type="button" @click="openModal(item)" class="flex-1 py-4 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase text-white/30 hover:text-white transition-all cursor-pointer">Изменить</button>
-                        <button type="button" @click="deleteProduct(item.id)" class="px-5 py-4 bg-red-500/5 border border-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-black transition-all cursor-pointer">🗑️</button>
+                    <div v-if="canAdjustStock" class="mt-auto flex gap-3">
+                        <button v-if="canManageCatalog" type="button" @click="openModal(item)" class="flex-1 py-4 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase text-white/30 hover:text-white transition-all cursor-pointer">Изменить</button>
+                        <button type="button" @click="openAdjustModal('write_off', item)" class="flex-1 py-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl text-[10px] font-black uppercase hover:bg-red-500 hover:text-black transition-all cursor-pointer">Списать</button>
+                        <button v-if="canManageCatalog" type="button" @click="deleteProduct(item.id)" class="px-5 py-4 bg-red-500/5 border border-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-black transition-all cursor-pointer">🗑️</button>
                     </div>
                     <div v-else class="mt-auto py-3 text-center text-[9px] uppercase font-black tracking-widest text-white/25">
                         Выдача маркировки — в очереди заказов
@@ -375,11 +448,11 @@ const receiveTargetName = computed(() => {
         <Teleport to="body">
             <div v-if="isModalOpen" class="fixed inset-0 z-[9999999] flex items-center justify-center p-6">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-2xl" @click="isModalOpen = false"></div>
-                <div class="relative w-full max-w-xl bg-[#050505] border-2 border-cyan-500/30 rounded-[3.5rem] p-12 shadow-[0_0_120px_rgba(6,182,212,0.2)]">
+                <div class="relative w-full max-w-xl bg-[#050505] border-2 border-cyan-500/30 rounded-[1.25rem] p-12 shadow-[0_0_120px_rgba(6,182,212,0.2)]">
                     <h2 class="text-cyan-500 text-3xl font-black uppercase italic mb-10 tracking-tighter">{{ form.id ? 'Update SKU' : 'Register SKU' }}</h2>
 
                     <div class="space-y-6">
-                        <div class="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-[2rem] p-6 bg-black/50 hover:border-cyan-500/40 transition-all cursor-pointer group" @click="triggerFileInput">
+                        <div class="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-[0.875rem] p-6 bg-black/50 hover:border-cyan-500/40 transition-all cursor-pointer group" @click="triggerFileInput">
                             <input type="file" ref="fileInput" class="hidden" accept="image/*" @change="handleFileChange" />
                             <div v-if="imagePreview" class="w-32 h-32 relative rounded-xl overflow-hidden bg-white/5 border border-white/10">
                                 <img :src="imagePreview" class="w-full h-full object-contain" />
@@ -443,19 +516,72 @@ const receiveTargetName = computed(() => {
         <Teleport to="body">
             <div v-if="isWriteOffOpen" class="fixed inset-0 z-[9999999] flex items-center justify-center p-6">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-2xl" @click="isWriteOffOpen = false"></div>
-                <div class="relative w-full max-w-md bg-[#050505] border-2 border-red-500/30 rounded-[2.5rem] p-10 space-y-6">
-                    <h2 class="text-red-500 text-2xl font-black uppercase italic tracking-tighter">Списание КМ</h2>
-                    <div>
-                        <label class="text-[10px] text-white/30 uppercase font-black mb-2 block">DataMatrix</label>
-                        <input v-model="writeOffCode" type="text" class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold" placeholder="Сканируйте код" />
+                <div class="relative w-full max-w-md bg-[#050505] border-2 rounded-[1rem] p-10 space-y-5"
+                     :class="adjustMode === 'comp' ? 'border-amber-500/30' : 'border-red-500/30'">
+                    <h2 class="text-2xl font-black uppercase italic tracking-tighter"
+                        :class="adjustMode === 'comp' ? 'text-amber-400' : 'text-red-500'">
+                        {{ adjustMode === 'comp' ? 'Угощение / бесплатно' : 'Списание со склада' }}
+                    </h2>
+                    <p class="text-[10px] text-white/30 uppercase tracking-widest font-black">
+                        С причиной — чтобы не всплыло как расхождение на пересменке
+                    </p>
+
+                    <div class="flex gap-2">
+                        <button type="button" @click="adjustMode = 'write_off'; writeOffReasonCode = 'spoilage'"
+                                class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase cursor-pointer border"
+                                :class="adjustMode === 'write_off' ? 'bg-red-600 text-white border-red-600' : 'border-white/10 text-white/40'">
+                            Списание
+                        </button>
+                        <button type="button" @click="adjustMode = 'comp'; writeOffReasonCode = 'comp'"
+                                class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase cursor-pointer border"
+                                :class="adjustMode === 'comp' ? 'bg-amber-500 text-black border-amber-500' : 'border-white/10 text-white/40'">
+                            Угощение
+                        </button>
                     </div>
+
+                    <div>
+                        <label class="text-[10px] text-white/30 uppercase font-black mb-2 block">Товар</label>
+                        <select v-model.number="writeOffProductId" class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold outline-none">
+                            <option :value="null">— выберите —</option>
+                            <option v-for="p in products" :key="p.id" :value="p.id">
+                                {{ p.name }} ({{ p.stock }} шт){{ p.requires_marking ? ' · КМ' : '' }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <div v-if="writeOffNeedsKm">
+                        <label class="text-[10px] text-white/30 uppercase font-black mb-2 block">DataMatrix единицы</label>
+                        <input v-model="writeOffCode" type="text" class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold" placeholder="Сканируйте КМ" />
+                    </div>
+                    <div v-else-if="writeOffProductId" class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-[10px] text-white/30 uppercase font-black mb-2 block">Количество</label>
+                            <input v-model.number="writeOffQty" type="number" min="1" :max="writeOffProduct?.stock || 999"
+                                   class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold" />
+                        </div>
+                        <div class="flex items-end pb-2 text-[10px] text-white/30 uppercase font-black">
+                            На складе: {{ writeOffProduct?.stock ?? 0 }}
+                        </div>
+                    </div>
+
                     <div>
                         <label class="text-[10px] text-white/30 uppercase font-black mb-2 block">Причина</label>
-                        <input v-model="writeOffReason" type="text" class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold" />
+                        <select v-model="writeOffReasonCode" class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold outline-none">
+                            <option v-for="r in reasonOptions" :key="r.code" :value="r.code">{{ r.label }}</option>
+                        </select>
                     </div>
-                    <div class="flex gap-3">
+                    <div>
+                        <label class="text-[10px] text-white/30 uppercase font-black mb-2 block">Комментарий (необязательно)</label>
+                        <input v-model="writeOffReason" type="text" class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold" placeholder="Детали…" />
+                    </div>
+
+                    <div class="flex gap-3 pt-2">
                         <button type="button" @click="isWriteOffOpen = false" class="flex-1 py-4 border border-white/10 text-white/40 rounded-xl font-black uppercase text-[10px] cursor-pointer">Отмена</button>
-                        <button type="button" @click="submitWriteOff" :disabled="isProcessing" class="flex-1 py-4 bg-red-600 text-white rounded-xl font-black uppercase text-[10px] cursor-pointer disabled:opacity-40">Списать</button>
+                        <button type="button" @click="submitWriteOff" :disabled="isProcessing"
+                                class="flex-1 py-4 rounded-xl font-black uppercase text-[10px] cursor-pointer disabled:opacity-40"
+                                :class="adjustMode === 'comp' ? 'bg-amber-500 text-black' : 'bg-red-600 text-white'">
+                            {{ adjustMode === 'comp' ? 'Выдать бесплатно' : 'Списать' }}
+                        </button>
                     </div>
                 </div>
             </div>

@@ -25,6 +25,11 @@ class HandleInertiaRequests extends Middleware
         $balance = $user ? $user->availableBalance() : 0.0;
 
         return array_merge(parent::share($request), [
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'error' => fn () => $request->session()->get('error'),
+                'info' => fn () => $request->session()->get('info'),
+            ],
             'auth' => [
                 'user' => $user ? array_merge($user->toArray(), [
                     'balance' => $balance,

@@ -100,7 +100,7 @@ const formatDate = (dateStr: string) => {
                 </div>
             </div>
 
-            <div class="bg-[#050505] border border-red-900/20 rounded-[3rem] overflow-hidden shadow-2xl relative">
+            <div class="bg-[#050505] border border-red-900/20 rounded-[1.125rem] overflow-hidden shadow-2xl relative">
                 <div class="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
 
                 <div class="overflow-x-auto relative z-10">
@@ -171,7 +171,7 @@ const formatDate = (dateStr: string) => {
                 </div>
             </div>
 
-            <div class="p-8 bg-red-600/5 border border-red-600/20 rounded-[2.5rem] flex items-center justify-between">
+            <div class="p-8 bg-red-600/5 border border-red-600/20 rounded-[1rem] flex items-center justify-between">
                 <div class="flex items-center gap-6">
                     <div class="w-12 h-12 bg-red-600 text-black flex items-center justify-center rounded-2xl text-2xl">⚠️</div>
                     <div>

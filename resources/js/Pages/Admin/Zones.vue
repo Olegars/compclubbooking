@@ -30,7 +30,7 @@ const deleteZone = (id) => {
             <h1 class="text-4xl font-black italic tracking-tighter uppercase text-cyan-500 mb-10">Топология залов</h1>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div class="bg-[#0a0a0a] border border-white/5 rounded-[2.5rem] p-8 shadow-2xl h-fit">
+                <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 shadow-2xl h-fit">
                     <h3 class="text-lg font-black uppercase italic mb-6">Новая зона</h3>
                     <form @submit.prevent="submitZone" class="space-y-4">
                         <div>

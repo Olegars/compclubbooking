@@ -35,24 +35,24 @@ const taxToPay = Math.max(0, totalTaxRaw - props.premiums.total);
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-[#050505] border border-white/5 p-8 rounded-[2rem] shadow-xl relative overflow-hidden">
+                <div class="bg-[#050505] border border-white/5 p-8 rounded-[0.875rem] shadow-xl relative overflow-hidden">
                     <div class="text-[10px] text-white/30 uppercase font-black tracking-widest mb-2">Валовый доход</div>
                     <div class="text-4xl font-black text-white tracking-tighter">{{ formatRuble(total_income) }}</div>
                 </div>
 
-                <div class="bg-[#050505] border border-indigo-500/20 p-8 rounded-[2rem] shadow-xl relative overflow-hidden">
+                <div class="bg-[#050505] border border-indigo-500/20 p-8 rounded-[0.875rem] shadow-xl relative overflow-hidden">
                     <div class="text-[10px] text-indigo-500 uppercase font-black tracking-widest mb-2">Страховые взносы (Фикс + 1%)</div>
                     <div class="text-4xl font-black text-indigo-500 tracking-tighter">{{ formatRuble(premiums.total) }}</div>
                     <div class="text-xs text-indigo-500/50 mt-2">Вычитаются из налога УСН</div>
                 </div>
 
-                <div class="bg-indigo-500 p-8 rounded-[2rem] shadow-[0_0_40px_rgba(99,102,241,0.3)] relative overflow-hidden text-black">
+                <div class="bg-indigo-500 p-8 rounded-[0.875rem] shadow-[0_0_40px_rgba(99,102,241,0.3)] relative overflow-hidden text-black">
                     <div class="text-[10px] uppercase font-black tracking-widest mb-2 opacity-70">Налог к уплате (С учетом вычетов)</div>
                     <div class="text-4xl font-black tracking-tighter">{{ formatRuble(taxToPay) }}</div>
                 </div>
             </div>
 
-            <div class="bg-[#0a0a0a] border border-white/5 rounded-[3rem] p-10 mt-8 shadow-2xl">
+            <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-10 mt-8 shadow-2xl">
                 <h3 class="text-sm text-white/40 uppercase font-black tracking-[0.2em] mb-8 italic">Квартальные авансы</h3>
 
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">

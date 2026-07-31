@@ -5,11 +5,21 @@ namespace App\Services;
 use App\Models\Product;
 use App\Models\ProductReservation;
 use App\Models\ProductUnit;
+use App\Models\StockMovement;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class ProductStockService
 {
+    /** @var list<string> */
+    public const WRITE_OFF_REASON_CODES = [
+        StockMovement::REASON_SPOILAGE,
+        StockMovement::REASON_EXPIRED,
+        StockMovement::REASON_BROKEN,
+        StockMovement::REASON_COMP,
+        StockMovement::REASON_OTHER,
+    ];
+
     public function availableUnitsCount(int $productId): int
     {
         return ProductUnit::query()
@@ -162,7 +172,7 @@ class ProductStockService
     /**
      * Sell unmarked product quantity (decrement stock at checkout).
      */
-    public function decrementUnmarked(Product $product, int $qty): void
+    public function decrementUnmarked(Product $product, int $qty, ?int $orderId = null): void
     {
         if ($product->requires_marking) {
             return;
@@ -172,7 +182,57 @@ class ProductStockService
             throw new RuntimeException("Недостаточно «{$product->name}» на складе");
         }
 
+        $before = (int) $product->stock;
         $product->decrement('stock', $qty);
+        $product->refresh();
+
+        $this->recordMovement([
+            'product_id' => (int) $product->id,
+            'order_id' => $orderId,
+            'type' => StockMovement::TYPE_SALE,
+            'qty' => -$qty,
+            'stock_before' => $before,
+            'stock_after' => (int) $product->stock,
+            'reason_code' => null,
+            'reason' => 'Продажа',
+        ]);
+    }
+
+    /**
+     * Restore unmarked qty when an order is cancelled (stock was decremented at checkout).
+     *
+     * @param  array<int, array{product_id?:?int, qty?:int}>  $items
+     */
+    public function restoreUnmarkedForOrder(int $orderId, array $items): void
+    {
+        foreach ($items as $row) {
+            $productId = isset($row['product_id']) ? (int) $row['product_id'] : 0;
+            $qty = max(1, (int) ($row['qty'] ?? 1));
+            if ($productId < 1) {
+                continue;
+            }
+
+            /** @var Product|null $product */
+            $product = Product::query()->lockForUpdate()->find($productId);
+            if (! $product || $product->requires_marking) {
+                continue;
+            }
+
+            $before = (int) $product->stock;
+            $product->increment('stock', $qty);
+            $product->refresh();
+
+            $this->recordMovement([
+                'product_id' => $productId,
+                'order_id' => $orderId,
+                'type' => StockMovement::TYPE_SALE_RESTORE,
+                'qty' => $qty,
+                'stock_before' => $before,
+                'stock_after' => (int) $product->stock,
+                'reason_code' => StockMovement::REASON_CANCEL,
+                'reason' => StockMovement::formatReason(StockMovement::REASON_CANCEL, "заказ #{$orderId}"),
+            ]);
+        }
     }
 
     /**
@@ -242,14 +302,26 @@ class ProductStockService
         }
     }
 
-    public function writeOffUnit(string $rawCode, int $adminId, string $reason): ProductUnit
-    {
+    public function writeOffUnit(
+        string $rawCode,
+        int $adminId,
+        string $reason,
+        ?string $reasonCode = null,
+        string $type = StockMovement::TYPE_WRITE_OFF
+    ): ProductUnit {
         $code = ProductUnit::normalizeCode($rawCode);
         if ($code === '') {
             throw new RuntimeException('Пустой код маркировки');
         }
 
-        return DB::transaction(function () use ($code, $adminId, $reason) {
+        if (! in_array($type, [StockMovement::TYPE_WRITE_OFF, StockMovement::TYPE_COMP], true)) {
+            $type = StockMovement::TYPE_WRITE_OFF;
+        }
+
+        $reasonCode = $this->normalizeReasonCode($reasonCode, $type);
+        $reasonText = StockMovement::formatReason($reasonCode, $reason);
+
+        return DB::transaction(function () use ($code, $adminId, $reasonText, $reasonCode, $type) {
             /** @var ProductUnit|null $unit */
             $unit = ProductUnit::query()
                 ->where('marking_code', $code)
@@ -264,17 +336,177 @@ class ProductStockService
                 throw new RuntimeException('Списать можно только доступную единицу');
             }
 
+            $before = $this->sellableUnitsCount((int) $unit->product_id);
+
             $unit->update([
                 'status' => ProductUnit::STATUS_WRITTEN_OFF,
                 'written_off_by' => $adminId,
-                'write_off_reason' => $reason,
+                'write_off_reason' => $reasonText,
                 'written_off_at' => now(),
             ]);
 
-            $this->syncMarkedStock((int) $unit->product_id);
+            $after = $this->syncMarkedStock((int) $unit->product_id);
+
+            $this->recordMovement([
+                'product_id' => (int) $unit->product_id,
+                'product_unit_id' => (int) $unit->id,
+                'admin_id' => $adminId,
+                'type' => $type,
+                'reason_code' => $reasonCode,
+                'reason' => $reasonText,
+                'qty' => -1,
+                'stock_before' => $before,
+                'stock_after' => $after,
+            ]);
 
             return $unit->fresh(['product']);
         });
+    }
+
+    /**
+     * Write-off or complimentary drink for unmarked SKU (qty + reason).
+     * Keeps пересменка clean: explained mid-shift losses don't look like theft.
+     *
+     * @return array{product: Product, movement: StockMovement}
+     */
+    public function adjustUnmarked(
+        Product $product,
+        int $qty,
+        int $adminId,
+        string $type,
+        ?string $reasonCode = null,
+        ?string $reasonNote = null,
+        ?int $shiftId = null
+    ): array {
+        if ($product->requires_marking) {
+            throw new RuntimeException('Маркированный товар списывается сканом КМ, не количеством');
+        }
+
+        if ($qty < 1) {
+            throw new RuntimeException('Количество должно быть больше нуля');
+        }
+
+        if (! in_array($type, [StockMovement::TYPE_WRITE_OFF, StockMovement::TYPE_COMP], true)) {
+            throw new RuntimeException('Неизвестный тип движения');
+        }
+
+        $reasonCode = $this->normalizeReasonCode(
+            $reasonCode,
+            $type === StockMovement::TYPE_COMP ? StockMovement::TYPE_COMP : StockMovement::TYPE_WRITE_OFF
+        );
+        $reasonText = StockMovement::formatReason($reasonCode, $reasonNote);
+
+        return DB::transaction(function () use ($product, $qty, $adminId, $type, $reasonCode, $reasonText, $shiftId) {
+            /** @var Product $locked */
+            $locked = Product::query()->lockForUpdate()->findOrFail($product->id);
+            $before = (int) $locked->stock;
+
+            if ($before < $qty) {
+                throw new RuntimeException("Недостаточно «{$locked->name}» на складе (есть {$before})");
+            }
+
+            $after = $before - $qty;
+            $locked->update(['stock' => $after]);
+
+            $movement = $this->recordMovement([
+                'product_id' => (int) $locked->id,
+                'admin_id' => $adminId,
+                'shift_id' => $shiftId,
+                'type' => $type,
+                'reason_code' => $reasonCode,
+                'reason' => $reasonText,
+                'qty' => -$qty,
+                'stock_before' => $before,
+                'stock_after' => $after,
+            ]);
+
+            return [
+                'product' => $locked->fresh(),
+                'movement' => $movement,
+            ];
+        });
+    }
+
+    /**
+     * Apply shift recount for unmarked product: set stock to actual and log the delta.
+     *
+     * @return StockMovement|null  null when no change
+     */
+    public function applyShiftAdjustment(
+        Product $product,
+        int $expected,
+        int $actual,
+        int $adminId,
+        int $shiftId,
+        string $reasonNote
+    ): ?StockMovement {
+        if ($product->requires_marking) {
+            throw new RuntimeException("«{$product->name}» маркирован — остаток правится списанием КМ, не пересменкой");
+        }
+
+        $delta = $actual - $expected;
+        if ($delta === 0) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($product, $actual, $adminId, $shiftId, $reasonNote, $delta) {
+            /** @var Product $locked */
+            $locked = Product::query()->lockForUpdate()->findOrFail($product->id);
+            $before = (int) $locked->stock;
+            $locked->update(['stock' => max(0, $actual)]);
+
+            return $this->recordMovement([
+                'product_id' => (int) $locked->id,
+                'admin_id' => $adminId,
+                'shift_id' => $shiftId,
+                'type' => StockMovement::TYPE_SHIFT_ADJUST,
+                'reason_code' => StockMovement::REASON_SHIFT,
+                'reason' => StockMovement::formatReason(StockMovement::REASON_SHIFT, $reasonNote),
+                'qty' => $delta,
+                'stock_before' => $before,
+                'stock_after' => max(0, $actual),
+                'meta' => [
+                    'expected' => $before,
+                    'actual' => $actual,
+                ],
+            ]);
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $attrs
+     */
+    public function recordMovement(array $attrs): StockMovement
+    {
+        return StockMovement::create([
+            'product_id' => (int) $attrs['product_id'],
+            'product_unit_id' => $attrs['product_unit_id'] ?? null,
+            'admin_id' => $attrs['admin_id'] ?? null,
+            'shift_id' => $attrs['shift_id'] ?? null,
+            'order_id' => $attrs['order_id'] ?? null,
+            'type' => (string) $attrs['type'],
+            'reason_code' => $attrs['reason_code'] ?? null,
+            'reason' => $attrs['reason'] ?? null,
+            'qty' => (int) $attrs['qty'],
+            'stock_before' => (int) ($attrs['stock_before'] ?? 0),
+            'stock_after' => (int) ($attrs['stock_after'] ?? 0),
+            'meta' => $attrs['meta'] ?? null,
+        ]);
+    }
+
+    public function normalizeReasonCode(?string $code, string $type = StockMovement::TYPE_WRITE_OFF): string
+    {
+        $code = $code !== null ? strtolower(trim($code)) : '';
+
+        if ($type === StockMovement::TYPE_COMP) {
+            return StockMovement::REASON_COMP;
+        }
+
+        if (in_array($code, self::WRITE_OFF_REASON_CODES, true)) {
+            return $code;
+        }
+
+        return StockMovement::REASON_OTHER;
     }
 
     /**

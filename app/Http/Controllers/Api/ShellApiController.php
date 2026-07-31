@@ -805,10 +805,6 @@ class ShellApiController extends Controller
             ) {
                 $newBalance = $wallet->debitSpendable($totalPrice);
 
-                foreach ($qtyByProduct as $pid => $qty) {
-                    $stockService->decrementUnmarked($products[$pid], $qty);
-                }
-
                 $orderStatus = 'pending';
                 $orderId = (int) DB::table('orders')->insertGetId([
                     'user_id' => $user->id,
@@ -820,6 +816,10 @@ class ShellApiController extends Controller
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
+
+                foreach ($qtyByProduct as $pid => $qty) {
+                    $stockService->decrementUnmarked($products[$pid], $qty, $orderId);
+                }
 
                 $stockService->reserveMarkedForOrder($orderId, $lineItems);
             });

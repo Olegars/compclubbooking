@@ -8,7 +8,7 @@ const emit = defineEmits(['close', 'confirm']);
 
 <template>
     <div v-if="isOpen"
-         class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] bg-[#050505] border-2 border-yellow-500/50 rounded-[40px] p-10 z-[9999995] shadow-[0_0_100px_rgba(234,179,8,0.2)] select-none animate-in">
+         class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] bg-[#050505] border-2 border-yellow-500/50 rounded-[16px] p-10 z-[9999995] shadow-[0_0_100px_rgba(234,179,8,0.2)] select-none animate-in">
 
         <div class="flex items-center gap-4 mb-6">
             <div class="w-12 h-12 rounded-full bg-yellow-500/10 flex items-center justify-center text-yellow-500 text-2xl animate-pulse">⚠️</div>

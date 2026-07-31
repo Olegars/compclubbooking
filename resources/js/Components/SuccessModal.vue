@@ -9,7 +9,7 @@ const emit = defineEmits(['close'])
 
       <div class="absolute inset-0" @click="emit('close')"></div>
 
-      <div class="relative w-[440px] max-w-full bg-[#0a0a0a] border border-white/10 rounded-[40px] shadow-[0_0_150px_rgba(34,197,94,0.15)] overflow-hidden flex flex-col z-[10000000]">
+      <div class="relative w-[440px] max-w-full bg-[#0a0a0a] border border-white/10 rounded-[16px] shadow-[0_0_150px_rgba(34,197,94,0.15)] overflow-hidden flex flex-col z-[10000000]">
         <div class="shrink-0 h-1 bg-gradient-to-r from-transparent via-[#22c55e] to-transparent"></div>
 
         <div class="p-10 flex flex-col items-center text-center">
@@ -38,7 +38,7 @@ const emit = defineEmits(['close'])
 
           <button
             @click="emit('close')"
-            class="w-full bg-[#22c55e] hover:bg-[#2ae06d] text-black font-black p-6 rounded-[2rem] transition-all active:scale-[0.98] uppercase italic tracking-widest text-xs shadow-[0_0_30px_rgba(34,197,94,0.3)]"
+            class="w-full bg-[#22c55e] hover:bg-[#2ae06d] text-black font-black p-6 rounded-[0.875rem] transition-all active:scale-[0.98] uppercase italic tracking-widest text-xs shadow-[0_0_30px_rgba(34,197,94,0.3)]"
           >
             Завершить
           </button>

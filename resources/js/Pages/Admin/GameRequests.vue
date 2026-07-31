@@ -72,7 +72,7 @@ const formatDate = (iso: string | null) => {
     <AdminLayout>
         <div class="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
 
-            <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
                     <h1 class="text-3xl font-black uppercase italic tracking-tighter text-white">
                         Заявки на <span class="text-cyan-400">игры</span>
@@ -111,13 +111,13 @@ const formatDate = (iso: string | null) => {
 
             <section class="space-y-4">
                 <h2 class="text-[11px] font-black uppercase tracking-[0.35em] text-cyan-400/80 italic px-2">Топ запросов</h2>
-                <div v-if="top.length === 0" class="py-16 text-center border border-dashed border-white/10 rounded-[2rem] text-white/30 text-xs uppercase tracking-widest">
+                <div v-if="top.length === 0" class="py-16 text-center border border-dashed border-white/10 rounded-[0.875rem] text-white/30 text-xs uppercase tracking-widest">
                     Пока нет заявок
                 </div>
                 <div v-else class="space-y-3">
                     <article
                         v-for="row in top" :key="row.title_normalized"
-                        class="bg-[#0a0a0a] border border-white/5 rounded-[1.75rem] p-6"
+                        class="bg-[#0a0a0a] border border-white/5 rounded-[0.75rem] p-6"
                     >
                         <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
                             <div class="min-w-0">
@@ -149,7 +149,7 @@ const formatDate = (iso: string | null) => {
 
             <section class="space-y-4">
                 <h2 class="text-[11px] font-black uppercase tracking-[0.35em] text-white/40 italic px-2">Последние заявки</h2>
-                <div class="bg-[#0a0a0a] border border-white/5 rounded-[2rem] overflow-hidden">
+                <div class="bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] overflow-hidden">
                     <div v-for="r in recent" :key="r.id"
                          class="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-white/5 last:border-0">
                         <div class="min-w-0">

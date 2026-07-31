@@ -948,9 +948,9 @@ onUnmounted(() => {
 
 <template>
     <component :is="layout">
-        <div class="booking-frame flex flex-col lg:flex-row bg-black rounded-[28px] lg:rounded-[40px] border border-[#22c55e]/30 p-2 mx-auto w-full lg:w-fit h-auto lg:h-[880px] relative shadow-[0_0_50px_rgba(34,197,94,0.1)] overflow-visible lg:overflow-hidden select-none">
+        <div class="booking-frame flex flex-col lg:flex-row bg-black rounded-[12px] lg:rounded-[16px] border border-[#22c55e]/30 p-2 mx-auto w-full lg:w-fit h-auto lg:h-[880px] relative shadow-[0_0_50px_rgba(34,197,94,0.1)] overflow-visible lg:overflow-hidden select-none">
 
-            <section class="p-3 sm:p-5 lg:p-6 border-b lg:border-b-0 lg:border-r border-[#22c55e]/30 flex flex-col gap-3 bg-[#080808] rounded-t-[26px] lg:rounded-t-none lg:rounded-l-[38px] w-full lg:w-auto lg:min-w-[960px] lg:h-full lg:min-h-0 relative">
+            <section class="p-3 sm:p-5 lg:p-6 border-b lg:border-b-0 lg:border-r border-[#22c55e]/30 flex flex-col gap-3 bg-[#080808] rounded-t-[12px] lg:rounded-t-none lg:rounded-l-[16px] w-full lg:w-auto lg:min-w-[960px] lg:h-full lg:min-h-0 relative">
                 <div ref="gamesBanner"
                      :class="['shrink-0 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 rounded-2xl border px-4 py-3 transition-all duration-500',
                               highlightGames ? 'border-[#22c55e] shadow-[0_0_0_3px_rgba(34,197,94,0.22)] bg-[#22c55e]/[0.08]'
@@ -993,7 +993,7 @@ onUnmounted(() => {
                 </div>
             </section>
 
-            <aside class="w-full lg:w-[460px] p-5 sm:p-6 lg:p-8 flex flex-col bg-[#050505] rounded-b-[26px] lg:rounded-b-none lg:rounded-r-[38px] lg:h-full lg:min-h-0">
+            <aside class="w-full lg:w-[460px] p-5 sm:p-6 lg:p-8 flex flex-col bg-[#050505] rounded-b-[12px] lg:rounded-b-none lg:rounded-r-[16px] lg:h-full lg:min-h-0">
 
                 <div class="mb-4 flex justify-between items-end px-2 shrink-0">
                     <h3 class="text-[#22c55e] text-xl font-black uppercase italic tracking-widest leading-none">{{ props.clubData.name }}</h3>
@@ -1067,7 +1067,7 @@ onUnmounted(() => {
                             </p>
                         </div>
 
-                        <div class="bg-black border border-white/10 rounded-[32px] p-3 sm:p-4 mb-4 shrink-0">
+                        <div class="bg-black border border-white/10 rounded-[14px] p-3 sm:p-4 mb-4 shrink-0">
                             <div class="grid grid-cols-2 gap-2 sm:gap-3">
                                 <div class="flex flex-col items-center gap-1">
                                     <span class="time-label">Начало</span>
@@ -1137,8 +1137,8 @@ onUnmounted(() => {
 
                     <button @click="selectedIds.length && !isBookingLoading && checkAgeRestriction()"
                             :disabled="isProcessing || isBookingLoading || !selectedIds.length"
-                            :class="['group w-full p-1 bg-[#22c55e] rounded-[2.5rem] transition-all active:scale-95', !selectedIds.length || isProcessing || isBookingLoading ? 'opacity-30 grayscale cursor-not-allowed' : 'cursor-pointer shadow-[0_10px_30px_rgba(34,197,94,0.2)]']">
-                        <div class="bg-[#0a0a0a] rounded-[2.3rem] p-5 lg:p-6 flex justify-between items-center border border-white/10 group-hover:bg-transparent transition-all">
+                            :class="['group w-full p-1 bg-[#22c55e] rounded-[1rem] transition-all active:scale-95', !selectedIds.length || isProcessing || isBookingLoading ? 'opacity-30 grayscale cursor-not-allowed' : 'cursor-pointer shadow-[0_10px_30px_rgba(34,197,94,0.2)]']">
+                        <div class="bg-[#0a0a0a] rounded-[0.9375rem] p-5 lg:p-6 flex justify-between items-center border border-white/10 group-hover:bg-transparent transition-all">
                             <span class="font-black uppercase text-sm text-white group-hover:text-black italic tracking-widest">
                                 <template v-if="isBookingLoading">Расчет...</template>
                                 <template v-else-if="isProcessing">Связь...</template>
@@ -1228,7 +1228,7 @@ onUnmounted(() => {
 .time-step {
     flex: 1;
     min-height: 34px;
-    border-radius: 10px;
+    border-radius: 8px;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: #22c55e;
@@ -1245,7 +1245,7 @@ onUnmounted(() => {
     min-width: 58px;
     min-height: 44px;
     padding: 0 0.5rem;
-    border-radius: 12px;
+    border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(255, 255, 255, 0.04);
     color: rgba(255, 255, 255, 0.75);

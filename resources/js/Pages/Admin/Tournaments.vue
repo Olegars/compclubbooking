@@ -78,7 +78,7 @@ const updateStatus = (id, status) => {
         <Teleport to="body">
             <div v-if="showCreateModal" class="fixed inset-0 flex items-center justify-center z-50 p-6">
                 <div class="absolute inset-0 bg-black/90 backdrop-blur-xl" @click="showCreateModal = false"></div>
-                <div class="relative w-full max-w-2xl bg-[#0a0a0a] border border-white/10 rounded-[3rem] p-10">
+                <div class="relative w-full max-w-2xl bg-[#0a0a0a] border border-white/10 rounded-[1.125rem] p-10">
                     <h2 class="text-2xl font-black uppercase italic mb-8">Настройка Ивента</h2>
                     <form @submit.prevent="submit" class="grid grid-cols-2 gap-6">
                         <div class="col-span-2">

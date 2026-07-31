@@ -142,7 +142,7 @@ const money = (n: number) =>
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
 
-            <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                 <div>
                     <h1 class="text-3xl font-black uppercase italic tracking-tighter text-white">
                         Аналитика <span class="text-[#22c55e]">бизнеса</span>
@@ -188,7 +188,7 @@ const money = (n: number) =>
                     <button
                         v-for="z in utilization.zones" :key="z.id" type="button"
                         @click="selectZone(z.id)"
-                        class="text-left bg-[#0a0a0a] border rounded-[1.75rem] p-6 transition-colors"
+                        class="text-left bg-[#0a0a0a] border rounded-[0.75rem] p-6 transition-colors"
                         :class="selectedZoneId === z.id ? 'border-cyan-500/50' : 'border-white/5 hover:border-white/15'"
                     >
                         <div class="flex items-center justify-between gap-3 mb-3">
@@ -207,7 +207,7 @@ const money = (n: number) =>
                     </button>
                 </div>
 
-                <div v-if="activeHeat" class="bg-[#0a0a0a] border border-white/5 rounded-[2rem] p-6 overflow-x-auto">
+                <div v-if="activeHeat" class="bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] p-6 overflow-x-auto">
                     <div class="flex items-center justify-between mb-4 gap-4">
                         <h2 class="text-[11px] font-black uppercase tracking-[0.35em] text-cyan-400/80 italic">
                             Heatmap · {{ activeHeat.zone_name }}
@@ -244,7 +244,7 @@ const money = (n: number) =>
                         </div>
                     </div>
                 </div>
-                <div v-else class="py-16 text-center border border-dashed border-white/10 rounded-[2rem] text-white/30 text-xs uppercase tracking-widest">
+                <div v-else class="py-16 text-center border border-dashed border-white/10 rounded-[0.875rem] text-white/30 text-xs uppercase tracking-widest">
                     Нет данных по зонам (привяжите ПК к spaces)
                 </div>
             </div>
@@ -252,25 +252,25 @@ const money = (n: number) =>
             <!-- COHORTS -->
             <div v-show="tab === 'cohorts'" class="space-y-6">
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.75rem] p-5">
+                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[0.75rem] p-5">
                         <div class="text-[9px] uppercase text-white/30 tracking-widest font-black">Spend всего</div>
                         <div class="text-2xl font-black italic text-white mt-2">{{ money(cohorts.summary.total_spend) }}</div>
                     </div>
-                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.75rem] p-5">
+                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[0.75rem] p-5">
                         <div class="text-[9px] uppercase text-white/30 tracking-widest font-black">VIP (топ 20%)</div>
                         <div class="text-2xl font-black italic text-amber-400 mt-2">{{ cohorts.summary.vip_count }}</div>
                     </div>
-                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.75rem] p-5">
+                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[0.75rem] p-5">
                         <div class="text-[9px] uppercase text-white/30 tracking-widest font-black">VIP доля выручки</div>
                         <div class="text-2xl font-black italic text-[#22c55e] mt-2">{{ cohorts.summary.vip_share_percent }}%</div>
                     </div>
-                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.75rem] p-5">
+                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[0.75rem] p-5">
                         <div class="text-[9px] uppercase text-white/30 tracking-widest font-black">Новые (6 мес)</div>
                         <div class="text-2xl font-black italic text-cyan-400 mt-2">{{ cohorts.summary.users_in_window }}</div>
                     </div>
                 </div>
 
-                <div class="bg-[#0a0a0a] border border-white/5 rounded-[2rem] overflow-hidden">
+                <div class="bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] overflow-hidden">
                     <div class="px-6 py-4 border-b border-white/5 text-[11px] font-black uppercase tracking-[0.3em] text-white/40 italic">
                         Когорты по месяцу регистрации
                     </div>
@@ -305,7 +305,7 @@ const money = (n: number) =>
                     </div>
                 </div>
 
-                <div class="bg-[#0a0a0a] border border-white/5 rounded-[2rem] overflow-hidden">
+                <div class="bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] overflow-hidden">
                     <div class="px-6 py-4 border-b border-white/5 text-[11px] font-black uppercase tracking-[0.3em] text-amber-400/80 italic">
                         VIP · топ 20% LTV (бронь + магазин)
                     </div>
@@ -329,21 +329,21 @@ const money = (n: number) =>
             <!-- INVENTORY -->
             <div v-show="tab === 'inventory'" class="space-y-6">
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.75rem] p-5">
+                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[0.75rem] p-5">
                         <div class="text-[9px] uppercase text-white/30 tracking-widest font-black">Выручка бара</div>
                         <div class="text-2xl font-black italic text-white mt-2">{{ money(inventory.summary.total_revenue) }}</div>
                     </div>
-                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.75rem] p-5">
+                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[0.75rem] p-5">
                         <div class="text-[9px] uppercase text-white/30 tracking-widest font-black">SKU</div>
                         <div class="text-2xl font-black italic text-cyan-400 mt-2">{{ inventory.summary.sku_count }}</div>
                     </div>
-                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.75rem] p-5">
+                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[0.75rem] p-5">
                         <div class="text-[9px] uppercase text-white/30 tracking-widest font-black">ABC</div>
                         <div class="text-sm font-black italic text-white/70 mt-2">
                             A{{ inventory.summary.abc.A }} · B{{ inventory.summary.abc.B }} · C{{ inventory.summary.abc.C }}
                         </div>
                     </div>
-                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.75rem] p-5">
+                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[0.75rem] p-5">
                         <div class="text-[9px] uppercase text-white/30 tracking-widest font-black">XYZ</div>
                         <div class="text-sm font-black italic text-white/70 mt-2">
                             X{{ inventory.summary.xyz.X }} · Y{{ inventory.summary.xyz.Y }} · Z{{ inventory.summary.xyz.Z }}
@@ -351,7 +351,7 @@ const money = (n: number) =>
                     </div>
                 </div>
 
-                <div class="bg-[#0a0a0a] border border-white/5 rounded-[2rem] overflow-hidden">
+                <div class="bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] overflow-hidden">
                     <div class="px-6 py-4 border-b border-white/5 text-[11px] font-black uppercase tracking-[0.3em] text-white/40 italic">
                         Товары · {{ inventory.from }} — {{ inventory.to }}
                     </div>

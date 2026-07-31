@@ -74,6 +74,12 @@ Route::middleware('guest')->group(function () {
 
 Route::post('/logout', [LogoutController::class, 'logout'])->name('logout');
 
+// ЮKassa HTTP-уведомления (без сессии / CSRF)
+Route::post('/api/billing/yookassa/webhook', [BillingController::class, 'webhook'])
+    ->name('billing.yookassa.webhook');
+// Адрес, прописанный в ЛК ЮKassa; вне admin-гарда, иначе уведомление получит редирект на логин.
+Route::post('/admin/yookassaStatusSave', [BillingController::class, 'webhook']);
+
 /*
 |--------------------------------------------------------------------------
 | ОБЩИЕ API (ИГРОКИ + АДМИНЫ)
@@ -108,6 +114,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/api/booking/{bookingGroup}/cancel', [BookingController::class, 'cancel']);
 
     Route::post('/api/billing/topup', [BillingController::class, 'topUp']);
+    Route::get('/billing/yookassa/return/{payment}', [BillingController::class, 'returnFromYooKassa'])
+        ->name('billing.yookassa.return');
     Route::post('/api/admin/call', [ChatController::class, 'callAdmin']);
     Route::get('/api/game-requests/mine', [GameRequestController::class, 'mine']);
     Route::post('/api/game-requests', [GameRequestController::class, 'store']);
@@ -149,6 +157,9 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::post('/receive-scan', [AdminController::class, 'receiveScan']);
         Route::post('/update-stock', [AdminController::class, 'updateStock']);
         Route::get('/find-barcode', [AdminController::class, 'findByBarcode']);
+        // Списание / угощение с причиной — любой админ в смене
+        Route::post('/write-off', [AdminController::class, 'writeOffUnit']);
+        Route::post('/adjust', [AdminController::class, 'adjustStock']);
     });
 
     Route::post('/orders/fulfill-scan', [AdminController::class, 'autoFulfillScan']);
@@ -177,7 +188,6 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::prefix('api/inventory')->group(function () {
             Route::post('/save', [AdminController::class, 'saveProduct']);
             Route::delete('/delete/{id}', [AdminController::class, 'deleteProduct']);
-            Route::post('/write-off', [AdminController::class, 'writeOffUnit']);
         });
 
         // КАРТА И ТАРИФЫ

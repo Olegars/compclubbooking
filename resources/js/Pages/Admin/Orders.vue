@@ -117,7 +117,7 @@ onUnmounted(() => {
     <AdminLayout>
         <div class="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono text-white pb-10">
 
-            <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-xl flex items-center gap-4">
+            <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-xl flex items-center gap-4">
                 <div class="w-3 h-10 bg-[#22c55e] rounded-full animate-pulse shadow-[0_0_15px_rgba(34,197,94,0.4)]"></div>
                 <div>
                     <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">Очередь заказов</h1>
@@ -129,7 +129,7 @@ onUnmounted(() => {
 
             <div v-if="orders && orders.length > 0" class="space-y-4">
                 <div v-for="order in orders" :key="order.id"
-                     class="bg-[#050505] border rounded-[2rem] p-6 flex flex-col gap-4 group hover:border-[#22c55e]/40 transition-all shadow-lg relative overflow-hidden"
+                     class="bg-[#050505] border rounded-[0.875rem] p-6 flex flex-col gap-4 group hover:border-[#22c55e]/40 transition-all shadow-lg relative overflow-hidden"
                      :class="lastScannedOrderId === order.id ? 'border-cyan-500 ring-1 ring-cyan-500/40' : 'border-white/5'">
 
                     <div class="absolute left-0 top-0 bottom-0 w-1 bg-[#22c55e]/20 group-hover:bg-[#22c55e] transition-colors"></div>
@@ -200,7 +200,7 @@ onUnmounted(() => {
                 </div>
             </div>
 
-            <div v-else class="text-center py-32 border-2 border-dashed border-white/5 rounded-[3rem] bg-[#050505]">
+            <div v-else class="text-center py-32 border-2 border-dashed border-white/5 rounded-[1.125rem] bg-[#050505]">
                 <div class="text-white/10 uppercase font-black italic tracking-[0.5em] text-xl">Очередь пуста</div>
                 <div class="text-[10px] text-white/20 uppercase tracking-widest mt-2 font-bold">Ожидание новых поступлений...</div>
             </div>

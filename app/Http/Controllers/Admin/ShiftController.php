@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Shift;
+use App\Services\ProductStockService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class ShiftController extends Controller
 {
@@ -16,7 +18,7 @@ class ShiftController extends Controller
 
     public function transferPage()
     {
-        $products = Product::select('id', 'name', 'stock', 'category')->get();
+        $products = Product::select('id', 'name', 'stock', 'category', 'requires_marking')->get();
 
         return Inertia::render('Admin/ShiftTransfer', [
             'expected' => $products,
@@ -26,7 +28,7 @@ class ShiftController extends Controller
         ]);
     }
 
-    public function completeTransfer(Request $request)
+    public function completeTransfer(Request $request, ProductStockService $stock)
     {
         $data = $request->validate([
             'items' => ['required', 'array', 'min:1'],
@@ -34,12 +36,31 @@ class ShiftController extends Controller
             'items.*.name' => ['required', 'string'],
             'items.*.stock' => ['required', 'integer'],
             'items.*.actual' => ['required', 'integer', 'min:0'],
+            'items.*.requires_marking' => ['nullable', 'boolean'],
+            'items.*.reason' => ['nullable', 'string', 'max:255'],
             'cash_counted' => ['required', 'numeric', 'min:0'],
         ]);
 
         $admin = auth()->user();
 
-        return DB::transaction(function () use ($data, $admin) {
+        foreach ($data['items'] as $item) {
+            if ((int) $item['actual'] === (int) $item['stock']) {
+                continue;
+            }
+            $product = Product::find($item['id']);
+            if ($product?->requires_marking) {
+                return back()->withErrors([
+                    'items' => "«{$item['name']}» маркирован — спишите недостачу через КМ на складе, а не правкой пересменки.",
+                ]);
+            }
+            if (trim((string) ($item['reason'] ?? '')) === '') {
+                return back()->withErrors([
+                    'items' => "Укажите причину расхождения для «{$item['name']}» (бой, просрочка, пересчёт и т.д.).",
+                ]);
+            }
+        }
+
+        return DB::transaction(function () use ($data, $admin, $stock) {
             $cashCounted = (float) $data['cash_counted'];
 
             // 1. Закрываем смену, которую нам сдают. Пересчитанная касса — это одновременно
@@ -69,18 +90,38 @@ class ShiftController extends Controller
                     'created_at' => now(),
                 ]);
 
-                // 4. Если есть расхождение — пишем в Инциденты
-                if ($item['actual'] != $item['stock']) {
-                    DB::table('incidents')->insert([
-                        'type' => 'inventory_discrepancy',
-                        'severity' => 'high',
-                        'description' => "РАСХОЖДЕНИЕ ПРИ ПРИЕМКЕ: {$item['name']}. Ожидалось: {$item['stock']}, по факту: {$item['actual']}. Принял: {$admin->name}",
-                        'created_at' => now(),
-                    ]);
-
-                    // Обновляем реальный остаток в базе до фактического
-                    Product::where('id', $item['id'])->update(['stock' => $item['actual']]);
+                if ((int) $item['actual'] === (int) $item['stock']) {
+                    continue;
                 }
+
+                $product = Product::find($item['id']);
+                if (! $product) {
+                    continue;
+                }
+
+                $reasonNote = trim((string) ($item['reason'] ?? ''));
+
+                try {
+                    $stock->applyShiftAdjustment(
+                        $product,
+                        (int) $item['stock'],
+                        (int) $item['actual'],
+                        (int) $admin->id,
+                        (int) $shift->id,
+                        $reasonNote
+                    );
+                } catch (RuntimeException $e) {
+                    throw $e;
+                }
+
+                // Объяснённая корректировка — medium, не «подозрение в краже»
+                DB::table('incidents')->insert([
+                    'type' => 'inventory_discrepancy',
+                    'severity' => 'medium',
+                    'description' => "Пересменка «{$item['name']}»: ожидалось {$item['stock']}, факт {$item['actual']}. Причина: {$reasonNote}. Принял: {$admin->name}",
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
             }
 
             return redirect()->route('admin.dashboard');

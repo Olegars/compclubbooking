@@ -16,6 +16,14 @@
     --font-bomber: "BomberEscort", sans-serif;
     --color-reactor: #22c55e;
     --color-bg-dark: #020202;
+
+    /* Скругления сжаты относительно стандартной шкалы Tailwind:
+       интерфейс должен читаться как техничный, а не как «мягкие» карточки. */
+    --radius-lg: 0.375rem;
+    --radius-xl: 0.5rem;
+    --radius-2xl: 0.625rem;
+    --radius-3xl: 0.875rem;
+    --radius-4xl: 1.125rem;
 }
 
 @layer base {

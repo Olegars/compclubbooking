@@ -140,6 +140,14 @@ class AdminController extends Controller
 
         return Inertia::render('Admin/Inventory', [
             'canManageCatalog' => $canManageCatalog,
+            'canAdjustStock' => true,
+            'reasonCodes' => collect(ProductStockService::WRITE_OFF_REASON_CODES)
+                ->map(fn ($code) => [
+                    'code' => $code,
+                    'label' => \App\Models\StockMovement::REASON_LABELS[$code] ?? $code,
+                ])
+                ->values()
+                ->all(),
             'products' => Product::query()
                 ->orderBy('name')
                 ->get(['id', 'name', 'category', 'price', 'stock', 'barcode', 'image', 'requires_marking']),
@@ -326,22 +334,83 @@ class AdminController extends Controller
     public function writeOffUnit(Request $request, ProductStockService $stock)
     {
         $admin = auth('admin')->user();
-        if (! $admin || ! in_array($admin->role, ['supervisor', 'owner'], true)) {
-            return response()->json(['message' => 'Недостаточно прав'], 403);
+        if (! $admin) {
+            return response()->json(['message' => 'Не авторизован'], 403);
         }
 
         $request->validate([
             'code' => 'required|string|max:512',
-            'reason' => 'required|string|max:255',
+            'reason_code' => 'nullable|string|max:32',
+            'reason' => 'nullable|string|max:255',
+            'type' => 'nullable|in:write_off,comp',
         ]);
 
+        $type = $request->input('type', 'write_off') === 'comp'
+            ? \App\Models\StockMovement::TYPE_COMP
+            : \App\Models\StockMovement::TYPE_WRITE_OFF;
+
+        $note = trim((string) ($request->input('reason') ?? ''));
+        if ($note === '') {
+            $note = $type === \App\Models\StockMovement::TYPE_COMP ? 'Угощение' : 'Списание';
+        }
+
         try {
-            $unit = $stock->writeOffUnit($request->code, (int) $admin->id, $request->reason);
+            $unit = $stock->writeOffUnit(
+                $request->code,
+                (int) $admin->id,
+                $note,
+                $request->input('reason_code'),
+                $type
+            );
 
             return response()->json([
                 'status' => 'written_off',
                 'product' => $unit->product,
                 'new_stock' => (int) ($unit->product?->stock ?? 0),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * Mid-shift write-off / complimentary for unmarked products (qty + reason).
+     * Available to any admin on shift so losses don't become unexplained пересменка gaps.
+     */
+    public function adjustStock(Request $request, ProductStockService $stock)
+    {
+        $admin = auth('admin')->user();
+        if (! $admin) {
+            return response()->json(['message' => 'Не авторизован'], 403);
+        }
+
+        $data = $request->validate([
+            'product_id' => 'required|integer|exists:products,id',
+            'qty' => 'required|integer|min:1|max:999',
+            'type' => 'required|in:write_off,comp',
+            'reason_code' => 'nullable|string|max:32',
+            'reason' => 'nullable|string|max:255',
+        ]);
+
+        $product = Product::findOrFail($data['product_id']);
+
+        try {
+            $result = $stock->adjustUnmarked(
+                $product,
+                (int) $data['qty'],
+                (int) $admin->id,
+                $data['type'] === 'comp'
+                    ? \App\Models\StockMovement::TYPE_COMP
+                    : \App\Models\StockMovement::TYPE_WRITE_OFF,
+                $data['reason_code'] ?? null,
+                $data['reason'] ?? null
+            );
+
+            return response()->json([
+                'status' => 'adjusted',
+                'product' => $result['product'],
+                'new_stock' => (int) $result['product']->stock,
+                'movement_id' => $result['movement']->id,
             ]);
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -528,24 +597,28 @@ class AdminController extends Controller
         }
 
         if ($request->status === 'cancelled') {
-            $soldUnits = ProductUnit::query()
-                ->where('sold_order_id', (int) $id)
-                ->where('status', ProductUnit::STATUS_SOLD)
-                ->get();
+            DB::transaction(function () use ($id, $items, $stock) {
+                $soldUnits = ProductUnit::query()
+                    ->where('sold_order_id', (int) $id)
+                    ->where('status', ProductUnit::STATUS_SOLD)
+                    ->lockForUpdate()
+                    ->get();
 
-            foreach ($soldUnits as $unit) {
-                $unit->update([
-                    'status' => ProductUnit::STATUS_AVAILABLE,
-                    'sold_order_id' => null,
-                    'sold_at' => null,
-                ]);
-            }
+                foreach ($soldUnits as $unit) {
+                    $unit->update([
+                        'status' => ProductUnit::STATUS_AVAILABLE,
+                        'sold_order_id' => null,
+                        'sold_at' => null,
+                    ]);
+                }
 
-            $stock->releaseReservationsForOrder((int) $id);
+                $stock->releaseReservationsForOrder((int) $id);
+                $stock->restoreUnmarkedForOrder((int) $id, $items);
 
-            foreach ($soldUnits->pluck('product_id')->unique() as $productId) {
-                $stock->syncMarkedStock((int) $productId);
-            }
+                foreach ($soldUnits->pluck('product_id')->unique() as $productId) {
+                    $stock->syncMarkedStock((int) $productId);
+                }
+            });
         }
 
         if ($request->status === 'delivered') {

@@ -262,7 +262,7 @@ const getStatusBadge = (status) => {
                     </div>
                 </div>
 
-                <div class="lg:col-span-8 bg-[#0a0a0a] border border-white/5 rounded-[3rem] p-10 shadow-2xl min-h-[600px] flex flex-col relative overflow-hidden">
+                <div class="lg:col-span-8 bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-10 shadow-2xl min-h-[600px] flex flex-col relative overflow-hidden">
 
                     <div class="absolute -right-20 -top-20 opacity-[0.02] pointer-events-none">
                         <svg class="w-96 h-96 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 2a8 8 0 100 16 8 8 0 000-16zM8 7a1 1 0 112 0v4a1 1 0 11-2 0V7zm2 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" /></svg>
@@ -396,7 +396,7 @@ const getStatusBadge = (status) => {
         <Teleport to="body">
             <div v-if="showGameModal" class="fixed inset-0 flex items-center justify-center z-[9999900] p-6 font-mono">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-md" @click="showGameModal = false"></div>
-                <div class="relative w-full max-w-xl bg-[#0a0a0a] border border-blue-500/30 rounded-[3rem] p-10 shadow-[0_0_100px_rgba(37,99,235,0.15)] animate-in zoom-in-95 duration-200 max-h-[95vh] overflow-y-auto custom-scrollbar">
+                <div class="relative w-full max-w-xl bg-[#0a0a0a] border border-blue-500/30 rounded-[1.125rem] p-10 shadow-[0_0_100px_rgba(37,99,235,0.15)] animate-in zoom-in-95 duration-200 max-h-[95vh] overflow-y-auto custom-scrollbar">
                     <h2 class="text-blue-500 text-3xl font-black uppercase italic mb-8 tracking-tighter">
                         {{ isEditing ? 'Изменение метаданных' : 'Метаданные игры' }}
                     </h2>
@@ -442,7 +442,7 @@ const getStatusBadge = (status) => {
                             </div>
                         </div>
 
-                        <div class="p-6 bg-blue-500/5 border border-blue-500/20 rounded-[2rem] space-y-4">
+                        <div class="p-6 bg-blue-500/5 border border-blue-500/20 rounded-[0.875rem] space-y-4">
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                                 <div class="text-[10px] text-blue-400 font-black uppercase tracking-widest">Инструкции запуска (Shell Bridge)</div>
@@ -473,7 +473,7 @@ const getStatusBadge = (status) => {
         <Teleport to="body">
             <div v-if="showAccountModal" class="fixed inset-0 flex items-center justify-center z-[9999900] p-6 font-mono">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-md" @click="showAccountModal = false"></div>
-                <div class="relative w-full max-w-md bg-[#0a0a0a] border border-white/20 rounded-[3rem] p-10 shadow-[0_0_100px_rgba(255,255,255,0.05)] animate-in zoom-in-95 duration-200">
+                <div class="relative w-full max-w-md bg-[#0a0a0a] border border-white/20 rounded-[1.125rem] p-10 shadow-[0_0_100px_rgba(255,255,255,0.05)] animate-in zoom-in-95 duration-200">
                     <h2 class="text-white text-3xl font-black uppercase italic mb-8 tracking-tighter">Внести данные</h2>
 
                     <form @submit.prevent="submitAccount" class="space-y-5">

@@ -171,7 +171,7 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
 
             <!-- SOS С ТЕРМИНАЛОВ: ЛИПКАЯ КРАСНАЯ ПАНЕЛЬ -->
             <div v-if="sosAlerts.length > 0" class="sticky top-0 z-40 -mx-6 -mt-6 px-6 pt-6 pb-4 bg-[#050505]/95 backdrop-blur-md">
-                <div class="bg-red-600/[0.07] border-2 border-red-600/50 rounded-[2.5rem] p-6 shadow-[0_0_60px_rgba(220,38,38,0.2)]">
+                <div class="bg-red-600/[0.07] border-2 border-red-600/50 rounded-[1rem] p-6 shadow-[0_0_60px_rgba(220,38,38,0.2)]">
                     <div class="flex items-center justify-between gap-4 mb-5">
                         <div class="flex items-center gap-4">
                             <span class="w-3 h-3 bg-red-600 rounded-full animate-ping"></span>
@@ -208,23 +208,23 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden">
+                <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-xl relative overflow-hidden">
                     <div class="absolute right-0 top-0 p-4 opacity-5"><span class="text-6xl italic">₽</span></div>
                     <span class="text-[10px] text-cyan-500/50 uppercase font-black tracking-[0.3em] italic">Выручка (24h)</span>
                     <div class="text-5xl font-black mt-2 tracking-tighter italic">{{ formatMoney(stats.TOTAL_REVENUE) }}<span class="text-sm ml-2 text-white/20">₽</span></div>
                 </div>
-                <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-xl">
+                <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-xl">
                     <span class="text-[10px] text-[#22c55e]/50 uppercase font-black tracking-[0.3em] italic">Active Nodes</span>
                     <div class="text-5xl font-black mt-2 tracking-tighter italic">{{ stats.ACTIVE_SESSIONS }}</div>
                 </div>
-                <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-xl">
+                <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-xl">
                     <span class="text-[10px] text-purple-500/50 uppercase font-black tracking-[0.3em] italic">New Stalkers</span>
                     <div class="text-5xl font-black mt-2 tracking-tighter italic">+{{ stats.NEW_USERS_TODAY }}</div>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                <div class="lg:col-span-8 bg-[#0a0a0a] border border-white/5 rounded-[3rem] p-10 shadow-2xl">
+                <div class="lg:col-span-8 bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-10 shadow-2xl">
                     <h2 class="text-2xl font-black uppercase italic mb-10 flex items-center gap-4 tracking-tighter">
                         <span class="w-2 h-10 bg-cyan-500 rounded-full shadow-[0_0_15px_rgba(6,182,212,0.5)]"></span>
                         Мониторинг залов
@@ -242,7 +242,7 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                 </div>
 
                 <div class="lg:col-span-4 space-y-6">
-                    <div v-if="isSupervisorPlus" class="bg-[#0a0a0a] border border-cyan-500/10 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden group">
+                    <div v-if="isSupervisorPlus" class="bg-[#0a0a0a] border border-cyan-500/10 rounded-[1rem] p-8 shadow-2xl relative overflow-hidden group">
                         <h3 class="text-lg font-black text-cyan-500 uppercase italic mb-6 flex items-center gap-3">
                             <span class="w-1.5 h-6 bg-cyan-500 rounded-full"></span> Настройка цен
                         </h3>
@@ -255,7 +255,7 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                         </Link>
                     </div>
 
-                    <div class="bg-[#0a0a0a] border border-red-500/20 rounded-[2.5rem] p-8 shadow-2xl">
+                    <div class="bg-[#0a0a0a] border border-red-500/20 rounded-[1rem] p-8 shadow-2xl">
                         <h3 class="text-lg font-black text-red-500 uppercase italic mb-6 flex items-center gap-3">
                             <span class="w-1.5 h-6 bg-red-500 rounded-full animate-pulse"></span> Вызовы
                         </h3>
@@ -272,7 +272,7 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                         <div v-else class="py-10 text-center border border-dashed border-white/5 rounded-2xl italic text-[10px] text-white/10 uppercase tracking-widest">Сигналов нет</div>
                     </div>
 
-                    <div v-if="inputAlerts.length > 0" class="bg-[#0a0a0a] border border-amber-500/20 rounded-[2.5rem] p-8 shadow-2xl">
+                    <div v-if="inputAlerts.length > 0" class="bg-[#0a0a0a] border border-amber-500/20 rounded-[1rem] p-8 shadow-2xl">
                         <h3 class="text-lg font-black text-amber-500 uppercase italic mb-6 flex items-center gap-3">
                             <span class="w-1.5 h-6 bg-amber-500 rounded-full"></span> Периферия
                         </h3>
@@ -289,7 +289,7 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                         </div>
                     </div>
 
-                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[2.5rem] p-8 shadow-2xl">
+                    <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 shadow-2xl">
                         <h3 class="text-lg font-black text-white uppercase italic mb-8 flex items-center gap-3">
                             <span class="w-1.5 h-6 bg-[#22c55e] rounded-full"></span> Гость / Касса
                         </h3>

@@ -75,11 +75,18 @@ const runTopUpStub = async () => {
   isSuccessModalOpen.value = true
 
   try {
-    await axios.post('/api/billing/topup', {
+    const { data } = await axios.post('/api/billing/topup', {
       amount: value,
       method: paymentMethod.value,
+      return_to: window.location.pathname + window.location.search,
     })
-    router.reload({ only: ['auth', 'transactions'], preserveScroll: true })
+    if (data.confirmation_url) {
+      window.location.href = data.confirmation_url
+      return
+    }
+    isSuccessModalOpen.value = false
+    alert('Не удалось получить ссылку на оплату')
+    closeAll()
   } catch (e: any) {
     isSuccessModalOpen.value = false
     alert(e.response?.data?.message || 'Сбой транзакции пополнения')

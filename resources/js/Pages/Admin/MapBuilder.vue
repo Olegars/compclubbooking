@@ -884,7 +884,7 @@ onUnmounted(() => {
 
 <template>
     <AdminLayout>
-        <div class="h-[calc(100vh-8rem)] min-h-[600px] flex flex-col bg-[#050505] border border-white/5 rounded-[2.5rem] overflow-hidden shadow-2xl animate-in fade-in duration-500 font-mono text-white relative">
+        <div class="h-[calc(100vh-8rem)] min-h-[600px] flex flex-col bg-[#050505] border border-white/5 rounded-[1rem] overflow-hidden shadow-2xl animate-in fade-in duration-500 font-mono text-white relative">
 
             <div v-if="isLoading" class="absolute inset-0 bg-black/70 backdrop-blur-md z-[999] flex items-center justify-center">
                 <div class="flex flex-col items-center gap-4">

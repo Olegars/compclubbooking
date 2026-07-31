@@ -52,7 +52,7 @@ const totalItems = computed(() =>
     <AdminLayout>
         <div class="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
 
-            <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-2xl space-y-6">
+            <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-2xl space-y-6">
                 <div>
                     <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">
                         О <span class="text-[#22c55e]">системе</span>
@@ -79,7 +79,7 @@ const totalItems = computed(() =>
                 </div>
             </div>
 
-            <div v-if="filtered.length === 0" class="py-16 text-center border border-dashed border-white/10 rounded-[2.5rem] text-white/30 text-xs uppercase tracking-widest">
+            <div v-if="filtered.length === 0" class="py-16 text-center border border-dashed border-white/10 rounded-[1rem] text-white/30 text-xs uppercase tracking-widest">
                 Ничего не найдено
             </div>
 
@@ -96,7 +96,7 @@ const totalItems = computed(() =>
                     <article
                         v-for="item in section.items"
                         :key="item.title"
-                        class="bg-[#0a0a0a] border border-white/5 rounded-[1.75rem] p-6 hover:border-white/10 transition-colors"
+                        class="bg-[#0a0a0a] border border-white/5 rounded-[0.75rem] p-6 hover:border-white/10 transition-colors"
                     >
                         <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
                             <h3 class="text-sm font-black uppercase italic tracking-tight text-white">

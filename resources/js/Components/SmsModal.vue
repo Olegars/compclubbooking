@@ -54,7 +54,7 @@ const btnClass = "h-16 bg-[#0a0a0a] border border-[#22c55e]/20 rounded-2xl flex 
 
         <div class="absolute inset-0 bg-black/90 backdrop-blur-md" @click="emit('close')"></div>
 
-        <div class="relative w-full max-w-sm bg-[#050505] border border-[#22c55e]/40 rounded-[2.5rem] p-8 shadow-[0_0_80px_rgba(34,197,94,0.2)] flex flex-col items-center">
+        <div class="relative w-full max-w-sm bg-[#050505] border border-[#22c55e]/40 rounded-[1rem] p-8 shadow-[0_0_80px_rgba(34,197,94,0.2)] flex flex-col items-center">
 
             <input
                 v-if="!isActuallyTerminal"

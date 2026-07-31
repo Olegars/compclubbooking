@@ -6,6 +6,7 @@ import axios from 'axios' // <--- Прямой импорт (решает про
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import SmsModal from '@/Components/SmsModal.vue'
 import PaymentModal from '@/Components/PaymentModal.vue'
+import FlashToast from '@/Components/FlashToast.vue'
 
 const page = usePage()
 
@@ -15,7 +16,7 @@ const isSmsModalOpen = ref(false)
 const authPhone = ref('')
 const smsModalRef = ref<InstanceType<typeof SmsModal> | null>(null)
 
-// --- ПОПОЛНЕНИЕ (заглушка оплаты) ---
+// --- ПОПОЛНЕНИЕ (ЮKassa) ---
 const isTopUpInputOpen = ref(false)
 const isPaymentProcessing = ref(false)
 const topUpAmount = ref(500)
@@ -117,14 +118,17 @@ const proceedToPayment = async () => {
     }
 
     try {
-        // Payment stub: backend credits deposit_balance as if acquiring succeeded
         const { data } = await axios.post('/api/billing/topup', {
             amount: topUpAmount.value,
             method: paymentMethod.value,
+            return_to: window.location.pathname + window.location.search,
         })
-        const next = parseFloat(String(data.new_balance ?? data.deposit_balance ?? data.balance ?? 0))
-        if (!isNaN(next)) localBalance.value = next
-        router.reload({ only: ['auth', 'transactions'], preserveScroll: true })
+        if (data.confirmation_url) {
+            window.location.href = data.confirmation_url
+            return
+        }
+        isPaymentProcessing.value = false
+        alert('Не удалось получить ссылку на оплату')
     } catch (e: any) {
         isPaymentProcessing.value = false
         alert(e.response?.data?.message || 'Сбой транзакции пополнения')
@@ -215,11 +219,16 @@ onUnmounted(() => {
                 </Link>
 
                 <nav class="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-                    <Link href="/booking" class="nav-btn" :class="{ 'active': $page.url.startsWith('/booking') }">Бронирование</Link>
                     <Link href="/" class="nav-btn" :class="{ 'active': $page.url === '/' }">Главная</Link>
+                    <Link
+                        v-if="isAuthenticated"
+                        href="/account/dashboard"
+                        class="nav-btn"
+                        :class="{ 'active': $page.url.startsWith('/account') }"
+                    >Кабинет</Link>
+                    <Link href="/booking" class="nav-btn" :class="{ 'active': $page.url.startsWith('/booking') }">Бронирование</Link>
 
                     <template v-if="isAuthenticated">
-                        <Link href="/account/dashboard" class="nav-btn" :class="{ 'active': $page.url.startsWith('/account') }">Кабинет</Link>
                         <div class="nav-meta">
                             <span class="nav-meta-name">
                                 {{ $page.props.auth?.user?.name || $page.props.user?.name || '—' }}
@@ -285,7 +294,7 @@ onUnmounted(() => {
 
             <div v-if="isTopUpInputOpen" class="fixed inset-0 flex items-center justify-center z-[9998] p-6 animate-in fade-in duration-300">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="isTopUpInputOpen = false"></div>
-                <div class="relative max-w-md w-full bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[3.5rem] p-12 text-center shadow-[0_0_120px_rgba(34,197,94,0.2)]">
+                <div class="relative max-w-md w-full bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1.25rem] p-12 text-center shadow-[0_0_120px_rgba(34,197,94,0.2)]">
                     <h2 class="text-[#22c55e] text-4xl font-black uppercase italic mb-8 tracking-tighter">Reactor Pay</h2>
                     <div class="grid grid-cols-3 gap-3 mb-6">
                         <button
@@ -302,7 +311,7 @@ onUnmounted(() => {
                         v-model.number="topUpAmount"
                         type="number"
                         min="100"
-                        class="w-full bg-black border-2 border-white/5 rounded-[2.5rem] py-8 text-6xl font-black text-center text-white mb-6 outline-none focus:border-[#22c55e]/50 transition-colors"
+                        class="w-full bg-black border-2 border-white/5 rounded-[1rem] py-8 text-6xl font-black text-center text-white mb-6 outline-none focus:border-[#22c55e]/50 transition-colors"
                     />
                     <div class="grid grid-cols-2 gap-3 mb-8">
                         <button
@@ -319,7 +328,7 @@ onUnmounted(() => {
                     <button
                         type="button"
                         @click="proceedToPayment"
-                        class="w-full py-7 bg-[#22c55e] text-black font-black uppercase rounded-[2.5rem] italic hover:bg-[#2ae06d] transition-colors shadow-[0_0_20px_rgba(34,197,94,0.3)]"
+                        class="w-full py-7 bg-[#22c55e] text-black font-black uppercase rounded-[1rem] italic hover:bg-[#2ae06d] transition-colors shadow-[0_0_20px_rgba(34,197,94,0.3)]"
                     >Оплатить</button>
                 </div>
             </div>
@@ -332,6 +341,8 @@ onUnmounted(() => {
                 @close="isPaymentProcessing = false"
             />
         </Teleport>
+
+        <FlashToast />
     </main>
 </template>
 

@@ -1,37 +1,65 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Head, router } from '@inertiajs/vue3'
+import { Head, router, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
 const props = defineProps<{ expected: any[], expectedCash: number }>()
+const page = usePage()
 
 const items = ref(props.expected.map(i => ({
     ...i,
-    actual: i.stock
+    requires_marking: Boolean(i.requires_marking),
+    actual: Number(i.stock) || 0,
+    reason: '',
 })))
 
 // Пересчитанная касса: она же станет остатком на конец сдаваемой смены
 const cashCounted = ref<number | null>(props.expectedCash)
 
-const hasDiscrepancies = computed(() => items.value.some(i => i.actual !== i.stock))
+const hasDiscrepancies = computed(() => items.value.some(i => Number(i.actual) !== Number(i.stock)))
 const cashIsValid = computed(() => typeof cashCounted.value === 'number' && cashCounted.value >= 0)
+const missingReasons = computed(() =>
+    items.value.filter(i =>
+        !i.requires_marking
+        && Number(i.actual) !== Number(i.stock)
+        && !String(i.reason || '').trim()
+    )
+)
+const formError = computed(() => {
+    const errs = (page.props as any)?.errors
+    return errs?.items || errs?.message || null
+})
 
 const printList = () => { window.print() }
 
 const submitShift = () => {
     if (!cashIsValid.value) {
-        alert("Укажите сумму наличных в кассе")
+        alert('Укажите сумму наличных в кассе')
+        return
+    }
+
+    const markedTamper = items.value.find(i =>
+        i.requires_marking && Number(i.actual) !== Number(i.stock)
+    )
+    if (markedTamper) {
+        alert(`«${markedTamper.name}» маркирован — недостачу списывайте через КМ на складе, не правкой пересменки.`)
+        markedTamper.actual = Number(markedTamper.stock)
+        return
+    }
+
+    if (missingReasons.value.length) {
+        alert(`Укажите причину расхождения: ${missingReasons.value.map(i => i.name).join(', ')}`)
         return
     }
 
     const msg = hasDiscrepancies.value
-        ? "ВНИМАНИЕ: Обнаружены расхождения! Зафиксировать инцидент и открыть смену?"
-        : "Открыть новую смену?"
+        ? 'Есть расхождения с указанными причинами. Зафиксировать и открыть смену?'
+        : 'Открыть новую смену?'
 
     if (confirm(msg)) {
         router.post('/admin/api/shifts/complete', {
             items: items.value,
-            cash_counted: cashCounted.value
+            cash_counted: cashCounted.value,
         })
     }
 }
@@ -42,7 +70,7 @@ const submitShift = () => {
     <AdminLayout>
         <div class="max-w-5xl mx-auto space-y-8 font-mono pb-20">
 
-            <div class="no-print flex justify-between items-center bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem]">
+            <div class="no-print flex justify-between items-center bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem]">
                 <div>
                     <h1 class="text-3xl font-black text-white uppercase italic tracking-tighter">Shift Transfer</h1>
                     <p class="text-white/20 text-[10px] uppercase font-bold mt-1">Протокол передачи материальной ответственности</p>
@@ -59,7 +87,11 @@ const submitShift = () => {
                 </div>
             </div>
 
-            <div class="no-print flex items-center justify-between gap-8 bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem]">
+            <div v-if="formError" class="no-print bg-red-500/15 border border-red-500/40 text-red-300 px-6 py-4 rounded-2xl text-sm font-bold">
+                {{ formError }}
+            </div>
+
+            <div class="no-print flex items-center justify-between gap-8 bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem]">
                 <div>
                     <h2 class="text-sm font-black text-white uppercase italic tracking-tight">Касса</h2>
                     <p class="text-white/20 text-[10px] uppercase font-bold mt-1">
@@ -73,13 +105,14 @@ const submitShift = () => {
                 </div>
             </div>
 
-            <div class="bg-[#050505] border border-white/5 rounded-[3rem] overflow-hidden shadow-2xl printable-area">
+            <div class="bg-[#050505] border border-white/5 rounded-[1.125rem] overflow-hidden shadow-2xl printable-area">
                 <table class="w-full text-left border-collapse">
                     <thead class="bg-white/5 text-[10px] uppercase font-black tracking-widest text-white/40">
                     <tr>
                         <th class="p-6">Объект</th>
                         <th class="p-6 text-center">План</th>
                         <th class="p-6 text-center">Факт</th>
+                        <th class="p-6 no-print">Причина (если ≠)</th>
                         <th class="p-6 text-right no-print">Статус</th>
                     </tr>
                     </thead>
@@ -88,12 +121,24 @@ const submitShift = () => {
                         :class="item.actual !== item.stock ? 'bg-red-500/10' : ''">
                         <td class="p-6">
                             <div class="font-bold text-white uppercase italic text-sm">{{ item.name }}</div>
-                            <div class="text-[9px] text-white/20 uppercase">{{ item.category }}</div>
+                            <div class="text-[9px] text-white/20 uppercase">
+                                {{ item.category }}
+                                <span v-if="item.requires_marking" class="ml-2 text-violet-400">КМ</span>
+                            </div>
                         </td>
                         <td class="p-6 text-center font-black text-xl text-white/40">{{ item.stock }}</td>
                         <td class="p-6 text-center">
                             <input v-model.number="item.actual" type="number"
-                                   class="w-20 bg-black border-2 border-white/10 rounded-lg py-2 text-center text-xl font-black text-white focus:border-cyan-500 outline-none" />
+                                   :disabled="item.requires_marking"
+                                   class="w-20 bg-black border-2 border-white/10 rounded-lg py-2 text-center text-xl font-black text-white focus:border-cyan-500 outline-none disabled:opacity-40" />
+                        </td>
+                        <td class="p-6 no-print">
+                            <input v-if="!item.requires_marking && item.actual !== item.stock"
+                                   v-model="item.reason" type="text"
+                                   placeholder="Бой / просрочка / …"
+                                   class="w-full bg-black border border-white/10 rounded-lg py-2 px-3 text-sm text-white focus:border-cyan-500 outline-none" />
+                            <span v-else-if="item.requires_marking" class="text-[9px] text-white/25 uppercase">Только через списание КМ</span>
+                            <span v-else class="text-white/15">—</span>
                         </td>
                         <td class="p-6 text-right no-print">
                             <span v-if="item.actual === item.stock" class="text-[#22c55e] text-[10px] font-black">OK</span>

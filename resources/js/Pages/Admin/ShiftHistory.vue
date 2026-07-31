@@ -73,7 +73,7 @@ const exportCsv = () => {
                 </div>
             </div>
 
-            <div class="bg-[#050505] border border-white/5 rounded-[2rem] overflow-hidden shadow-xl">
+            <div class="bg-[#050505] border border-white/5 rounded-[0.875rem] overflow-hidden shadow-xl">
                 <table class="w-full text-left border-collapse">
                     <thead>
                     <tr class="border-b border-white/10 bg-white/[0.02]">

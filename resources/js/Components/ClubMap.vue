@@ -1,5 +1,5 @@
 <template>
-    <div class="map-wrapper w-full h-full relative rounded-[38px] overflow-hidden border border-white/5 bg-[#020202] flex items-center justify-center">
+    <div class="map-wrapper w-full h-full relative rounded-[16px] overflow-hidden border border-white/5 bg-[#020202] flex items-center justify-center">
         <svg
             :viewBox="displayViewbox"
             preserveAspectRatio="xMidYMid meet"

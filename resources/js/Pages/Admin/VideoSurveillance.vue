@@ -180,7 +180,7 @@ const seedMouseEvent = () => {
             </div>
 
             <!-- Settings -->
-            <section class="bg-[#0a0a0a] border border-white/5 rounded-[2rem] p-8 space-y-6">
+            <section class="bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] p-8 space-y-6">
                 <div class="flex items-center justify-between gap-4">
                     <h2 class="text-xs font-black uppercase tracking-[0.3em] text-white/40 italic">Подключение</h2>
                     <label class="inline-flex items-center gap-3 cursor-pointer">
@@ -262,7 +262,7 @@ const seedMouseEvent = () => {
             </section>
 
             <!-- Events -->
-            <section class="bg-[#0a0a0a] border border-white/5 rounded-[2rem] p-8 space-y-6">
+            <section class="bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] p-8 space-y-6">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <h2 class="text-xs font-black uppercase tracking-[0.3em] text-white/40 italic">События</h2>
                     <button type="button" @click="seedMouseEvent"

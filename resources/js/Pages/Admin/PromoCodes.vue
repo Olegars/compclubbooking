@@ -61,7 +61,7 @@ const isDepleted = (used: number, max: number) => used >= max
 
             <div class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
 
-                <div class="xl:col-span-4 bg-[#0a0a0a] border border-purple-500/30 rounded-[2.5rem] p-8 shadow-[0_0_50px_rgba(168,85,247,0.05)] sticky top-8">
+                <div class="xl:col-span-4 bg-[#0a0a0a] border border-purple-500/30 rounded-[1rem] p-8 shadow-[0_0_50px_rgba(168,85,247,0.05)] sticky top-8">
                     <h2 class="text-xl font-black uppercase italic text-purple-400 mb-6 border-b border-purple-500/20 pb-4">Создать акцию</h2>
 
                     <form @submit.prevent="submit" class="space-y-6">
@@ -114,13 +114,13 @@ const isDepleted = (used: number, max: number) => used >= max
 
                 <div class="xl:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                    <div v-if="promocodes.length === 0" class="col-span-full py-20 border-2 border-dashed border-white/5 rounded-[3rem] text-center bg-[#050505]">
+                    <div v-if="promocodes.length === 0" class="col-span-full py-20 border-2 border-dashed border-white/5 rounded-[1.125rem] text-center bg-[#050505]">
                         <div class="text-5xl mb-4 opacity-50">🎁</div>
                         <div class="text-white/20 text-[10px] uppercase font-black tracking-[0.4em] italic">Активных кампаний нет</div>
                     </div>
 
                     <div v-for="promo in promocodes" :key="promo.id"
-                         class="bg-[#050505] border rounded-[2rem] p-6 relative overflow-hidden transition-all group flex flex-col justify-between min-h-[220px]"
+                         class="bg-[#050505] border rounded-[0.875rem] p-6 relative overflow-hidden transition-all group flex flex-col justify-between min-h-[220px]"
                          :class="isDepleted(promo.used_count, promo.max_uses) ? 'border-red-500/20 opacity-60 grayscale' : 'border-white/10 hover:border-purple-500/50 hover:bg-purple-500/[0.02]'">
 
                         <div class="flex justify-between items-start z-10">

@@ -128,7 +128,7 @@ const formatPositionName = (pos: string) => {
 
         <div class="max-w-7xl mx-auto space-y-8 pb-10 font-mono text-white p-6">
 
-            <div class="bg-[#0a0a0a] border border-purple-500/10 rounded-[3rem] p-10 flex items-center justify-between shadow-2xl">
+            <div class="bg-[#0a0a0a] border border-purple-500/10 rounded-[1.125rem] p-10 flex items-center justify-between shadow-2xl">
                 <div>
                     <h2 class="text-2xl font-black uppercase italic mb-2 flex items-center gap-4 tracking-tighter">
                         <span class="w-2 h-10 bg-purple-500 rounded-full shadow-[0_0_15px_rgba(168,85,247,0.5)]"></span>
@@ -141,7 +141,7 @@ const formatPositionName = (pos: string) => {
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500">
                 <div v-for="block in overlays" :key="block.id"
-                     class="bg-[#0a0a0a] border border-white/5 rounded-[2.5rem] p-8 group transition-all hover:border-purple-500/20 shadow-xl relative overflow-hidden flex flex-col justify-between">
+                     class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 group transition-all hover:border-purple-500/20 shadow-xl relative overflow-hidden flex flex-col justify-between">
 
                     <div>
                         <div class="flex justify-between items-start mb-6 border-b border-white/5 pb-4">

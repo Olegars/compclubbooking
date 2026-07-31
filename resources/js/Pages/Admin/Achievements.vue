@@ -119,7 +119,7 @@ const rewardLabel = (type: string) => type === 'bonus_balance' ? 'Фантики
             </div>
 
             <div class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-                <div class="xl:col-span-4 bg-[#0a0a0a] border border-purple-500/30 rounded-[2.5rem] p-8 shadow-[0_0_50px_rgba(168,85,247,0.05)] sticky top-8">
+                <div class="xl:col-span-4 bg-[#0a0a0a] border border-purple-500/30 rounded-[1rem] p-8 shadow-[0_0_50px_rgba(168,85,247,0.05)] sticky top-8">
                     <h2 class="text-xl font-black uppercase italic text-purple-400 mb-6 border-b border-purple-500/20 pb-4">
                         {{ editingId ? 'Редактировать' : 'Новая ачивка' }}
                     </h2>
@@ -213,12 +213,12 @@ const rewardLabel = (type: string) => type === 'bonus_balance' ? 'Фантики
                 </div>
 
                 <div class="xl:col-span-8 space-y-4">
-                    <div v-if="achievements.length === 0" class="py-20 border-2 border-dashed border-white/5 rounded-[3rem] text-center bg-[#050505]">
+                    <div v-if="achievements.length === 0" class="py-20 border-2 border-dashed border-white/5 rounded-[1.125rem] text-center bg-[#050505]">
                         <div class="text-white/20 text-[10px] uppercase font-black tracking-[0.4em] italic">Ачивок пока нет</div>
                     </div>
 
                     <div v-for="a in achievements" :key="a.id"
-                         class="bg-[#050505] border rounded-[2rem] p-6 transition-all flex flex-col md:flex-row md:items-center gap-4 justify-between"
+                         class="bg-[#050505] border rounded-[0.875rem] p-6 transition-all flex flex-col md:flex-row md:items-center gap-4 justify-between"
                          :class="a.is_active ? 'border-white/10 hover:border-purple-500/40' : 'border-white/5 opacity-50'">
                         <div class="min-w-0 flex-1">
                             <div class="flex flex-wrap items-center gap-2 mb-2">

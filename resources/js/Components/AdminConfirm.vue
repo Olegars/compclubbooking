@@ -27,7 +27,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
     <div v-if="isOpen" class="fixed inset-0 z-[99998] flex items-center justify-center p-4 font-mono">
         <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="emit('close')"></div>
 
-        <div class="relative z-10 w-full max-w-md bg-[#0a0a0a] border rounded-[2.5rem] p-8 shadow-2xl animate-in"
+        <div class="relative z-10 w-full max-w-md bg-[#0a0a0a] border rounded-[1rem] p-8 shadow-2xl animate-in"
              :class="tone === 'danger' ? 'border-red-500/30 shadow-[0_0_80px_rgba(239,68,68,0.12)]' : 'border-[#22c55e]/30 shadow-[0_0_80px_rgba(34,197,94,0.12)]'">
 
             <div class="flex items-center gap-4 mb-6">

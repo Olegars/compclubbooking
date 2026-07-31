@@ -51,7 +51,7 @@ const toggleGame = (game: BookingGameItem) => {
         <div v-if="isOpen" class="fixed inset-0 flex items-center justify-center p-4" style="z-index: 9999999 !important;">
             <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="emit('close')"></div>
 
-            <div class="relative w-full max-w-[520px] max-h-[min(82vh,720px)] bg-[#0a0a0a] border border-white/10 rounded-[32px] shadow-[0_0_80px_rgba(0,0,0,1)] overflow-hidden z-[10000000] flex flex-col">
+            <div class="relative w-full max-w-[520px] max-h-[min(82vh,720px)] bg-[#0a0a0a] border border-white/10 rounded-[14px] shadow-[0_0_80px_rgba(0,0,0,1)] overflow-hidden z-[10000000] flex flex-col">
                 <div class="h-1 bg-gradient-to-r from-transparent via-[#22c55e] to-transparent shrink-0"></div>
 
                 <div class="p-6 sm:p-8 flex flex-col min-h-0 flex-1">

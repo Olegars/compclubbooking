@@ -40,24 +40,24 @@ const formatDate = (dateStr: string) => {
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
 
             <div class="flex flex-col lg:flex-row gap-6">
-                <div class="flex-1 bg-[#0a0a0a] border border-white/5 p-8 rounded-[2.5rem] shadow-xl flex flex-col justify-center">
+                <div class="flex-1 bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-xl flex flex-col justify-center">
                     <h1 class="text-3xl font-black uppercase italic text-cyan-500 tracking-tighter">Реестр Бонусов</h1>
                     <p class="text-white/30 text-[10px] uppercase tracking-[0.4em] font-black mt-1 italic">Журнал компенсаций времени</p>
                 </div>
 
                 <div class="flex gap-6">
-                    <div class="bg-[#050505] border border-cyan-500/20 p-6 rounded-[2.5rem] min-w-[200px] flex flex-col justify-center shadow-[0_0_20px_rgba(6,182,212,0.05)]">
+                    <div class="bg-[#050505] border border-cyan-500/20 p-6 rounded-[1rem] min-w-[200px] flex flex-col justify-center shadow-[0_0_20px_rgba(6,182,212,0.05)]">
                         <span class="text-[10px] text-cyan-500/50 uppercase font-black tracking-[0.2em]">Выдано сегодня</span>
                         <div class="text-4xl font-black text-white mt-1 italic">{{ stats?.today_minutes || 0 }} <span class="text-sm text-cyan-500 ml-1">МИН</span></div>
                     </div>
-                    <div class="bg-[#050505] border border-white/10 p-6 rounded-[2.5rem] min-w-[200px] flex flex-col justify-center">
+                    <div class="bg-[#050505] border border-white/10 p-6 rounded-[1rem] min-w-[200px] flex flex-col justify-center">
                         <span class="text-[10px] text-white/30 uppercase font-black tracking-[0.2em]">За этот месяц</span>
                         <div class="text-4xl font-black text-white mt-1 italic">{{ stats?.month_minutes || 0 }} <span class="text-sm text-white/40 ml-1">МИН</span></div>
                     </div>
                 </div>
             </div>
 
-            <div class="bg-[#0a0a0a] border border-white/5 rounded-[2.5rem] p-8 shadow-xl">
+            <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 shadow-xl">
 
                 <div class="mb-8">
                     <input v-model="searchQuery" type="text" placeholder="Поиск по гостю, оператору или причине..."

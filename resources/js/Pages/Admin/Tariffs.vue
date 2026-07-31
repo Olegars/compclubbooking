@@ -489,7 +489,7 @@ const timeEndInput = computed({
         <Teleport to="body">
             <div v-if="showAddTariff" class="fixed inset-0 z-[9999900] flex items-center justify-center p-6 font-mono">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="showAddTariff = false"></div>
-                <form @submit.prevent="submitTariff" class="relative w-full max-w-lg bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[2.5rem] p-10 space-y-5">
+                <form @submit.prevent="submitTariff" class="relative w-full max-w-lg bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1rem] p-10 space-y-5">
                     <h2 class="text-[#22c55e] text-2xl font-black uppercase italic">Новый тариф</h2>
                     <input v-model="tariffForm.name" required placeholder="Название" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold focus:border-[#22c55e] outline-none" />
                     <input v-model="tariffForm.threshold_hours" type="number" min="1" required placeholder="Часов (1 = почасовой)" class="no-spinners w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold focus:border-[#22c55e] outline-none" />
@@ -502,7 +502,7 @@ const timeEndInput = computed({
 
             <div v-if="showRuleModal" class="fixed inset-0 z-[9999900] flex items-center justify-center p-6 font-mono">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="showRuleModal = false"></div>
-                <form @submit.prevent="submitRule" class="relative w-full max-w-xl bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[2.5rem] p-10 space-y-4">
+                <form @submit.prevent="submitRule" class="relative w-full max-w-xl bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1rem] p-10 space-y-4">
                     <h2 class="text-[#22c55e] text-2xl font-black uppercase italic mb-2">
                         {{ editingRuleId ? 'Изменить правило' : 'Правило цены' }}
                     </h2>
@@ -549,7 +549,7 @@ const timeEndInput = computed({
 
             <div v-if="showDayGroupModal" class="fixed inset-0 z-[9999900] flex items-center justify-center p-6 font-mono">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="showDayGroupModal = false"></div>
-                <form @submit.prevent="submitDayGroup" class="relative w-full max-w-lg bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[2.5rem] p-10 space-y-5">
+                <form @submit.prevent="submitDayGroup" class="relative w-full max-w-lg bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1rem] p-10 space-y-5">
                     <h2 class="text-[#22c55e] text-2xl font-black uppercase italic">Группа дней</h2>
                     <input v-model="dayGroupForm.name" required placeholder="Название" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold focus:border-[#22c55e] outline-none" />
                     <input v-model="dayGroupForm.color" type="color" class="w-full h-12 bg-black border-2 border-white/5 rounded-2xl p-1" />
@@ -568,7 +568,7 @@ const timeEndInput = computed({
 
             <div v-if="showOverrideModal" class="fixed inset-0 z-[9999900] flex items-center justify-center p-6 font-mono">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="showOverrideModal = false"></div>
-                <form @submit.prevent="submitOverride" class="relative w-full max-w-lg bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[2.5rem] p-10 space-y-5">
+                <form @submit.prevent="submitOverride" class="relative w-full max-w-lg bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1rem] p-10 space-y-5">
                     <h2 class="text-[#22c55e] text-2xl font-black uppercase italic">Дата как…</h2>
                     <input v-model="overrideForm.date" type="date" required class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold focus:border-[#22c55e] outline-none" />
                     <select v-model="overrideForm.day_group_id" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-[#22c55e] appearance-none">
@@ -584,7 +584,7 @@ const timeEndInput = computed({
 
             <div v-if="showAddonModal" class="fixed inset-0 z-[9999900] flex items-center justify-center p-6 font-mono">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="showAddonModal = false"></div>
-                <form @submit.prevent="submitAddon" class="relative w-full max-w-lg bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[2.5rem] p-10 space-y-5">
+                <form @submit.prevent="submitAddon" class="relative w-full max-w-lg bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1rem] p-10 space-y-5">
                     <h2 class="text-[#22c55e] text-2xl font-black uppercase italic">
                         {{ editingAddonId ? 'Изменить доп' : 'Новый доп' }}
                     </h2>
