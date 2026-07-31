@@ -9,88 +9,110 @@
         * { box-sizing: border-box; }
         html, body {
             margin: 0;
-            min-height: 100%;
-            background: #050505;
-            color: #e5e5e5;
+            height: 100%;
+            background: #080808;
+            color: #f5f5f5;
             font-family: Inter, Segoe UI, system-ui, sans-serif;
+            overflow: hidden;
         }
-        .wrap {
-            max-width: 480px;
-            margin: 0 auto;
-            padding: 20px 16px 28px;
+        .shell {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
         }
-        .head {
-            margin-bottom: 16px;
+        .body {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            padding: 12px;
         }
-        .head h1 {
-            margin: 0 0 6px;
-            font-size: 18px;
-            letter-spacing: 0.08em;
+        .foot {
+            flex: 0 0 auto;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 10px 16px;
+            text-align: center;
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.25);
+        }
+        #payment-form { min-height: 320px; }
+
+        .loader {
+            display: flex;
+            min-height: 340px;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .loader.hide { display: none; }
+        .spin {
+            height: 40px;
+            width: 40px;
+            border-radius: 9999px;
+            border: 2px solid rgba(34, 197, 94, 0.2);
+            border-top-color: #22c55e;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loader-text {
+            margin-top: 20px;
+            font-size: 10px;
+            font-weight: 900;
+            font-style: italic;
+            letter-spacing: 0.2em;
             text-transform: uppercase;
             color: #22c55e;
         }
-        .head p {
-            margin: 0;
-            font-size: 13px;
-            color: #a3a3a3;
-        }
-        .amount {
-            margin: 0 0 16px;
-            font-size: 28px;
-            font-weight: 800;
-            color: #fff;
-        }
-        #payment-form {
-            min-height: 320px;
-            background: #0a0a0a;
-            border: 1px solid rgba(34, 197, 94, 0.25);
-            border-radius: 12px;
-            padding: 8px;
-        }
+
         .banner {
             display: none;
-            margin-top: 16px;
-            padding: 14px 16px;
-            border-radius: 10px;
-            font-size: 14px;
-            line-height: 1.4;
+            margin-top: 12px;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            font-size: 10px;
+            font-weight: 900;
+            font-style: italic;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
         }
         .banner.show { display: block; }
         .banner.ok {
-            background: rgba(34, 197, 94, 0.12);
-            border: 1px solid rgba(34, 197, 94, 0.45);
-            color: #86efac;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            background: rgba(34, 197, 94, 0.1);
+            color: #22c55e;
         }
         .banner.err {
-            background: rgba(248, 113, 113, 0.12);
-            border: 1px solid rgba(248, 113, 113, 0.4);
-            color: #fecaca;
-        }
-        .banner.info {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #d4d4d4;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            background: rgba(239, 68, 68, 0.1);
+            color: #fca5a5;
+            font-size: 12px;
+            font-style: normal;
+            letter-spacing: normal;
+            text-transform: none;
         }
     </style>
 </head>
 <body>
-<div class="wrap">
-    <div class="head">
-        <h1>Reactor Pay</h1>
-        <p>Оплата картой через ЮKassa · тестовый режим</p>
+<div class="shell">
+    <div class="body">
+        @if ($payment->isSucceeded())
+            <div class="banner ok show">Оплата прошла · баланс обновится на ПК</div>
+        @elseif ($payment->status === 'canceled')
+            <div class="banner err show">Платёж отменён. Закройте окно и попробуйте снова.</div>
+        @elseif (!$confirmationToken)
+            <div class="banner err show">Нет токена виджета. Создайте платёж заново.</div>
+        @else
+            <div id="loader" class="loader">
+                <div class="spin"></div>
+                <div class="loader-text">Загрузка формы</div>
+            </div>
+            <div id="payment-form"></div>
+            <div id="status" class="banner"></div>
+        @endif
     </div>
-    <div class="amount">{{ number_format((float) $payment->amount, 0, '.', ' ') }} ₽</div>
-
-    @if ($payment->isSucceeded())
-        <div class="banner ok show">Оплата уже прошла. Можно закрыть окно — баланс обновится на ПК.</div>
-    @elseif ($payment->status === 'canceled')
-        <div class="banner err show">Платёж отменён. Закройте окно и попробуйте снова.</div>
-    @elseif (!$confirmationToken)
-        <div class="banner err show">Нет токена виджета. Создайте платёж заново.</div>
-    @else
-        <div id="payment-form"></div>
-        <div id="status" class="banner info"></div>
-    @endif
+    <div class="foot">Защищённая форма ЮKassa · данные карты не передаются REACTOR</div>
 </div>
 
 @if (!$payment->isFinal() && $confirmationToken)
@@ -99,6 +121,11 @@
 (function () {
     const syncUrl = @json($syncUrl);
     const statusEl = document.getElementById('status');
+    const loaderEl = document.getElementById('loader');
+
+    // Флаги для шелла: он опрашивает их и сам закрывает нативное окно.
+    window.__payDone = false;
+    window.__payClose = false;
 
     // Накопитель ошибок: статус-строку перетирает успешный render(),
     // а шелл читает именно этот список через runJavaScript.
@@ -121,8 +148,12 @@
         statusEl.textContent = text;
     }
 
-    // Ошибку виджета отдаём читаемой строкой: шелл снимает текст этого блока
-    // через runJavaScript, а '' + object превращался в "[object Object]".
+    function hideLoader() {
+        if (loaderEl) loaderEl.className = 'loader hide';
+    }
+
+    // Ошибку виджета отдаём читаемой строкой: '' + object превращался
+    // в "[object Object]" и скрывал причину.
     function describe(value) {
         if (value === null || value === undefined) return 'unknown';
         if (typeof value === 'string') return value;
@@ -156,37 +187,65 @@
         }).then(function (r) { return r.json(); }).catch(function () { return null; });
     }
 
+    // Статус в ЮKassa проставляется с задержкой — опрашиваем, как в ЛК.
+    function syncUntilPaid(attempt) {
+        attempt = attempt || 0;
+        show('ok', 'Платёж принят · обновляем баланс');
+
+        return syncPayment().then(function (data) {
+            if (data && data.paid) {
+                window.__payDone = true;
+                return;
+            }
+            if (data && data.payment_status === 'canceled') {
+                show('err', 'Платёж отменён. Закройте окно и попробуйте снова.');
+                return;
+            }
+            if (attempt >= 11) {
+                // Дальше добьёт вебхук: шеллу разрешаем закрыться.
+                window.__payDone = true;
+                return;
+            }
+            return new Promise(function (resolve) {
+                setTimeout(function () { resolve(syncUntilPaid(attempt + 1)); }, 1000);
+            });
+        });
+    }
+
     const checkout = new window.YooMoneyCheckoutWidget({
         confirmation_token: @json($confirmationToken),
         return_url: @json($returnUrl),
+        // Тёмная тема под интерфейс REACTOR (как в личном кабинете).
+        // payment_methods не задаём: тестовый магазин отвечает на него
+        // customization_of_payment_methods_not_allowed и форма не грузится.
+        customization: {
+            colors: {
+                background: '#0A0A0A',
+                control_primary: '#22C55E',
+                control_primary_content: '#020202',
+                control_secondary: '#64748B',
+                border: '#24332A',
+                text: '#F5F5F5'
+            }
+        },
         error_callback: function (error) {
-            show('err', 'Ошибка виджета: ' + describe(error));
+            hideLoader();
+            show('err', 'Ошибка ЮKassa: ' + describe(error));
         }
     });
 
     if (typeof checkout.on === 'function') {
-        checkout.on('success', function () {
-            show('ok', 'Оплата принята. Синхронизируем баланс…');
-            syncPayment().then(function (data) {
-                if (data && data.paid) {
-                    show('ok', 'Готово. Можно закрыть окно — баланс обновится на ПК.');
-                } else {
-                    show('ok', 'Платёж принят. Баланс обновится в течение минуты.');
-                }
-            });
-        });
+        checkout.on('success', function () { syncUntilPaid(0); });
+        checkout.on('complete', function () { syncUntilPaid(0); });
         checkout.on('fail', function () {
-            show('err', 'Оплата не прошла. Можно закрыть окно и попробовать снова.');
-            syncPayment();
-        });
-        checkout.on('complete', function () {
-            syncPayment();
+            show('err', 'Оплата не прошла. Проверьте данные карты и попробуйте снова.');
         });
     }
 
     checkout.render('payment-form').then(function () {
-        show('info', 'Введите данные карты тестового магазина ЮKassa.');
+        hideLoader();
     }).catch(function (e) {
+        hideLoader();
         show('err', 'Не удалось показать форму: ' + describe(e));
     });
 })();
