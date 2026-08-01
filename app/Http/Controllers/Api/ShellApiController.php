@@ -43,7 +43,25 @@ class ShellApiController extends Controller
     {
         $overlays = Overlay::where('is_active', true)
             ->get()
-            ->keyBy('block_position');
+            ->keyBy('block_position')
+            ->map(function (Overlay $overlay) {
+                $content = $overlay->content;
+                if (is_array($content) && isset($content['layers']) && is_array($content['layers'])) {
+                    foreach ($content['layers'] as $key => $layer) {
+                        if (! is_array($layer) || empty($layer['value']) || ! is_string($layer['value'])) {
+                            continue;
+                        }
+                        $path = parse_url($layer['value'], PHP_URL_PATH);
+                        if (is_string($path) && str_contains($path, '/storage/')) {
+                            // Relative path → Shell prepends its configured server URL.
+                            $content['layers'][$key]['value'] = ltrim($path, '/');
+                        }
+                    }
+                    $overlay->content = $content;
+                }
+
+                return $overlay;
+            });
 
         return response()->json([
             'status' => 'success',
