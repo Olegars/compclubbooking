@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * Конкретная комната на карте клуба.
@@ -72,6 +73,11 @@ class Space extends Model
     public function computers(): HasMany
     {
         return $this->hasMany(Computer::class);
+    }
+
+    public function fan(): HasOne
+    {
+        return $this->hasOne(SpaceFan::class);
     }
 
     public function addons(): BelongsToMany

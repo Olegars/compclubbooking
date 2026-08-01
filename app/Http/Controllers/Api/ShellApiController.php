@@ -22,6 +22,7 @@ use App\Models\ComputerSosAlert;
 use App\Services\AchievementService;
 use App\Services\BookingSessionTimingService;
 use App\Services\ComputerStatusService;
+use App\Services\Fan\FanControlService;
 use App\Services\GameRequestService;
 use App\Services\ProductStockService;
 use App\Services\UserCloudSettingsService;
@@ -143,6 +144,12 @@ class ShellApiController extends Controller
 
             // Cloud Saves: pack for Shell to restore on this PC (may be null if never saved).
             $cloud = app(UserCloudSettingsService::class)->getPackWithMeta($user);
+
+            try {
+                app(FanControlService::class)->reconcileForComputer($terminalId);
+            } catch (\Throwable $e) {
+                Log::warning('Fan reconcile after login failed: '.$e->getMessage());
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -563,6 +570,76 @@ class ShellApiController extends Controller
             Log::error('Shell API reportSos: '.$e->getMessage());
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Shell reports CPU temperature; backend decides fan state for the room (Space).
+     */
+    public function reportThermal(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'cpu_c' => 'required|numeric|min:0|max:150',
+        ]);
+
+        try {
+            $fan = app(FanControlService::class)->reportThermal(
+                (int) $request->terminal_id,
+                (float) $request->cpu_c
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'fan' => $fan
+                    ? app(FanControlService::class)->stateForComputer((int) $request->terminal_id)
+                    : ['available' => false, 'reason' => 'no_fan'],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API reportThermal: '.$e->getMessage());
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Manual fan control for the room. Shared across all PCs in the Space.
+     * action: on | off | auto
+     */
+    public function controlFan(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'action' => 'required|string|in:on,off,auto',
+        ]);
+
+        try {
+            $fan = app(FanControlService::class)->setManualModeForComputer(
+                (int) $request->terminal_id,
+                (string) $request->action
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'fan' => app(FanControlService::class)->stateForComputer((int) $request->terminal_id),
+                'applied' => (bool) $fan,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API controlFan: '.$e->getMessage());
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getFanState(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'fan' => app(FanControlService::class)->stateForComputer((int) $request->terminal_id),
+        ]);
     }
 
     private function mapGamePayload(Game $game): array
@@ -1486,6 +1563,12 @@ class ShellApiController extends Controller
                 });
 
                 app(ComputerStatusService::class)->syncFor((int) $termId);
+
+                try {
+                    app(FanControlService::class)->reconcileForComputer((int) $termId);
+                } catch (\Throwable $e) {
+                    Log::warning('Fan reconcile after logout failed: '.$e->getMessage());
+                }
 
                 if ($booking->user_id) {
                     try {

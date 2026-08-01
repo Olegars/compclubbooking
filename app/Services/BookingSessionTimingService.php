@@ -6,7 +6,7 @@ use App\Models\Booking;
 use App\Models\BookingGroup;
 use App\Models\GameAccount;
 use App\Models\GameAccountReservation;
-use App\Services\AchievementService;
+use App\Services\Fan\FanControlService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -188,6 +188,16 @@ class BookingSessionTimingService
             ->update(['status' => 'completed']);
 
         $this->computerStatuses->syncFor($expiredBookings->pluck('computer_id'), $now);
+
+        foreach ($expiredBookings->pluck('computer_id')->unique()->filter() as $computerId) {
+            try {
+                app(FanControlService::class)->reconcileForComputer((int) $computerId);
+            } catch (\Throwable $e) {
+                Log::warning('Fan reconcile after session expiry failed: '.$e->getMessage(), [
+                    'computer_id' => $computerId,
+                ]);
+            }
+        }
 
         try {
             app(AchievementService::class)->evaluateForBookings($expiredBookings);

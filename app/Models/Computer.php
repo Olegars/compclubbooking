@@ -61,4 +61,9 @@ class Computer extends Model
     {
         return $this->hasMany(ComputerSosAlert::class);
     }
+
+    public function thermal()
+    {
+        return $this->hasOne(ComputerThermal::class);
+    }
 }

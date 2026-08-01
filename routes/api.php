@@ -16,4 +16,7 @@ Route::prefix('shell')->group(function () {
     Route::post('/hid/snapshot', [ShellApiController::class, 'saveHidSnapshot']);
     Route::post('/hid/alert', [ShellApiController::class, 'reportHidAlert']);
     Route::post('/sos', [ShellApiController::class, 'reportSos']);
+    Route::post('/thermal', [ShellApiController::class, 'reportThermal']);
+    Route::post('/fan', [ShellApiController::class, 'controlFan']);
+    Route::get('/fan', [ShellApiController::class, 'getFanState']);
 });

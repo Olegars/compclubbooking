@@ -338,6 +338,11 @@ Route::prefix('api/shell')->group(function () {
     // --- SOS вызов администратора с причиной ---
     Route::post('/sos', [ShellApiController::class, 'reportSos']);
 
+    // --- Вентиляция комнаты (Space): Shell только события ---
+    Route::post('/thermal', [ShellApiController::class, 'reportThermal']);
+    Route::post('/fan', [ShellApiController::class, 'controlFan']);
+    Route::get('/fan', [ShellApiController::class, 'getFanState']);
+
     // --- УПРАВЛЕНИЕ ЛИЦЕНЗИЯМИ И ОБНОВЛЕНИЕ КЭША VDF ---
     Route::post('/games/take-account', [ShellApiController::class, 'takeAccount']);
     Route::post('/games/free-account', [ShellApiController::class, 'freeAccount']);
