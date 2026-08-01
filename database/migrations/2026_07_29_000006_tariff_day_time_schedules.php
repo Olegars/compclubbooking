@@ -74,10 +74,14 @@ return new class extends Migration
             'time_end' => 1440,
         ]);
 
-        DB::statement('ALTER TABLE tariff_prices ALTER COLUMN day_group_id SET NOT NULL');
+        $driver = Schema::getConnection()->getDriverName();
+
+        if ($driver === 'pgsql') {
+            DB::statement('ALTER TABLE tariff_prices ALTER COLUMN day_group_id SET NOT NULL');
+        }
 
         DB::statement('DROP INDEX IF EXISTS tariff_prices_club_zone_unique');
-        DB::statement('CREATE UNIQUE INDEX tariff_prices_schedule_unique
+        DB::statement('CREATE UNIQUE INDEX IF NOT EXISTS tariff_prices_schedule_unique
             ON tariff_prices (tariff_id, club_id, zone_id, day_group_id, time_start, time_end)');
 
         // weekdays/weekend ids reserved for future UI defaults — silence unused if needed

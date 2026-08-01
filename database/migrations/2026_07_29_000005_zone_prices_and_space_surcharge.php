@@ -13,9 +13,14 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('spaces', function (Blueprint $table) {
+        $driver = Schema::getConnection()->getDriverName();
+
+        Schema::table('spaces', function (Blueprint $table) use ($driver) {
             if (! Schema::hasColumn('spaces', 'surcharge_per_hour')) {
-                $table->decimal('surcharge_per_hour', 10, 2)->default(0)->after('h');
+                $column = $table->decimal('surcharge_per_hour', 10, 2)->default(0);
+                if ($driver === 'pgsql') {
+                    $column->after('h');
+                }
             }
         });
 
@@ -32,7 +37,7 @@ return new class extends Migration
         DB::statement('DROP INDEX IF EXISTS tariff_prices_zone_unique');
 
         // zone_id становится обязательным: нет цены без типа помещения.
-        if (Schema::hasColumn('tariff_prices', 'zone_id')) {
+        if (Schema::hasColumn('tariff_prices', 'zone_id') && $driver === 'pgsql') {
             DB::statement('ALTER TABLE tariff_prices ALTER COLUMN zone_id SET NOT NULL');
         }
 
@@ -42,6 +47,8 @@ return new class extends Migration
 
     public function down(): void
     {
+        $driver = Schema::getConnection()->getDriverName();
+
         DB::statement('DROP INDEX IF EXISTS tariff_prices_club_zone_unique');
 
         Schema::table('tariff_prices', function (Blueprint $table) {
@@ -50,7 +57,9 @@ return new class extends Migration
             }
         });
 
-        DB::statement('ALTER TABLE tariff_prices ALTER COLUMN zone_id DROP NOT NULL');
+        if ($driver === 'pgsql') {
+            DB::statement('ALTER TABLE tariff_prices ALTER COLUMN zone_id DROP NOT NULL');
+        }
 
         Schema::table('spaces', function (Blueprint $table) {
             if (Schema::hasColumn('spaces', 'surcharge_per_hour')) {

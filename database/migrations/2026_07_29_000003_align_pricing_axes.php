@@ -97,9 +97,14 @@ return new class extends Migration
 
         // Сплошной unique не подходит: Postgres считает NULL-ы различными,
         // и он не помешал бы завести две базовые цены на одну пару.
-        DB::statement('ALTER TABLE tariff_prices DROP CONSTRAINT IF EXISTS tariff_prices_unique');
+        $driver = Schema::getConnection()->getDriverName();
+
+        if ($driver === 'pgsql') {
+            DB::statement('ALTER TABLE tariff_prices DROP CONSTRAINT IF EXISTS tariff_prices_unique');
+        }
         DB::statement('DROP INDEX IF EXISTS tariff_prices_unique');
 
+        // Partial unique indexes: supported by Postgres and SQLite.
         DB::statement('CREATE UNIQUE INDEX IF NOT EXISTS tariff_prices_base_unique
             ON tariff_prices (tariff_id, club_id, seat_class_id)
             WHERE zone_id IS NULL');
