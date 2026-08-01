@@ -21,6 +21,7 @@ use App\Models\ComputerInputAlert;
 use App\Models\ComputerSosAlert;
 use App\Services\AchievementService;
 use App\Services\AiAssistant\AiAssistantService;
+use App\Services\AiAssistant\VoiceGreetingService;
 use App\Services\BookingSessionTimingService;
 use App\Services\ComputerStatusService;
 use App\Services\Fan\FanControlService;
@@ -642,6 +643,60 @@ class ShellApiController extends Controller
             'status' => 'success',
             'fan' => app(FanControlService::class)->stateForComputer((int) $request->terminal_id),
         ]);
+    }
+
+    /**
+     * Personalized spoken greeting after Shell login: context → DeepSeek → TTS.
+     * Qt Shell only; requires active booking on terminal.
+     */
+    public function voiceGreeting(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'booking_id' => 'nullable|integer|exists:bookings,id',
+        ]);
+
+        $terminalId = (int) $request->terminal_id;
+        $rateKey = 'shell-ai-greet:'.$terminalId;
+        $limit = max(1, (int) config('ai_assistant.rate_limit_per_minute', 8));
+
+        if (RateLimiter::tooManyAttempts($rateKey, $limit)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Слишком много запросов приветствия. Подожди немного.',
+            ], 429);
+        }
+        RateLimiter::hit($rateKey, 60);
+
+        try {
+            $result = app(VoiceGreetingService::class)->greet(
+                $terminalId,
+                $request->filled('booking_id') ? (int) $request->booking_id : null
+            );
+
+            return response()->json([
+                'status' => 'success',
+                ...$result,
+            ]);
+        } catch (RuntimeException $e) {
+            Log::warning('Shell voice greeting: '.$e->getMessage(), [
+                'terminal_id' => $terminalId,
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $e) {
+            Log::error('Shell voice greeting failed: '.$e->getMessage(), [
+                'terminal_id' => $terminalId,
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Не удалось сформировать приветствие.',
+            ], 500);
+        }
     }
 
     /**
