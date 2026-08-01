@@ -71,9 +71,9 @@ class OverlayAdminController extends Controller
             // Сохраняем в public/storage/overlays
             $path = $file->store('overlays', 'public');
 
-            // Возвращаем полный URL
+            // Относительный путь — Shell подставит api_ip из config.ini
             return response()->json([
-                'url' => asset('storage/' . $path)
+                'url' => 'storage/'.$path
             ]);
         }
 
@@ -91,10 +91,10 @@ class OverlayAdminController extends Controller
                 // Сохраняем файл в папку public/videos
                 $path = $request->file('video')->store('videos', 'public');
 
-                // Возвращаем полный URL к файлу для QML-шелла
+                // Относительный путь — Shell сам подставит api_ip из config.ini
                 return response()->json([
                     'status' => 'success',
-                    'url' => asset('storage/' . $path)
+                    'url' => 'storage/'.$path
                 ]);
             }
 
