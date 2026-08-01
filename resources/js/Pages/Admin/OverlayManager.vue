@@ -3,10 +3,11 @@ import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
-// --- ИНТЕРФЕЙСЫ ---
 interface Layer {
-    type: 'video';
+    type: 'video' | 'text' | 'image';
     value: string;
+    color?: string;
+    size?: number;
 }
 
 interface OverlayContent {
@@ -20,35 +21,86 @@ interface OverlayBlock {
     type: string;
     content: OverlayContent;
     is_active: boolean;
+    /** UI-only mirrors of the type=text layer drawn by shell */
+    textCaption: string;
+    textColor: string;
+    textSize: number;
 }
 
 const overlays = ref<OverlayBlock[]>([])
 const isProcessing = ref(false)
 
-// Для загрузки файлов
 const fileInput = ref<HTMLInputElement | null>(null)
 const currentUploadBlock = ref<OverlayBlock | null>(null)
 
-// --- API ЗАПРОСЫ ---
+const findLayer = (layers: Layer[], type: Layer['type']): Layer | undefined =>
+    layers.find((l) => l.type === type)
+
+const videoLayer = (block: OverlayBlock): Layer => {
+    const existing = findLayer(block.content.layers, 'video')
+    if (existing) return existing
+    const created: Layer = { type: 'video', value: '' }
+    block.content.layers.unshift(created)
+    return created
+}
+
+const normalizeBlock = (block: any): OverlayBlock => {
+    let content = block.content
+    if (typeof content === 'string') {
+        try { content = JSON.parse(content) } catch { content = {} }
+    }
+    const rawLayers: Layer[] = Array.isArray(content?.layers) ? content.layers : []
+
+    let video = findLayer(rawLayers, 'video')
+    if (!video) {
+        const maybeFirst = rawLayers[0]
+        // Legacy: first layer was sometimes text-only; don't treat caption as video URL
+        if (maybeFirst && maybeFirst.type !== 'text' && maybeFirst.type !== 'image') {
+            video = { type: 'video', value: maybeFirst.value || '' }
+        } else {
+            video = { type: 'video', value: '' }
+        }
+    }
+
+    const text = findLayer(rawLayers, 'text')
+    const others = rawLayers.filter((l) => l !== video && l.type !== 'text' && l.type !== 'video')
+
+    return {
+        id: block.id,
+        block_position: block.block_position,
+        title: block.title,
+        type: block.type || 'video',
+        is_active: !!block.is_active,
+        content: { layers: [video, ...others] },
+        textCaption: text?.value ?? '',
+        textColor: text?.color ?? '#facc15',
+        textSize: text?.size ?? 28,
+    }
+}
+
+const buildContentForSave = (block: OverlayBlock): OverlayContent => {
+    const video = videoLayer(block)
+    const layers: Layer[] = [{ type: 'video', value: video.value || '' }]
+
+    const caption = (block.textCaption || '').trim()
+    if (caption) {
+        layers.push({
+            type: 'text',
+            value: caption,
+            color: block.textColor || '#facc15',
+            size: Number(block.textSize) || 28,
+        })
+    }
+
+    return { layers }
+}
+
 const fetchOverlays = async () => {
     try {
         const response = await axios.get('/admin/api/overlays')
-        // Форматируем данные, чтобы всегда был один слой типа "video"
-        overlays.value = response.data.map((block: any) => {
-            let content = block.content
-            if (typeof content === 'string') {
-                try { content = JSON.parse(content) } catch (e) { content = {} }
-            }
-            if (!content || !content.layers || content.layers.length === 0) {
-                content = { layers: [{ type: 'video', value: '' }] }
-            } else {
-                content.layers[0].type = 'video' // Жестко задаем тип
-            }
-            block.content = content
-            return block
-        })
+        overlays.value = response.data.map((block: any) => normalizeBlock(block))
     } catch (error) {
-        console.error("Ошибка загрузки", error)
+        console.error('Ошибка загрузки', error)
     }
 }
 
@@ -59,25 +111,25 @@ const saveOverlay = async (block: OverlayBlock) => {
     try {
         const payload = {
             title: block.title,
-            type: block.type,
-            content: block.content, // Отправляем структуру с массивом layers (одно видео)
-            is_active: block.is_active ? 1 : 0
+            type: block.type || 'video',
+            content: buildContentForSave(block),
+            is_active: block.is_active ? 1 : 0,
         }
 
         const response = await axios.put(`/admin/api/overlays/${block.id}`, payload)
 
         if (response.data.status === 'success') {
-            alert('REACTOR: ВИДЕО УСПЕШНО СИНХРОНИЗИРОВАНО!')
+            alert('REACTOR: БЛОК УСПЕШНО СИНХРОНИЗИРОВАН!')
+            await fetchOverlays()
         }
     } catch (error: any) {
-        console.error("ОШИБКА:", error.response?.data)
+        console.error('ОШИБКА:', error.response?.data)
         alert('Ошибка при сохранении: ' + JSON.stringify(error.response?.data?.errors))
     } finally {
         isProcessing.value = false
     }
 }
 
-// --- ЛОГИКА ЗАГРУЗКИ ВИДЕО ---
 const triggerUpload = (block: OverlayBlock) => {
     currentUploadBlock.value = block
     fileInput.value?.click()
@@ -89,19 +141,17 @@ const handleVideoUpload = async (event: Event) => {
 
     const file = target.files[0]
     const formData = new FormData()
-    formData.append('video', file) // Бэкенд должен ловить 'video'
+    formData.append('video', file)
 
     try {
         isProcessing.value = true
-        // Тебе нужно будет создать этот роут в Laravel, если его еще нет
         const response = await axios.post('/admin/api/upload-video', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
+            headers: { 'Content-Type': 'multipart/form-data' },
         })
 
-        // Подставляем полученный URL прямо в инпут текущего блока
-        currentUploadBlock.value.content.layers[0].value = response.data.url
+        videoLayer(currentUploadBlock.value).value = response.data.url
         alert('Видео загружено! Нажмите "СИНХРОНИЗИРОВАТЬ" для отправки на экраны.')
-    } catch (error) {
+    } catch {
         alert('Ошибка при загрузке видео на сервер! Проверьте лимиты (upload_max_filesize).')
     } finally {
         isProcessing.value = false
@@ -114,9 +164,12 @@ onMounted(fetchOverlays)
 
 const formatPositionName = (pos: string) => {
     const map: Record<string, string> = {
-        'top_left': 'Верхний Левый', 'top_right': 'Верхний Правый',
-        'mid_left': 'Средний Левый', 'mid_right': 'Средний Правый',
-        'bottom_left': 'Нижний Левый', 'bottom_right': 'Нижний Правый'
+        top_left: 'Верхний Левый',
+        top_right: 'Верхний Правый',
+        mid_left: 'Средний Левый',
+        mid_right: 'Средний Правый',
+        bottom_left: 'Нижний Левый',
+        bottom_right: 'Нижний Правый',
     }
     return map[pos] || pos
 }
@@ -134,7 +187,7 @@ const formatPositionName = (pos: string) => {
                         <span class="w-2 h-10 bg-purple-500 rounded-full shadow-[0_0_15px_rgba(168,85,247,0.5)]"></span>
                         REACTOR Media Center
                     </h2>
-                    <p class="text-[10px] text-white/40 uppercase tracking-[0.3em] ml-6 italic">Video Injection System v3.0</p>
+                    <p class="text-[10px] text-white/40 uppercase tracking-[0.3em] ml-6 italic">Video + Text Overlay · v3.1</p>
                 </div>
                 <div class="text-xs text-purple-500/50 font-black tracking-widest">2026 // SECTOR 0451</div>
             </div>
@@ -159,25 +212,41 @@ const formatPositionName = (pos: string) => {
                             </label>
                         </div>
 
-                        <div class="space-y-4 mb-8">
-                            <label class="text-[10px] text-white/40 uppercase tracking-widest font-bold block">Источник видео (URL .mp4)</label>
+                        <div class="space-y-5 mb-8">
+                            <div class="space-y-2">
+                                <label class="text-[10px] text-white/40 uppercase tracking-widest font-bold block">Источник видео (URL .mp4)</label>
+                                <div class="flex gap-3">
+                                    <input type="text" v-model="block.content.layers[0].value" placeholder="storage/videos/...."
+                                           class="flex-1 bg-[#050505] border border-white/10 p-4 rounded-2xl text-xs outline-none focus:border-purple-500 transition-all text-white font-mono" />
+                                    <button type="button" @click="triggerUpload(block)" title="Загрузить видео с ПК"
+                                            class="bg-white/5 hover:bg-purple-500 border border-white/10 hover:border-purple-500 text-white hover:text-black px-6 rounded-2xl transition-all flex items-center justify-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                                            <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
 
-                            <div class="flex gap-3">
-                                <input type="text" v-model="block.content.layers[0].value" placeholder="https://.../video.mp4"
-                                       class="flex-1 bg-[#050505] border border-white/10 p-4 rounded-2xl text-xs outline-none focus:border-purple-500 transition-all text-white font-mono" />
-
-                                <button @click="triggerUpload(block)" title="Загрузить видео с ПК"
-                                        class="bg-white/5 hover:bg-purple-500 border border-white/10 hover:border-purple-500 text-white hover:text-black px-6 rounded-2xl transition-all flex items-center justify-center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                                        <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-                                        <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
-                                    </svg>
-                                </button>
+                            <div class="space-y-2 border-t border-white/5 pt-5">
+                                <label class="text-[10px] text-white/40 uppercase tracking-widest font-bold block">
+                                    Текст поверх видео
+                                    <span class="text-white/20 normal-case tracking-normal ml-2">(пусто = без надписи)</span>
+                                </label>
+                                <input type="text" v-model="block.textCaption" placeholder="например: Спроси у ИИ…"
+                                       class="w-full bg-[#050505] border border-white/10 p-4 rounded-2xl text-sm outline-none focus:border-yellow-500/50 transition-all text-yellow-400 font-bold" />
+                                <div class="flex gap-3">
+                                    <input type="color" v-model="block.textColor" title="Цвет текста"
+                                           class="h-11 w-14 bg-[#050505] border border-white/10 rounded-xl cursor-pointer p-1" />
+                                    <input type="number" v-model.number="block.textSize" min="12" max="72" title="Размер"
+                                           class="w-24 bg-[#050505] border border-white/10 p-3 rounded-xl text-xs outline-none focus:border-purple-500 text-white font-mono" />
+                                    <span class="self-center text-[10px] text-white/30 uppercase tracking-widest">px</span>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <button @click="saveOverlay(block)" :disabled="isProcessing"
+                    <button type="button" @click="saveOverlay(block)" :disabled="isProcessing"
                             class="w-full bg-[#22c55e]/10 hover:bg-[#22c55e] text-[#22c55e] hover:text-black border border-[#22c55e]/30 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] transition-all disabled:opacity-50">
                         {{ isProcessing ? 'СИНХРОНИЗАЦИЯ...' : 'СИНХРОНИЗИРОВАТЬ БЛОК' }}
                     </button>

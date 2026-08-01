@@ -33,19 +33,19 @@ class OverlayAdminController extends Controller
             'is_active' => 'required|boolean'
         ]);
 
-        // ГЛУБОКАЯ ОЧИСТКА ССЫЛОК ПЕРЕД ЗАПИСЬЮ В БАЗУ
-        // Проходим по каждому слою внутри структуры 'layers'
+        // Очистка абсолютных URL только у media-слоёв (video/image), не у text
         if (isset($validated['content']['layers']) && is_array($validated['content']['layers'])) {
             foreach ($validated['content']['layers'] as $key => $layer) {
-                if (isset($layer['value'])) {
-                    $urlPath = parse_url($layer['value'], PHP_URL_PATH);
-
-                    // Если это была полная ссылка, parse_url вернет строго "/storage/videos/..."
-                    // Если это уже был относительный путь, он останется нетронутым
-                    if ($urlPath) {
-                        // Убираем ведущий слэш для единообразия, чтобы получилось "storage/videos/..."
-                        $validated['content']['layers'][$key]['value'] = ltrim($urlPath, '/');
-                    }
+                $type = $layer['type'] ?? '';
+                if (! in_array($type, ['video', 'video_url', 'image'], true)) {
+                    continue;
+                }
+                if (! isset($layer['value']) || ! is_string($layer['value'])) {
+                    continue;
+                }
+                $urlPath = parse_url($layer['value'], PHP_URL_PATH);
+                if ($urlPath) {
+                    $validated['content']['layers'][$key]['value'] = ltrim($urlPath, '/');
                 }
             }
         }
