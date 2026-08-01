@@ -20,6 +20,7 @@ use App\Models\ComputerInputDevice;
 use App\Models\ComputerInputAlert;
 use App\Models\ComputerSosAlert;
 use App\Services\AchievementService;
+use App\Services\AiAssistant\AiAssistantService;
 use App\Services\BookingSessionTimingService;
 use App\Services\ComputerStatusService;
 use App\Services\Fan\FanControlService;
@@ -31,6 +32,7 @@ use App\Services\YooKassaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -640,6 +642,66 @@ class ShellApiController extends Controller
             'status' => 'success',
             'fan' => app(FanControlService::class)->stateForComputer((int) $request->terminal_id),
         ]);
+    }
+
+    /**
+     * F1 voice companion: audio in → STT → DeepSeek → TTS → audio+text out.
+     * Qt Shell only; requires active booking on terminal.
+     */
+    public function aiAssistant(Request $request)
+    {
+        $maxKb = max(64, (int) config('ai_assistant.max_audio_kb', 5120));
+
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'audio' => 'required|file|max:'.$maxKb,
+            'game_id' => 'nullable|integer|exists:games,id',
+            'game_title' => 'nullable|string|max:255',
+        ]);
+
+        $terminalId = (int) $request->terminal_id;
+        $rateKey = 'shell-ai:'.$terminalId;
+        $limit = max(1, (int) config('ai_assistant.rate_limit_per_minute', 8));
+
+        if (RateLimiter::tooManyAttempts($rateKey, $limit)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Слишком много запросов к ассистенту. Подожди немного.',
+            ], 429);
+        }
+        RateLimiter::hit($rateKey, 60);
+
+        try {
+            $result = app(AiAssistantService::class)->handle(
+                $terminalId,
+                $request->file('audio'),
+                $request->filled('game_id') ? (int) $request->game_id : null,
+                $request->input('game_title')
+            );
+
+            return response()->json([
+                'status' => 'success',
+                ...$result,
+            ]);
+        } catch (RuntimeException $e) {
+            Log::warning('Shell AI assistant: '.$e->getMessage(), [
+                'terminal_id' => $terminalId,
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $e) {
+            Log::error('Shell AI assistant failed: '.$e->getMessage(), [
+                'terminal_id' => $terminalId,
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Не удалось обработать запрос ассистента.',
+            ], 500);
+        }
     }
 
     private function mapGamePayload(Game $game): array

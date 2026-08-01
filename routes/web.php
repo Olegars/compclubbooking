@@ -343,6 +343,9 @@ Route::prefix('api/shell')->group(function () {
     Route::post('/fan', [ShellApiController::class, 'controlFan']);
     Route::get('/fan', [ShellApiController::class, 'getFanState']);
 
+    // --- F1 AI-компаньон (голос → ответ в наушники) ---
+    Route::post('/ai-assistant', [ShellApiController::class, 'aiAssistant']);
+
     // --- УПРАВЛЕНИЕ ЛИЦЕНЗИЯМИ И ОБНОВЛЕНИЕ КЭША VDF ---
     Route::post('/games/take-account', [ShellApiController::class, 'takeAccount']);
     Route::post('/games/free-account', [ShellApiController::class, 'freeAccount']);
