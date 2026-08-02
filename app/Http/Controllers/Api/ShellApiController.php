@@ -15,6 +15,7 @@ use App\Models\Game;
 use App\Models\QuickApp;
 use App\Models\Computer;
 use App\Support\OrderDeliveryTarget;
+use App\Support\ZoneSlug;
 use App\Models\UserGameStat;
 use App\Models\ComputerInputDevice;
 use App\Models\ComputerInputAlert;
@@ -1626,6 +1627,7 @@ class ShellApiController extends Controller
 
             $hwid = strtolower(trim((string) $request->hwid));
             $computer = Computer::query()
+                ->with(['space.zone'])
                 ->whereRaw('LOWER(hwid) = ?', [$hwid])
                 ->first();
 
@@ -1643,11 +1645,20 @@ class ShellApiController extends Controller
                     }
                 }
 
+                $zone = $computer->space?->zone;
+                $zoneSlug = ZoneSlug::normalize($zone?->slug ?: ($computer->type ?? ''));
+                if ($zoneSlug === '') {
+                    $zoneSlug = 'singl';
+                }
+
                 return response()->json([
                     'status' => 'success',
                     'computer_id' => $computer->id,
                     'name' => $computer->name,
-                    'type' => $computer->type ?? 'standard',
+                    'type' => $zoneSlug,
+                    'zone_name' => $zone?->name,
+                    'zone_slug' => $zoneSlug,
+                    'zone_color' => $zone?->color,
                     'power_desired' => $computer->power_desired ?? 'on',
                     'power_state' => $computer->power_state ?? 'on',
                 ], 200);
