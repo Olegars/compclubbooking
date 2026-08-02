@@ -11,18 +11,8 @@ use Illuminate\Support\Facades\Log;
 /**
  * Питание ПК по расписанию бронирований.
  *
- * Правило desired=on: есть бронь (confirmed/paid/active), которая
- * пересекается с окном [now, now + warmup_minutes].
- * Иначе desired=off.
- *
- * Magic packet шлёт не облако, а MikroTik в LAN (pull:
- * GET /api/power/wol-targets → /tool wol).
- *
- * Фактический power_state:
- *   on      — шелл жив (heartbeat недавно)
- *   booting — релей подтвердил WOL, ждём heartbeat
- *   off     — выключен / давно не отвечали при desired=off
- *   error   — после WOL не ожил за wol_timeout / нет MAC
+ * online = last_seen_at свежий (шелл недавно ответил).
+ * Magic packet шлёт MikroTik (GET /api/power/wol-targets), не облако.
  */
 class ComputerPowerService
 {
@@ -49,7 +39,7 @@ class ComputerPowerService
 
     public function staleSeconds(): int
     {
-        return max(30, (int) config('club.power.heartbeat_stale_seconds', 90));
+        return max(30, (int) config('club.power.heartbeat_stale_seconds', 180));
     }
 
     public function wolTimeoutSeconds(): int
@@ -88,20 +78,21 @@ class ComputerPowerService
         }
 
         $needOn = $this->computersNeedingPower($ids, $now);
+        $aliveIds = array_flip($this->aliveComputerIds($ids));
         $changed = 0;
 
         $rows = DB::table('computers')->whereIn('id', $ids)->get();
         foreach ($rows as $row) {
-            $desired = in_array((int) $row->id, $needOn, true)
-                ? self::DESIRED_ON
-                : self::DESIRED_OFF;
+            $id = (int) $row->id;
+            $desired = in_array($id, $needOn, true) ? self::DESIRED_ON : self::DESIRED_OFF;
+            $alive = isset($aliveIds[$id]);
 
-            $patch = $this->reconcileRow($row, $desired, $now);
+            $patch = $this->reconcileRow($row, $desired, $alive, $now);
             if ($patch === []) {
                 continue;
             }
 
-            DB::table('computers')->where('id', $row->id)->update($patch);
+            DB::table('computers')->where('id', $id)->update($patch);
             $changed++;
         }
 
@@ -109,7 +100,7 @@ class ComputerPowerService
     }
 
     /**
-     * Очередь для MikroTik: ПК с desired=on, офлайн, есть MAC, пора будить/ретраить.
+     * Очередь для MikroTik.
      *
      * @return list<array{id: int, name: string, mac: string}>
      */
@@ -118,8 +109,8 @@ class ComputerPowerService
         $now = $now ?? CarbonImmutable::now();
         $this->syncAll($now);
 
-        $staleBefore = $now->subSeconds($this->staleSeconds());
-        $retryBefore = $now->subSeconds($this->wolTimeoutSeconds());
+        $staleSec = $this->staleSeconds();
+        $retrySec = $this->wolTimeoutSeconds();
 
         $rows = DB::table('computers')
             ->whereNotNull('hwid')
@@ -127,20 +118,18 @@ class ComputerPowerService
             ->where('power_desired', self::DESIRED_ON)
             ->whereNotNull('mac_address')
             ->where('mac_address', '!=', '')
-            ->where(function ($q) use ($staleBefore) {
+            ->where(function ($q) use ($staleSec) {
                 $q->whereNull('last_seen_at')
-                    ->orWhere('last_seen_at', '<', $staleBefore);
+                    ->orWhereRaw("last_seen_at < NOW() - (? * INTERVAL '1 second')", [$staleSec]);
             })
-            ->where(function ($q) use ($retryBefore) {
-                // Ещё не будили / off / error → в очередь.
-                // booting → только после таймаута (ретрай).
+            ->where(function ($q) use ($retrySec) {
                 $q->whereIn('power_state', [self::STATE_OFF, self::STATE_ERROR])
                     ->orWhereNull('power_state')
-                    ->orWhere(function ($booting) use ($retryBefore) {
+                    ->orWhere(function ($booting) use ($retrySec) {
                         $booting->where('power_state', self::STATE_BOOTING)
-                            ->where(function ($w) use ($retryBefore) {
+                            ->where(function ($w) use ($retrySec) {
                                 $w->whereNull('wol_sent_at')
-                                    ->orWhere('wol_sent_at', '<=', $retryBefore);
+                                    ->orWhereRaw("wol_sent_at <= NOW() - (? * INTERVAL '1 second')", [$retrySec]);
                             });
                     });
             })
@@ -171,13 +160,10 @@ class ComputerPowerService
     }
 
     /**
-     * Релей сообщил, что magic packet ушёл (или claim при GET).
-     *
      * @param  list<int|string>  $computerIds
      */
     public function markWolSent(array $computerIds, ?CarbonImmutable $now = null): int
     {
-        $now = $now ?? CarbonImmutable::now();
         $ids = $this->normalizeIds($computerIds);
         if ($ids === []) {
             return 0;
@@ -187,39 +173,35 @@ class ComputerPowerService
             ->whereIn('id', $ids)
             ->update([
                 'power_state' => self::STATE_BOOTING,
-                'power_state_updated_at' => $now,
-                'wol_sent_at' => $now,
+                'power_state_updated_at' => DB::raw('NOW()'),
+                'wol_sent_at' => DB::raw('NOW()'),
             ]);
     }
 
     /**
-     * Heartbeat от шелла: ПК жив, желаемое питание, опционально MAC.
+     * Heartbeat / любой сигнал что шелл жив.
      *
      * @return array{power_desired: string, power_state: string, power_action: string, session_active: bool}
      */
     public function heartbeat(Computer $computer, ?string $mac = null): array
     {
-        $now = CarbonImmutable::now();
-        $patch = [
-            'last_seen_at' => $now,
-            'power_state' => self::STATE_ON,
-            'power_state_updated_at' => $now,
-        ];
+        $id = (int) $computer->id;
+        $this->markOnline($id, $mac);
 
-        if ($mac) {
-            $normalized = $this->wol->normalizeMac($mac);
-            if ($normalized && $normalized !== $computer->mac_address) {
-                $patch['mac_address'] = $normalized;
-            }
+        $desired = self::DESIRED_OFF;
+        try {
+            $needOn = $this->computersNeedingPower([$id], CarbonImmutable::now());
+            $desired = $needOn !== [] ? self::DESIRED_ON : self::DESIRED_OFF;
+            DB::table('computers')->where('id', $id)->update(['power_desired' => $desired]);
+        } catch (\Throwable $e) {
+            Log::warning('Power desired recalculation failed', [
+                'computer_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+            $desired = (string) (DB::table('computers')->where('id', $id)->value('power_desired') ?: self::DESIRED_OFF);
         }
 
-        $needOn = $this->computersNeedingPower([(int) $computer->id], $now);
-        $desired = $needOn !== [] ? self::DESIRED_ON : self::DESIRED_OFF;
-        $patch['power_desired'] = $desired;
-
-        $computer->update($patch);
-
-        $sessionActive = $this->hasActiveSession((int) $computer->id);
+        $sessionActive = $this->hasActiveSession($id);
 
         return [
             'power_desired' => $desired,
@@ -230,10 +212,46 @@ class ComputerPowerService
     }
 
     /**
-     * Команда шеллу после закрытия сессии (logout / expire).
+     * Пометить ПК онлайн. Пишет через SQL NOW() — без сюрпризов таймзоны PHP.
+     */
+    public function markOnline(int $computerId, ?string $mac = null): void
+    {
+        if ($computerId <= 0) {
+            return;
+        }
+
+        $patch = [
+            'last_seen_at' => DB::raw('NOW()'),
+            'power_state' => self::STATE_ON,
+            'power_state_updated_at' => DB::raw('NOW()'),
+            'updated_at' => DB::raw('NOW()'),
+        ];
+
+        if ($mac) {
+            $normalized = $this->wol->normalizeMac($mac);
+            if ($normalized) {
+                $patch['mac_address'] = $normalized;
+            }
+        }
+
+        $affected = DB::table('computers')->where('id', $computerId)->update($patch);
+        if ($affected === 0) {
+            Log::warning('Power markOnline: computer not found', ['computer_id' => $computerId]);
+        }
+    }
+
+    public function touchOnline(int $computerId, ?string $mac = null): void
+    {
+        $this->markOnline($computerId, $mac);
+    }
+
+    /**
+     * Команда шеллу после закрытия сессии.
+     * Сам факт HTTP logout значит ПК сейчас онлайн.
      */
     public function powerActionFor(int $computerId, ?CarbonImmutable $now = null): string
     {
+        $this->markOnline($computerId);
         $now = $now ?? CarbonImmutable::now();
         $this->syncFor([$computerId], $now);
 
@@ -248,26 +266,52 @@ class ComputerPowerService
     }
 
     /**
-     * Лёгкий touch «шелл на связи» без полного пересчёта desired.
-     * Для эндпоинтов, которые старый/новый шелл дергает на гостевом экране.
+     * Снимок для админ-дашборда: online выводим по last_seen (SQL NOW()), не слепо по колонке.
+     *
+     * @return \Illuminate\Support\Collection<int, object>
      */
-    public function touchOnline(int $computerId, ?string $mac = null): void
+    public function statusSnapshot(?int $clubId = null)
     {
-        $computer = Computer::query()->find($computerId);
-        if (! $computer) {
-            return;
+        $stale = $this->staleSeconds();
+
+        $sql = "SELECT id, name, status, power_desired, last_seen_at,
+                       CASE
+                           WHEN last_seen_at IS NOT NULL
+                                AND last_seen_at >= NOW() - (? * INTERVAL '1 second')
+                           THEN 'on'
+                           ELSE COALESCE(power_state, 'off')
+                       END AS power_state
+                FROM computers";
+        $bindings = [$stale];
+
+        if ($clubId !== null) {
+            $sql .= ' WHERE club_id = ?';
+            $bindings[] = $clubId;
         }
 
-        $this->heartbeat($computer, $mac);
+        $sql .= ' ORDER BY name ASC';
+
+        return collect(DB::select($sql, $bindings));
     }
 
-    private function isAlive(?CarbonImmutable $lastSeen, CarbonImmutable $now): bool
+    /**
+     * @param  list<int>  $ids
+     * @return list<int>
+     */
+    private function aliveComputerIds(array $ids): array
     {
-        if ($lastSeen === null) {
-            return false;
+        if ($ids === []) {
+            return [];
         }
 
-        return $lastSeen->greaterThanOrEqualTo($now->subSeconds($this->staleSeconds()));
+        $stale = $this->staleSeconds();
+
+        return DB::table('computers')
+            ->whereIn('id', $ids)
+            ->whereRaw("last_seen_at IS NOT NULL AND last_seen_at >= NOW() - (? * INTERVAL '1 second')", [$stale])
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
     }
 
     /**
@@ -312,16 +356,13 @@ class ComputerPowerService
     }
 
     /**
-     * @param  object  $row  stdClass из computers
+     * @param  object  $row
      * @return array<string, mixed>
      */
-    private function reconcileRow(object $row, string $desired, CarbonImmutable $now): array
+    private function reconcileRow(object $row, string $desired, bool $alive, CarbonImmutable $now): array
     {
         $patch = [];
         $state = (string) ($row->power_state ?? self::STATE_OFF);
-        $lastSeen = $row->last_seen_at ? CarbonImmutable::parse($row->last_seen_at) : null;
-        $wolSent = $row->wol_sent_at ? CarbonImmutable::parse($row->wol_sent_at) : null;
-        $alive = $this->isAlive($lastSeen, $now);
 
         if ((string) ($row->power_desired ?? '') !== $desired) {
             $patch['power_desired'] = $desired;
@@ -330,7 +371,7 @@ class ComputerPowerService
         if ($alive) {
             if ($state !== self::STATE_ON) {
                 $patch['power_state'] = self::STATE_ON;
-                $patch['power_state_updated_at'] = $now;
+                $patch['power_state_updated_at'] = DB::raw('NOW()');
             }
 
             return $patch;
@@ -339,17 +380,19 @@ class ComputerPowerService
         if ($desired === self::DESIRED_OFF) {
             if ($state !== self::STATE_OFF) {
                 $patch['power_state'] = self::STATE_OFF;
-                $patch['power_state_updated_at'] = $now;
+                $patch['power_state_updated_at'] = DB::raw('NOW()');
             }
 
             return $patch;
         }
 
-        // desired=on, шелл молчит — WOL делает MikroTik через /api/power/wol-targets.
+        // desired=on, шелл молчит
+        $wolSent = $row->wol_sent_at ? CarbonImmutable::parse($row->wol_sent_at) : null;
         if ($state === self::STATE_BOOTING && $wolSent) {
-            if ($wolSent->lessThanOrEqualTo($now->subSeconds($this->wolTimeoutSeconds()))) {
+            $timeoutAt = CarbonImmutable::now()->subSeconds($this->wolTimeoutSeconds());
+            if ($wolSent->lessThanOrEqualTo($timeoutAt)) {
                 $patch['power_state'] = self::STATE_ERROR;
-                $patch['power_state_updated_at'] = $now;
+                $patch['power_state_updated_at'] = DB::raw('NOW()');
                 Log::warning('WOL timeout (relay)', ['computer_id' => $row->id, 'mac' => $row->mac_address]);
             }
 
@@ -360,17 +403,16 @@ class ComputerPowerService
         if ($mac === '' || $this->wol->normalizeMac($mac) === null) {
             if ($state !== self::STATE_ERROR) {
                 $patch['power_state'] = self::STATE_ERROR;
-                $patch['power_state_updated_at'] = $now;
+                $patch['power_state_updated_at'] = DB::raw('NOW()');
                 Log::warning('WOL pending skipped: no MAC', ['computer_id' => $row->id]);
             }
 
             return $patch;
         }
 
-        // Офлайн + нужен on → ждём релей. Держам off (или оставляем error до ретрая).
         if ($state !== self::STATE_OFF && $state !== self::STATE_ERROR && $state !== self::STATE_BOOTING) {
             $patch['power_state'] = self::STATE_OFF;
-            $patch['power_state_updated_at'] = $now;
+            $patch['power_state_updated_at'] = DB::raw('NOW()');
         }
 
         return $patch;

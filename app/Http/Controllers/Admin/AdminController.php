@@ -32,12 +32,7 @@ class AdminController extends Controller
         // Получаем ID первого клуба (или текущего активного)
         $clubId = DB::table('clubs')->first()->id ?? 1;
 
-        // Загружаем реальные ПК из базы (занятость + питание для мониторинга)
-        $computers = DB::table('computers')
-            ->where('club_id', $clubId)
-            ->select('id', 'name', 'status', 'power_desired', 'power_state', 'last_seen_at')
-            ->orderBy('name', 'asc')
-            ->get();
+        $computers = app(\App\Services\ComputerPowerService::class)->statusSnapshot((int) $clubId);
 
         return Inertia::render('Admin/Dashboard', [
             'computers' => $computers,
@@ -765,11 +760,7 @@ class AdminController extends Controller
     }
     public function getPcStatuses()
     {
-        $statuses = DB::table('computers')
-            ->select('id', 'status', 'power_desired', 'power_state', 'last_seen_at')
-            ->get();
-
-        return response()->json($statuses);
+        return response()->json(app(\App\Services\ComputerPowerService::class)->statusSnapshot());
     }
     public function checkNewOrders()
     {

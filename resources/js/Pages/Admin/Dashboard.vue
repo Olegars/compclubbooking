@@ -67,13 +67,15 @@ const pickNew = (list: any[], seen: Set<number>) => list.filter(item => !seen.ha
 const refreshStatuses = async () => {
     try {
         const { data: pcData } = await axios.get('/admin/api/pc-statuses')
-        localComputers.value.forEach(pc => {
-            const updated = pcData.find((d: any) => d.id === pc.id)
-            if (updated) {
-                pc.status = updated.status
-                pc.power_desired = updated.power_desired
-                pc.power_state = updated.power_state
-                pc.last_seen_at = updated.last_seen_at
+        localComputers.value = localComputers.value.map(pc => {
+            const updated = pcData.find((d: any) => Number(d.id) === Number(pc.id))
+            if (!updated) return pc
+            return {
+                ...pc,
+                status: updated.status,
+                power_desired: updated.power_desired,
+                power_state: updated.power_state,
+                last_seen_at: updated.last_seen_at,
             }
         })
 

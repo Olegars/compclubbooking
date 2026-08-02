@@ -625,6 +625,12 @@ class ShellApiController extends Controller
                 (float) $request->cpu_c
             );
 
+            try {
+                app(ComputerPowerService::class)->touchOnline((int) $request->terminal_id);
+            } catch (\Throwable $e) {
+                Log::warning('Power touch on thermal failed: '.$e->getMessage());
+            }
+
             return response()->json([
                 'status' => 'success',
                 'fan' => $fan
@@ -1624,12 +1630,17 @@ class ShellApiController extends Controller
                 ->first();
 
             if ($computer) {
-                // Шелл поднялся / переопросил HWID — считаем ПК живым.
+                // Шелл на связи: сначала жёстко пишем last_seen/power_state через SQL NOW().
                 try {
                     app(ComputerPowerService::class)->heartbeat($computer);
                     $computer->refresh();
                 } catch (\Throwable $e) {
                     Log::warning('Power heartbeat on check failed: '.$e->getMessage());
+                    try {
+                        app(ComputerPowerService::class)->touchOnline((int) $computer->id);
+                    } catch (\Throwable $e2) {
+                        Log::warning('Power touch on check failed: '.$e2->getMessage());
+                    }
                 }
 
                 return response()->json([
