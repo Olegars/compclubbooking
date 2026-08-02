@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\QueueController;
 
 // Оверлеи Shell (API для терминалов)
 use App\Http\Controllers\Api\ShellApiController;
+use App\Http\Controllers\Api\WolRelayController;
 
 // Контроллеры Авторизации
 use App\Http\Controllers\Auth\SmsAuthController;
@@ -303,6 +304,16 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 */
 /*
 |--------------------------------------------------------------------------
+| WOL-релей (MikroTik pull): роутер сам забирает MAC, облако пакет не шлёт
+|--------------------------------------------------------------------------
+*/
+Route::prefix('api/power')->group(function () {
+    Route::get('/wol-targets', [WolRelayController::class, 'targets']);
+    Route::post('/wol-sent', [WolRelayController::class, 'sent']);
+});
+
+/*
+|--------------------------------------------------------------------------
 | API ДЛЯ QML-ШЕЛЛА (Терминалы клуба)
 |--------------------------------------------------------------------------
 */
@@ -310,6 +321,7 @@ Route::prefix('api/shell')->group(function () {
     // --- ПРОВЕРКА И АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ ОБОРУДОВАНИЯ ПО СЕРИЙНИКУ (HWID) ---
     Route::post('/check', [ShellApiController::class, 'checkTerminalBooking']); // Стартовый роут проверки HWID
     Route::post('/register-terminal', [ShellApiController::class, 'registerTerminal']); // Кнопка "Привязать ПК"
+    Route::post('/power/heartbeat', [ShellApiController::class, 'powerHeartbeat']);
 
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
     Route::post('/login', [ShellApiController::class, 'login']);

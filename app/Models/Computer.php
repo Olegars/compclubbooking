@@ -11,6 +11,14 @@ class Computer extends Model
     protected $fillable = [
         'club_id', 'name', 'x', 'y', 'type', 'seat_class_id', 'space_id',
         'kind', 'booth_id', 'status', 'hwid',
+        'mac_address', 'power_desired', 'power_state',
+        'power_state_updated_at', 'last_seen_at', 'wol_sent_at',
+    ];
+
+    protected $casts = [
+        'power_state_updated_at' => 'immutable_datetime',
+        'last_seen_at' => 'immutable_datetime',
+        'wol_sent_at' => 'immutable_datetime',
     ];
 
     public const KIND_PC = 'pc';

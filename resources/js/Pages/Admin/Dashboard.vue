@@ -25,6 +25,30 @@ const activeCalls = ref<any[]>([])
 const sosAlerts = ref<any[]>([])
 const inputAlerts = ref<any[]>([])
 
+const powerTileClass = (pc: any) => {
+    const state = pc.power_state || 'off'
+    if (state === 'on') return 'bg-emerald-500/15 border-emerald-500/40'
+    if (state === 'booting') return 'bg-amber-400/15 border-amber-400/50 animate-pulse'
+    if (state === 'error') return 'bg-red-500/15 border-red-500/50'
+    return 'bg-white/[0.02] border-white/5'
+}
+
+const powerLabelClass = (pc: any) => {
+    const state = pc.power_state || 'off'
+    if (state === 'on') return 'text-emerald-400'
+    if (state === 'booting') return 'text-amber-300'
+    if (state === 'error') return 'text-red-400'
+    return 'text-white/25'
+}
+
+const powerLabel = (pc: any) => {
+    const state = pc.power_state || 'off'
+    if (state === 'on') return pc.status === 'busy' ? 'сессия' : 'онлайн'
+    if (state === 'booting') return 'загрузка'
+    if (state === 'error') return 'ошибка'
+    return 'выкл'
+}
+
 // Первый опрос только наполняет панели: сирена звучит лишь на новых сигналах
 const isFirstPoll = ref(true)
 const seenCallIds = ref<Set<number>>(new Set())
@@ -41,7 +65,12 @@ const refreshStatuses = async () => {
         const { data: pcData } = await axios.get('/admin/api/pc-statuses')
         localComputers.value.forEach(pc => {
             const updated = pcData.find((d: any) => d.id === pc.id)
-            if (updated) pc.status = updated.status
+            if (updated) {
+                pc.status = updated.status
+                pc.power_desired = updated.power_desired
+                pc.power_state = updated.power_state
+                pc.last_seen_at = updated.last_seen_at
+            }
         })
 
         const [{ data: callData }, { data: alertData }] = await Promise.all([
@@ -229,14 +258,26 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                         <span class="w-2 h-10 bg-cyan-500 rounded-full shadow-[0_0_15px_rgba(6,182,212,0.5)]"></span>
                         Мониторинг залов
                     </h2>
+                    <div class="flex flex-wrap gap-4 mb-6 text-[9px] font-black uppercase tracking-widest text-white/40">
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> В сети</span>
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-white/25"></span> Выкл</span>
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span> Загрузка</span>
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span> Ошибка WOL</span>
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Сессия</span>
+                    </div>
                     <div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
                         <div v-for="pc in localComputers" :key="pc.id" @click="selectedPc = pc"
                              class="aspect-square rounded-2xl border transition-all cursor-pointer flex flex-col items-center justify-center group relative overflow-hidden"
-                             :class="[ pc.status === 'busy' ? 'bg-cyan-500/10 border-cyan-500/40' : 'bg-white/[0.02] border-white/5',
+                             :class="[ powerTileClass(pc),
                                        selectedPc?.id === pc.id ? 'ring-2 ring-cyan-500 ring-offset-4 ring-offset-[#050505] scale-90' : 'hover:scale-105' ]">
                             <div v-if="activeCalls.some(c => c.pc_id === pc.id) || sosAlerts.some(a => a.computer_id === pc.id)"
                                  class="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full animate-ping"></div>
-                            <span class="text-[11px] font-black" :class="pc.status === 'busy' ? 'text-cyan-400' : 'text-white/20'">{{ pc.name }}</span>
+                            <div v-if="pc.status === 'busy'"
+                                 class="absolute top-1 left-1 w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]"></div>
+                            <span class="text-[11px] font-black" :class="powerLabelClass(pc)">{{ pc.name }}</span>
+                            <span class="text-[8px] font-black uppercase tracking-wider mt-1 opacity-60" :class="powerLabelClass(pc)">
+                                {{ powerLabel(pc) }}
+                            </span>
                         </div>
                     </div>
                 </div>

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use App\Services\BookingSessionTimingService;
+use App\Services\ComputerPowerService;
 use App\Services\ComputerStatusService;
 
 class UpdatePcStatuses extends Command
@@ -11,8 +12,11 @@ class UpdatePcStatuses extends Command
     protected $signature = 'reactor:update-statuses';
     protected $description = 'Обновление статусов ПК на основе активных бронирований';
 
-    public function handle(BookingSessionTimingService $timing, ComputerStatusService $statuses)
-    {
+    public function handle(
+        BookingSessionTimingService $timing,
+        ComputerStatusService $statuses,
+        ComputerPowerService $power,
+    ) {
         $noShows = $timing->cancelNoShows();
         if ($noShows > 0) {
             $this->info('No-show отменено: '.$noShows);
@@ -28,6 +32,12 @@ class UpdatePcStatuses extends Command
         $changed = $statuses->syncAll();
         if ($changed > 0) {
             $this->info('Обновлено узлов: '.$changed);
+        }
+
+        // Питание: desired on/off по букингам ± warmup, WOL, stale → off/error.
+        $powerChanged = $power->syncAll();
+        if ($powerChanged > 0) {
+            $this->info('Обновлено питание: '.$powerChanged);
         }
 
         return Command::SUCCESS;

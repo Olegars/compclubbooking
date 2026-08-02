@@ -32,10 +32,10 @@ class AdminController extends Controller
         // Получаем ID первого клуба (или текущего активного)
         $clubId = DB::table('clubs')->first()->id ?? 1;
 
-        // Загружаем реальные ПК из базы
+        // Загружаем реальные ПК из базы (занятость + питание для мониторинга)
         $computers = DB::table('computers')
             ->where('club_id', $clubId)
-            ->select('id', 'name', 'status') // Предполагаем, что колонка status есть (available/busy)
+            ->select('id', 'name', 'status', 'power_desired', 'power_state', 'last_seen_at')
             ->orderBy('name', 'asc')
             ->get();
 
@@ -765,9 +765,8 @@ class AdminController extends Controller
     }
     public function getPcStatuses()
     {
-        // Возвращаем только ID и статус всех ПК клуба
         $statuses = DB::table('computers')
-            ->select('id', 'status')
+            ->select('id', 'status', 'power_desired', 'power_state', 'last_seen_at')
             ->get();
 
         return response()->json($statuses);

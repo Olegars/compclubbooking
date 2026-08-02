@@ -23,6 +23,7 @@ use App\Services\AchievementService;
 use App\Services\AiAssistant\AiAssistantService;
 use App\Services\AiAssistant\VoiceGreetingService;
 use App\Services\BookingSessionTimingService;
+use App\Services\ComputerPowerService;
 use App\Services\ComputerStatusService;
 use App\Services\Fan\FanControlService;
 use App\Services\GameRequestService;
@@ -1608,11 +1609,21 @@ class ShellApiController extends Controller
                 ->first();
 
             if ($computer) {
+                // Шелл поднялся / переопросил HWID — считаем ПК живым.
+                try {
+                    app(ComputerPowerService::class)->heartbeat($computer);
+                    $computer->refresh();
+                } catch (\Throwable $e) {
+                    Log::warning('Power heartbeat on check failed: '.$e->getMessage());
+                }
+
                 return response()->json([
                     'status' => 'success',
                     'computer_id' => $computer->id,
                     'name' => $computer->name,
-                    'type' => $computer->type ?? 'standard'
+                    'type' => $computer->type ?? 'standard',
+                    'power_desired' => $computer->power_desired ?? 'on',
+                    'power_state' => $computer->power_state ?? 'on',
                 ], 200);
             }
 
@@ -1699,6 +1710,13 @@ class ShellApiController extends Controller
 
                 app(ComputerStatusService::class)->syncFor((int) $termId);
 
+                $powerAction = 'none';
+                try {
+                    $powerAction = app(ComputerPowerService::class)->powerActionFor((int) $termId);
+                } catch (\Throwable $e) {
+                    Log::warning('Power action after logout failed: '.$e->getMessage());
+                }
+
                 try {
                     app(FanControlService::class)->reconcileForComputer((int) $termId);
                 } catch (\Throwable $e) {
@@ -1721,6 +1739,8 @@ class ShellApiController extends Controller
                     'message' => 'Сессия успешно закрыта. Терминал освобожден.',
                     'settings_saved' => $settingsSaved,
                     'settings_error' => $settingsError,
+                    'power_action' => $powerAction,
+                    'power_desired' => $powerAction === 'reboot' ? 'on' : 'off',
                 ], 200);
             }
 
@@ -1734,6 +1754,54 @@ class ShellApiController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Ошибка сервера при выходе: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Периодический heartbeat шелла: last_seen, MAC, power_desired/action.
+     * Если сессия уже закрыта планировщиком — шелл получит session_active=false
+     * и power_action (reboot|shutdown).
+     */
+    public function powerHeartbeat(Request $request)
+    {
+        try {
+            $request->validate([
+                'terminal_id' => 'nullable|integer',
+                'hwid' => 'nullable|string',
+                'mac_address' => 'nullable|string|max:32',
+            ]);
+
+            $computer = null;
+            if ($request->filled('terminal_id')) {
+                $computer = Computer::find((int) $request->terminal_id);
+            }
+            if (! $computer && $request->filled('hwid')) {
+                $hwid = strtolower(trim((string) $request->hwid));
+                $computer = Computer::query()
+                    ->whereRaw('LOWER(hwid) = ?', [$hwid])
+                    ->first();
+            }
+
+            if (! $computer) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Терминал не найден',
+                ], 200);
+            }
+
+            $result = app(ComputerPowerService::class)->heartbeat(
+                $computer,
+                $request->input('mac_address')
+            );
+
+            return response()->json(array_merge(['status' => 'success'], $result), 200);
+        } catch (\Throwable $e) {
+            Log::error('Shell API Power Heartbeat Error: '.$e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ошибка heartbeat: '.$e->getMessage(),
             ], 500);
         }
     }
