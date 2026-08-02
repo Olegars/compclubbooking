@@ -4,6 +4,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Transaction extends Model
 {
@@ -16,15 +17,26 @@ class Transaction extends Model
         'description',
         'payload',
         'idempotency_key',
+        'receipt_id',
+        'fiscal_mode',
+        'fiscal_status',
+        'fiscal_receipt_url',
+        'fiscal_error',
+        'fiscal_at',
     ];
-    protected $casts = ['payload' => 'array'];
 
-    public function user()
+    protected $casts = [
+        'payload' => 'array',
+        'amount' => 'float',
+        'fiscal_at' => 'datetime',
+    ];
+
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-    public function bookingGroup()
+    public function bookingGroup(): BelongsTo
     {
         return $this->belongsTo(BookingGroup::class);
     }

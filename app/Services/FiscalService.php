@@ -2,72 +2,309 @@
 
 namespace App\Services;
 
+use App\Models\Transaction;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
-class FiscalService {
-    protected string $url;
-    protected string $user;
-    protected string $password;
+class FiscalService
+{
+    public const MODE_ADVANCE = 'advance';
 
-    public function __construct() {
-        $this->url = env('KKM_SERVER_URL', 'http://localhost:5893/Execute');
-        $this->user = env('KKM_SERVER_USER', 'Admin');
-        $this->password = env('KKM_SERVER_PASS', '');
+    public const MODE_SETTLEMENT = 'settlement';
+
+    public const MODE_REFUND = 'refund';
+
+    /** Признак способа расчёта (тег 1214) */
+    public const METHOD_ADVANCE = 3;
+
+    public const METHOD_FULL = 4;
+
+    /** Признак предмета расчёта (тег 1212) */
+    public const OBJECT_SERVICE = 4;
+
+    public const OBJECT_PAYMENT = 10;
+
+    public const OBJECT_GOODS = 1;
+
+    public function isEnabled(): bool
+    {
+        return (bool) config('fiscal.enabled', false);
     }
 
     /**
-     * Регистрация чека (Приход)
+     * Какой режим чека нужен для транзакции (или null — не фискалить).
      */
-    public function registerReceipt($transaction) {
-        $user = $transaction->user;
+    public function resolveMode(Transaction $transaction): ?string
+    {
+        $type = (string) $transaction->type;
+        $source = strtolower(trim((string) ($transaction->source ?? '')));
+        $amount = (float) $transaction->amount;
 
-        $data = [
-            "Command" => "RegisterCheck",
-            "NumDevice" => 0, // Номер устройства в KkmServer
-            "InnKassa" => "", // Если несколько касс, можно фильтровать по ИНН
-            "IsFiscalCheck" => true,
-            "TypeCheck" => 0, // 0 - Приход, 1 - Возврат прихода
-            "NotPrint" => false, // Печатать бумажный чек или только электронный?
-            "CashierName" => "REACTOR System",
-            "ClientAddress" => $user->email ?? $user->phone, // Куда слать эл. чек
-            "CheckStrings" => [
+        if ($type === 'deposit' && $amount > 0) {
+            $allowed = array_map('strtolower', config('fiscal.advance_sources', []));
+            if (in_array($source, $allowed, true)) {
+                return self::MODE_ADVANCE;
+            }
+
+            return null;
+        }
+
+        if ($amount < 0 && in_array($type, config('fiscal.settlement_types', []), true)) {
+            return self::MODE_SETTLEMENT;
+        }
+
+        if ($type === 'refund' && $amount > 0) {
+            return self::MODE_REFUND;
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{success: bool, url?: ?string, error?: string, skipped?: bool}
+     */
+    public function registerForTransaction(Transaction $transaction): array
+    {
+        if (! $this->isEnabled()) {
+            return ['success' => true, 'skipped' => true, 'url' => null];
+        }
+
+        $mode = $transaction->fiscal_mode ?: $this->resolveMode($transaction);
+        if ($mode === null) {
+            return ['success' => true, 'skipped' => true, 'url' => null];
+        }
+
+        return match ($mode) {
+            self::MODE_ADVANCE => $this->registerAdvance($transaction),
+            self::MODE_SETTLEMENT => $this->registerSettlement($transaction),
+            self::MODE_REFUND => $this->registerRefund($transaction),
+            default => ['success' => false, 'error' => 'Unknown fiscal mode: '.$mode],
+        };
+    }
+
+    /**
+     * Пополнение кошелька — чек «АВАНС».
+     *
+     * @return array{success: bool, url?: ?string, error?: string}
+     */
+    public function registerAdvance(Transaction $transaction): array
+    {
+        $amount = abs((float) $transaction->amount);
+        $name = $this->itemName($transaction, 'Аванс (пополнение баланса)');
+
+        $payload = $this->basePayload(
+            typeCheck: 0,
+            itemName: $name,
+            amount: $amount,
+            signMethod: self::METHOD_ADVANCE,
+            signObject: self::OBJECT_PAYMENT,
+            cash: $this->isCashSource($transaction) ? $amount : 0.0,
+            electronic: $this->isCashSource($transaction) ? 0.0 : $amount,
+            advancePayment: 0.0,
+            clientAddress: $this->clientAddress($transaction),
+        );
+
+        return $this->execute($payload, $transaction, self::MODE_ADVANCE);
+    }
+
+    /**
+     * Списание с депозита (бронь / магазин) — полный расчёт с зачётом аванса.
+     *
+     * @return array{success: bool, url?: ?string, error?: string}
+     */
+    public function registerSettlement(Transaction $transaction): array
+    {
+        $amount = abs((float) $transaction->amount);
+        $isGoods = $transaction->type === 'purchase';
+        $name = $this->itemName(
+            $transaction,
+            $isGoods ? 'Товары клуба' : 'Игровое время'
+        );
+
+        $payload = $this->basePayload(
+            typeCheck: 0,
+            itemName: $name,
+            amount: $amount,
+            signMethod: self::METHOD_FULL,
+            signObject: $isGoods ? self::OBJECT_GOODS : self::OBJECT_SERVICE,
+            cash: 0.0,
+            electronic: 0.0,
+            advancePayment: $amount,
+            clientAddress: $this->clientAddress($transaction),
+        );
+
+        return $this->execute($payload, $transaction, self::MODE_SETTLEMENT);
+    }
+
+    /**
+     * Возврат на баланс (возврат прихода) — упрощённо как возврат аванса.
+     *
+     * @return array{success: bool, url?: ?string, error?: string}
+     */
+    public function registerRefund(Transaction $transaction): array
+    {
+        $amount = abs((float) $transaction->amount);
+        $name = $this->itemName($transaction, 'Возврат аванса');
+
+        $payload = $this->basePayload(
+            typeCheck: 1,
+            itemName: $name,
+            amount: $amount,
+            signMethod: self::METHOD_ADVANCE,
+            signObject: self::OBJECT_PAYMENT,
+            cash: $this->isCashSource($transaction) ? $amount : 0.0,
+            electronic: $this->isCashSource($transaction) ? 0.0 : $amount,
+            advancePayment: 0.0,
+            clientAddress: $this->clientAddress($transaction),
+        );
+
+        return $this->execute($payload, $transaction, self::MODE_REFUND);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function basePayload(
+        int $typeCheck,
+        string $itemName,
+        float $amount,
+        int $signMethod,
+        int $signObject,
+        float $cash,
+        float $electronic,
+        float $advancePayment,
+        ?string $clientAddress,
+    ): array {
+        $kkm = config('fiscal.kkm', []);
+        $amount = round($amount, 2);
+
+        $payload = [
+            'Command' => 'RegisterCheck',
+            'NumDevice' => (int) ($kkm['num_device'] ?? 0),
+            'InnKassa' => (string) ($kkm['inn_kassa'] ?? ''),
+            'IsFiscalCheck' => true,
+            'TypeCheck' => $typeCheck,
+            'NotPrint' => (bool) ($kkm['not_print'] ?? false),
+            'NumberCopies' => 0,
+            'CashierName' => (string) ($kkm['cashier_name'] ?? 'REACTOR System'),
+            'CheckStrings' => [
                 [
-                    "Register" => [
-                        "Name" => $transaction->description,
-                        "Quantity" => 1,
-                        "Price" => abs($transaction->amount),
-                        "Amount" => abs($transaction->amount),
-                        "Tax" => -1, // -1 - Без НДС (для патента/УСН)
-                        "EAN13" => ""
-                    ]
-                ]
+                    'Register' => [
+                        'Name' => mb_substr($itemName, 0, 128),
+                        'Quantity' => 1,
+                        'Price' => $amount,
+                        'Amount' => $amount,
+                        'Tax' => (int) ($kkm['tax'] ?? -1),
+                        'SignMethodCalculation' => $signMethod,
+                        'SignCalculationObject' => $signObject,
+                        'MeasureOfQuantity' => 0,
+                    ],
+                ],
             ],
-            "Payments" => [
-                [
-                    "Type" => $transaction->source === 'cash' ? 0 : 1, // 0 - Нал, 1 - Безнал
-                    "Amount" => abs($transaction->amount)
-                ]
-            ],
-            "User" => $this->user,
-            "Password" => $this->password
+            'Cash' => round($cash, 2),
+            'ElectronicPayment' => round($electronic, 2),
+            'AdvancePayment' => round($advancePayment, 2),
+            'Credit' => 0,
+            'CashProvision' => 0,
+            'IdCommand' => (string) Str::uuid(),
+            'Timeout' => (int) ($kkm['timeout'] ?? 15),
+            'User' => (string) ($kkm['user'] ?? 'Admin'),
+            'Password' => (string) ($kkm['password'] ?? ''),
         ];
 
+        if ($clientAddress) {
+            $payload['ClientAddress'] = $clientAddress;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{success: bool, url?: ?string, error?: string}
+     */
+    protected function execute(array $payload, Transaction $transaction, string $mode): array
+    {
+        $url = (string) config('fiscal.kkm.url');
+        $timeout = (int) config('fiscal.kkm.timeout', 15);
+
         try {
-            $response = Http::timeout(10)->post($this->url, $data);
+            $response = Http::timeout($timeout)->post($url, $payload);
             $result = $response->json();
 
-            if (isset($result['Status']) && $result['Status'] == 0) {
+            if (! is_array($result)) {
+                Log::warning('Fiscal KKM non-JSON response', [
+                    'transaction_id' => $transaction->id,
+                    'mode' => $mode,
+                    'status' => $response->status(),
+                    'body' => mb_substr($response->body(), 0, 500),
+                ]);
+
+                return ['success' => false, 'error' => 'KKM returned non-JSON response'];
+            }
+
+            if ((int) ($result['Status'] ?? -1) === 0) {
                 return [
                     'success' => true,
-                    'url' => $result['URL'] ?? null
+                    'url' => $result['URL'] ?? $result['Url'] ?? null,
                 ];
             }
 
-            return ['success' => false, 'error' => $result['Error'] ?? 'Unknown KKM Error'];
+            $error = (string) ($result['Error'] ?? $result['Message'] ?? 'Unknown KKM Error');
+            Log::warning('Fiscal KKM error', [
+                'transaction_id' => $transaction->id,
+                'mode' => $mode,
+                'error' => $error,
+                'result' => $result,
+            ]);
 
-        } catch (\Exception $e) {
+            return ['success' => false, 'error' => $error];
+        } catch (\Throwable $e) {
+            Log::error('Fiscal KKM exception', [
+                'transaction_id' => $transaction->id,
+                'mode' => $mode,
+                'error' => $e->getMessage(),
+            ]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
+    }
+
+    protected function itemName(Transaction $transaction, string $fallback): string
+    {
+        $desc = trim((string) ($transaction->description ?? ''));
+
+        return $desc !== '' ? $desc : $fallback;
+    }
+
+    protected function isCashSource(Transaction $transaction): bool
+    {
+        $source = strtolower(trim((string) ($transaction->source ?? '')));
+
+        return in_array($source, ['cash', 'admin_cash'], true);
+    }
+
+    protected function clientAddress(Transaction $transaction): ?string
+    {
+        $user = $transaction->relationLoaded('user')
+            ? $transaction->user
+            : $transaction->user()->first();
+
+        if (! $user) {
+            return null;
+        }
+
+        $email = trim((string) ($user->email ?? ''));
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return $email;
+        }
+
+        $phone = preg_replace('/\D+/', '', (string) ($user->phone ?? ''));
+        if ($phone !== null && strlen($phone) >= 10) {
+            return '+'.$phone;
+        }
+
+        return null;
     }
 }

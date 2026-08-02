@@ -1155,6 +1155,18 @@ class ShellApiController extends Controller
             ) {
                 $newBalance = $wallet->debitSpendable($totalPrice);
 
+                \App\Models\Transaction::create([
+                    'user_id' => $user->id,
+                    'amount' => -$totalPrice,
+                    'type' => 'purchase',
+                    'source' => 'balance',
+                    'description' => 'Магазин: '.$summary,
+                    'payload' => [
+                        'order_items' => $lineItems,
+                        'terminal_id' => (int) $request->terminal_id,
+                    ],
+                ]);
+
                 $orderStatus = 'pending';
                 $orderId = (int) DB::table('orders')->insertGetId([
                     'user_id' => $user->id,

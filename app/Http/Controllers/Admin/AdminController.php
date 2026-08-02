@@ -104,14 +104,12 @@ class AdminController extends Controller
             $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id]);
             $balance = $wallet->creditSpendable($amount);
 
-            DB::table('transactions')->insert([
+            \App\Models\Transaction::create([
                 'user_id' => $user->id,
                 'amount' => $amount,
                 'type' => 'deposit',
                 'source' => 'admin_cash',
                 'description' => $request->reason ?: 'Пополнение кассой REACTOR',
-                'created_at' => now(),
-                'updated_at' => now(),
             ]);
 
             return $balance;

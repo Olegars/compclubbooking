@@ -36,7 +36,6 @@ class BookingObserver
                         'type'        => 'booking_upgrade',
                         'source'      => 'balance',
                         'description' => "Апгрейд тарифа: ПК №" . $booking->computer_id . " ({$booking->duration} ч.)",
-                        'date'        => now()->format('d.m.Y H:i')
                     ]);
                 });
             }
