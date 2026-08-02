@@ -212,6 +212,24 @@ class ComputerPowerService
     }
 
     /**
+     * Шелл штатно выключается — сразу off, не ждём stale-таймаут.
+     */
+    public function markOffline(int $computerId): void
+    {
+        if ($computerId <= 0) {
+            return;
+        }
+
+        DB::table('computers')->where('id', $computerId)->update([
+            'power_state' => self::STATE_OFF,
+            'power_state_updated_at' => DB::raw('NOW()'),
+            // null → statusSnapshot не считает ПК онлайн
+            'last_seen_at' => null,
+            'updated_at' => DB::raw('NOW()'),
+        ]);
+    }
+
+    /**
      * Пометить ПК онлайн. Пишет через SQL NOW() — без сюрпризов таймзоны PHP.
      */
     public function markOnline(int $computerId, ?string $mac = null): void

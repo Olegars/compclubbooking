@@ -322,6 +322,7 @@ Route::prefix('api/shell')->group(function () {
     Route::post('/check', [ShellApiController::class, 'checkTerminalBooking']); // Стартовый роут проверки HWID
     Route::post('/register-terminal', [ShellApiController::class, 'registerTerminal']); // Кнопка "Привязать ПК"
     Route::post('/power/heartbeat', [ShellApiController::class, 'powerHeartbeat']);
+    Route::post('/power/offline', [ShellApiController::class, 'powerOffline']);
 
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
     Route::post('/login', [ShellApiController::class, 'login']);

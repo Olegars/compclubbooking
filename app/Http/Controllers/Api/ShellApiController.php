@@ -1833,6 +1833,51 @@ class ShellApiController extends Controller
     }
 
     /**
+     * Шелл закрывается (aboutToQuit) — сразу power_state=off.
+     */
+    public function powerOffline(Request $request)
+    {
+        try {
+            $request->validate([
+                'terminal_id' => 'nullable|integer',
+                'hwid' => 'nullable|string',
+            ]);
+
+            $computer = null;
+            if ($request->filled('terminal_id')) {
+                $computer = Computer::find((int) $request->terminal_id);
+            }
+            if (! $computer && $request->filled('hwid')) {
+                $hwid = strtolower(trim((string) $request->hwid));
+                $computer = Computer::query()
+                    ->whereRaw('LOWER(hwid) = ?', [$hwid])
+                    ->first();
+            }
+
+            if (! $computer) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Терминал не найден',
+                ], 200);
+            }
+
+            app(ComputerPowerService::class)->markOffline((int) $computer->id);
+
+            return response()->json([
+                'status' => 'success',
+                'power_state' => 'off',
+            ], 200);
+        } catch (\Throwable $e) {
+            Log::error('Shell API Power Offline Error: '.$e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ошибка offline: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * GET cloud settings pack for the player on the active terminal session.
      * Shell can also re-fetch mid-session (e.g. after reconnect).
      */
