@@ -248,6 +248,29 @@ class ComputerPowerService
     }
 
     /**
+     * Лёгкий touch «шелл на связи» без полного пересчёта desired.
+     * Для эндпоинтов, которые старый/новый шелл дергает на гостевом экране.
+     */
+    public function touchOnline(int $computerId, ?string $mac = null): void
+    {
+        $computer = Computer::query()->find($computerId);
+        if (! $computer) {
+            return;
+        }
+
+        $this->heartbeat($computer, $mac);
+    }
+
+    private function isAlive(?CarbonImmutable $lastSeen, CarbonImmutable $now): bool
+    {
+        if ($lastSeen === null) {
+            return false;
+        }
+
+        return $lastSeen->greaterThanOrEqualTo($now->subSeconds($this->staleSeconds()));
+    }
+
+    /**
      * @param  list<int>  $ids
      * @return list<int>
      */
@@ -298,7 +321,7 @@ class ComputerPowerService
         $state = (string) ($row->power_state ?? self::STATE_OFF);
         $lastSeen = $row->last_seen_at ? CarbonImmutable::parse($row->last_seen_at) : null;
         $wolSent = $row->wol_sent_at ? CarbonImmutable::parse($row->wol_sent_at) : null;
-        $alive = $lastSeen && $lastSeen->diffInSeconds($now, false) <= $this->staleSeconds();
+        $alive = $this->isAlive($lastSeen, $now);
 
         if ((string) ($row->power_desired ?? '') !== $desired) {
             $patch['power_desired'] = $desired;
@@ -324,7 +347,7 @@ class ComputerPowerService
 
         // desired=on, шелл молчит — WOL делает MikroTik через /api/power/wol-targets.
         if ($state === self::STATE_BOOTING && $wolSent) {
-            if ($wolSent->diffInSeconds($now, false) >= $this->wolTimeoutSeconds()) {
+            if ($wolSent->lessThanOrEqualTo($now->subSeconds($this->wolTimeoutSeconds()))) {
                 $patch['power_state'] = self::STATE_ERROR;
                 $patch['power_state_updated_at'] = $now;
                 Log::warning('WOL timeout (relay)', ['computer_id' => $row->id, 'mac' => $row->mac_address]);

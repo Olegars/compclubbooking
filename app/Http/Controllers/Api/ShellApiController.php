@@ -40,8 +40,17 @@ use RuntimeException;
 
 class ShellApiController extends Controller
 {
-    public function getActiveOverlays()
+    public function getActiveOverlays(Request $request)
     {
+        $terminalId = (int) $request->query('terminal_id', 0);
+        if ($terminalId > 0) {
+            try {
+                app(ComputerPowerService::class)->touchOnline($terminalId);
+            } catch (\Throwable $e) {
+                Log::warning('Power touch on overlays failed: '.$e->getMessage());
+            }
+        }
+
         $overlays = Overlay::where('is_active', true)
             ->get()
             ->keyBy('block_position')
@@ -171,6 +180,12 @@ class ShellApiController extends Controller
                 app(FanControlService::class)->reconcileForComputer($terminalId);
             } catch (\Throwable $e) {
                 Log::warning('Fan reconcile after login failed: '.$e->getMessage());
+            }
+
+            try {
+                app(ComputerPowerService::class)->touchOnline($terminalId);
+            } catch (\Throwable $e) {
+                Log::warning('Power touch after login failed: '.$e->getMessage());
             }
 
             return response()->json([

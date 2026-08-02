@@ -26,6 +26,8 @@ const sosAlerts = ref<any[]>([])
 const inputAlerts = ref<any[]>([])
 
 const powerTileClass = (pc: any) => {
+    // Активная сессия — циан (как раньше), питание смотрим когда места свободно.
+    if (pc.status === 'busy') return 'bg-cyan-500/10 border-cyan-500/40'
     const state = pc.power_state || 'off'
     if (state === 'on') return 'bg-emerald-500/15 border-emerald-500/40'
     if (state === 'booting') return 'bg-amber-400/15 border-amber-400/50 animate-pulse'
@@ -34,6 +36,7 @@ const powerTileClass = (pc: any) => {
 }
 
 const powerLabelClass = (pc: any) => {
+    if (pc.status === 'busy') return 'text-cyan-400'
     const state = pc.power_state || 'off'
     if (state === 'on') return 'text-emerald-400'
     if (state === 'booting') return 'text-amber-300'
@@ -42,8 +45,9 @@ const powerLabelClass = (pc: any) => {
 }
 
 const powerLabel = (pc: any) => {
+    if (pc.status === 'busy') return 'сессия'
     const state = pc.power_state || 'off'
-    if (state === 'on') return pc.status === 'busy' ? 'сессия' : 'онлайн'
+    if (state === 'on') return 'онлайн'
     if (state === 'booting') return 'загрузка'
     if (state === 'error') return 'ошибка'
     return 'выкл'
