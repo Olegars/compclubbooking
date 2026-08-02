@@ -297,7 +297,9 @@ class ComputerPowerService
                            WHEN last_seen_at IS NOT NULL
                                 AND last_seen_at >= NOW() - (? * INTERVAL '1 second')
                            THEN 'on'
-                           ELSE COALESCE(power_state, 'off')
+                           WHEN power_state = 'booting' THEN 'booting'
+                           WHEN power_state = 'error' THEN 'error'
+                           ELSE 'off'
                        END AS power_state
                 FROM computers";
         $bindings = [$stale];
@@ -428,7 +430,8 @@ class ComputerPowerService
             return $patch;
         }
 
-        if ($state !== self::STATE_OFF && $state !== self::STATE_ERROR && $state !== self::STATE_BOOTING) {
+        // Зависший on без heartbeat → off (ждём WOL-релей).
+        if ($state === self::STATE_ON || ($state !== self::STATE_OFF && $state !== self::STATE_ERROR && $state !== self::STATE_BOOTING)) {
             $patch['power_state'] = self::STATE_OFF;
             $patch['power_state_updated_at'] = DB::raw('NOW()');
         }
