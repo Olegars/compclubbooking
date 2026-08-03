@@ -126,31 +126,33 @@ class FanAdminController extends Controller
                 'integer',
                 Rule::exists('relay_boards', 'id')->where(fn ($q) => $q->where('club_id', $request->integer('club_id'))),
             ],
-            'channel' => [
-                'required',
-                'integer',
-                'min:1',
-                'max:16',
-                Rule::unique('space_fans', 'channel')->where(fn ($q) => $q->where('relay_board_id', $request->integer('relay_board_id'))),
-            ],
+            'channel' => 'required|integer|min:1|max:16',
+            'channel2' => 'required|integer|min:1|max:16|different:channel',
             'thermal_on_c' => 'nullable|integer|min:40|max:120',
             'thermal_off_c' => 'nullable|integer|min:30|max:110',
         ]);
+
+        $this->assertChannelsFree(
+            (int) $data['relay_board_id'],
+            (int) $data['channel'],
+            (int) $data['channel2'],
+        );
 
         SpaceFan::create([
             'club_id' => $data['club_id'],
             'space_id' => $data['space_id'],
             'relay_board_id' => $data['relay_board_id'],
             'channel' => $data['channel'],
+            'channel2' => $data['channel2'],
             'manual_mode' => SpaceFan::MODE_AUTO,
-            'desired_power' => 0,
-            'applied_power' => 0,
-            'default_on_power' => (int) config('fan.default_on_power', 100),
+            'desired_power' => SpaceFan::SPEED_NIGHT,
+            'applied_power' => SpaceFan::SPEED_NIGHT,
+            'default_on_power' => SpaceFan::SPEED_HIGH,
             'thermal_on_c' => $data['thermal_on_c'] ?? (int) config('fan.thermal_on_c', 75),
             'thermal_off_c' => $data['thermal_off_c'] ?? (int) config('fan.thermal_off_c', 65),
         ]);
 
-        return back()->with('success', 'Вентилятор привязан к комнате');
+        return back()->with('success', 'Вентилятор привязан к комнате (K1+K2)');
     }
 
     public function updateFan(Request $request, SpaceFan $fan)
@@ -161,23 +163,24 @@ class FanAdminController extends Controller
                 'integer',
                 Rule::exists('relay_boards', 'id')->where(fn ($q) => $q->where('club_id', $fan->club_id)),
             ],
-            'channel' => [
-                'required',
-                'integer',
-                'min:1',
-                'max:16',
-                Rule::unique('space_fans', 'channel')
-                    ->where(fn ($q) => $q->where('relay_board_id', $request->integer('relay_board_id')))
-                    ->ignore($fan->id),
-            ],
+            'channel' => 'required|integer|min:1|max:16',
+            'channel2' => 'required|integer|min:1|max:16|different:channel',
             'thermal_on_c' => 'nullable|integer|min:40|max:120',
             'thermal_off_c' => 'nullable|integer|min:30|max:110',
             'manual_mode' => 'nullable|string|in:auto,force_on,force_off',
         ]);
 
+        $this->assertChannelsFree(
+            (int) $data['relay_board_id'],
+            (int) $data['channel'],
+            (int) $data['channel2'],
+            (int) $fan->id,
+        );
+
         $fan->update([
             'relay_board_id' => $data['relay_board_id'],
             'channel' => $data['channel'],
+            'channel2' => $data['channel2'],
             'thermal_on_c' => $data['thermal_on_c'] ?? $fan->thermal_on_c,
             'thermal_off_c' => $data['thermal_off_c'] ?? $fan->thermal_off_c,
             'manual_mode' => $data['manual_mode'] ?? $fan->manual_mode,
@@ -204,8 +207,23 @@ class FanAdminController extends Controller
             'manual_mode' => $result['fan']?->manual_mode,
             'applied_power' => $result['fan']?->applied_power,
             'message' => $result['wol_computer_id']
-                ? 'force_off задан, будим ПК #'.$result['wol_computer_id']
-                : 'force_off задан',
+                ? 'Дежурный режим (120В), будим ПК #'.$result['wol_computer_id']
+                : 'Дежурный режим (120В) задан',
         ]);
+    }
+
+    private function assertChannelsFree(int $boardId, int $ch1, int $ch2, ?int $ignoreFanId = null): void
+    {
+        $q = SpaceFan::query()->where('relay_board_id', $boardId);
+        if ($ignoreFanId) {
+            $q->where('id', '!=', $ignoreFanId);
+        }
+
+        foreach ($q->get(['id', 'channel', 'channel2']) as $row) {
+            $used = [(int) $row->channel, (int) $row->channel2];
+            if (in_array($ch1, $used, true) || in_array($ch2, $used, true)) {
+                abort(422, 'Канал K1/K2 уже занят на этой плате другим вентилятором');
+            }
+        }
     }
 }

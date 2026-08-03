@@ -291,7 +291,7 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                 <div class="flex items-center gap-3 mb-4">
                     <span class="text-amber-400 text-xl">⚠</span>
                     <h2 class="text-lg font-black uppercase italic tracking-tighter text-amber-400">
-                        Вентилятор при выключенных ПК
+                        Вентилятор mid/max при выкл. ПК
                     </h2>
                 </div>
                 <div class="space-y-3">
@@ -307,7 +307,7 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                             @click="forceOffFan(fan.fan_id)"
                             :disabled="forceOffBusy === fan.fan_id"
                             class="shrink-0 px-6 py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
-                            Выключить вентилятор
+                            Выключить до дежурного (120В)
                         </button>
                     </div>
                 </div>

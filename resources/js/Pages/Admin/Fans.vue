@@ -37,6 +37,7 @@ const fanForm = useForm({
     space_id: null as number | null,
     relay_board_id: null as number | null,
     channel: 1,
+    channel2: 2,
     thermal_on_c: props.defaults.thermal_on_c,
     thermal_off_c: props.defaults.thermal_off_c,
 })
@@ -60,8 +61,9 @@ const submitFan = () => {
     }
     fanForm.post('/admin/fans', {
         onSuccess: () => {
-            fanForm.reset('channel')
+            fanForm.reset('channel', 'channel2')
             fanForm.channel = 1
+            fanForm.channel2 = 2
             selectedSpaceId.value = null
             fanForm.space_id = null
         },
@@ -90,7 +92,7 @@ const freeSpaces = computed(() => props.spaces.filter((s: any) => !s.has_fan))
                 <div>
                     <h1 class="text-4xl font-black italic tracking-tighter uppercase text-cyan-500">Вентиляторы</h1>
                     <p class="text-[10px] text-white/30 uppercase tracking-widest font-black mt-2">
-                        W5100 · IP + канал · привязка к комнате · shell на LAN
+                        W5100 · K1+K2 каскад 120/170/220 В · shell на LAN
                     </p>
                 </div>
                 <select v-model.number="selectedClubId"
@@ -133,16 +135,22 @@ const freeSpaces = computed(() => props.spaces.filter((s: any) => !s.has_fan))
 
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 space-y-4">
                     <h3 class="text-lg font-black uppercase italic">Привязать вентилятор</h3>
-                    <p class="text-[10px] text-white/30 uppercase tracking-wider">Выберите комнату ниже, затем канал 1–16</p>
+                    <p class="text-[10px] text-white/30 uppercase tracking-wider">
+                        Комната + каналы K1/K2 (каскад 120/170/220 В)
+                    </p>
                     <form @submit.prevent="submitFan" class="space-y-3">
                         <select v-model.number="fanForm.relay_board_id"
                                 class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" required>
                             <option :value="null" disabled>Плата</option>
                             <option v-for="b in boards" :key="b.id" :value="b.id">{{ b.name }} ({{ b.host }})</option>
                         </select>
-                        <div class="grid grid-cols-3 gap-3">
-                            <input v-model.number="fanForm.channel" type="number" min="1" max="16" placeholder="Канал"
+                        <div class="grid grid-cols-2 gap-3">
+                            <input v-model.number="fanForm.channel" type="number" min="1" max="16" placeholder="K1 канал"
                                    class="bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" required />
+                            <input v-model.number="fanForm.channel2" type="number" min="1" max="16" placeholder="K2 канал"
+                                   class="bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" required />
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
                             <input v-model.number="fanForm.thermal_on_c" type="number" placeholder="ON °C"
                                    class="bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" />
                             <input v-model.number="fanForm.thermal_off_c" type="number" placeholder="OFF °C"
@@ -189,7 +197,9 @@ const freeSpaces = computed(() => props.spaces.filter((s: any) => !s.has_fan))
                                 Space #{{ f.space_id }} · {{ f.space?.name || 'room' }}
                             </div>
                             <div class="text-[10px] text-white/40 font-mono mt-1">
-                                {{ f.relay_board?.host }}:{{ f.relay_board?.port }} · ch {{ f.channel }} · mode {{ f.manual_mode }} · applied {{ f.applied_power }}
+                                {{ f.relay_board?.host }}:{{ f.relay_board?.port }}
+                                · K1={{ f.channel }} K2={{ f.channel2 }}
+                                · speed {{ f.applied_power }}/3 · mode {{ f.manual_mode }}
                             </div>
                         </div>
                         <button @click="deleteFan(f.id)" class="text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase">

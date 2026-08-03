@@ -13,11 +13,19 @@ class SpaceFan extends Model
 
     public const MODE_FORCE_OFF = 'force_off';
 
+    /** Cascade stages (desired_power / applied_power). */
+    public const SPEED_NIGHT = 1; // 120V — K1 OFF, K2 OFF
+
+    public const SPEED_MID = 2;   // 170V — K1 ON,  K2 OFF
+
+    public const SPEED_HIGH = 3;  // 220V — K1 OFF, K2 ON
+
     protected $fillable = [
         'club_id',
         'space_id',
         'relay_board_id',
         'channel',
+        'channel2',
         'manual_mode',
         'desired_power',
         'applied_power',
@@ -36,6 +44,7 @@ class SpaceFan extends Model
         'space_id' => 'integer',
         'relay_board_id' => 'integer',
         'channel' => 'integer',
+        'channel2' => 'integer',
         'desired_power' => 'integer',
         'applied_power' => 'integer',
         'default_on_power' => 'integer',
@@ -72,8 +81,53 @@ class SpaceFan extends Model
         return $this->belongsTo(Computer::class, 'last_applied_by_computer_id');
     }
 
+    /**
+     * True when above night/duty (mid or high) — used for orphan / UI "spinning hard".
+     */
     public function isOn(): bool
     {
-        return (int) $this->applied_power > 0;
+        return (int) $this->applied_power >= self::SPEED_MID;
+    }
+
+    public static function normalizeSpeed(int $power): int
+    {
+        if ($power <= 0) {
+            return self::SPEED_NIGHT;
+        }
+        if ($power === self::SPEED_MID) {
+            return self::SPEED_MID;
+        }
+        if ($power === self::SPEED_HIGH || $power >= 90) {
+            return self::SPEED_HIGH;
+        }
+        if ($power === self::SPEED_NIGHT || $power < 50) {
+            return self::SPEED_NIGHT;
+        }
+
+        return self::SPEED_MID;
+    }
+
+    /**
+     * @return array{0:bool,1:bool} [K1, K2]
+     */
+    public static function speedToRelays(int $speed): array
+    {
+        return match (self::normalizeSpeed($speed)) {
+            self::SPEED_MID => [true, false],
+            self::SPEED_HIGH => [false, true],
+            default => [false, false], // night
+        };
+    }
+
+    public static function relaysToSpeed(bool $k1, bool $k2): int
+    {
+        if ($k2) {
+            return self::SPEED_HIGH;
+        }
+        if ($k1) {
+            return self::SPEED_MID;
+        }
+
+        return self::SPEED_NIGHT;
     }
 }

@@ -172,7 +172,7 @@ class FanControlService
             return ['fan' => null, 'locked' => false, 'remaining_sec' => 0];
         }
 
-        $appliedPower = max(0, min(100, $appliedPower));
+        $appliedPower = SpaceFan::normalizeSpeed($appliedPower);
 
         return DB::transaction(function () use ($computer, $appliedPower, $error, $source) {
             /** @var SpaceFan|null $fan */
@@ -198,7 +198,7 @@ class FanControlService
                 }
             }
 
-            $fan->applied_power = $appliedPower;
+            $fan->applied_power = SpaceFan::normalizeSpeed($appliedPower);
             $fan->desired_power = $this->computeDesiredPower($fan);
             $fan->last_error = $error;
             $fan->last_applied_at = now();
@@ -224,13 +224,13 @@ class FanControlService
             }
 
             $fan->manual_mode = SpaceFan::MODE_FORCE_OFF;
-            $fan->desired_power = 0;
+            $fan->desired_power = SpaceFan::SPEED_NIGHT;
             $fan->last_manual_at = now();
             $fan->last_manual_by_computer_id = null;
             $fan->save();
 
             $wolComputerId = null;
-            if ($this->spaceAllComputersOffline($fan) && (int) $fan->applied_power > 0) {
+            if ($this->spaceAllComputersOffline($fan) && (int) $fan->applied_power >= SpaceFan::SPEED_MID) {
                 $wolComputerId = $this->wakeOneComputerInSpace($fan);
             }
 
@@ -284,9 +284,12 @@ class FanControlService
                 'host' => (string) $board->host,
                 'port' => (int) ($board->port ?: config('fan.w5100_default_port', 30000)),
                 'channel' => (int) $fan->channel,
+                'channel2' => (int) $fan->channel2,
                 'driver' => (string) $board->driver,
             ];
         }
+
+        $speed = SpaceFan::normalizeSpeed($desired);
 
         return [
             'available' => $relay !== null,
@@ -295,12 +298,19 @@ class FanControlService
             'space_id' => (int) $fan->space_id,
             'relay' => $relay,
             'manual_mode' => $fan->manual_mode,
-            'desired_power' => $desired,
-            'applied_power' => (int) $fan->applied_power,
-            'default_on_power' => (int) ($fan->default_on_power ?: config('fan.default_on_power', 100)),
+            'desired_power' => $speed,
+            'desired_speed' => $speed,
+            'applied_power' => SpaceFan::normalizeSpeed((int) $fan->applied_power),
+            'applied_speed' => SpaceFan::normalizeSpeed((int) $fan->applied_power),
+            'default_on_power' => SpaceFan::SPEED_HIGH,
             'thermal_on_c' => (int) ($fan->thermal_on_c ?: config('fan.thermal_on_c', 75)),
             'thermal_off_c' => (int) ($fan->thermal_off_c ?: config('fan.thermal_off_c', 65)),
             'is_on' => $fan->isOn(),
+            'speed_labels' => [
+                1 => 'night_120v',
+                2 => 'mid_170v',
+                3 => 'high_220v',
+            ],
             'last_error' => $fan->last_error,
             'facts' => [
                 'session' => $sessions > 0,
@@ -339,12 +349,13 @@ class FanControlService
 
         $out = [];
         foreach ($query->get() as $fan) {
-            $orphan = (int) $fan->applied_power > 0 && $this->spaceAllComputersOffline($fan);
+            $orphan = (int) $fan->applied_power >= SpaceFan::SPEED_MID && $this->spaceAllComputersOffline($fan);
             $out[] = [
                 'fan_id' => (int) $fan->id,
                 'space_id' => (int) $fan->space_id,
                 'club_id' => (int) $fan->club_id,
-                'applied_power' => (int) $fan->applied_power,
+                'applied_power' => SpaceFan::normalizeSpeed((int) $fan->applied_power),
+                'applied_speed' => SpaceFan::normalizeSpeed((int) $fan->applied_power),
                 'manual_mode' => (string) $fan->manual_mode,
                 'fan_orphan_on' => $orphan,
                 'is_on' => $fan->isOn(),
@@ -368,22 +379,24 @@ class FanControlService
 
     public function computeDesiredPower(SpaceFan $fan): int
     {
-        $onPower = max(1, min(100, (int) ($fan->default_on_power ?: config('fan.default_on_power', 100))));
-
         if ($fan->manual_mode === SpaceFan::MODE_FORCE_OFF) {
-            return 0;
+            return SpaceFan::SPEED_NIGHT;
         }
 
         if ($fan->manual_mode === SpaceFan::MODE_FORCE_ON) {
-            return $onPower;
+            return SpaceFan::SPEED_HIGH;
         }
 
-        // Suggested desired for shell: session always on; thermal for post-boot cool-down hint.
-        if ($this->spaceHasActiveSession($fan) || $this->spaceHasThermalHot($fan)) {
-            return $onPower;
+        // Session → max 220V; thermal (cool-down hint) → mid 170V; else night 120V.
+        if ($this->spaceHasActiveSession($fan)) {
+            return SpaceFan::SPEED_HIGH;
         }
 
-        return 0;
+        if ($this->spaceHasThermalHot($fan)) {
+            return SpaceFan::SPEED_MID;
+        }
+
+        return SpaceFan::SPEED_NIGHT;
     }
 
     private function manualLockRemainingSec(SpaceFan $fan, int $cooldown): int

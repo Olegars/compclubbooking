@@ -694,7 +694,7 @@ class ShellApiController extends Controller
     {
         $request->validate([
             'terminal_id' => 'required|integer|exists:computers,id',
-            'applied_power' => 'required|integer|min:0|max:100',
+            'applied_power' => 'required|integer|min:0|max:3',
             'last_error' => 'nullable|string|max:2000',
             'source' => 'nullable|string|in:command,status_read',
         ]);

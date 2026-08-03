@@ -93,10 +93,11 @@ class FanControlTest extends TestCase
             'space_id' => $this->space->id,
             'relay_board_id' => $this->board->id,
             'channel' => 3,
+            'channel2' => 4,
             'manual_mode' => SpaceFan::MODE_AUTO,
-            'desired_power' => 0,
-            'applied_power' => 0,
-            'default_on_power' => 100,
+            'desired_power' => SpaceFan::SPEED_NIGHT,
+            'applied_power' => SpaceFan::SPEED_NIGHT,
+            'default_on_power' => SpaceFan::SPEED_HIGH,
             'thermal_on_c' => 75,
             'thermal_off_c' => 65,
         ]);
@@ -108,8 +109,8 @@ class FanControlTest extends TestCase
     {
         $fan = $this->fans->reconcileForSpace($this->space->id, $this->club->id);
 
-        $this->assertSame(0, $fan->desired_power);
-        $this->assertSame(0, $fan->applied_power);
+        $this->assertSame(SpaceFan::SPEED_NIGHT, $fan->desired_power);
+        $this->assertSame(SpaceFan::SPEED_NIGHT, $fan->applied_power);
         Http::assertNothingSent();
     }
 
@@ -135,8 +136,8 @@ class FanControlTest extends TestCase
 
         $fan = $this->fans->reconcileForComputer($this->pcA->id);
 
-        $this->assertSame(100, $fan->desired_power);
-        $this->assertSame(0, $fan->applied_power); // shell must ack
+        $this->assertSame(SpaceFan::SPEED_HIGH, $fan->desired_power);
+        $this->assertSame(SpaceFan::SPEED_NIGHT, $fan->applied_power); // shell must ack
         Http::assertNothingSent();
     }
 
@@ -148,6 +149,7 @@ class FanControlTest extends TestCase
         $this->assertSame('192.168.1.4', $state['relay']['host']);
         $this->assertSame(30000, $state['relay']['port']);
         $this->assertSame(3, $state['relay']['channel']);
+        $this->assertSame(4, $state['relay']['channel2']);
         $this->assertSame('w5100_http', $state['relay']['driver']);
         $this->assertArrayHasKey('facts', $state);
         $this->assertArrayHasKey('manual_lock', $state);
@@ -157,13 +159,13 @@ class FanControlTest extends TestCase
     {
         $this->fans->reportThermal($this->pcA->id, 70.0);
         $this->fan->refresh();
-        $this->assertSame(0, $this->fan->desired_power);
+        $this->assertSame(SpaceFan::SPEED_NIGHT, $this->fan->desired_power);
         $this->assertFalse(ComputerThermal::where('computer_id', $this->pcA->id)->first()->is_hot);
 
         $this->fans->reportThermal($this->pcA->id, 75.0);
         $this->fan->refresh();
-        $this->assertSame(100, $this->fan->desired_power);
-        $this->assertSame(0, $this->fan->applied_power);
+        $this->assertSame(SpaceFan::SPEED_MID, $this->fan->desired_power);
+        $this->assertSame(SpaceFan::SPEED_NIGHT, $this->fan->applied_power);
         $this->assertTrue(ComputerThermal::where('computer_id', $this->pcA->id)->first()->is_hot);
 
         $this->fans->reportThermal($this->pcA->id, 70.0);
@@ -171,7 +173,7 @@ class FanControlTest extends TestCase
 
         $this->fans->reportThermal($this->pcA->id, 65.0);
         $this->fan->refresh();
-        $this->assertSame(0, $this->fan->desired_power);
+        $this->assertSame(SpaceFan::SPEED_NIGHT, $this->fan->desired_power);
         $this->assertFalse(ComputerThermal::where('computer_id', $this->pcA->id)->first()->is_hot);
     }
 
@@ -191,10 +193,10 @@ class FanControlTest extends TestCase
 
     public function test_acknowledge_applied_updates_power(): void
     {
-        $result = $this->fans->acknowledgeApplied($this->pcA->id, 100, null, 'command');
+        $result = $this->fans->acknowledgeApplied($this->pcA->id, 3, null, 'command');
         $this->assertFalse($result['locked']);
         $this->fan->refresh();
-        $this->assertSame(100, $this->fan->applied_power);
+        $this->assertSame(SpaceFan::SPEED_HIGH, $this->fan->applied_power);
         $this->assertSame($this->pcA->id, $this->fan->last_applied_by_computer_id);
     }
 
@@ -205,21 +207,23 @@ class FanControlTest extends TestCase
             'cpu_c' => 80,
         ])->assertOk()
             ->assertJsonPath('status', 'success')
-            ->assertJsonPath('fan.desired_power', 100)
-            ->assertJsonPath('fan.relay.host', '192.168.1.4');
+            ->assertJsonPath('fan.desired_power', SpaceFan::SPEED_MID)
+            ->assertJsonPath('fan.relay.host', '192.168.1.4')
+            ->assertJsonPath('fan.relay.channel2', 4);
 
         $this->postJson('/api/shell/fan', [
             'terminal_id' => $this->pcB->id,
             'action' => 'off',
         ])->assertOk()
-            ->assertJsonPath('fan.manual_mode', 'force_off');
+            ->assertJsonPath('fan.manual_mode', 'force_off')
+            ->assertJsonPath('fan.desired_power', SpaceFan::SPEED_NIGHT);
 
         $this->postJson('/api/shell/fan/applied', [
             'terminal_id' => $this->pcA->id,
-            'applied_power' => 0,
+            'applied_power' => 1,
             'source' => 'command',
         ])->assertOk()
-            ->assertJsonPath('fan.applied_power', 0);
+            ->assertJsonPath('fan.applied_power', 1);
 
         $this->getJson('/api/shell/fan?terminal_id='.$this->pcA->id)
             ->assertOk()
@@ -233,14 +237,14 @@ class FanControlTest extends TestCase
 
         $this->fans->setManualModeForComputer($this->pcA->id, 'on');
         $this->fans->reconcileForComputer($this->pcA->id);
-        $this->fans->acknowledgeApplied($this->pcA->id, 100);
+        $this->fans->acknowledgeApplied($this->pcA->id, 3);
 
         Http::assertNothingSent();
     }
 
     public function test_orphan_snapshot_when_fan_on_and_pcs_off(): void
     {
-        $this->fan->update(['applied_power' => 100]);
+        $this->fan->update(['applied_power' => SpaceFan::SPEED_HIGH]);
         $this->pcA->update(['power_state' => 'off', 'last_seen_at' => null]);
         $this->pcB->update(['power_state' => 'off', 'last_seen_at' => null]);
 
@@ -251,13 +255,22 @@ class FanControlTest extends TestCase
 
     public function test_admin_force_off_sets_mode(): void
     {
-        $this->fan->update(['applied_power' => 100, 'manual_mode' => SpaceFan::MODE_AUTO]);
+        $this->fan->update(['applied_power' => SpaceFan::SPEED_HIGH, 'manual_mode' => SpaceFan::MODE_AUTO]);
         $this->pcA->update(['mac_address' => 'AA:BB:CC:DD:EE:FF', 'power_state' => 'off', 'last_seen_at' => null]);
         $this->pcB->update(['power_state' => 'off', 'last_seen_at' => null]);
 
         $result = $this->fans->adminForceOff($this->fan->id);
         $this->assertSame(SpaceFan::MODE_FORCE_OFF, $result['fan']->manual_mode);
+        $this->assertSame(SpaceFan::SPEED_NIGHT, $result['fan']->desired_power);
         $this->assertSame($this->pcA->id, $result['wol_computer_id']);
         $this->assertSame('on', Computer::find($this->pcA->id)->power_desired);
+    }
+
+    public function test_speed_to_relays_cascade(): void
+    {
+        $this->assertSame([false, false], SpaceFan::speedToRelays(1));
+        $this->assertSame([true, false], SpaceFan::speedToRelays(2));
+        $this->assertSame([false, true], SpaceFan::speedToRelays(3));
+        $this->assertSame(3, SpaceFan::relaysToSpeed(true, true));
     }
 }
