@@ -33,9 +33,11 @@ class AdminController extends Controller
         $clubId = DB::table('clubs')->first()->id ?? 1;
 
         $computers = app(\App\Services\ComputerPowerService::class)->statusSnapshot((int) $clubId);
+        $fanOrphans = app(\App\Services\Fan\FanControlService::class)->orphanSnapshot((int) $clubId);
 
         return Inertia::render('Admin/Dashboard', [
             'computers' => $computers,
+            'fanOrphans' => $fanOrphans,
             'stats' => [
                 'TOTAL_REVENUE' => DB::table('orders')->where('status', 'delivered')->sum('price') ?? 0,
                 'ACTIVE_SESSIONS' => $computers->where('status', 'busy')->count(),
@@ -758,7 +760,13 @@ class AdminController extends Controller
     }
     public function getPcStatuses()
     {
-        return response()->json(app(\App\Services\ComputerPowerService::class)->statusSnapshot());
+        $computers = app(\App\Services\ComputerPowerService::class)->statusSnapshot();
+        $fanOrphans = app(\App\Services\Fan\FanControlService::class)->orphanSnapshot();
+
+        return response()->json([
+            'computers' => $computers,
+            'fan_orphans' => $fanOrphans,
+        ]);
     }
     public function checkNewOrders()
     {

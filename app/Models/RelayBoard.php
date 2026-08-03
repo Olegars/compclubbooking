@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class RelayBoard extends Model
 {
+    public const DRIVER_W5100_HTTP = 'w5100_http';
+
     public const DRIVER_KINCONY_HTTP = 'kincony_http';
 
     public const DRIVER_DINGTIAN_HTTP = 'dingtian_http';

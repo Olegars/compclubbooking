@@ -27,6 +27,7 @@ use App\Http\Controllers\Auth\LogoutController;
 // Контроллеры Админки
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\MapController;
+use App\Http\Controllers\Admin\FanAdminController;
 use App\Http\Controllers\Admin\ShiftController;
 use App\Http\Controllers\Admin\BonusController;
 use App\Http\Controllers\Admin\TaxController;
@@ -255,6 +256,7 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::put('/overlays/{id}', [OverlayAdminController::class, 'updateOverlay']);
             Route::post('/upload-image', [OverlayAdminController::class, 'uploadImage']);
             Route::post('/upload-video', [OverlayAdminController::class, 'uploadVideo']);
+            Route::post('/fans/{fan}/force-off', [FanAdminController::class, 'forceOff']);
         });
 
         Route::get('/bonuses', [BonusController::class, 'index'])->name('admin.bonuses.index');
@@ -292,6 +294,14 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     Route::middleware(['role:owner'])->group(function () {
         Route::get('/taxes', [TaxController::class, 'index'])->name('admin.taxes.index');
         Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
+
+        Route::get('/fans', [FanAdminController::class, 'index'])->name('admin.fans');
+        Route::post('/fans/boards', [FanAdminController::class, 'storeBoard']);
+        Route::put('/fans/boards/{board}', [FanAdminController::class, 'updateBoard']);
+        Route::delete('/fans/boards/{board}', [FanAdminController::class, 'destroyBoard']);
+        Route::post('/fans', [FanAdminController::class, 'storeFan']);
+        Route::put('/fans/{fan}', [FanAdminController::class, 'updateFan']);
+        Route::delete('/fans/{fan}', [FanAdminController::class, 'destroyFan']);
     });
 
     Route::post('/logout', [AdminLoginController::class, 'logout'])->name('admin.logout');
@@ -354,6 +364,7 @@ Route::prefix('api/shell')->group(function () {
     // --- Вентиляция комнаты (Space): Shell только события ---
     Route::post('/thermal', [ShellApiController::class, 'reportThermal']);
     Route::post('/fan', [ShellApiController::class, 'controlFan']);
+    Route::post('/fan/applied', [ShellApiController::class, 'acknowledgeFanApplied']);
     Route::get('/fan', [ShellApiController::class, 'getFanState']);
 
     // --- F1 AI-компаньон (голос → ответ в наушники) ---

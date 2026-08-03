@@ -292,7 +292,7 @@ class ComputerPowerService
     {
         $stale = $this->staleSeconds();
 
-        $sql = "SELECT id, name, status, power_desired, last_seen_at,
+        $sql = "SELECT id, name, status, power_desired, last_seen_at, space_id, club_id,
                        CASE
                            WHEN last_seen_at IS NOT NULL
                                 AND last_seen_at >= NOW() - (? * INTERVAL '1 second')

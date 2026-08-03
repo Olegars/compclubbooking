@@ -18,6 +18,7 @@ Route::prefix('shell')->group(function () {
     Route::post('/sos', [ShellApiController::class, 'reportSos']);
     Route::post('/thermal', [ShellApiController::class, 'reportThermal']);
     Route::post('/fan', [ShellApiController::class, 'controlFan']);
+    Route::post('/fan/applied', [ShellApiController::class, 'acknowledgeFanApplied']);
     Route::get('/fan', [ShellApiController::class, 'getFanState']);
     Route::post('/ai-assistant', [ShellApiController::class, 'aiAssistant']);
     Route::post('/voice-greeting', [ShellApiController::class, 'voiceGreeting']);

@@ -80,11 +80,11 @@ class FanControlTest extends TestCase
 
         $this->board = RelayBoard::create([
             'club_id' => $this->club->id,
-            'name' => 'H32',
-            'driver' => RelayBoard::DRIVER_KINCONY_HTTP,
-            'host' => '192.168.1.50',
-            'port' => 80,
-            'meta' => ['password' => 'admin123'],
+            'name' => 'W5100',
+            'driver' => RelayBoard::DRIVER_W5100_HTTP,
+            'host' => '192.168.1.4',
+            'port' => 30000,
+            'meta' => null,
             'is_active' => true,
         ]);
 
@@ -104,15 +104,16 @@ class FanControlTest extends TestCase
         $this->fans = app(FanControlService::class);
     }
 
-    public function test_idle_fan_stays_off(): void
+    public function test_idle_fan_desired_stays_off_without_cloud_http(): void
     {
         $fan = $this->fans->reconcileForSpace($this->space->id, $this->club->id);
 
         $this->assertSame(0, $fan->desired_power);
         $this->assertSame(0, $fan->applied_power);
+        Http::assertNothingSent();
     }
 
-    public function test_active_session_turns_fan_on(): void
+    public function test_active_session_sets_desired_on_without_actuator(): void
     {
         Booking::create([
             'user_id' => User::create([
@@ -135,93 +136,66 @@ class FanControlTest extends TestCase
         $fan = $this->fans->reconcileForComputer($this->pcA->id);
 
         $this->assertSame(100, $fan->desired_power);
-        $this->assertSame(100, $fan->applied_power);
-        $this->assertTrue($fan->isOn());
+        $this->assertSame(0, $fan->applied_power); // shell must ack
+        Http::assertNothingSent();
     }
 
-    public function test_session_on_any_pc_keeps_room_fan_on(): void
+    public function test_shell_state_includes_relay_payload(): void
     {
-        Booking::create([
-            'user_id' => User::create([
-                'name' => 'Player B',
-                'phone' => '+79991110002',
-                'email' => 'fan2@example.test',
-                'password' => 'password',
-            ])->id,
-            'computer_id' => $this->pcB->id,
-            'pc_ids' => [(string) $this->pcB->id],
-            'date' => now()->toDateString(),
-            'start_time' => 12.0,
-            'duration' => 2,
-            'price' => 100,
-            'status' => 'active',
-            'starts_at' => now()->subMinute(),
-            'ends_at' => now()->addHour(),
-        ]);
+        $state = $this->fans->stateForComputer($this->pcA->id);
 
-        $fan = $this->fans->reconcileForComputer($this->pcA->id);
-
-        $this->assertSame(100, $fan->applied_power);
+        $this->assertTrue($state['available']);
+        $this->assertSame('192.168.1.4', $state['relay']['host']);
+        $this->assertSame(30000, $state['relay']['port']);
+        $this->assertSame(3, $state['relay']['channel']);
+        $this->assertSame('w5100_http', $state['relay']['driver']);
+        $this->assertArrayHasKey('facts', $state);
+        $this->assertArrayHasKey('manual_lock', $state);
     }
 
-    public function test_thermal_hysteresis(): void
+    public function test_thermal_hysteresis_updates_facts_not_applied(): void
     {
         $this->fans->reportThermal($this->pcA->id, 70.0);
         $this->fan->refresh();
-        $this->assertSame(0, $this->fan->applied_power);
+        $this->assertSame(0, $this->fan->desired_power);
         $this->assertFalse(ComputerThermal::where('computer_id', $this->pcA->id)->first()->is_hot);
 
         $this->fans->reportThermal($this->pcA->id, 75.0);
         $this->fan->refresh();
-        $this->assertSame(100, $this->fan->applied_power);
+        $this->assertSame(100, $this->fan->desired_power);
+        $this->assertSame(0, $this->fan->applied_power);
         $this->assertTrue(ComputerThermal::where('computer_id', $this->pcA->id)->first()->is_hot);
 
         $this->fans->reportThermal($this->pcA->id, 70.0);
-        $this->fan->refresh();
-        $this->assertSame(100, $this->fan->applied_power);
+        $this->assertTrue(ComputerThermal::where('computer_id', $this->pcA->id)->first()->is_hot);
 
         $this->fans->reportThermal($this->pcA->id, 65.0);
         $this->fan->refresh();
-        $this->assertSame(0, $this->fan->applied_power);
+        $this->assertSame(0, $this->fan->desired_power);
         $this->assertFalse(ComputerThermal::where('computer_id', $this->pcA->id)->first()->is_hot);
     }
 
-    public function test_manual_force_off_overrides_session(): void
+    public function test_manual_force_off_with_cooldown(): void
     {
-        Booking::create([
-            'user_id' => User::create([
-                'name' => 'Player C',
-                'phone' => '+79991110003',
-                'email' => 'fan3@example.test',
-                'password' => 'password',
-            ])->id,
-            'computer_id' => $this->pcA->id,
-            'pc_ids' => [(string) $this->pcA->id],
-            'date' => now()->toDateString(),
-            'start_time' => 12.0,
-            'duration' => 2,
-            'price' => 100,
-            'status' => 'active',
-            'starts_at' => now()->subMinute(),
-            'ends_at' => now()->addHour(),
-        ]);
-
-        $this->fans->reconcileForComputer($this->pcA->id);
-        $this->fans->setManualModeForComputer($this->pcB->id, 'off');
-
-        $this->fan->refresh();
-        $this->assertSame(SpaceFan::MODE_FORCE_OFF, $this->fan->manual_mode);
-        $this->assertSame(0, $this->fan->applied_power);
-    }
-
-    public function test_parallel_manual_on_from_other_pc(): void
-    {
-        $this->fans->setManualModeForComputer($this->pcA->id, 'off');
-        $this->fans->setManualModeForComputer($this->pcB->id, 'on');
-
+        $first = $this->fans->setManualModeForComputer($this->pcA->id, 'on');
+        $this->assertFalse($first['locked']);
         $this->fan->refresh();
         $this->assertSame(SpaceFan::MODE_FORCE_ON, $this->fan->manual_mode);
+
+        $locked = $this->fans->setManualModeForComputer($this->pcB->id, 'off');
+        $this->assertTrue($locked['locked']);
+        $this->assertGreaterThan(0, $locked['remaining_sec']);
+        $this->fan->refresh();
+        $this->assertSame(SpaceFan::MODE_FORCE_ON, $this->fan->manual_mode);
+    }
+
+    public function test_acknowledge_applied_updates_power(): void
+    {
+        $result = $this->fans->acknowledgeApplied($this->pcA->id, 100, null, 'command');
+        $this->assertFalse($result['locked']);
+        $this->fan->refresh();
         $this->assertSame(100, $this->fan->applied_power);
+        $this->assertSame($this->pcA->id, $this->fan->last_applied_by_computer_id);
     }
 
     public function test_shell_thermal_and_fan_endpoints(): void
@@ -231,14 +205,21 @@ class FanControlTest extends TestCase
             'cpu_c' => 80,
         ])->assertOk()
             ->assertJsonPath('status', 'success')
-            ->assertJsonPath('fan.is_on', true);
+            ->assertJsonPath('fan.desired_power', 100)
+            ->assertJsonPath('fan.relay.host', '192.168.1.4');
 
         $this->postJson('/api/shell/fan', [
             'terminal_id' => $this->pcB->id,
             'action' => 'off',
         ])->assertOk()
-            ->assertJsonPath('fan.manual_mode', 'force_off')
-            ->assertJsonPath('fan.is_on', false);
+            ->assertJsonPath('fan.manual_mode', 'force_off');
+
+        $this->postJson('/api/shell/fan/applied', [
+            'terminal_id' => $this->pcA->id,
+            'applied_power' => 0,
+            'source' => 'command',
+        ])->assertOk()
+            ->assertJsonPath('fan.applied_power', 0);
 
         $this->getJson('/api/shell/fan?terminal_id='.$this->pcA->id)
             ->assertOk()
@@ -246,17 +227,37 @@ class FanControlTest extends TestCase
             ->assertJsonPath('fan.club_id', $this->club->id);
     }
 
-    public function test_kincony_http_called_with_channel(): void
+    public function test_cloud_does_not_http_to_relay(): void
     {
-        Http::fake([
-            '192.168.1.50/*' => Http::response('OK', 200),
-        ]);
+        Http::fake();
 
         $this->fans->setManualModeForComputer($this->pcA->id, 'on');
+        $this->fans->reconcileForComputer($this->pcA->id);
+        $this->fans->acknowledgeApplied($this->pcA->id, 100);
 
-        Http::assertSent(function ($request) {
-            return str_contains($request->url(), '192.168.1.50')
-                && str_contains($request->url(), 'Relay03=ON');
-        });
+        Http::assertNothingSent();
+    }
+
+    public function test_orphan_snapshot_when_fan_on_and_pcs_off(): void
+    {
+        $this->fan->update(['applied_power' => 100]);
+        $this->pcA->update(['power_state' => 'off', 'last_seen_at' => null]);
+        $this->pcB->update(['power_state' => 'off', 'last_seen_at' => null]);
+
+        $orphans = $this->fans->orphanSnapshot($this->club->id);
+        $this->assertNotEmpty($orphans);
+        $this->assertTrue(collect($orphans)->firstWhere('fan_id', $this->fan->id)['fan_orphan_on']);
+    }
+
+    public function test_admin_force_off_sets_mode(): void
+    {
+        $this->fan->update(['applied_power' => 100, 'manual_mode' => SpaceFan::MODE_AUTO]);
+        $this->pcA->update(['mac_address' => 'AA:BB:CC:DD:EE:FF', 'power_state' => 'off', 'last_seen_at' => null]);
+        $this->pcB->update(['power_state' => 'off', 'last_seen_at' => null]);
+
+        $result = $this->fans->adminForceOff($this->fan->id);
+        $this->assertSame(SpaceFan::MODE_FORCE_OFF, $result['fan']->manual_mode);
+        $this->assertSame($this->pcA->id, $result['wol_computer_id']);
+        $this->assertSame('on', Computer::find($this->pcA->id)->power_desired);
     }
 }

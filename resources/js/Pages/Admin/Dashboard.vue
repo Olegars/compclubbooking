@@ -8,7 +8,8 @@ import { useAdminAlerts } from '@/Composables/useAdminAlerts'
 
 const props = defineProps<{
     stats: { TOTAL_REVENUE: number | string, ACTIVE_SESSIONS: number, NEW_USERS_TODAY: number },
-    computers: any[]
+    computers: any[],
+    fanOrphans?: any[],
 }>()
 
 const page = usePage()
@@ -19,11 +20,21 @@ const { success, error, warning } = useToast()
 const { setCounts } = useAdminAlerts()
 
 const localComputers = ref([...props.computers])
+const fanOrphans = ref<any[]>([...(props.fanOrphans || [])])
 const selectedPc = ref<any>(null)
 const statusTimer = ref<any>(null)
 const activeCalls = ref<any[]>([])
 const sosAlerts = ref<any[]>([])
 const inputAlerts = ref<any[]>([])
+const forceOffBusy = ref<number | null>(null)
+
+const orphanFans = computed(() => fanOrphans.value.filter((f: any) => f.fan_orphan_on))
+
+const spaceNameHint = (spaceId: number) => {
+    const pcs = localComputers.value.filter((p: any) => Number(p.space_id) === Number(spaceId))
+    if (!pcs.length) return `Space #${spaceId}`
+    return `Space #${spaceId} · ${pcs.map((p: any) => p.name).slice(0, 3).join(', ')}`
+}
 
 const powerTileClass = (pc: any) => {
     // Активная сессия — циан (как раньше), питание смотрим когда места свободно.
@@ -67,8 +78,11 @@ const pickNew = (list: any[], seen: Set<number>) => list.filter(item => !seen.ha
 const refreshStatuses = async () => {
     try {
         const { data: pcData } = await axios.get('/admin/api/pc-statuses')
+        const list = Array.isArray(pcData) ? pcData : (pcData?.computers || [])
+        fanOrphans.value = Array.isArray(pcData?.fan_orphans) ? pcData.fan_orphans : fanOrphans.value
+
         localComputers.value = localComputers.value.map(pc => {
-            const updated = pcData.find((d: any) => Number(d.id) === Number(pc.id))
+            const updated = list.find((d: any) => Number(d.id) === Number(pc.id))
             if (!updated) return pc
             return {
                 ...pc,
@@ -76,6 +90,7 @@ const refreshStatuses = async () => {
                 power_desired: updated.power_desired,
                 power_state: updated.power_state,
                 last_seen_at: updated.last_seen_at,
+                space_id: updated.space_id ?? pc.space_id,
             }
         })
 
@@ -108,6 +123,20 @@ const refreshStatuses = async () => {
         }
         isFirstPoll.value = false
     } catch (e) { console.error('📡 REACTOR Link Error') }
+}
+
+const forceOffFan = async (fanId: number) => {
+    if (forceOffBusy.value) return
+    forceOffBusy.value = fanId
+    try {
+        const { data } = await axios.post(`/admin/api/fans/${fanId}/force-off`)
+        success(data?.message || 'Команда выключения отправлена')
+        await refreshStatuses()
+    } catch (e: any) {
+        error(e?.response?.data?.message || 'Не удалось выключить вентилятор')
+    } finally {
+        forceOffBusy.value = null
+    }
 }
 
 const resolveCall = async (callId: number) => {
@@ -255,6 +284,32 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                 <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-xl">
                     <span class="text-[10px] text-purple-500/50 uppercase font-black tracking-[0.3em] italic">New Stalkers</span>
                     <div class="text-5xl font-black mt-2 tracking-tighter italic">+{{ stats.NEW_USERS_TODAY }}</div>
+                </div>
+            </div>
+
+            <div v-if="orphanFans.length" class="bg-amber-500/[0.07] border border-amber-500/40 rounded-[1rem] p-6 shadow-[0_0_40px_rgba(245,158,11,0.12)]">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="text-amber-400 text-xl">⚠</span>
+                    <h2 class="text-lg font-black uppercase italic tracking-tighter text-amber-400">
+                        Вентилятор при выключенных ПК
+                    </h2>
+                </div>
+                <div class="space-y-3">
+                    <div v-for="fan in orphanFans" :key="fan.fan_id"
+                         class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-black/40 border border-amber-500/20 rounded-2xl p-5">
+                        <div>
+                            <div class="text-sm font-black uppercase italic text-white">{{ spaceNameHint(fan.space_id) }}</div>
+                            <div class="text-[9px] text-white/30 uppercase font-black tracking-widest mt-1">
+                                fan #{{ fan.fan_id }} · mode {{ fan.manual_mode }} · applied {{ fan.applied_power }}
+                            </div>
+                        </div>
+                        <button
+                            @click="forceOffFan(fan.fan_id)"
+                            :disabled="forceOffBusy === fan.fan_id"
+                            class="shrink-0 px-6 py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
+                            Выключить вентилятор
+                        </button>
+                    </div>
                 </div>
             </div>
 

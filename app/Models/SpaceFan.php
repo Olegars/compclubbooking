@@ -26,6 +26,9 @@ class SpaceFan extends Model
         'thermal_off_c',
         'last_error',
         'last_applied_at',
+        'last_manual_at',
+        'last_manual_by_computer_id',
+        'last_applied_by_computer_id',
     ];
 
     protected $casts = [
@@ -39,6 +42,9 @@ class SpaceFan extends Model
         'thermal_on_c' => 'integer',
         'thermal_off_c' => 'integer',
         'last_applied_at' => 'datetime',
+        'last_manual_at' => 'datetime',
+        'last_manual_by_computer_id' => 'integer',
+        'last_applied_by_computer_id' => 'integer',
     ];
 
     public function club(): BelongsTo
@@ -54,6 +60,16 @@ class SpaceFan extends Model
     public function relayBoard(): BelongsTo
     {
         return $this->belongsTo(RelayBoard::class);
+    }
+
+    public function lastManualByComputer(): BelongsTo
+    {
+        return $this->belongsTo(Computer::class, 'last_manual_by_computer_id');
+    }
+
+    public function lastAppliedByComputer(): BelongsTo
+    {
+        return $this->belongsTo(Computer::class, 'last_applied_by_computer_id');
     }
 
     public function isOn(): bool

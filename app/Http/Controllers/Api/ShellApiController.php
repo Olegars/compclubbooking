@@ -177,10 +177,18 @@ class ShellApiController extends Controller
             // Cloud Saves: pack for Shell to restore on this PC (may be null if never saved).
             $cloud = app(UserCloudSettingsService::class)->getPackWithMeta($user);
 
+            // Fan desired refresh only — shell actuates W5100 on LAN.
             try {
                 app(FanControlService::class)->reconcileForComputer($terminalId);
             } catch (\Throwable $e) {
                 Log::warning('Fan reconcile after login failed: '.$e->getMessage());
+            }
+
+            $fanState = ['available' => false];
+            try {
+                $fanState = app(FanControlService::class)->stateForComputer($terminalId);
+            } catch (\Throwable $e) {
+                Log::warning('Fan state after login failed: '.$e->getMessage());
             }
 
             try {
@@ -193,6 +201,7 @@ class ShellApiController extends Controller
                 'status' => 'success',
                 'message' => 'Авторизация успешна.',
                 'booking_id' => $booking->id,
+                'fan' => $fanState,
                 'user' => [
                     'id' => $user->id,
                     'name' => $user->name ?? 'Игрок',
@@ -611,7 +620,8 @@ class ShellApiController extends Controller
     }
 
     /**
-     * Shell reports CPU temperature; backend decides fan state for the room (Space).
+     * Shell reports CPU temperature; backend stores thermal facts for the room.
+     * Physical relay control is done by the shell on LAN (W5100).
      */
     public function reportThermal(Request $request)
     {
@@ -621,7 +631,7 @@ class ShellApiController extends Controller
         ]);
 
         try {
-            $fan = app(FanControlService::class)->reportThermal(
+            app(FanControlService::class)->reportThermal(
                 (int) $request->terminal_id,
                 (float) $request->cpu_c
             );
@@ -634,9 +644,7 @@ class ShellApiController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'fan' => $fan
-                    ? app(FanControlService::class)->stateForComputer((int) $request->terminal_id)
-                    : ['available' => false, 'reason' => 'no_fan'],
+                'fan' => app(FanControlService::class)->stateForComputer((int) $request->terminal_id),
             ]);
         } catch (\Throwable $e) {
             Log::error('Shell API reportThermal: '.$e->getMessage());
@@ -646,8 +654,8 @@ class ShellApiController extends Controller
     }
 
     /**
-     * Manual fan control for the room. Shared across all PCs in the Space.
-     * action: on | off | auto
+     * Manual fan mode for the room. Shared across all PCs in the Space.
+     * action: on | off | auto — shell applies to W5100 after this.
      */
     public function controlFan(Request $request)
     {
@@ -657,18 +665,59 @@ class ShellApiController extends Controller
         ]);
 
         try {
-            $fan = app(FanControlService::class)->setManualModeForComputer(
+            $result = app(FanControlService::class)->setManualModeForComputer(
                 (int) $request->terminal_id,
                 (string) $request->action
             );
 
+            $status = $result['locked'] ? 'locked' : 'success';
+            $code = $result['locked'] ? 423 : 200;
+
             return response()->json([
-                'status' => 'success',
+                'status' => $status,
                 'fan' => app(FanControlService::class)->stateForComputer((int) $request->terminal_id),
-                'applied' => (bool) $fan,
-            ]);
+                'locked' => $result['locked'],
+                'remaining_sec' => $result['remaining_sec'],
+                'applied' => (bool) $result['fan'] && ! $result['locked'],
+            ], $code);
         } catch (\Throwable $e) {
             Log::error('Shell API controlFan: '.$e->getMessage());
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Shell reports actual W5100 channel state after command or /99 status read.
+     */
+    public function acknowledgeFanApplied(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'applied_power' => 'required|integer|min:0|max:100',
+            'last_error' => 'nullable|string|max:2000',
+            'source' => 'nullable|string|in:command,status_read',
+        ]);
+
+        try {
+            $result = app(FanControlService::class)->acknowledgeApplied(
+                (int) $request->terminal_id,
+                (int) $request->applied_power,
+                $request->input('last_error'),
+                (string) $request->input('source', 'command'),
+            );
+
+            $status = $result['locked'] ? 'locked' : 'success';
+            $code = $result['locked'] ? 423 : 200;
+
+            return response()->json([
+                'status' => $status,
+                'fan' => app(FanControlService::class)->stateForComputer((int) $request->terminal_id),
+                'locked' => $result['locked'],
+                'remaining_sec' => $result['remaining_sec'],
+            ], $code);
+        } catch (\Throwable $e) {
+            Log::error('Shell API acknowledgeFanApplied: '.$e->getMessage());
 
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
@@ -1772,6 +1821,13 @@ class ShellApiController extends Controller
                     Log::warning('Fan reconcile after logout failed: '.$e->getMessage());
                 }
 
+                $fanState = ['available' => false];
+                try {
+                    $fanState = app(FanControlService::class)->stateForComputer((int) $termId);
+                } catch (\Throwable $e) {
+                    Log::warning('Fan state after logout failed: '.$e->getMessage());
+                }
+
                 if ($booking->user_id) {
                     try {
                         $user = User::find($booking->user_id);
@@ -1790,6 +1846,7 @@ class ShellApiController extends Controller
                     'settings_error' => $settingsError,
                     'power_action' => $powerAction,
                     'power_desired' => $powerAction === 'reboot' ? 'on' : 'off',
+                    'fan' => $fanState,
                 ], 200);
             }
 
