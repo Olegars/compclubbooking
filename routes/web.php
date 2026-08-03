@@ -288,12 +288,6 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::post('/game-requests/bulk-status', [GameRequestAdminController::class, 'bulkStatus']);
 
         Route::get('/analytics', [AnalyticsController::class, 'index'])->name('admin.analytics.index');
-    });
-
-    // УРОВЕНЬ: OWNER
-    Route::middleware(['role:owner'])->group(function () {
-        Route::get('/taxes', [TaxController::class, 'index'])->name('admin.taxes.index');
-        Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
 
         Route::get('/fans', [FanAdminController::class, 'index'])->name('admin.fans');
         Route::post('/fans/boards', [FanAdminController::class, 'storeBoard']);
@@ -302,6 +296,12 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::post('/fans', [FanAdminController::class, 'storeFan']);
         Route::put('/fans/{fan}', [FanAdminController::class, 'updateFan']);
         Route::delete('/fans/{fan}', [FanAdminController::class, 'destroyFan']);
+    });
+
+    // УРОВЕНЬ: OWNER
+    Route::middleware(['role:owner'])->group(function () {
+        Route::get('/taxes', [TaxController::class, 'index'])->name('admin.taxes.index');
+        Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
     });
 
     Route::post('/logout', [AdminLoginController::class, 'logout'])->name('admin.logout');
