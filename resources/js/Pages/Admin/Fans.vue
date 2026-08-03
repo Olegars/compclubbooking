@@ -94,12 +94,10 @@ const selectedSpace = computed(() =>
     props.spaces.find((s: any) => Number(s.id) === Number(selectedSpaceId.value)) || null
 )
 
+/** Плотный viewBox по комнатам — не берём высокий viewbox редактора, иначе пустота снизу. */
 const mapViewBox = computed(() => {
-    const fromConfig = props.mapPreview?.viewbox
-    if (fromConfig && String(fromConfig).trim()) return String(fromConfig).trim()
-
-    const list = props.spaces.filter((s: any) => s.w > 0 && s.h > 0)
-    if (!list.length) return '0 0 100 100'
+    const list = props.spaces.filter((s: any) => Number(s.w) > 0 && Number(s.h) > 0)
+    if (!list.length) return '0 0 100 60'
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
     for (const s of list) {
@@ -108,15 +106,16 @@ const mapViewBox = computed(() => {
         maxX = Math.max(maxX, Number(s.x) + Number(s.w))
         maxY = Math.max(maxY, Number(s.y) + Number(s.h))
     }
-    const pad = 4
-    return `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`
+    const pad = 2
+    const w = Math.max(1, maxX - minX + pad * 2)
+    const h = Math.max(1, maxY - minY + pad * 2)
+    return `${minX - pad} ${minY - pad} ${w} ${h}`
 })
 
-/** Соотношение сторон карты из viewBox — контейнер подгоняется под карту, без пустоты. */
 const mapAspectStyle = computed(() => {
     const parts = String(mapViewBox.value).trim().split(/[\s,]+/).map(Number)
     const w = parts[2] > 0 ? parts[2] : 100
-    const h = parts[3] > 0 ? parts[3] : 100
+    const h = parts[3] > 0 ? parts[3] : 60
     return { aspectRatio: `${w} / ${h}` }
 })
 
@@ -158,7 +157,7 @@ const spaceStroke = (s: any) => {
             </div>
 
             <!-- Карта клуба: клик по комнате выбирает space -->
-            <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-6 md:p-8 space-y-4">
+            <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-4 md:p-5 space-y-3">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                         <h3 class="text-lg font-black uppercase italic">Карта клуба</h3>
@@ -177,7 +176,7 @@ const spaceStroke = (s: any) => {
                 </div>
 
                 <div
-                    class="w-full max-w-3xl mx-auto overflow-hidden rounded-2xl border border-white/5 bg-black/60"
+                    class="w-full overflow-hidden rounded-2xl border border-white/5 bg-black/60"
                     :style="mapAspectStyle"
                 >
                     <svg
