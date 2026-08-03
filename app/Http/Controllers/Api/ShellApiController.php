@@ -661,7 +661,7 @@ class ShellApiController extends Controller
     {
         $request->validate([
             'terminal_id' => 'required|integer|exists:computers,id',
-            'action' => 'required|string|in:on,off,auto',
+            'action' => 'required|string|in:on,off,auto,50,75,100',
         ]);
 
         try {
