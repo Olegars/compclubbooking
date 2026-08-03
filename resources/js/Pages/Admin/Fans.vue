@@ -242,7 +242,8 @@ const spaceStroke = (s: any) => {
                                class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" required />
                         <input v-model="boardForm.host" type="text" placeholder="IP (192.168.1.4)"
                                class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" required />
-                        <input v-model.number="boardForm.port" type="number" min="1" max="65535" placeholder="Port"
+                        <input v-model.number="boardForm.port" type="number" min="1" max="65535"
+                               placeholder="Путь-порт (30000 → http://IP/30000/…)"
                                class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" />
                         <button type="submit" class="w-full py-4 bg-cyan-500 text-black font-black uppercase text-[10px] rounded-xl tracking-widest">
                             Добавить плату
@@ -254,7 +255,7 @@ const spaceStroke = (s: any) => {
                              class="flex items-center justify-between gap-3 p-4 rounded-2xl border border-white/5 bg-black/40">
                             <div>
                                 <div class="text-sm font-black uppercase italic">{{ b.name }}</div>
-                                <div class="text-[10px] text-white/40 font-mono mt-1">{{ b.host }}:{{ b.port }} · {{ b.driver }}</div>
+                                <div class="text-[10px] text-white/40 font-mono mt-1">http://{{ b.host }}/{{ b.port }}/ · {{ b.driver }}</div>
                             </div>
                             <button @click="deleteBoard(b.id)" class="text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase">
                                 Удалить
@@ -336,7 +337,7 @@ const spaceStroke = (s: any) => {
                                 Space #{{ f.space_id }} · {{ f.space?.name || 'room' }}
                             </div>
                             <div class="text-[10px] text-white/40 font-mono mt-1">
-                                {{ f.relay_board?.host }}:{{ f.relay_board?.port }}
+                                http://{{ f.relay_board?.host }}/{{ f.relay_board?.port }}/
                                 · K1={{ f.channel }} K2={{ f.channel2 }}
                                 · speed {{ f.applied_power }}/3 · mode {{ f.manual_mode }}
                             </div>
