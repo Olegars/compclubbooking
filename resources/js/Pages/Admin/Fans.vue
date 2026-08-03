@@ -112,6 +112,14 @@ const mapViewBox = computed(() => {
     return `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`
 })
 
+/** Соотношение сторон карты из viewBox — контейнер подгоняется под карту, без пустоты. */
+const mapAspectStyle = computed(() => {
+    const parts = String(mapViewBox.value).trim().split(/[\s,]+/).map(Number)
+    const w = parts[2] > 0 ? parts[2] : 100
+    const h = parts[3] > 0 ? parts[3] : 100
+    return { aspectRatio: `${w} / ${h}` }
+})
+
 const mapWalls = computed(() => (props.mapPreview?.walls || []).filter((w: any) => w?.d))
 
 const labelFontSize = (s: any) => {
@@ -168,11 +176,13 @@ const spaceStroke = (s: any) => {
                     </div>
                 </div>
 
-                <div class="relative w-full overflow-hidden rounded-2xl border border-white/5 bg-black/60 max-h-[340px]"
-                     style="aspect-ratio: 2.4 / 1; min-height: 180px; max-height: 340px;">
+                <div
+                    class="w-full max-w-3xl mx-auto overflow-hidden rounded-2xl border border-white/5 bg-black/60"
+                    :style="mapAspectStyle"
+                >
                     <svg
                         v-if="spaces.length"
-                        class="absolute inset-0 w-full h-full"
+                        class="block w-full h-full"
                         :viewBox="mapViewBox"
                         preserveAspectRatio="xMidYMid meet"
                     >
@@ -219,7 +229,7 @@ const spaceStroke = (s: any) => {
                             </g>
                         </g>
                     </svg>
-                    <div v-else class="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-widest text-white/20 italic">
+                    <div v-else class="flex items-center justify-center py-16 text-[10px] uppercase tracking-widest text-white/20 italic">
                         Нет rooms / spaces для этого клуба — сначала карта в редакторе
                     </div>
                 </div>
