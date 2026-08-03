@@ -38,14 +38,23 @@ class FanAdminController extends Controller
             ->map(fn (Space $s) => [
                 'id' => $s->id,
                 'name' => $s->name ?: ('Space #'.$s->id),
-                'x' => $s->x,
-                'y' => $s->y,
-                'w' => $s->w,
-                'h' => $s->h,
+                'x' => (float) $s->x,
+                'y' => (float) $s->y,
+                'w' => (float) $s->w,
+                'h' => (float) $s->h,
                 'zone_name' => $s->zone?->name,
                 'zone_color' => $s->zone?->color,
                 'has_fan' => $fans->contains(fn (SpaceFan $f) => (int) $f->space_id === (int) $s->id),
             ]);
+
+        $club = $clubId ? Club::query()->find($clubId) : null;
+        $mapConfig = is_array($club?->map_config) ? $club->map_config : [];
+
+        $mapPreview = [
+            'viewbox' => $mapConfig['viewbox'] ?? null,
+            'walls' => is_array($mapConfig['walls'] ?? null) ? $mapConfig['walls'] : [],
+            'labels' => is_array($mapConfig['labels'] ?? null) ? $mapConfig['labels'] : [],
+        ];
 
         return Inertia::render('Admin/Fans', [
             'clubs' => $clubs,
@@ -53,6 +62,7 @@ class FanAdminController extends Controller
             'boards' => $boards,
             'fans' => $fans,
             'spaces' => $spaces,
+            'mapPreview' => $mapPreview,
             'defaults' => [
                 'port' => (int) config('fan.w5100_default_port', 30000),
                 'thermal_on_c' => (int) config('fan.thermal_on_c', 75),
