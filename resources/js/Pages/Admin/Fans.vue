@@ -168,8 +168,8 @@ const spaceStroke = (s: any) => {
                     </div>
                 </div>
 
-                <div class="relative w-full overflow-hidden rounded-2xl border border-white/5 bg-black/60"
-                     style="aspect-ratio: 16 / 10; min-height: 280px;">
+                <div class="relative w-full overflow-hidden rounded-2xl border border-white/5 bg-black/60 max-h-[340px]"
+                     style="aspect-ratio: 2.4 / 1; min-height: 180px; max-height: 340px;">
                     <svg
                         v-if="spaces.length"
                         class="absolute inset-0 w-full h-full"
