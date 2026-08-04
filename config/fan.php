@@ -11,6 +11,8 @@ return [
     | Speed 2: K1=ON  K2=OFF → 170V (mid / cool-down)
     | Speed 3: K1=OFF K2=ON  → 220V (session max)
     |
+    | Jump 1↔3 goes through mid (~2.5s) to ease cascade contactors.
+    |
     | There is no true electrical OFF with only 2 CO relays — "off" / force_off
     | maps to speed 1 (night). Orphan alarm = speed >= 2 while all PCs offline.
     |
