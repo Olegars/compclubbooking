@@ -143,6 +143,10 @@ class FanAdminController extends Controller
             'thermal_off_c' => 'nullable|integer|min:30|max:110',
         ]);
 
+        if (! SpaceFan::isCascadePair((int) $data['channel'], (int) $data['channel2'])) {
+            return back()->withErrors(['channel' => 'Только парные реле: 1+2, 3+4, … 15+16']);
+        }
+
         $max = max(1, (int) config('fan.max_per_space', 2));
         $existing = SpaceFan::query()
             ->where('space_id', $data['space_id'])
@@ -189,6 +193,10 @@ class FanAdminController extends Controller
             'thermal_off_c' => 'nullable|integer|min:30|max:110',
             'manual_mode' => 'nullable|string|in:auto,force_on,force_off',
         ]);
+
+        if (! SpaceFan::isCascadePair((int) $data['channel'], (int) $data['channel2'])) {
+            return back()->withErrors(['channel' => 'Только парные реле: 1+2, 3+4, … 15+16']);
+        }
 
         $this->assertChannelsFree(
             (int) $data['relay_board_id'],

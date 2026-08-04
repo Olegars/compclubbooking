@@ -69,6 +69,10 @@ const submitFan = () => {
     if (!fanForm.space_id) {
         fanForm.space_id = selectedSpaceId.value
     }
+    // Enforce cascade pair even if form was tampered with
+    if (fanForm.channel % 2 === 1) {
+        fanForm.channel2 = fanForm.channel + 1
+    }
     fanForm.post('/admin/fans', {
         onSuccess: () => {
             fanForm.reset('channel', 'channel2')
@@ -286,12 +290,14 @@ const spaceStroke = (s: any) => {
                             <option :value="null" disabled>Плата</option>
                             <option v-for="b in boards" :key="b.id" :value="b.id">{{ b.name }} ({{ b.host }})</option>
                         </select>
-                        <div class="grid grid-cols-2 gap-3">
-                            <input v-model.number="fanForm.channel" type="number" min="1" max="16" placeholder="K1 канал"
-                                   class="bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" required />
-                            <input v-model.number="fanForm.channel2" type="number" min="1" max="16" placeholder="K2 канал"
-                                   class="bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" required />
-                        </div>
+                        <select v-model.number="fanForm.channel"
+                                class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500"
+                                required
+                                @change="fanForm.channel2 = fanForm.channel + 1">
+                            <option v-for="k1 in [1,3,5,7,9,11,13,15]" :key="k1" :value="k1">
+                                K{{ k1 }}+K{{ k1 + 1 }}
+                            </option>
+                        </select>
                         <div class="grid grid-cols-2 gap-3">
                             <input v-model.number="fanForm.thermal_on_c" type="number" placeholder="ON °C"
                                    class="bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" />

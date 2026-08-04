@@ -273,4 +273,18 @@ class FanControlTest extends TestCase
         $this->assertSame([false, true], SpaceFan::speedToRelays(3));
         $this->assertSame(3, SpaceFan::relaysToSpeed(true, true));
     }
+
+    public function test_cascade_pair_validation(): void
+    {
+        $this->assertTrue(SpaceFan::isCascadePair(1, 2));
+        $this->assertTrue(SpaceFan::isCascadePair(15, 16));
+        $this->assertFalse(SpaceFan::isCascadePair(1, 3));
+        $this->assertFalse(SpaceFan::isCascadePair(5, 9));
+        $this->assertFalse(SpaceFan::isCascadePair(2, 3));
+        $this->assertFalse(SpaceFan::isCascadePair(4, 3));
+
+        $bad = $this->fans->bindForComputer($this->pcA->id, $this->board->id, 1, 3);
+        $this->assertFalse($bad['ok']);
+        $this->assertStringContainsString('парные', $bad['message']);
+    }
 }

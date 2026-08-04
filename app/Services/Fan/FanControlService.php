@@ -735,6 +735,13 @@ class FanControlService
         if ($channel < 1 || $channel > 16 || $channel2 < 1 || $channel2 > 16 || $channel === $channel2) {
             return ['ok' => false, 'message' => 'Некорректные каналы K1/K2', 'fan' => null];
         }
+        if (! SpaceFan::isCascadePair($channel, $channel2)) {
+            return [
+                'ok' => false,
+                'message' => 'Только парные реле: 1+2, 3+4, … 15+16',
+                'fan' => null,
+            ];
+        }
 
         $board = RelayBoard::query()
             ->where('id', $boardId)

@@ -82,6 +82,17 @@ class SpaceFan extends Model
     }
 
     /**
+     * Hardware cascade pairs only: K1 odd, K2 = K1+1 (1+2, 3+4, … 15+16).
+     */
+    public static function isCascadePair(int $channel, int $channel2): bool
+    {
+        return $channel >= 1
+            && $channel <= 15
+            && ($channel % 2) === 1
+            && $channel2 === $channel + 1;
+    }
+
+    /**
      * True when above night/duty (mid or high) — used for orphan / UI "spinning hard".
      */
     public function isOn(): bool
