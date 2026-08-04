@@ -259,84 +259,6 @@ const spaceStroke = (s: any) => {
                 </select>
             </div>
 
-            <!-- Карта клуба: клик по комнате выбирает space -->
-            <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-4 md:p-5 space-y-3">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                        <h3 class="text-lg font-black uppercase italic">Карта клуба</h3>
-                        <p class="text-[10px] text-white/30 uppercase tracking-wider mt-1">
-                            Клик по комнате без вентилятора → выбор space #
-                            <span v-if="selectedSpace" class="text-cyan-400 font-black">
-                                {{ selectedSpace.id }}
-                            </span>
-                        </p>
-                    </div>
-                    <div class="flex flex-wrap gap-4 text-[9px] font-black uppercase tracking-widest text-white/40">
-                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-cyan-400/80"></span> Выбрана</span>
-                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-[#22c55e]/50"></span> Уже с вентилятором</span>
-                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-white/20"></span> Свободна</span>
-                    </div>
-                </div>
-
-                <div
-                    class="w-full overflow-hidden rounded-2xl border border-white/5 bg-black/60"
-                    :style="mapAspectStyle"
-                >
-                    <svg
-                        v-if="spaces.length"
-                        class="block w-full h-full"
-                        :viewBox="mapViewBox"
-                        preserveAspectRatio="xMidYMid meet"
-                    >
-                        <g class="walls" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="0.35">
-                            <path v-for="(w, i) in mapWalls" :key="'wall'+i" :d="w.d" />
-                        </g>
-
-                        <g class="spaces">
-                            <g v-for="s in spaces" :key="s.id"
-                               :class="spaceCanAddFan(s) ? 'cursor-pointer' : 'cursor-default'"
-                               @click="pickSpace(s.id)">
-                                <rect
-                                    :x="s.x" :y="s.y" :width="s.w" :height="s.h"
-                                    :fill="spaceFill(s)"
-                                    :stroke="spaceStroke(s)"
-                                    stroke-width="0.45"
-                                    rx="0.4"
-                                    class="transition-opacity"
-                                    :opacity="!spaceCanAddFan(s) && selectedSpaceId !== s.id ? 0.85 : 1"
-                                />
-                                <text
-                                    :x="Number(s.x) + Number(s.w) / 2"
-                                    :y="Number(s.y) + Number(s.h) / 2"
-                                    text-anchor="middle"
-                                    dominant-baseline="central"
-                                    fill="white"
-                                    :font-size="labelFontSize(s)"
-                                    font-weight="900"
-                                    class="pointer-events-none select-none"
-                                    style="font-family: ui-monospace, monospace;"
-                                >#{{ s.id }}</text>
-                                <text
-                                    v-if="Number(s.h) > 6"
-                                    :x="Number(s.x) + Number(s.w) / 2"
-                                    :y="Number(s.y) + Number(s.h) / 2 + labelFontSize(s) * 1.15"
-                                    text-anchor="middle"
-                                    dominant-baseline="central"
-                                    fill="rgba(255,255,255,0.45)"
-                                    :font-size="Math.max(0.9, labelFontSize(s) * 0.55)"
-                                    font-weight="700"
-                                    class="pointer-events-none select-none uppercase"
-                                    style="font-family: ui-monospace, monospace;"
-                                >{{ spaceFanCount(s) > 0 ? ('fan×' + spaceFanCount(s)) : (s.zone_name || s.name) }}</text>
-                            </g>
-                        </g>
-                    </svg>
-                    <div v-else class="flex items-center justify-center py-16 text-[10px] uppercase tracking-widest text-white/20 italic">
-                        Нет rooms / spaces для этого клуба — сначала карта в редакторе
-                    </div>
-                </div>
-            </div>
-
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 space-y-4">
                     <h3 class="text-lg font-black uppercase italic">Новая плата W5100</h3>
@@ -373,7 +295,7 @@ const spaceStroke = (s: any) => {
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 space-y-4">
                     <h3 class="text-lg font-black uppercase italic">Привязать вентилятор</h3>
                     <p class="text-[10px] text-white/30 uppercase tracking-wider">
-                        До {{ maxPerSpace }} на комнату · карта · каналы K1/K2
+                        До {{ maxPerSpace }} на комнату · клик по карте · каналы K1/K2
                     </p>
                     <form @submit.prevent="submitFan" class="space-y-3">
                         <select v-model.number="fanForm.relay_board_id"
@@ -413,20 +335,71 @@ const spaceStroke = (s: any) => {
                         </button>
                     </form>
 
-                    <div class="pt-2 space-y-2 max-h-48 overflow-y-auto">
-                        <button v-for="s in freeSpaces" :key="s.id" type="button" @click="pickSpace(s.id)"
-                                class="w-full text-left p-3 rounded-2xl border transition-all"
-                                :class="selectedSpaceId === s.id ? 'border-cyan-500 bg-cyan-500/10' : 'border-white/5 bg-black/30 hover:border-white/20'">
-                            <div class="flex items-center gap-3">
-                                <span class="w-3 h-3 rounded-full" :style="{ background: s.zone_color || '#22c55e' }"></span>
-                                <div>
-                                    <div class="text-xs font-black uppercase">space #{{ s.id }}</div>
-                                    <div class="text-[9px] text-white/30">{{ s.name }} · {{ s.zone_name || 'zone' }}</div>
-                                </div>
+                    <div class="pt-2 space-y-2">
+                        <div class="flex flex-wrap gap-3 text-[9px] font-black uppercase tracking-widest text-white/40">
+                            <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-cyan-400/80"></span> Выбрана</span>
+                            <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-[#22c55e]/50"></span> С вентилятором</span>
+                            <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-white/20"></span> Свободна</span>
+                        </div>
+                        <div
+                            class="w-full overflow-hidden rounded-2xl border border-white/5 bg-black/60"
+                            :style="mapAspectStyle"
+                        >
+                            <svg
+                                v-if="spaces.length"
+                                class="block w-full h-full"
+                                :viewBox="mapViewBox"
+                                preserveAspectRatio="xMidYMid meet"
+                            >
+                                <g class="walls" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="0.35">
+                                    <path v-for="(w, i) in mapWalls" :key="'wall'+i" :d="w.d" />
+                                </g>
+                                <g class="spaces">
+                                    <g v-for="s in spaces" :key="s.id"
+                                       :class="spaceCanAddFan(s) ? 'cursor-pointer' : 'cursor-default'"
+                                       @click="pickSpace(s.id)">
+                                        <rect
+                                            :x="s.x" :y="s.y" :width="s.w" :height="s.h"
+                                            :fill="spaceFill(s)"
+                                            :stroke="spaceStroke(s)"
+                                            stroke-width="0.45"
+                                            rx="0.4"
+                                            class="transition-opacity"
+                                            :opacity="!spaceCanAddFan(s) && selectedSpaceId !== s.id ? 0.85 : 1"
+                                        />
+                                        <text
+                                            :x="Number(s.x) + Number(s.w) / 2"
+                                            :y="Number(s.y) + Number(s.h) / 2"
+                                            text-anchor="middle"
+                                            dominant-baseline="central"
+                                            fill="white"
+                                            :font-size="labelFontSize(s)"
+                                            font-weight="900"
+                                            class="pointer-events-none select-none"
+                                            style="font-family: ui-monospace, monospace;"
+                                        >#{{ s.id }}</text>
+                                        <text
+                                            v-if="Number(s.h) > 6"
+                                            :x="Number(s.x) + Number(s.w) / 2"
+                                            :y="Number(s.y) + Number(s.h) / 2 + labelFontSize(s) * 1.15"
+                                            text-anchor="middle"
+                                            dominant-baseline="central"
+                                            fill="rgba(255,255,255,0.45)"
+                                            :font-size="Math.max(0.9, labelFontSize(s) * 0.55)"
+                                            font-weight="700"
+                                            class="pointer-events-none select-none uppercase"
+                                            style="font-family: ui-monospace, monospace;"
+                                        >{{ spaceFanCount(s) > 0 ? ('fan×' + spaceFanCount(s)) : (s.zone_name || s.name) }}</text>
+                                    </g>
+                                </g>
+                            </svg>
+                            <div v-else class="flex items-center justify-center py-12 text-[10px] uppercase tracking-widest text-white/20 italic">
+                                Нет rooms / spaces — карта в редакторе
                             </div>
-                        </button>
-                        <div v-if="!freeSpaces.length" class="text-[10px] text-white/20 uppercase tracking-widest italic py-4 text-center">
-                            Все комнаты уже с макс. вентиляторами или spaces пусты
+                        </div>
+                        <div v-if="!freeSpaces.length && spaces.length"
+                             class="text-[10px] text-white/20 uppercase tracking-widest italic py-2 text-center">
+                            Все комнаты уже с макс. вентиляторами
                         </div>
                     </div>
                 </div>
