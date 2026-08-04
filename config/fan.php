@@ -24,7 +24,7 @@ return [
     'thermal_off_c' => (int) env('FAN_THERMAL_OFF_C', 65),
     'http_timeout' => (float) env('FAN_HTTP_TIMEOUT', 2.0),
 
-    'manual_cooldown_sec' => (int) env('FAN_MANUAL_COOLDOWN_SEC', 60),
+    'manual_cooldown_sec' => (int) env('FAN_MANUAL_COOLDOWN_SEC', 10),
     'auto_apply_cooldown_sec' => (int) env('FAN_AUTO_APPLY_COOLDOWN_SEC', 20),
     // Path segment for http://{host}/{port}/{cmd} (TCP remains :80), not a TCP listen port.
     'w5100_default_port' => (int) env('FAN_W5100_DEFAULT_PORT', 30000),

@@ -107,7 +107,7 @@ class FanControlService
                 return ['fan' => null, 'locked' => false, 'remaining_sec' => 0];
             }
 
-            $cooldown = max(0, (int) config('fan.manual_cooldown_sec', 60));
+            $cooldown = max(0, (int) config('fan.manual_cooldown_sec', 10));
             $remaining = $this->manualLockRemainingSec($fan, $cooldown);
             $sameForceSpeed = $mode === SpaceFan::MODE_FORCE_ON
                 && $forcedSpeed !== null
@@ -294,7 +294,7 @@ class FanControlService
         $sessions = $this->spaceActiveSessionCount($fan);
         $thermal = $this->spaceHasThermalHot($fan);
         $desired = $this->computeDesiredPower($fan);
-        $manualCooldown = max(0, (int) config('fan.manual_cooldown_sec', 60));
+        $manualCooldown = max(0, (int) config('fan.manual_cooldown_sec', 10));
         $autoCooldown = max(0, (int) config('fan.auto_apply_cooldown_sec', 20));
         $manualRemaining = $this->manualLockRemainingSec($fan, $manualCooldown);
         $autoRemaining = $this->autoLockRemainingSec($fan, $autoCooldown);
@@ -323,7 +323,7 @@ class FanControlService
             'desired_speed' => $speed,
             'applied_power' => SpaceFan::normalizeSpeed((int) $fan->applied_power),
             'applied_speed' => SpaceFan::normalizeSpeed((int) $fan->applied_power),
-            'default_on_power' => SpaceFan::SPEED_HIGH,
+            'default_on_power' => SpaceFan::normalizeSpeed((int) ($fan->default_on_power ?: SpaceFan::SPEED_HIGH)),
             'thermal_on_c' => (int) ($fan->thermal_on_c ?: config('fan.thermal_on_c', 75)),
             'thermal_off_c' => (int) ($fan->thermal_off_c ?: config('fan.thermal_off_c', 65)),
             'is_on' => $fan->isOn(),
