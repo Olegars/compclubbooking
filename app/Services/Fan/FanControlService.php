@@ -52,6 +52,12 @@ class FanControlService
                 } elseif ((int) $board->club_id !== (int) $fan->club_id) {
                     $fan->last_error = 'Relay board club_id mismatch';
                 }
+                // Empty room: drop marketing/manual force_on so next boot stays quiet.
+                if ($fan->manual_mode === SpaceFan::MODE_FORCE_ON
+                    && ! $this->spaceHasActiveSession($fan)) {
+                    $fan->manual_mode = SpaceFan::MODE_AUTO;
+                    $fan->default_on_power = SpaceFan::SPEED_HIGH;
+                }
                 $fan->desired_power = $this->computeDesiredPower($fan);
                 $fan->save();
                 $primary ??= $fan;
