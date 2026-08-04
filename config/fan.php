@@ -32,4 +32,10 @@ return [
     'w5100_default_port' => (int) env('FAN_W5100_DEFAULT_PORT', 30000),
     'max_per_space' => (int) env('FAN_MAX_PER_SPACE', 2),
     // Cascade K1/K2 must be odd+next: 1+2, 3+4, … 15+16 (enforced in bind/admin).
+
+    // MikroTik pull token for shared supply/exhaust fans (falls back to WOL token).
+    'shared_relay_token' => (string) (
+        env('FAN_SHARED_RELAY_TOKEN')
+        ?: env('CLUB_WOL_RELAY_TOKEN', '')
+    ),
 ];

@@ -31,7 +31,7 @@ class FanControlService
      */
     public function reconcileForSpace(int $spaceId, ?int $clubId = null): ?SpaceFan
     {
-        return DB::transaction(function () use ($spaceId, $clubId) {
+        $primary = DB::transaction(function () use ($spaceId, $clubId) {
             $fans = SpaceFan::query()
                 ->where('space_id', $spaceId)
                 ->when($clubId, fn ($q) => $q->where('club_id', $clubId))
@@ -59,6 +59,12 @@ class FanControlService
 
             return $primary;
         });
+
+        if ($primary) {
+            $this->touchSharedFans((int) $primary->club_id, $spaceId);
+        }
+
+        return $primary;
     }
 
     /**
@@ -89,7 +95,7 @@ class FanControlService
             };
         }
 
-        return DB::transaction(function () use ($computer, $mode, $forcedSpeed) {
+        $result = DB::transaction(function () use ($computer, $mode, $forcedSpeed) {
             $fans = SpaceFan::query()
                 ->where('space_id', $computer->space_id)
                 ->where('club_id', $computer->club_id)
@@ -139,6 +145,12 @@ class FanControlService
 
             return ['fan' => $fan->fresh(), 'locked' => false, 'remaining_sec' => 0];
         });
+
+        if ($result['fan']) {
+            $this->touchSharedFans((int) $computer->club_id, (int) $computer->space_id);
+        }
+
+        return $result;
     }
 
     public function reportThermal(int $computerId, float $cpuC): ?SpaceFan
@@ -200,7 +212,7 @@ class FanControlService
 
         $appliedPower = SpaceFan::normalizeSpeed($appliedPower);
 
-        return DB::transaction(function () use ($computer, $appliedPower, $error, $source) {
+        $result = DB::transaction(function () use ($computer, $appliedPower, $error, $source) {
             $fans = SpaceFan::query()
                 ->where('space_id', $computer->space_id)
                 ->where('club_id', $computer->club_id)
@@ -237,6 +249,12 @@ class FanControlService
 
             return ['fan' => $fan->fresh(), 'locked' => false, 'remaining_sec' => 0];
         });
+
+        if ($result['fan']) {
+            $this->touchSharedFans((int) $computer->club_id, (int) $computer->space_id);
+        }
+
+        return $result;
     }
 
     /**
@@ -246,7 +264,7 @@ class FanControlService
      */
     public function adminForceOff(int $spaceFanId): array
     {
-        return DB::transaction(function () use ($spaceFanId) {
+        $result = DB::transaction(function () use ($spaceFanId) {
             /** @var SpaceFan|null $fan */
             $fan = SpaceFan::query()->lockForUpdate()->find($spaceFanId);
             if (! $fan) {
@@ -266,6 +284,12 @@ class FanControlService
 
             return ['fan' => $fan, 'wol_computer_id' => $wolComputerId];
         });
+
+        if ($result['fan']) {
+            $this->touchSharedFans((int) $result['fan']->club_id, (int) $result['fan']->space_id);
+        }
+
+        return $result;
     }
 
     public function stateForComputer(int $computerId): array
@@ -754,7 +778,7 @@ class FanControlService
 
         $slotsMax = max(1, (int) config('fan.max_per_space', 2));
 
-        return DB::transaction(function () use ($computer, $board, $channel, $channel2, $slotsMax) {
+        $result = DB::transaction(function () use ($computer, $board, $channel, $channel2, $slotsMax) {
             $clubId = (int) $computer->club_id;
             $spaceId = (int) $computer->space_id;
 
@@ -848,6 +872,12 @@ class FanControlService
                 'fan' => $this->stateForComputer((int) $computer->id),
             ];
         });
+
+        if ($result['ok']) {
+            $this->touchSharedFans((int) $computer->club_id, (int) $computer->space_id);
+        }
+
+        return $result;
     }
 
     /**
@@ -872,6 +902,23 @@ class FanControlService
 
         $fan->delete();
 
+        app(SharedFanControlService::class)->recomputeAfterPersonalChange(
+            (int) $computer->club_id,
+            [(int) $fanId]
+        );
+
         return ['ok' => true, 'message' => 'Вентилятор отвязан (K'.$fan->channel.'+K'.$fan->channel2.')'];
+    }
+
+    private function touchSharedFans(int $clubId, int $spaceId): void
+    {
+        $ids = SpaceFan::query()
+            ->where('club_id', $clubId)
+            ->where('space_id', $spaceId)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        app(SharedFanControlService::class)->recomputeAfterPersonalChange($clubId, $ids);
     }
 }

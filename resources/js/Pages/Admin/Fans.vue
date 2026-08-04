@@ -8,14 +8,26 @@ const props = defineProps<{
     clubId: number
     boards: any[]
     fans: any[]
+    sharedFans?: any[]
+    linkedPersonalIds?: number[]
     spaces: any[]
     mapPreview?: { viewbox?: string | null, walls?: any[], labels?: any[] }
-    defaults: { port: number, thermal_on_c: number, thermal_off_c: number, max_per_space?: number }
+    defaults: {
+        port: number
+        thermal_on_c: number
+        thermal_off_c: number
+        max_per_space?: number
+        load_steps?: number[]
+    }
 }>()
 
 const maxPerSpace = computed(() => props.defaults.max_per_space ?? 2)
+const loadSteps = computed(() => props.defaults.load_steps ?? [50, 60, 70, 80, 90, 100])
+const sharedFans = computed(() => props.sharedFans || [])
+const linkedPersonalIds = computed(() => new Set(props.linkedPersonalIds || []))
 const selectedClubId = ref(props.clubId || props.clubs[0]?.id || 0)
 const selectedSpaceId = ref<number | null>(null)
+const expandedSharedId = ref<number | null>(null)
 
 watch(selectedClubId, (id) => {
     selectedSpaceId.value = null
@@ -34,6 +46,7 @@ const boardForm = useForm({
 watch(() => props.clubId, (id) => {
     boardForm.club_id = id
     fanForm.club_id = id
+    sharedForm.club_id = id
 })
 
 const fanForm = useForm({
@@ -45,6 +58,43 @@ const fanForm = useForm({
     thermal_on_c: props.defaults.thermal_on_c,
     thermal_off_c: props.defaults.thermal_off_c,
 })
+
+const sharedForm = useForm({
+    club_id: props.clubId,
+    kind: 'supply' as 'supply' | 'exhaust',
+    name: '',
+    relay_board_id: null as number | null,
+    channel: 1,
+    channel2: 2,
+})
+
+const linkForm = useForm({
+    space_fan_id: null as number | null,
+})
+
+const mapDrafts = ref<Record<number, Array<{ load_pct: number, output_pct: number }>>>({})
+
+watch(sharedFans, (list) => {
+    const next: Record<number, Array<{ load_pct: number, output_pct: number }>> = {}
+    for (const sf of list) {
+        next[sf.id] = loadSteps.value.map((load) => {
+            const row = (sf.maps || []).find((m: any) => Number(m.load_pct) === load)
+            return { load_pct: load, output_pct: Number(row?.output_pct ?? 50) }
+        })
+    }
+    mapDrafts.value = next
+}, { immediate: true })
+
+const freeForExhaust = (sharedId: number) =>
+    props.fans.filter((f: any) => {
+        const linked = linkedPersonalIds.value.has(Number(f.id))
+        const mine = (sharedFans.value.find((s: any) => s.id === sharedId)?.linked_fans || [])
+            .some((l: any) => Number(l.id) === Number(f.id))
+        return !linked || mine
+    })
+
+const speedLabel = (p: number) => (Number(p) >= 3 ? '100%' : Number(p) === 2 ? '75%' : '50%')
+const kindLabel = (k: string) => (k === 'exhaust' ? 'Вытяжка' : 'Приток')
 
 const spaceFanCount = (s: any) => Number(s.fans_count ?? (s.has_fan ? 1 : 0))
 const spaceCanAddFan = (s: any) => spaceFanCount(s) < maxPerSpace.value
@@ -93,6 +143,47 @@ const deleteBoard = (id: number) => {
 const deleteFan = (id: number) => {
     if (confirm('Удалить вентилятор этой комнаты?')) {
         router.delete(`/admin/fans/${id}`)
+    }
+}
+
+const submitShared = () => {
+    sharedForm.club_id = selectedClubId.value
+    if (sharedForm.channel % 2 === 1) {
+        sharedForm.channel2 = sharedForm.channel + 1
+    }
+    sharedForm.post('/admin/fans/shared', {
+        onSuccess: () => {
+            sharedForm.reset('name')
+            sharedForm.channel = 1
+            sharedForm.channel2 = 2
+            sharedForm.kind = 'supply'
+        },
+    })
+}
+
+const saveMaps = (sharedId: number) => {
+    router.put(`/admin/fans/shared/${sharedId}/maps`, {
+        maps: mapDrafts.value[sharedId] || [],
+    }, { preserveScroll: true })
+}
+
+const linkPersonal = (sharedId: number) => {
+    if (!linkForm.space_fan_id) return
+    linkForm.post(`/admin/fans/shared/${sharedId}/link`, {
+        onSuccess: () => { linkForm.space_fan_id = null },
+        preserveScroll: true,
+    })
+}
+
+const unlinkPersonal = (sharedId: number, spaceFanId: number) => {
+    router.post(`/admin/fans/shared/${sharedId}/unlink`, {
+        space_fan_id: spaceFanId,
+    }, { preserveScroll: true })
+}
+
+const deleteShared = (id: number) => {
+    if (confirm('Удалить общий вентилятор?')) {
+        router.delete(`/admin/fans/shared/${id}`)
     }
 }
 
@@ -342,7 +433,7 @@ const spaceStroke = (s: any) => {
             </div>
 
             <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8">
-                <h3 class="text-lg font-black uppercase italic mb-6">Заведённые вентиляторы</h3>
+                <h3 class="text-lg font-black uppercase italic mb-6">Персональные вентиляторы</h3>
                 <div class="space-y-3">
                     <div v-for="f in fans" :key="f.id"
                          class="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl border border-white/5 bg-black/40">
@@ -354,6 +445,9 @@ const spaceStroke = (s: any) => {
                                 http://{{ f.relay_board?.host }}/{{ f.relay_board?.port }}/
                                 · K1={{ f.channel }} K2={{ f.channel2 }}
                                 · speed {{ f.applied_power }}/3 · mode {{ f.manual_mode }}
+                                <span v-if="f.shared_fan_link?.shared_fan" class="text-amber-400/80">
+                                    · вытяжка: {{ f.shared_fan_link.shared_fan.name }}
+                                </span>
                             </div>
                         </div>
                         <button @click="deleteFan(f.id)" class="text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase">
@@ -362,6 +456,131 @@ const spaceStroke = (s: any) => {
                     </div>
                     <div v-if="!fans.length" class="py-10 text-center text-white/20 text-[10px] uppercase tracking-widest italic border border-dashed border-white/5 rounded-2xl">
                         Вентиляторы не заведены
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 space-y-6">
+                <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                    <div>
+                        <h3 class="text-lg font-black uppercase italic">Общие (приток / вытяжка)</h3>
+                        <p class="text-[10px] text-white/30 uppercase tracking-wider mt-2">
+                            Приток = пул avg всех personal · Вытяжка = avg привязанных · MikroTik poll
+                        </p>
+                    </div>
+                </div>
+
+                <form @submit.prevent="submitShared" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3 items-end">
+                    <select v-model="sharedForm.kind"
+                            class="bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500">
+                        <option value="supply">Приток</option>
+                        <option value="exhaust">Вытяжка</option>
+                    </select>
+                    <input v-model="sharedForm.name" type="text" placeholder="Имя"
+                           class="bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500 lg:col-span-2" required />
+                    <select v-model.number="sharedForm.relay_board_id"
+                            class="bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" required>
+                        <option :value="null" disabled>Плата</option>
+                        <option v-for="b in boards" :key="'sb'+b.id" :value="b.id">{{ b.name }}</option>
+                    </select>
+                    <select v-model.number="sharedForm.channel"
+                            class="bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500"
+                            required
+                            @change="sharedForm.channel2 = sharedForm.channel + 1">
+                        <option v-for="k1 in [1,3,5,7,9,11,13,15]" :key="'sk'+k1" :value="k1">
+                            K{{ k1 }}+K{{ k1 + 1 }}
+                        </option>
+                    </select>
+                    <button type="submit"
+                            class="py-4 bg-amber-400 text-black font-black uppercase text-[10px] rounded-xl tracking-widest">
+                        Добавить
+                    </button>
+                </form>
+
+                <div class="space-y-4">
+                    <div v-for="sf in sharedFans" :key="sf.id"
+                         class="rounded-2xl border border-white/5 bg-black/40 overflow-hidden">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5">
+                            <div>
+                                <div class="text-sm font-black uppercase italic">
+                                    {{ kindLabel(sf.kind) }} · {{ sf.name }}
+                                </div>
+                                <div class="text-[10px] text-white/40 font-mono mt-1">
+                                    http://{{ sf.relay_board?.host }}/{{ sf.relay_board?.port }}/
+                                    · K{{ sf.channel }}+K{{ sf.channel2 }}
+                                    · load {{ sf.load_pct }}% → desired {{ speedLabel(sf.desired_power) }}
+                                    · applied {{ speedLabel(sf.applied_power) }}
+                                </div>
+                                <div v-if="sf.kind === 'supply'" class="text-[10px] text-cyan-400/70 mt-1 uppercase tracking-wider">
+                                    Пул: среднее по всем персональным клуба
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <button type="button"
+                                        class="text-cyan-400/70 hover:text-cyan-300 text-[10px] font-black uppercase"
+                                        @click="expandedSharedId = expandedSharedId === sf.id ? null : sf.id">
+                                    {{ expandedSharedId === sf.id ? 'Свернуть' : 'Настроить' }}
+                                </button>
+                                <button type="button" @click="deleteShared(sf.id)"
+                                        class="text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase">
+                                    Удалить
+                                </button>
+                            </div>
+                        </div>
+
+                        <div v-if="expandedSharedId === sf.id" class="border-t border-white/5 p-5 space-y-5 bg-black/30">
+                            <div>
+                                <div class="text-[10px] uppercase tracking-widest text-white/40 mb-3">
+                                    Сопоставление load → общий (50 или 100)
+                                </div>
+                                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                                    <label v-for="(row, idx) in (mapDrafts[sf.id] || [])" :key="row.load_pct"
+                                           class="rounded-xl border border-white/10 p-3 space-y-2">
+                                        <div class="text-[10px] font-black text-white/50">load {{ row.load_pct }}%</div>
+                                        <select v-model.number="mapDrafts[sf.id][idx].output_pct"
+                                                class="w-full bg-black border border-white/10 rounded-lg p-2 text-xs outline-none">
+                                            <option :value="50">50%</option>
+                                            <option :value="100">100%</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <button type="button" @click="saveMaps(sf.id)"
+                                        class="mt-3 px-4 py-2 bg-cyan-500 text-black text-[10px] font-black uppercase rounded-xl tracking-widest">
+                                    Сохранить map
+                                </button>
+                            </div>
+
+                            <div v-if="sf.kind === 'exhaust'" class="space-y-3">
+                                <div class="text-[10px] uppercase tracking-widest text-white/40">
+                                    Привязка персональных
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <span v-for="lf in sf.linked_fans" :key="lf.id"
+                                          class="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-amber-500/30 bg-amber-500/10 text-[10px]">
+                                        #{{ lf.id }} space {{ lf.space_id }} {{ lf.label }}
+                                        <button type="button" class="text-red-400" @click="unlinkPersonal(sf.id, lf.id)">×</button>
+                                    </span>
+                                    <span v-if="!sf.linked_fans?.length" class="text-[10px] text-white/25 italic">нет привязок</span>
+                                </div>
+                                <div class="flex flex-col sm:flex-row gap-2">
+                                    <select v-model.number="linkForm.space_fan_id"
+                                            class="flex-1 bg-black border border-white/10 rounded-xl p-3 text-sm outline-none">
+                                        <option :value="null" disabled>Персональный вентилятор</option>
+                                        <option v-for="f in freeForExhaust(sf.id)" :key="'lf'+f.id" :value="f.id">
+                                            #{{ f.id }} space {{ f.space_id }} K{{ f.channel }}+K{{ f.channel2 }}
+                                        </option>
+                                    </select>
+                                    <button type="button" @click="linkPersonal(sf.id)"
+                                            class="px-4 py-3 bg-[#22c55e] text-black text-[10px] font-black uppercase rounded-xl tracking-widest">
+                                        Привязать
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="!sharedFans.length"
+                         class="py-10 text-center text-white/20 text-[10px] uppercase tracking-widest italic border border-dashed border-white/5 rounded-2xl">
+                        Общие вентиляторы не заведены
                     </div>
                 </div>
             </div>

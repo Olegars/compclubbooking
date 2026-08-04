@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\QueueController;
 // Оверлеи Shell (API для терминалов)
 use App\Http\Controllers\Api\ShellApiController;
 use App\Http\Controllers\Api\WolRelayController;
+use App\Http\Controllers\Api\SharedFanRelayController;
 
 // Контроллеры Авторизации
 use App\Http\Controllers\Auth\SmsAuthController;
@@ -293,6 +294,11 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::post('/fans/boards', [FanAdminController::class, 'storeBoard']);
         Route::put('/fans/boards/{board}', [FanAdminController::class, 'updateBoard']);
         Route::delete('/fans/boards/{board}', [FanAdminController::class, 'destroyBoard']);
+        Route::post('/fans/shared', [FanAdminController::class, 'storeSharedFan']);
+        Route::put('/fans/shared/{sharedFan}/maps', [FanAdminController::class, 'updateSharedMaps']);
+        Route::post('/fans/shared/{sharedFan}/link', [FanAdminController::class, 'linkSharedFan']);
+        Route::post('/fans/shared/{sharedFan}/unlink', [FanAdminController::class, 'unlinkSharedFan']);
+        Route::delete('/fans/shared/{sharedFan}', [FanAdminController::class, 'destroySharedFan']);
         Route::post('/fans', [FanAdminController::class, 'storeFan']);
         Route::put('/fans/{fan}', [FanAdminController::class, 'updateFan']);
         Route::delete('/fans/{fan}', [FanAdminController::class, 'destroyFan']);
@@ -320,6 +326,11 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 Route::prefix('api/power')->group(function () {
     Route::get('/wol-targets', [WolRelayController::class, 'targets']);
     Route::post('/wol-sent', [WolRelayController::class, 'sent']);
+});
+
+Route::prefix('api/fans')->group(function () {
+    Route::get('/shared-targets', [SharedFanRelayController::class, 'targets']);
+    Route::post('/shared-applied', [SharedFanRelayController::class, 'applied']);
 });
 
 /*

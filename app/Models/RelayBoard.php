@@ -40,4 +40,9 @@ class RelayBoard extends Model
     {
         return $this->hasMany(SpaceFan::class);
     }
+
+    public function sharedFans(): HasMany
+    {
+        return $this->hasMany(SharedFan::class);
+    }
 }

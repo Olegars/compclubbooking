@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class SpaceFan extends Model
 {
@@ -81,6 +82,11 @@ class SpaceFan extends Model
         return $this->belongsTo(Computer::class, 'last_applied_by_computer_id');
     }
 
+    public function sharedFanLink(): HasOne
+    {
+        return $this->hasOne(SharedFanLink::class);
+    }
+
     /**
      * Hardware cascade pairs only: K1 odd, K2 = K1+1 (1+2, 3+4, … 15+16).
      */
@@ -90,6 +96,22 @@ class SpaceFan extends Model
             && $channel <= 15
             && ($channel % 2) === 1
             && $channel2 === $channel + 1;
+    }
+
+    /** Personal UI percent: night=50, mid=75, high=100. */
+    public static function speedToPercent(int $speed): int
+    {
+        return match (self::normalizeSpeed($speed)) {
+            self::SPEED_HIGH => 100,
+            self::SPEED_MID => 75,
+            default => 50,
+        };
+    }
+
+    /** Shared fans only use 50% (night) or 100% (high). */
+    public static function sharedOutputToSpeed(int $outputPct): int
+    {
+        return $outputPct >= 100 ? self::SPEED_HIGH : self::SPEED_NIGHT;
     }
 
     /**
