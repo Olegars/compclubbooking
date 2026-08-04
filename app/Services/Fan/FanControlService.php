@@ -5,6 +5,7 @@ namespace App\Services\Fan;
 use App\Models\Booking;
 use App\Models\Computer;
 use App\Models\ComputerThermal;
+use App\Models\RelayBoard;
 use App\Models\SpaceFan;
 use App\Services\ComputerPowerService;
 use Illuminate\Support\Facades\DB;
@@ -536,5 +537,198 @@ class FanControlService
         ]);
 
         return (int) $pc->id;
+    }
+
+    /**
+     * Shell discovery: boards + cascade pairs (1+2, 3+4, …) for this PC's club/space.
+     *
+     * @return array{available:bool,reason?:string,club_id?:int,space_id?:int,space_name?:string,current?:?array,boards:list<array>}
+     */
+    public function discoverForComputer(int $computerId): array
+    {
+        $computer = Computer::query()->with('space:id,name')->find($computerId);
+        if (! $computer || ! $computer->club_id) {
+            return ['available' => false, 'reason' => 'no_computer', 'boards' => []];
+        }
+        if (! $computer->space_id) {
+            return [
+                'available' => false,
+                'reason' => 'no_space',
+                'club_id' => (int) $computer->club_id,
+                'boards' => [],
+            ];
+        }
+
+        $clubId = (int) $computer->club_id;
+        $spaceId = (int) $computer->space_id;
+
+        $currentFan = SpaceFan::query()
+            ->where('space_id', $spaceId)
+            ->where('club_id', $clubId)
+            ->with('relayBoard:id,name,host,port')
+            ->first();
+
+        $fansOnClub = SpaceFan::query()
+            ->where('club_id', $clubId)
+            ->with('space:id,name')
+            ->get();
+
+        $usage = []; // boardId => [channel => ['space_id'=>, 'space_name'=>, 'fan_id'=>]]
+        foreach ($fansOnClub as $fan) {
+            $bid = (int) $fan->relay_board_id;
+            foreach ([(int) $fan->channel, (int) $fan->channel2] as $ch) {
+                $usage[$bid][$ch] = [
+                    'space_id' => (int) $fan->space_id,
+                    'space_name' => (string) ($fan->space?->name ?: ('#'.$fan->space_id)),
+                    'fan_id' => (int) $fan->id,
+                ];
+            }
+        }
+
+        $boards = RelayBoard::query()
+            ->where('club_id', $clubId)
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->get();
+
+        $boardPayload = [];
+        foreach ($boards as $board) {
+            $pairs = [];
+            for ($k1 = 1; $k1 <= 15; $k1 += 2) {
+                $k2 = $k1 + 1;
+                $u1 = $usage[(int) $board->id][$k1] ?? null;
+                $u2 = $usage[(int) $board->id][$k2] ?? null;
+                $status = 'free';
+                $ownerSpaceId = null;
+                $ownerName = null;
+                if ($u1 || $u2) {
+                    $owner = $u1 ?: $u2;
+                    $ownerSpaceId = (int) $owner['space_id'];
+                    $ownerName = (string) $owner['space_name'];
+                    $status = $ownerSpaceId === $spaceId ? 'mine' : 'taken';
+                }
+                $pairs[] = [
+                    'channel' => $k1,
+                    'channel2' => $k2,
+                    'label' => "K{$k1}+K{$k2}",
+                    'status' => $status,
+                    'space_id' => $ownerSpaceId,
+                    'space_name' => $ownerName,
+                ];
+            }
+            $boardPayload[] = [
+                'id' => (int) $board->id,
+                'name' => (string) $board->name,
+                'host' => (string) $board->host,
+                'port' => (int) ($board->port ?: config('fan.w5100_default_port', 30000)),
+                'driver' => (string) $board->driver,
+                'pairs' => $pairs,
+            ];
+        }
+
+        $current = null;
+        if ($currentFan) {
+            $current = [
+                'fan_id' => (int) $currentFan->id,
+                'relay_board_id' => (int) $currentFan->relay_board_id,
+                'channel' => (int) $currentFan->channel,
+                'channel2' => (int) $currentFan->channel2,
+                'host' => (string) ($currentFan->relayBoard?->host ?? ''),
+                'port' => (int) ($currentFan->relayBoard?->port ?? 30000),
+            ];
+        }
+
+        return [
+            'available' => true,
+            'club_id' => $clubId,
+            'space_id' => $spaceId,
+            'space_name' => (string) ($computer->space?->name ?: ('#'.$spaceId)),
+            'current' => $current,
+            'boards' => $boardPayload,
+        ];
+    }
+
+    /**
+     * Bind cascade pair to this computer's space (create or update SpaceFan).
+     *
+     * @return array{ok:bool,message:string,fan:?array}
+     */
+    public function bindForComputer(int $computerId, int $boardId, int $channel, int $channel2): array
+    {
+        $computer = Computer::query()->find($computerId);
+        if (! $computer || ! $computer->club_id || ! $computer->space_id) {
+            return ['ok' => false, 'message' => 'ПК без клуба/комнаты', 'fan' => null];
+        }
+        if ($channel < 1 || $channel > 16 || $channel2 < 1 || $channel2 > 16 || $channel === $channel2) {
+            return ['ok' => false, 'message' => 'Некорректные каналы K1/K2', 'fan' => null];
+        }
+
+        $board = RelayBoard::query()
+            ->where('id', $boardId)
+            ->where('club_id', $computer->club_id)
+            ->where('is_active', true)
+            ->first();
+        if (! $board) {
+            return ['ok' => false, 'message' => 'Плата не найдена в клубе', 'fan' => null];
+        }
+
+        return DB::transaction(function () use ($computer, $board, $channel, $channel2) {
+            $clubId = (int) $computer->club_id;
+            $spaceId = (int) $computer->space_id;
+
+            $mine = SpaceFan::query()
+                ->where('space_id', $spaceId)
+                ->where('club_id', $clubId)
+                ->lockForUpdate()
+                ->first();
+
+            $conflicts = SpaceFan::query()
+                ->where('relay_board_id', $board->id)
+                ->where('club_id', $clubId)
+                ->when($mine, fn ($q) => $q->where('id', '!=', $mine->id))
+                ->lockForUpdate()
+                ->get(['id', 'space_id', 'channel', 'channel2']);
+
+            foreach ($conflicts as $row) {
+                $used = [(int) $row->channel, (int) $row->channel2];
+                if (in_array($channel, $used, true) || in_array($channel2, $used, true)) {
+                    return [
+                        'ok' => false,
+                        'message' => 'Каналы заняты другой комнатой (space #'.$row->space_id.')',
+                        'fan' => null,
+                    ];
+                }
+            }
+
+            $payload = [
+                'club_id' => $clubId,
+                'space_id' => $spaceId,
+                'relay_board_id' => (int) $board->id,
+                'channel' => $channel,
+                'channel2' => $channel2,
+                'manual_mode' => SpaceFan::MODE_AUTO,
+                'desired_power' => SpaceFan::SPEED_NIGHT,
+                'default_on_power' => SpaceFan::SPEED_HIGH,
+                'thermal_on_c' => (int) config('fan.thermal_on_c', 75),
+                'thermal_off_c' => (int) config('fan.thermal_off_c', 65),
+            ];
+
+            if ($mine) {
+                $mine->fill($payload);
+                $mine->save();
+                $fan = $mine;
+                $msg = 'Привязка обновлена: K'.$channel.'+K'.$channel2;
+            } else {
+                $payload['applied_power'] = SpaceFan::SPEED_NIGHT;
+                $fan = SpaceFan::create($payload);
+                $msg = 'Вентилятор привязан: K'.$channel.'+K'.$channel2;
+            }
+
+            return [
+                'ok' => true,
+                'message' => $msg,
+                'fan' => $this->statePayload($fan->fresh(['relayBoard']), (int) $computer->id),
+            ];
+        });
     }
 }

@@ -736,6 +736,65 @@ class ShellApiController extends Controller
     }
 
     /**
+     * Discovery list for shell setup: boards + cascade pairs free/mine/taken.
+     */
+    public function discoverFan(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+        ]);
+
+        try {
+            $payload = app(FanControlService::class)->discoverForComputer((int) $request->terminal_id);
+
+            return response()->json(array_merge(['status' => 'success'], $payload));
+        } catch (\Throwable $e) {
+            Log::error('Shell API discoverFan: '.$e->getMessage());
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Bind K1+K2 cascade pair to this terminal's space (from shell discovery UI).
+     */
+    public function bindFan(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'relay_board_id' => 'required|integer|exists:relay_boards,id',
+            'channel' => 'required|integer|min:1|max:16',
+            'channel2' => 'required|integer|min:1|max:16|different:channel',
+        ]);
+
+        try {
+            $result = app(FanControlService::class)->bindForComputer(
+                (int) $request->terminal_id,
+                (int) $request->relay_board_id,
+                (int) $request->channel,
+                (int) $request->channel2,
+            );
+
+            if (! $result['ok']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $result['message'],
+                ], 422);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => $result['message'],
+                'fan' => $result['fan'],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API bindFan: '.$e->getMessage());
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Personalized spoken greeting after Shell login: context → DeepSeek → TTS.
      * Qt Shell only; requires active booking on terminal.
      */
