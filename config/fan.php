@@ -30,4 +30,5 @@ return [
     'auto_apply_cooldown_sec' => (int) env('FAN_AUTO_APPLY_COOLDOWN_SEC', 20),
     // Path segment for http://{host}/{port}/{cmd} (TCP remains :80), not a TCP listen port.
     'w5100_default_port' => (int) env('FAN_W5100_DEFAULT_PORT', 30000),
+    'max_per_space' => (int) env('FAN_MAX_PER_SPACE', 2),
 ];

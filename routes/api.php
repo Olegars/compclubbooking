@@ -22,6 +22,7 @@ Route::prefix('shell')->group(function () {
     Route::get('/fan', [ShellApiController::class, 'getFanState']);
     Route::get('/fan/discover', [ShellApiController::class, 'discoverFan']);
     Route::post('/fan/bind', [ShellApiController::class, 'bindFan']);
+    Route::post('/fan/unbind', [ShellApiController::class, 'unbindFan']);
     Route::post('/ai-assistant', [ShellApiController::class, 'aiAssistant']);
     Route::post('/voice-greeting', [ShellApiController::class, 'voiceGreeting']);
 });

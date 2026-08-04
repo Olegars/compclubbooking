@@ -45,6 +45,7 @@ class FanAdminController extends Controller
                 'zone_name' => $s->zone?->name,
                 'zone_color' => $s->zone?->color,
                 'has_fan' => $fans->contains(fn (SpaceFan $f) => (int) $f->space_id === (int) $s->id),
+                'fans_count' => $fans->where('space_id', $s->id)->count(),
             ]);
 
         $club = $clubId ? Club::query()->find($clubId) : null;
@@ -67,6 +68,7 @@ class FanAdminController extends Controller
                 'port' => (int) config('fan.w5100_default_port', 30000),
                 'thermal_on_c' => (int) config('fan.thermal_on_c', 75),
                 'thermal_off_c' => (int) config('fan.thermal_off_c', 65),
+                'max_per_space' => (int) config('fan.max_per_space', 2),
             ],
         ]);
     }
@@ -129,7 +131,6 @@ class FanAdminController extends Controller
                 'required',
                 'integer',
                 Rule::exists('spaces', 'id')->where(fn ($q) => $q->where('club_id', $request->integer('club_id'))),
-                Rule::unique('space_fans', 'space_id'),
             ],
             'relay_board_id' => [
                 'required',
@@ -141,6 +142,15 @@ class FanAdminController extends Controller
             'thermal_on_c' => 'nullable|integer|min:40|max:120',
             'thermal_off_c' => 'nullable|integer|min:30|max:110',
         ]);
+
+        $max = max(1, (int) config('fan.max_per_space', 2));
+        $existing = SpaceFan::query()
+            ->where('space_id', $data['space_id'])
+            ->where('club_id', $data['club_id'])
+            ->count();
+        if ($existing >= $max) {
+            return back()->withErrors(['space_id' => "В комнате уже максимум {$max} вентилятора"]);
+        }
 
         $this->assertChannelsFree(
             (int) $data['relay_board_id'],

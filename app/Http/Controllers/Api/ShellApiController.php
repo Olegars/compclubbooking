@@ -794,6 +794,38 @@ class ShellApiController extends Controller
         }
     }
 
+    public function unbindFan(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'fan_id' => 'required|integer|exists:space_fans,id',
+        ]);
+
+        try {
+            $result = app(FanControlService::class)->unbindForComputer(
+                (int) $request->terminal_id,
+                (int) $request->fan_id,
+            );
+
+            if (! $result['ok']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $result['message'],
+                ], 422);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => $result['message'],
+                'discover' => app(FanControlService::class)->discoverForComputer((int) $request->terminal_id),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API unbindFan: '.$e->getMessage());
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
     /**
      * Personalized spoken greeting after Shell login: context → DeepSeek → TTS.
      * Qt Shell only; requires active booking on terminal.

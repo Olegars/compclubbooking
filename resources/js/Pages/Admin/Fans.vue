@@ -10,9 +10,10 @@ const props = defineProps<{
     fans: any[]
     spaces: any[]
     mapPreview?: { viewbox?: string | null, walls?: any[], labels?: any[] }
-    defaults: { port: number, thermal_on_c: number, thermal_off_c: number }
+    defaults: { port: number, thermal_on_c: number, thermal_off_c: number, max_per_space?: number }
 }>()
 
+const maxPerSpace = computed(() => props.defaults.max_per_space ?? 2)
 const selectedClubId = ref(props.clubId || props.clubs[0]?.id || 0)
 const selectedSpaceId = ref<number | null>(null)
 
@@ -45,10 +46,13 @@ const fanForm = useForm({
     thermal_off_c: props.defaults.thermal_off_c,
 })
 
+const spaceFanCount = (s: any) => Number(s.fans_count ?? (s.has_fan ? 1 : 0))
+const spaceCanAddFan = (s: any) => spaceFanCount(s) < maxPerSpace.value
+
 const pickSpace = (spaceId: number, allowTaken = false) => {
     const space = props.spaces.find((s: any) => Number(s.id) === Number(spaceId))
     if (!space) return
-    if (space.has_fan && !allowTaken) return
+    if (!spaceCanAddFan(space) && !allowTaken) return
     selectedSpaceId.value = spaceId
     fanForm.space_id = spaceId
 }
@@ -88,7 +92,9 @@ const deleteFan = (id: number) => {
     }
 }
 
-const freeSpaces = computed(() => props.spaces.filter((s: any) => !s.has_fan))
+const freeSpaces = computed(() =>
+    props.spaces.filter((s: any) => spaceCanAddFan(s))
+)
 
 const selectedSpace = computed(() =>
     props.spaces.find((s: any) => Number(s.id) === Number(selectedSpaceId.value)) || null
@@ -129,13 +135,15 @@ const labelFontSize = (s: any) => {
 
 const spaceFill = (s: any) => {
     if (selectedSpaceId.value === s.id) return 'rgba(6,182,212,0.45)'
-    if (s.has_fan) return 'rgba(34,197,94,0.18)'
+    const n = spaceFanCount(s)
+    if (n >= maxPerSpace.value) return 'rgba(34,197,94,0.22)'
+    if (n > 0) return 'rgba(34,197,94,0.12)'
     return (s.zone_color || '#22c55e') + '33'
 }
 
 const spaceStroke = (s: any) => {
     if (selectedSpaceId.value === s.id) return '#22d3ee'
-    if (s.has_fan) return '#22c55e'
+    if (spaceFanCount(s) > 0) return '#22c55e'
     return s.zone_color || '#64748b'
 }
 </script>
@@ -191,7 +199,7 @@ const spaceStroke = (s: any) => {
 
                         <g class="spaces">
                             <g v-for="s in spaces" :key="s.id"
-                               :class="s.has_fan ? 'cursor-default' : 'cursor-pointer'"
+                               :class="spaceCanAddFan(s) ? 'cursor-pointer' : 'cursor-default'"
                                @click="pickSpace(s.id)">
                                 <rect
                                     :x="s.x" :y="s.y" :width="s.w" :height="s.h"
@@ -200,7 +208,7 @@ const spaceStroke = (s: any) => {
                                     stroke-width="0.45"
                                     rx="0.4"
                                     class="transition-opacity"
-                                    :opacity="s.has_fan && selectedSpaceId !== s.id ? 0.85 : 1"
+                                    :opacity="!spaceCanAddFan(s) && selectedSpaceId !== s.id ? 0.85 : 1"
                                 />
                                 <text
                                     :x="Number(s.x) + Number(s.w) / 2"
@@ -224,7 +232,7 @@ const spaceStroke = (s: any) => {
                                     font-weight="700"
                                     class="pointer-events-none select-none uppercase"
                                     style="font-family: ui-monospace, monospace;"
-                                >{{ s.has_fan ? 'fan' : (s.zone_name || s.name) }}</text>
+                                >{{ spaceFanCount(s) > 0 ? ('fan×' + spaceFanCount(s)) : (s.zone_name || s.name) }}</text>
                             </g>
                         </g>
                     </svg>
@@ -270,7 +278,7 @@ const spaceStroke = (s: any) => {
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 space-y-4">
                     <h3 class="text-lg font-black uppercase italic">Привязать вентилятор</h3>
                     <p class="text-[10px] text-white/30 uppercase tracking-wider">
-                        Выберите комнату на карте · каналы K1/K2
+                        До {{ maxPerSpace }} на комнату · карта · каналы K1/K2
                     </p>
                     <form @submit.prevent="submitFan" class="space-y-3">
                         <select v-model.number="fanForm.relay_board_id"
@@ -321,7 +329,7 @@ const spaceStroke = (s: any) => {
                             </div>
                         </button>
                         <div v-if="!freeSpaces.length" class="text-[10px] text-white/20 uppercase tracking-widest italic py-4 text-center">
-                            Все комнаты уже с вентилятором или spaces пусты
+                            Все комнаты уже с макс. вентиляторами или spaces пусты
                         </div>
                     </div>
                 </div>
