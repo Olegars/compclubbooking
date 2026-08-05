@@ -36,6 +36,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -196,6 +197,8 @@ class ShellApiController extends Controller
             } catch (\Throwable $e) {
                 Log::warning('Power touch after login failed: '.$e->getMessage());
             }
+
+            $this->applyTvNetworkPolicy($terminalId, 'session_active');
 
             return response()->json([
                 'status' => 'success',
@@ -1716,49 +1719,55 @@ class ShellApiController extends Controller
                     'type' => $zoneType,
                     'name' => $name,
                     'hwid' => $hwid,
+                    'kind' => $zoneType === 'tv' ? Computer::KIND_TV : ($computer->kind ?: Computer::KIND_PC),
                 ]);
 
                 Log::info('Shell registerTerminal: updated by hwid', [
                     'computer_id' => $computer->id,
                     'hwid' => $hwid,
                     'name' => $name,
+                    'kind' => $computer->kind,
                 ]);
 
                 return response()->json([
                     'status' => 'success',
                     'terminal_id' => $computer->id,
-                    'message' => 'Конфигурация обновлена. ПК '.$computer->name.' (id '.$computer->id.')',
+                    'message' => 'Конфигурация обновлена. '.$computer->name.' (id '.$computer->id.')',
                 ]);
             }
 
             $defaultClubId = \App\Models\Club::first()?->id ?? 1;
+            $kind = $zoneType === 'tv' ? Computer::KIND_TV : Computer::KIND_PC;
 
             $newComputer = Computer::create([
                 'club_id' => $defaultClubId,
                 'hwid' => $hwid,
                 'type' => $zoneType,
                 'name' => $name,
-                'kind' => Computer::KIND_PC,
+                'kind' => $kind,
                 'status' => 'available',
             ]);
 
-            Game::query()->pluck('id')->each(fn ($gameId) =>
-                \App\Models\ComputerGame::firstOrCreate(
-                    ['computer_id' => $newComputer->id, 'game_id' => $gameId],
-                    ['is_installed' => true, 'verified_at' => now()]
-                )
-            );
+            if ($kind === Computer::KIND_PC) {
+                Game::query()->pluck('id')->each(fn ($gameId) =>
+                    \App\Models\ComputerGame::firstOrCreate(
+                        ['computer_id' => $newComputer->id, 'game_id' => $gameId],
+                        ['is_installed' => true, 'verified_at' => now()]
+                    )
+                );
+            }
 
-            Log::warning('Shell registerTerminal: created new PC (hwid not found)', [
+            Log::warning('Shell registerTerminal: created new station (hwid not found)', [
                 'computer_id' => $newComputer->id,
                 'hwid' => $hwid,
                 'name' => $name,
+                'kind' => $kind,
             ]);
 
             return response()->json([
                 'status' => 'success',
                 'terminal_id' => $newComputer->id,
-                'message' => 'Создан новый ПК '.$newComputer->name.' (id '.$newComputer->id.'). При необходимости поставьте его на карту в админке.',
+                'message' => 'Создана станция '.$newComputer->name.' (id '.$newComputer->id.', kind '.$kind.'). При необходимости поставьте на карту в админке.',
             ]);
 
         } catch (\Throwable $e) {
@@ -1912,6 +1921,8 @@ class ShellApiController extends Controller
                     Log::warning('Fan reconcile after logout failed: '.$e->getMessage());
                 }
 
+                $this->applyTvNetworkPolicy((int) $termId, 'session_idle');
+
                 $fanState = ['available' => false];
                 try {
                     $fanState = app(FanControlService::class)->stateForComputer((int) $termId);
@@ -2046,6 +2057,91 @@ class ShellApiController extends Controller
                 'message' => 'Ошибка offline: '.$e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * TV shell UI / session network policy for MikroTik pull.
+     * session_idle → isolate internet; session_active → restore.
+     * foreground/background — log only (kiosk pull is client-side).
+     */
+    public function reportUiState(Request $request)
+    {
+        try {
+            $request->validate([
+                'terminal_id' => 'required|integer|exists:computers,id',
+                'state' => 'required|string|in:foreground,background,session_active,session_idle',
+                'pull_attempts' => 'nullable|integer|min:0|max:50',
+                'mac_address' => 'nullable|string|max:32',
+                'lan_ip' => 'nullable|ip',
+            ]);
+
+            $terminalId = (int) $request->terminal_id;
+            $state = (string) $request->state;
+            $attempts = (int) $request->input('pull_attempts', 0);
+            $extra = array_filter([
+                'mac' => $request->input('mac_address'),
+                'ip' => $request->input('lan_ip'),
+            ], fn ($v) => is_string($v) && $v !== '');
+
+            if (! empty($extra['mac'])) {
+                $computer = Computer::query()->find($terminalId);
+                if ($computer) {
+                    $norm = app(\App\Services\WakeOnLan::class)->normalizeMac((string) $extra['mac']);
+                    if ($norm && $computer->mac_address !== $norm) {
+                        $computer->update(['mac_address' => $norm]);
+                    }
+                }
+            }
+
+            Cache::put('shell_ui:'.$terminalId, [
+                'state' => $state,
+                'pull_attempts' => $attempts,
+                'at' => now()->toIso8601String(),
+            ] + $extra, now()->addHours(6));
+
+            Log::info('Shell UI state', [
+                'terminal_id' => $terminalId,
+                'state' => $state,
+                'pull_attempts' => $attempts,
+            ]);
+
+            $action = $this->applyTvNetworkPolicy($terminalId, $state, $extra);
+
+            return response()->json([
+                'status' => 'success',
+                'action' => $action,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API reportUiState: '.$e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Queue MikroTik isolate/restore for TV terminals only.
+     *
+     * @param  array<string, string>  $extra
+     */
+    private function applyTvNetworkPolicy(int $terminalId, string $state, array $extra = []): string
+    {
+        $computer = Computer::query()->find($terminalId);
+        if (! $computer || $computer->kind !== Computer::KIND_TV) {
+            return 'none';
+        }
+
+        return match ($state) {
+            'session_idle' => tap('isolate_network', function () use ($terminalId, $extra) {
+                ShellIsolateRelayController::queueIsolate($terminalId, $extra + ['reason' => 'session_idle']);
+            }),
+            'session_active' => tap('restore_network', function () use ($terminalId, $extra) {
+                ShellIsolateRelayController::queueRestore($terminalId, $extra + ['reason' => 'session_active']);
+            }),
+            default => 'none',
+        };
     }
 
     /**

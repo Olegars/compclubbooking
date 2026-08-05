@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\QueueController;
 use App\Http\Controllers\Api\ShellApiController;
 use App\Http\Controllers\Api\WolRelayController;
 use App\Http\Controllers\Api\SharedFanRelayController;
+use App\Http\Controllers\Api\ShellIsolateRelayController;
 
 // Контроллеры Авторизации
 use App\Http\Controllers\Auth\SmsAuthController;
@@ -326,6 +327,8 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 Route::prefix('api/power')->group(function () {
     Route::get('/wol-targets', [WolRelayController::class, 'targets']);
     Route::post('/wol-sent', [WolRelayController::class, 'sent']);
+    Route::get('/isolate-targets', [ShellIsolateRelayController::class, 'targets']);
+    Route::post('/isolate-applied', [ShellIsolateRelayController::class, 'applied']);
 });
 
 Route::prefix('api/fans')->group(function () {
@@ -344,6 +347,7 @@ Route::prefix('api/shell')->group(function () {
     Route::post('/register-terminal', [ShellApiController::class, 'registerTerminal']); // Кнопка "Привязать ПК"
     Route::post('/power/heartbeat', [ShellApiController::class, 'powerHeartbeat']);
     Route::post('/power/offline', [ShellApiController::class, 'powerOffline']);
+    Route::post('/ui-state', [ShellApiController::class, 'reportUiState']);
 
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
     Route::post('/login', [ShellApiController::class, 'login']);
