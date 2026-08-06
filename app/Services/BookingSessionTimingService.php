@@ -197,6 +197,20 @@ class BookingSessionTimingService
                     'computer_id' => $computerId,
                 ]);
             }
+
+            try {
+                $pc = \App\Models\Computer::query()->find((int) $computerId);
+                if ($pc && $pc->kind === \App\Models\Computer::KIND_TV) {
+                    \App\Http\Controllers\Api\ShellIsolateRelayController::queueIsolate(
+                        (int) $computerId,
+                        ['reason' => 'session_expired']
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::warning('TV isolate after session expiry failed: '.$e->getMessage(), [
+                    'computer_id' => $computerId,
+                ]);
+            }
         }
 
         try {

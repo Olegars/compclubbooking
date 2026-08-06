@@ -276,8 +276,32 @@ class ShellApiController extends Controller
         }
 
         try {
-            // Shell embeds YooKassa Checkout Widget (confirmation=embedded).
-            $payment = $yookassa->createTopUp($user, $amount, 'card', '/account/dashboard', 'embedded');
+            $mode = (string) $request->input('confirmation', 'embedded');
+            if (! in_array($mode, ['embedded', 'redirect'], true)) {
+                $mode = 'embedded';
+            }
+            $payment = $yookassa->createTopUp($user, $amount, 'card', '/account/dashboard', $mode);
+
+            if ($mode === 'redirect') {
+                $url = $payment->confirmation_url;
+                if (! $url) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'ЮKassa не вернула confirmation_url',
+                    ], 502);
+                }
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Ссылка на оплату готова',
+                    'payment_id' => $payment->uuid,
+                    'confirmation_url' => $url,
+                    'amount' => $payment->amount,
+                    'method' => 'card',
+                    'payment_status' => $payment->status,
+                ]);
+            }
+
             $token = $payment->confirmationToken();
 
             if (!$token) {
@@ -358,6 +382,19 @@ class ShellApiController extends Controller
             // Read-only for polling (login already syncs legacy columns).
             $balance = $user->availableBalance();
 
+            $timeRemaining = '00:00:00';
+            $sessionActive = false;
+            if ($booking && $booking->status === 'active') {
+                $sessionActive = true;
+                if ($booking->ends_at) {
+                    $secs = max(0, (int) now()->diffInSeconds($booking->ends_at, false));
+                    $h = intdiv($secs, 3600);
+                    $m = intdiv($secs % 3600, 60);
+                    $s = $secs % 60;
+                    $timeRemaining = sprintf('%02d:%02d:%02d', $h, $m, $s);
+                }
+            }
+
             return response()->json([
                 'status' => 'success',
                 'user_id' => $user->id,
@@ -365,6 +402,8 @@ class ShellApiController extends Controller
                 'balance' => $balance,
                 'deposit_balance' => $balance,
                 'total_balance' => $balance,
+                'session_active' => $sessionActive,
+                'time_remaining' => $timeRemaining,
             ]);
         } catch (\Throwable $e) {
             Log::error('Shell API getBalance: '.$e->getMessage());
