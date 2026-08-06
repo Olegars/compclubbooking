@@ -166,11 +166,8 @@ class ShellApiController extends Controller
             }
 
             $booking = $activation['booking'];
-            $durationMinutes = $activation['time_remaining_minutes'];
-
-            $hours = floor($durationMinutes / 60);
-            $minutes = floor($durationMinutes % 60);
-            $formattedTime = sprintf('%02d:%02d:%02d', $hours, $minutes, 0);
+            $timing = app(BookingSessionTimingService::class);
+            $formattedTime = $timing->formatRemainingHms($booking);
 
             // Sync legacy users.balance / wallets.balance into deposit_balance so shell matches admin.
             $balance = $user->syncBalanceToWallet();
@@ -386,13 +383,9 @@ class ShellApiController extends Controller
             $sessionActive = false;
             if ($booking && $booking->status === 'active') {
                 $sessionActive = true;
-                if ($booking->ends_at) {
-                    $secs = max(0, (int) now()->diffInSeconds($booking->ends_at, false));
-                    $h = intdiv($secs, 3600);
-                    $m = intdiv($secs % 3600, 60);
-                    $s = $secs % 60;
-                    $timeRemaining = sprintf('%02d:%02d:%02d', $h, $m, $s);
-                }
+                $timing = app(BookingSessionTimingService::class);
+                $booking = $timing->healSkewedWindow($booking);
+                $timeRemaining = $timing->formatRemainingHms($booking);
             }
 
             return response()->json([

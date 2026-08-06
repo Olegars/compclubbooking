@@ -26,6 +26,105 @@ class BookingSessionTimingService
     }
 
     /**
+     * Remaining session time for shell / UI.
+     * Prefer wall-clock (date + start_time + duration) when starts_at/ends_at look
+     * timezone-shifted vs the booking card the user paid for (naive PG timestamps).
+     */
+    public function remainingSeconds(Booking $booking, ?CarbonImmutable $now = null): int
+    {
+        $now = $now ?? CarbonImmutable::now();
+        $end = $this->effectiveEndsAt($booking);
+
+        return max(0, (int) floor($now->diffInSeconds($end, false)));
+    }
+
+    public function formatRemainingHms(Booking $booking, ?CarbonImmutable $now = null): string
+    {
+        $secs = $this->remainingSeconds($booking, $now);
+        $h = intdiv($secs, 3600);
+        $m = intdiv($secs % 3600, 60);
+        $s = $secs % 60;
+
+        return sprintf('%02d:%02d:%02d', $h, $m, $s);
+    }
+
+    /**
+     * Paid length in minutes — trust duration when window disagrees (tz skew).
+     */
+    public function paidDurationMinutes(
+        Booking $booking,
+        ?CarbonImmutable $scheduledStart = null,
+        ?CarbonImmutable $scheduledEnd = null
+    ): int {
+        $fromDuration = (int) round(((float) $booking->duration) * 60);
+        if ($scheduledStart && $scheduledEnd) {
+            $fromWindow = (int) round(abs($scheduledStart->diffInMinutes($scheduledEnd)));
+            if ($fromDuration > 0 && $fromWindow > 0 && abs($fromDuration - $fromWindow) > 2) {
+                return max(1, $fromDuration);
+            }
+            if ($fromWindow > 0) {
+                return max(1, $fromWindow);
+            }
+        }
+
+        return max(1, $fromDuration > 0 ? $fromDuration : 1);
+    }
+
+    /**
+     * @return array{start: CarbonImmutable, end: CarbonImmutable}
+     */
+    public function wallClockWindow(Booking $booking): array
+    {
+        $tz = config('app.timezone');
+        $startTime = (float) $booking->start_time;
+        $duration = (float) $booking->duration;
+        $dateString = $booking->date instanceof \DateTimeInterface
+            ? $booking->date->format('Y-m-d')
+            : CarbonImmutable::parse((string) $booking->date, $tz)->format('Y-m-d');
+
+        $start = CarbonImmutable::parse($dateString, $tz)
+            ->startOfDay()
+            ->addMinutes((int) round($startTime * 60));
+        $end = $start->addMinutes((int) round(max(0.0, $duration) * 60));
+
+        return ['start' => $start, 'end' => $end];
+    }
+
+    public function effectiveEndsAt(Booking $booking): CarbonImmutable
+    {
+        $wall = $this->wallClockWindow($booking);
+        if (! $booking->starts_at || ! $booking->ends_at) {
+            return $wall['end'];
+        }
+
+        $tz = config('app.timezone');
+        $modernStart = CarbonImmutable::parse($booking->starts_at)->timezone($tz);
+        $modernEnd = CarbonImmutable::parse($booking->ends_at)->timezone($tz);
+
+        // After early-start activate, wall-clock fields are rewritten to match modern.
+        // If modern start drifts from wall-clock by >2 min, trust duration-based end
+        // (same rule as ProfileController dashboard card).
+        if (abs($modernStart->diffInMinutes($wall['start'])) <= 2) {
+            return $modernEnd;
+        }
+
+        // Active session with intentional shift: actual_started_at set and duration ok —
+        // still prefer modern end only when it matches paid duration length.
+        if ($booking->actual_started_at) {
+            $paid = $this->paidDurationMinutes($booking);
+            $modernLen = (int) round(abs(
+                CarbonImmutable::parse($booking->actual_started_at)->timezone($tz)
+                    ->diffInMinutes($modernEnd)
+            ));
+            if (abs($modernLen - $paid) <= 2) {
+                return $modernEnd;
+            }
+        }
+
+        return $wall['end'];
+    }
+
+    /**
      * Activate a confirmed booking at shell login.
      *
      * Early start (PC free): shift starts_at/ends_at to preserve paid duration.
@@ -53,6 +152,9 @@ class BookingSessionTimingService
             if (! $booking->starts_at || ! $booking->ends_at) {
                 return $this->activateLegacy($booking, $now);
             }
+
+            // Heal timezone-skewed modern window against wall-clock duration.
+            $booking = $this->healSkewedWindow($booking);
 
             $scheduledStart = CarbonImmutable::parse($booking->starts_at);
             $scheduledEnd = CarbonImmutable::parse($booking->ends_at);
@@ -231,7 +333,7 @@ class BookingSessionTimingService
         CarbonImmutable $scheduledStart,
         CarbonImmutable $scheduledEnd
     ): array {
-        $paidMinutes = max(1, (int) round($scheduledStart->diffInMinutes($scheduledEnd)));
+        $paidMinutes = $this->paidDurationMinutes($booking, $scheduledStart, $scheduledEnd);
         $newEndsAt = $now->addMinutes($paidMinutes);
 
         $computerId = (int) $booking->computer_id;
@@ -280,8 +382,6 @@ class BookingSessionTimingService
         CarbonImmutable $now,
         CarbonImmutable $scheduledEnd
     ): array {
-        $remaining = max(0, (int) floor($now->diffInSeconds($scheduledEnd, false) / 60));
-
         $booking->update([
             'status' => 'active',
             'actual_started_at' => $now,
@@ -299,10 +399,59 @@ class BookingSessionTimingService
         $booking->group?->update(['status' => 'active']);
         $this->computerStatuses->syncFor((int) $booking->computer_id, $now);
 
+        $fresh = $booking->fresh();
+
         return [
-            'booking' => $booking->fresh(),
-            'time_remaining_minutes' => $remaining,
+            'booking' => $fresh,
+            'time_remaining_minutes' => max(0, (int) floor($this->remainingSeconds($fresh, $now) / 60)),
         ];
+    }
+
+    /**
+     * If starts_at/ends_at disagree with date+start_time+duration by a timezone-sized gap,
+     * rewrite modern fields from wall-clock (source of truth for the booking card).
+     */
+    public function healSkewedWindow(Booking $booking): Booking
+    {
+        if (! $booking->starts_at || ! $booking->ends_at) {
+            return $booking;
+        }
+
+        $wall = $this->wallClockWindow($booking);
+        $tz = config('app.timezone');
+        $modernStart = CarbonImmutable::parse($booking->starts_at)->timezone($tz);
+        $modernEnd = CarbonImmutable::parse($booking->ends_at)->timezone($tz);
+
+        $startSkew = abs($modernStart->diffInMinutes($wall['start']));
+        $endSkew = abs($modernEnd->diffInMinutes($wall['end']));
+        $lenModern = (int) round(abs($modernStart->diffInMinutes($modernEnd)));
+        $lenWall = (int) round(abs($wall['start']->diffInMinutes($wall['end'])));
+
+        // Typical naive-timestamp bug: ~180 min (MSK) skew, duration field still correct.
+        if ($startSkew <= 2 && $endSkew <= 2 && abs($lenModern - $lenWall) <= 2) {
+            return $booking;
+        }
+
+        if ($lenWall < 1) {
+            return $booking;
+        }
+
+        Log::warning('Healing skewed booking window', [
+            'booking_id' => $booking->id,
+            'start_skew_min' => $startSkew,
+            'end_skew_min' => $endSkew,
+            'len_modern' => $lenModern,
+            'len_wall' => $lenWall,
+            'wall_start' => $wall['start']->toIso8601String(),
+            'wall_end' => $wall['end']->toIso8601String(),
+        ]);
+
+        $booking->update([
+            'starts_at' => $wall['start'],
+            'ends_at' => $wall['end'],
+        ]);
+
+        return $booking->fresh() ?? $booking;
     }
 
     /**
