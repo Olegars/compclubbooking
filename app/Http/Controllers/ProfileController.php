@@ -11,10 +11,11 @@ use App\Models\Order;
 use Carbon\Carbon;
 use App\Models\ReviewClaim;
 use App\Services\AchievementService;
+use App\Services\FiscalService;
 
 class ProfileController extends Controller
 {
-    public function dashboard()
+    public function dashboard(FiscalService $fiscal)
     {
         $user = Auth::user();
         $now = now();
@@ -39,7 +40,7 @@ class ProfileController extends Controller
             ->latest()
             ->take(5)
             ->get()
-            ->map(function ($t) {
+            ->map(function ($t) use ($fiscal) {
                 $titles = collect(data_get($t->payload, 'games', []))
                     ->pluck('title')
                     ->filter()
@@ -55,6 +56,10 @@ class ProfileController extends Controller
                     $description = 'Бронь #'.($t->booking_group_id ?: '—').': '.$titles->implode(', ');
                 }
 
+                $receiptUrl = $fiscal->displayReceiptUrl($t);
+                $isStub = $fiscal->isStubReceiptUrl($receiptUrl)
+                    || ($t->fiscal_status === 'skipped' && filled($receiptUrl));
+
                 return [
                     'id' => $t->id,
                     'type' => $t->type,
@@ -62,10 +67,11 @@ class ProfileController extends Controller
                     'description' => $description,
                     'games' => $titles->all(),
                     'date' => $t->created_at->format('d.m / H:i'),
-                    'fiscal_receipt_url' => $t->fiscal_receipt_url,
-                    'fiscal_status' => $t->fiscal_status,
+                    'fiscal_receipt_url' => $receiptUrl,
+                    'fiscal_status' => $t->fiscal_status ?: ($isStub ? 'skipped' : null),
                     'payment_uuid' => data_get($t->payload, 'payment_uuid'),
-                    'has_receipt' => filled($t->fiscal_receipt_url),
+                    'has_receipt' => filled($receiptUrl),
+                    'is_stub_receipt' => $isStub,
                 ];
             });
 

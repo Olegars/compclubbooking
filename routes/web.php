@@ -56,6 +56,8 @@ use App\Http\Controllers\GameRequestController;
 */
 Route::get('/', [HomeController::class, 'index'])->name('home');
 Route::get('/legal/offer', fn () => Inertia::render('Legal/Offer'))->name('legal.offer');
+Route::get('/receipt/stub/{transaction}', [\App\Http\Controllers\ReceiptStubController::class, 'show'])
+    ->name('receipt.stub');
 Route::get('/booking/{slug?}', [ClubController::class, 'show'])->name('booking');
 Route::get('/terminal/{slug?}', [TerminalController::class, 'index'])->name('terminal.booking');
 

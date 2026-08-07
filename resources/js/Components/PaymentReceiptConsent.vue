@@ -1,7 +1,6 @@
 <script setup lang="ts">
 /**
- * Единый блок согласия у кнопки оплаты (план 1.1).
- * Галочка «Отправить чек» по умолчанию снята.
+ * Галочка Email/SMS + плашка согласия про QR на экране.
  */
 import { computed } from 'vue'
 
@@ -33,9 +32,6 @@ const checked = computed({
             />
             <span class="text-[11px] leading-snug text-white/55 group-hover:text-white/75 transition-colors">
                 Отправить чек на Email/SMS
-                <span class="block text-white/30 text-[10px] mt-1">
-                    На контакт, привязанный к аккаунту. Без галочки чек только на экране (QR).
-                </span>
             </span>
         </label>
 

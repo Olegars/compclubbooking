@@ -38,10 +38,7 @@ class ProcessFiscalReceipt implements ShouldQueue
         }
 
         if (! $fiscal->isEnabled()) {
-            $transaction->update([
-                'fiscal_mode' => $mode,
-                'fiscal_status' => 'skipped',
-            ]);
+            $fiscal->markSkippedWithStub($transaction, $mode);
 
             return;
         }
@@ -55,10 +52,7 @@ class ProcessFiscalReceipt implements ShouldQueue
         $result = $fiscal->registerForTransaction($transaction->fresh(['user']));
 
         if (! empty($result['skipped'])) {
-            $transaction->update([
-                'fiscal_mode' => $mode,
-                'fiscal_status' => 'skipped',
-            ]);
+            $fiscal->markSkippedWithStub($transaction, $mode);
 
             return;
         }

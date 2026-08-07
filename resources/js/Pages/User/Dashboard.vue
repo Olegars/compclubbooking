@@ -132,6 +132,7 @@ const receiptModalUrl = ref<string | null>(null)
 const receiptModalAmount = ref<number | null>(null)
 const receiptPaymentId = ref<string | null>(null)
 const receiptFiscalStatus = ref<string | null>(null)
+const receiptIsStub = ref(false)
 const isReviewSubmitting = ref(false)
 const isGameRequestSubmitting = ref(false)
 const topUpAmount = ref(500)
@@ -254,6 +255,8 @@ const handlePaymentPaid = (payload: {
     receiptModalAmount.value = payload.amount;
     receiptPaymentId.value = payload.paymentId || null;
     receiptFiscalStatus.value = payload.fiscal_status || null;
+    receiptIsStub.value = !!payload.fiscal_status && payload.fiscal_status === 'skipped'
+        || !!(payload.fiscal_receipt_url && String(payload.fiscal_receipt_url).includes('/receipt/stub/'));
     isReceiptModalOpen.value = true;
     try {
         sessionStorage.setItem('reactor_receipt', JSON.stringify({
@@ -261,6 +264,7 @@ const handlePaymentPaid = (payload: {
             amount: receiptModalAmount.value,
             paymentId: receiptPaymentId.value,
             fiscalStatus: receiptFiscalStatus.value,
+            isStub: receiptIsStub.value,
             at: Date.now(),
         }))
     } catch { /* ignore */ }
@@ -273,6 +277,7 @@ const openTxReceipt = (tx: any) => {
     receiptModalAmount.value = tx?.amount ?? null
     receiptPaymentId.value = tx?.payment_uuid || null
     receiptFiscalStatus.value = tx?.fiscal_status || null
+    receiptIsStub.value = !!tx?.is_stub_receipt
     isReceiptModalOpen.value = true
 }
 
@@ -287,6 +292,7 @@ const restoreReceiptModal = () => {
         receiptModalAmount.value = data.amount ?? null
         receiptPaymentId.value = data.paymentId || null
         receiptFiscalStatus.value = data.fiscalStatus || null
+        receiptIsStub.value = !!data.isStub
         isReceiptModalOpen.value = true
     } catch { /* ignore */ }
 }
@@ -400,7 +406,7 @@ onMounted(() => {
                                         ? 'border-[#22c55e]/30 text-[#22c55e] hover:bg-[#22c55e]/10'
                                         : 'border-white/15 text-white/35 hover:bg-white/5'"
                                     @click="openTxReceipt(tx)"
-                                >{{ tx.has_receipt ? 'Чек' : 'Статус' }}</button>
+                                >{{ tx.has_receipt ? (tx.is_stub_receipt ? 'Чек · демо' : 'Чек') : 'Статус' }}</button>
                                 <div :class="['text-xl font-black italic font-mono tracking-tighter', tx.amount > 0 ? 'text-[#22c55e]' : 'text-white/40']">
                                     {{ tx.amount > 0 ? '+' : '' }}{{ tx.amount }} ₽
                                 </div>
@@ -607,6 +613,7 @@ onMounted(() => {
                 :amount="receiptModalAmount"
                 :payment-id="receiptPaymentId"
                 :fiscal-status="receiptFiscalStatus"
+                :is-stub="receiptIsStub"
                 @close="isReceiptModalOpen = false"
             />
         </Teleport>

@@ -25,6 +25,7 @@ type TxRow = {
     fiscal_at: string | null
     created_at: string | null
     user: TxUser | null
+    is_stub_receipt?: boolean
     can_print: boolean
 }
 
@@ -222,8 +223,9 @@ const rows = computed(() => props.transactions?.data || [])
                                     :href="tx.fiscal_receipt_url"
                                     target="_blank"
                                     rel="noopener"
-                                    class="text-[10px] text-cyan-400 uppercase font-black tracking-widest hover:underline"
-                                >Открыть</a>
+                                    class="text-[10px] uppercase font-black tracking-widest hover:underline"
+                                    :class="tx.is_stub_receipt ? 'text-amber-400' : 'text-cyan-400'"
+                                >{{ tx.is_stub_receipt ? 'Демо' : 'Открыть' }}</a>
                                 <span v-else class="text-white/20 text-[10px]">—</span>
                             </td>
                             <td class="py-4 px-3 text-right">

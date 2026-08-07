@@ -32,6 +32,7 @@ const receiptModalUrl = ref<string | null>(null)
 const receiptModalAmount = ref<number | null>(null)
 const receiptPaymentId = ref<string | null>(null)
 const receiptFiscalStatus = ref<string | null>(null)
+const receiptIsStub = ref(false)
 const localBalance = ref<number | null>(null)
 
 const saveReceiptSession = () => {
@@ -41,6 +42,7 @@ const saveReceiptSession = () => {
             amount: receiptModalAmount.value,
             paymentId: receiptPaymentId.value,
             fiscalStatus: receiptFiscalStatus.value,
+            isStub: receiptIsStub.value,
             at: Date.now(),
         }))
     } catch { /* ignore */ }
@@ -57,6 +59,7 @@ const restoreReceiptModal = () => {
         receiptModalAmount.value = data.amount ?? null
         receiptPaymentId.value = data.paymentId || null
         receiptFiscalStatus.value = data.fiscalStatus || null
+        receiptIsStub.value = !!data.isStub
         isReceiptModalOpen.value = true
     } catch { /* ignore */ }
 }
@@ -188,6 +191,8 @@ const handlePaymentPaid = (payload: {
     receiptModalAmount.value = payload.amount
     receiptPaymentId.value = payload.paymentId || null
     receiptFiscalStatus.value = payload.fiscal_status || null
+    receiptIsStub.value = payload.fiscal_status === 'skipped'
+        || !!(payload.fiscal_receipt_url && String(payload.fiscal_receipt_url).includes('/receipt/stub/'))
     isReceiptModalOpen.value = true
     saveReceiptSession()
     router.reload({
@@ -415,6 +420,7 @@ onUnmounted(() => {
                 :amount="receiptModalAmount"
                 :payment-id="receiptPaymentId"
                 :fiscal-status="receiptFiscalStatus"
+                :is-stub="receiptIsStub"
                 @close="isReceiptModalOpen = false"
             />
         </Teleport>

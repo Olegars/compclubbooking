@@ -3,14 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\Payment;
+use App\Services\FiscalService;
 use App\Services\YooKassaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class BillingController extends Controller
 {
-    public function __construct(protected YooKassaService $yookassa)
-    {
+    public function __construct(
+        protected YooKassaService $yookassa,
+        protected FiscalService $fiscal,
+    ) {
     }
 
     /**
@@ -172,14 +175,17 @@ class BillingController extends Controller
                 ->first();
         }
 
+        $receiptUrl = $tx ? $this->fiscal->displayReceiptUrl($tx) : null;
+
         return response()->json([
             'status' => 'success',
             'payment_id' => $local->uuid,
             'payment_status' => $local->status,
             'amount' => $local->amount,
             'paid' => $local->isSucceeded(),
-            'fiscal_receipt_url' => $tx?->fiscal_receipt_url,
-            'fiscal_status' => $tx?->fiscal_status,
+            'fiscal_receipt_url' => $receiptUrl,
+            'fiscal_status' => $tx?->fiscal_status ?: ($this->fiscal->isStubReceiptUrl($receiptUrl) ? 'skipped' : null),
+            'is_stub_receipt' => $this->fiscal->isStubReceiptUrl($receiptUrl),
             'transaction_id' => $tx?->id ?? $local->transaction_id,
         ]);
     }
@@ -206,14 +212,17 @@ class BillingController extends Controller
                 ->first();
         }
 
+        $receiptUrl = $tx ? $this->fiscal->displayReceiptUrl($tx) : null;
+
         return response()->json([
             'payment_id' => $local->uuid,
             'paid' => $local->isSucceeded(),
             'amount' => $local->amount,
             'transaction_id' => $tx?->id,
-            'fiscal_status' => $tx?->fiscal_status,
-            'fiscal_receipt_url' => $tx?->fiscal_receipt_url,
-            'has_receipt' => filled($tx?->fiscal_receipt_url),
+            'fiscal_status' => $tx?->fiscal_status ?: ($this->fiscal->isStubReceiptUrl($receiptUrl) ? 'skipped' : null),
+            'fiscal_receipt_url' => $receiptUrl,
+            'is_stub_receipt' => $this->fiscal->isStubReceiptUrl($receiptUrl),
+            'has_receipt' => filled($receiptUrl),
         ]);
     }
 }

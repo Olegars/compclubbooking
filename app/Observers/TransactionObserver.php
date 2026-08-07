@@ -20,10 +20,7 @@ class TransactionObserver
         }
 
         if (! $this->fiscal->isEnabled()) {
-            $transaction->forceFill([
-                'fiscal_mode' => $mode,
-                'fiscal_status' => 'skipped',
-            ])->saveQuietly();
+            $this->fiscal->markSkippedWithStub($transaction, $mode);
 
             return;
         }

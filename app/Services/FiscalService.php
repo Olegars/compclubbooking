@@ -32,6 +32,55 @@ class FiscalService
         return (bool) config('fiscal.enabled', false);
     }
 
+    public function stubReceiptUrl(Transaction $transaction): string
+    {
+        return url('/receipt/stub/'.$transaction->id);
+    }
+
+    public function isStubReceiptUrl(?string $url): bool
+    {
+        if (! is_string($url) || $url === '') {
+            return false;
+        }
+
+        return str_contains($url, '/receipt/stub/');
+    }
+
+    /**
+     * URL для показа QR: реальный ОФД или заглушка, если касса выключена / skipped.
+     */
+    public function displayReceiptUrl(Transaction $transaction): ?string
+    {
+        if (filled($transaction->fiscal_receipt_url)) {
+            return (string) $transaction->fiscal_receipt_url;
+        }
+
+        $mode = $transaction->fiscal_mode ?: $this->resolveMode($transaction);
+        if ($mode === null) {
+            return null;
+        }
+
+        if ($transaction->fiscal_status === 'skipped' || ! $this->isEnabled()) {
+            return $this->stubReceiptUrl($transaction);
+        }
+
+        return null;
+    }
+
+    /**
+     * Пометить транзакцию как пропущенную кассой и выдать URL-заглушку для QR.
+     */
+    public function markSkippedWithStub(Transaction $transaction, string $mode): void
+    {
+        $transaction->forceFill([
+            'fiscal_mode' => $mode,
+            'fiscal_status' => 'skipped',
+            'fiscal_receipt_url' => $this->stubReceiptUrl($transaction),
+            'fiscal_error' => null,
+            'fiscal_at' => now(),
+        ])->saveQuietly();
+    }
+
     /**
      * Какой режим чека нужен для транзакции (или null — не фискалить).
      */
@@ -69,7 +118,11 @@ class FiscalService
     public function registerForTransaction(Transaction $transaction): array
     {
         if (! $this->isEnabled()) {
-            return ['success' => true, 'skipped' => true, 'url' => null];
+            return [
+                'success' => true,
+                'skipped' => true,
+                'url' => $this->stubReceiptUrl($transaction),
+            ];
         }
 
         $mode = $transaction->fiscal_mode ?: $this->resolveMode($transaction);
