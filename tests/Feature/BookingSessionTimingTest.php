@@ -133,9 +133,20 @@ class BookingSessionTimingTest extends TestCase
         $result = $this->timing->activate($booking, $now);
 
         $this->assertSame(40, $result['time_remaining_minutes']);
+        $this->assertSame(40 * 60, $result['time_remaining_seconds']);
         $booking->refresh();
         $this->assertSame('active', $booking->status);
         $this->assertTrue($booking->ends_at->equalTo($now->addMinutes(40)));
+
+        // Simulate PG timestamptz re-read skew (+3h) while wall fields stay correct.
+        $booking->forceFill([
+            'starts_at' => $now->addHours(3),
+            'ends_at' => $now->addHours(3)->addMinutes(40),
+            'actual_started_at' => $now->addHours(3),
+        ])->saveQuietly();
+
+        $remaining = $this->timing->remainingSeconds($booking->fresh(), $now);
+        $this->assertEqualsWithDelta(40 * 60, $remaining, 5);
     }
 
     public function test_following_booking_forces_strict_deduction_from_start(): void

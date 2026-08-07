@@ -100,25 +100,32 @@ class BookingSessionTimingService
         $tz = config('app.timezone');
         $modernStart = CarbonImmutable::parse($booking->starts_at)->timezone($tz);
         $modernEnd = CarbonImmutable::parse($booking->ends_at)->timezone($tz);
+        $wallLen = (int) round(abs($wall['start']->diffInMinutes($wall['end'])));
+        $modernLen = (int) round(abs($modernStart->diffInMinutes($modernEnd)));
+        $startSkew = abs($modernStart->diffInMinutes($wall['start']));
+        $endSkew = abs($modernEnd->diffInMinutes($wall['end']));
 
-        // After early-start activate, wall-clock fields are rewritten to match modern.
-        // If modern start drifts from wall-clock by >2 min, trust duration-based end
-        // (same rule as ProfileController dashboard card).
-        if (abs($modernStart->diffInMinutes($wall['start'])) <= 2) {
+        // Modern window согласован с карточкой — можно брать ends_at как есть.
+        if ($startSkew <= 2 && $endSkew <= 2) {
             return $modernEnd;
         }
 
-        // Active session with intentional shift: actual_started_at set and duration ok —
-        // still prefer modern end only when it matches paid duration length.
-        if ($booking->actual_started_at) {
-            $paid = $this->paidDurationMinutes($booking);
-            $modernLen = (int) round(abs(
-                CarbonImmutable::parse($booking->actual_started_at)->timezone($tz)
-                    ->diffInMinutes($modernEnd)
-            ));
-            if (abs($modernLen - $paid) <= 2) {
-                return $modernEnd;
-            }
+        // Типичный PG/timestamptz skew (~60–240 мин): длина modern совпадает с wall/paid,
+        // но абсолютные метки сдвинуты. Wall (date+start_time+duration) — источник истины.
+        $paid = $this->paidDurationMinutes($booking, $wall['start'], $wall['end']);
+        if ($wallLen >= 1 && abs($wallLen - $paid) <= 2) {
+            return $wall['end'];
+        }
+
+        // Early/late activate без согласованного wall: восстановить от actual_started_at.
+        if ($booking->actual_started_at && $paid >= 1) {
+            return CarbonImmutable::parse($booking->actual_started_at)
+                ->timezone($tz)
+                ->addMinutes($paid);
+        }
+
+        if ($modernLen >= 1 && abs($modernLen - $paid) <= 2) {
+            return $modernEnd;
         }
 
         return $wall['end'];
@@ -493,11 +500,12 @@ class BookingSessionTimingService
         return [
             'booking' => $booking->fresh(),
             'time_remaining_minutes' => $paidMinutes,
+            'time_remaining_seconds' => $paidMinutes * 60,
         ];
     }
 
     /**
-     * @return array{booking: Booking, time_remaining_minutes: int}
+     * @return array{booking: Booking, time_remaining_minutes: int, time_remaining_seconds?: int}
      */
     private function activateOnSchedule(
         Booking $booking,
@@ -526,13 +534,14 @@ class BookingSessionTimingService
         return [
             'booking' => $fresh,
             'time_remaining_minutes' => max(0, (int) floor($this->remainingSeconds($fresh, $now) / 60)),
+            'time_remaining_seconds' => $this->remainingSeconds($fresh, $now),
         ];
     }
 
     /**
      * Late start under soft grace: set ends_at = now + remaining (may extend past card).
      *
-     * @return array{booking: Booking, time_remaining_minutes: int}
+     * @return array{booking: Booking, time_remaining_minutes: int, time_remaining_seconds?: int}
      */
     private function activateWithRemaining(
         Booking $booking,
@@ -589,6 +598,7 @@ class BookingSessionTimingService
         return [
             'booking' => $booking->fresh(),
             'time_remaining_minutes' => max(0, (int) floor($remainingSeconds / 60)),
+            'time_remaining_seconds' => max(0, $remainingSeconds),
         ];
     }
 
@@ -657,6 +667,7 @@ class BookingSessionTimingService
         return [
             'booking' => $booking->fresh(),
             'time_remaining_minutes' => $durationMinutes,
+            'time_remaining_seconds' => $durationMinutes * 60,
         ];
     }
 

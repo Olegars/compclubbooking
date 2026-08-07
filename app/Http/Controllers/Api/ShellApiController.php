@@ -167,7 +167,18 @@ class ShellApiController extends Controller
 
             $booking = $activation['booking'];
             $timing = app(BookingSessionTimingService::class);
-            $formattedTime = $timing->formatRemainingHms($booking);
+            // Prefer seconds returned by activate (avoids timestamptz re-read skew).
+            if (isset($activation['time_remaining_seconds'])) {
+                $secs = max(0, (int) $activation['time_remaining_seconds']);
+                $formattedTime = sprintf(
+                    '%02d:%02d:%02d',
+                    intdiv($secs, 3600),
+                    intdiv($secs % 3600, 60),
+                    $secs % 60
+                );
+            } else {
+                $formattedTime = $timing->formatRemainingHms($booking);
+            }
 
             // Sync legacy users.balance / wallets.balance into deposit_balance so shell matches admin.
             $balance = $user->syncBalanceToWallet();
