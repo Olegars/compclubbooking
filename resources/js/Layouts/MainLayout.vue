@@ -30,7 +30,36 @@ const sendReceipt = ref(false)
 const isReceiptModalOpen = ref(false)
 const receiptModalUrl = ref<string | null>(null)
 const receiptModalAmount = ref<number | null>(null)
+const receiptPaymentId = ref<string | null>(null)
+const receiptFiscalStatus = ref<string | null>(null)
 const localBalance = ref<number | null>(null)
+
+const saveReceiptSession = () => {
+    try {
+        sessionStorage.setItem('reactor_receipt', JSON.stringify({
+            url: receiptModalUrl.value,
+            amount: receiptModalAmount.value,
+            paymentId: receiptPaymentId.value,
+            fiscalStatus: receiptFiscalStatus.value,
+            at: Date.now(),
+        }))
+    } catch { /* ignore */ }
+}
+
+const restoreReceiptModal = () => {
+    try {
+        const raw = sessionStorage.getItem('reactor_receipt')
+        if (!raw) return
+        const data = JSON.parse(raw)
+        sessionStorage.removeItem('reactor_receipt')
+        if (!data || Date.now() - Number(data.at || 0) > 180000) return
+        receiptModalUrl.value = data.url || null
+        receiptModalAmount.value = data.amount ?? null
+        receiptPaymentId.value = data.paymentId || null
+        receiptFiscalStatus.value = data.fiscalStatus || null
+        isReceiptModalOpen.value = true
+    } catch { /* ignore */ }
+}
 
 const displayBalance = computed(() => {
     if (localBalance.value !== null) return localBalance.value
@@ -148,11 +177,19 @@ const closePaymentWidget = () => {
     paymentId.value = ''
 }
 
-const handlePaymentPaid = (payload: { paymentId: string; amount: number; fiscal_receipt_url?: string | null }) => {
+const handlePaymentPaid = (payload: {
+    paymentId: string
+    amount: number
+    fiscal_receipt_url?: string | null
+    fiscal_status?: string | null
+}) => {
     closePaymentWidget()
     receiptModalUrl.value = payload.fiscal_receipt_url || null
     receiptModalAmount.value = payload.amount
+    receiptPaymentId.value = payload.paymentId || null
+    receiptFiscalStatus.value = payload.fiscal_status || null
     isReceiptModalOpen.value = true
+    saveReceiptSession()
     router.reload({
         only: ['auth', 'transactions'],
         preserveScroll: true,
@@ -211,6 +248,7 @@ const triggerRoll = async () => {
 }
 
 onMounted(() => {
+    restoreReceiptModal()
     setTimeout(() => { triggerRoll() }, 500)
 })
 
@@ -375,6 +413,8 @@ onUnmounted(() => {
                 :is-open="isReceiptModalOpen"
                 :receipt-url="receiptModalUrl"
                 :amount="receiptModalAmount"
+                :payment-id="receiptPaymentId"
+                :fiscal-status="receiptFiscalStatus"
                 @close="isReceiptModalOpen = false"
             />
         </Teleport>

@@ -57,12 +57,14 @@ class ProfileController extends Controller
 
                 return [
                     'id' => $t->id,
+                    'type' => $t->type,
                     'amount' => (float) $t->amount,
                     'description' => $description,
                     'games' => $titles->all(),
                     'date' => $t->created_at->format('d.m / H:i'),
                     'fiscal_receipt_url' => $t->fiscal_receipt_url,
                     'fiscal_status' => $t->fiscal_status,
+                    'payment_uuid' => data_get($t->payload, 'payment_uuid'),
                     'has_receipt' => filled($t->fiscal_receipt_url),
                 ];
             });

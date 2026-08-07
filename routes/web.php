@@ -92,6 +92,8 @@ Route::get('/billing/yookassa/widget/{payment}', [BillingController::class, 'wid
     ->name('billing.yookassa.widget');
 Route::post('/api/billing/yookassa/sync/{payment}', [BillingController::class, 'sync'])
     ->name('billing.yookassa.sync');
+Route::get('/api/billing/yookassa/receipt/{payment}', [BillingController::class, 'receiptByPayment'])
+    ->name('billing.yookassa.receipt');
 
 /*
 |--------------------------------------------------------------------------

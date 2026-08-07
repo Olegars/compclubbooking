@@ -27,8 +27,21 @@ return [
     ],
 
     /*
-    | Источники deposit, по которым бьём аванс (реальные деньги клиента).
-    | Бонусы / промо / ачивки пропускаем.
+    | Источники deposit, по которым НЕ бьём аванс (бонусы / промо).
+    | Все остальные положительные deposit (карта, СБП, ЮMoney, cash…) → аванс.
+    */
+    'skip_advance_sources' => [
+        'bonus',
+        'promo',
+        'achievement',
+        'referral',
+        'gift',
+        'fantiki',
+        'admin_bonus',
+    ],
+
+    /*
+    | @deprecated — оставлен для совместимости; приоритет у skip_advance_sources.
     */
     'advance_sources' => [
         'card',

@@ -42,12 +42,14 @@ class FiscalService
         $amount = (float) $transaction->amount;
 
         if ($type === 'deposit' && $amount > 0) {
-            $allowed = array_map('strtolower', config('fiscal.advance_sources', []));
-            if (in_array($source, $allowed, true)) {
-                return self::MODE_ADVANCE;
+            $skip = array_map('strtolower', config('fiscal.skip_advance_sources', [
+                'bonus', 'promo', 'achievement', 'referral', 'gift', 'fantiki', 'admin_bonus',
+            ]));
+            if (in_array($source, $skip, true)) {
+                return null;
             }
 
-            return null;
+            return self::MODE_ADVANCE;
         }
 
         if ($amount < 0 && in_array($type, config('fiscal.settlement_types', []), true)) {

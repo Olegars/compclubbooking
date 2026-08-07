@@ -179,7 +179,41 @@ class BillingController extends Controller
             'amount' => $local->amount,
             'paid' => $local->isSucceeded(),
             'fiscal_receipt_url' => $tx?->fiscal_receipt_url,
+            'fiscal_status' => $tx?->fiscal_status,
             'transaction_id' => $tx?->id ?? $local->transaction_id,
+        ]);
+    }
+
+    /**
+     * Поллинг ссылки на чек после оплаты (Success Screen / лог).
+     */
+    public function receiptByPayment(string $payment)
+    {
+        $local = Payment::query()->where('uuid', $payment)->firstOrFail();
+
+        $tx = null;
+        if ($local->transaction_id) {
+            $tx = \App\Models\Transaction::query()->find($local->transaction_id);
+        }
+        if (! $tx) {
+            $tx = \App\Models\Transaction::query()
+                ->where(function ($q) use ($local) {
+                    $key = 'yookassa:'.($local->provider_payment_id ?: $local->uuid);
+                    $q->where('idempotency_key', $key)
+                        ->orWhere('payload->payment_uuid', $local->uuid);
+                })
+                ->latest('id')
+                ->first();
+        }
+
+        return response()->json([
+            'payment_id' => $local->uuid,
+            'paid' => $local->isSucceeded(),
+            'amount' => $local->amount,
+            'transaction_id' => $tx?->id,
+            'fiscal_status' => $tx?->fiscal_status,
+            'fiscal_receipt_url' => $tx?->fiscal_receipt_url,
+            'has_receipt' => filled($tx?->fiscal_receipt_url),
         ]);
     }
 }

@@ -130,6 +130,8 @@ const sendReceipt = ref(false)
 const isReceiptModalOpen = ref(false)
 const receiptModalUrl = ref<string | null>(null)
 const receiptModalAmount = ref<number | null>(null)
+const receiptPaymentId = ref<string | null>(null)
+const receiptFiscalStatus = ref<string | null>(null)
 const isReviewSubmitting = ref(false)
 const isGameRequestSubmitting = ref(false)
 const topUpAmount = ref(500)
@@ -241,23 +243,56 @@ const closePaymentWidget = () => {
     paymentId.value = '';
 }
 
-const handlePaymentPaid = (payload: { paymentId: string; amount: number; fiscal_receipt_url?: string | null }) => {
+const handlePaymentPaid = (payload: {
+    paymentId: string
+    amount: number
+    fiscal_receipt_url?: string | null
+    fiscal_status?: string | null
+}) => {
     closePaymentWidget();
     receiptModalUrl.value = payload.fiscal_receipt_url || null;
     receiptModalAmount.value = payload.amount;
+    receiptPaymentId.value = payload.paymentId || null;
+    receiptFiscalStatus.value = payload.fiscal_status || null;
     isReceiptModalOpen.value = true;
+    try {
+        sessionStorage.setItem('reactor_receipt', JSON.stringify({
+            url: receiptModalUrl.value,
+            amount: receiptModalAmount.value,
+            paymentId: receiptPaymentId.value,
+            fiscalStatus: receiptFiscalStatus.value,
+            at: Date.now(),
+        }))
+    } catch { /* ignore */ }
     fetchDashboardData();
     router.reload({ only: ['auth', 'transactions'], preserveScroll: true });
 }
 
 const openTxReceipt = (tx: any) => {
-    if (!tx?.fiscal_receipt_url) return
-    receiptModalUrl.value = tx.fiscal_receipt_url
-    receiptModalAmount.value = tx.amount
+    receiptModalUrl.value = tx?.fiscal_receipt_url || null
+    receiptModalAmount.value = tx?.amount ?? null
+    receiptPaymentId.value = tx?.payment_uuid || null
+    receiptFiscalStatus.value = tx?.fiscal_status || null
     isReceiptModalOpen.value = true
 }
 
+const restoreReceiptModal = () => {
+    try {
+        const raw = sessionStorage.getItem('reactor_receipt')
+        if (!raw) return
+        const data = JSON.parse(raw)
+        sessionStorage.removeItem('reactor_receipt')
+        if (!data || Date.now() - Number(data.at || 0) > 180000) return
+        receiptModalUrl.value = data.url || null
+        receiptModalAmount.value = data.amount ?? null
+        receiptPaymentId.value = data.paymentId || null
+        receiptFiscalStatus.value = data.fiscalStatus || null
+        isReceiptModalOpen.value = true
+    } catch { /* ignore */ }
+}
+
 onMounted(() => {
+    restoreReceiptModal()
     const b = getRawBalance();
     currentBalance.value = b;
     displayBalance.value = b;
@@ -358,11 +393,14 @@ onMounted(() => {
                             </div>
                             <div class="flex items-center gap-4 shrink-0">
                                 <button
-                                    v-if="tx.has_receipt"
+                                    v-if="tx.has_receipt || tx.fiscal_status || tx.type === 'deposit'"
                                     type="button"
-                                    class="px-3 py-2 rounded-xl border border-[#22c55e]/30 text-[#22c55e] text-[9px] font-black uppercase tracking-widest hover:bg-[#22c55e]/10 transition-colors"
+                                    class="px-3 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-colors"
+                                    :class="tx.has_receipt
+                                        ? 'border-[#22c55e]/30 text-[#22c55e] hover:bg-[#22c55e]/10'
+                                        : 'border-white/15 text-white/35 hover:bg-white/5'"
                                     @click="openTxReceipt(tx)"
-                                >Чек</button>
+                                >{{ tx.has_receipt ? 'Чек' : 'Статус' }}</button>
                                 <div :class="['text-xl font-black italic font-mono tracking-tighter', tx.amount > 0 ? 'text-[#22c55e]' : 'text-white/40']">
                                     {{ tx.amount > 0 ? '+' : '' }}{{ tx.amount }} ₽
                                 </div>
@@ -567,6 +605,8 @@ onMounted(() => {
                 :is-open="isReceiptModalOpen"
                 :receipt-url="receiptModalUrl"
                 :amount="receiptModalAmount"
+                :payment-id="receiptPaymentId"
+                :fiscal-status="receiptFiscalStatus"
                 @close="isReceiptModalOpen = false"
             />
         </Teleport>

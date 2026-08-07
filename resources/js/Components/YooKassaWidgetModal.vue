@@ -17,7 +17,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     close: []
-    paid: [payload: { paymentId: string; amount: number; fiscal_receipt_url?: string | null }]
+    paid: [payload: {
+        paymentId: string
+        amount: number
+        fiscal_receipt_url?: string | null
+        fiscal_status?: string | null
+    }]
 }>()
 
 const WIDGET_SCRIPT = 'https://yookassa.ru/checkout-widget/v1/checkout-widget.js'
@@ -80,6 +85,7 @@ const syncUntilPaid = async () => {
             const { data } = await axios.post(`/api/billing/yookassa/sync/${props.paymentId}`)
             if (data.paid) {
                 let receiptUrl = data.fiscal_receipt_url || null
+                let fiscalStatus = data.fiscal_status || null
                 // Фискализация идёт очередью — чуть подождём URL чека.
                 for (let wait = 0; wait < 8 && !receiptUrl; wait++) {
                     await new Promise(resolve => setTimeout(resolve, 700))
@@ -87,6 +93,8 @@ const syncUntilPaid = async () => {
                     try {
                         const again = await axios.post(`/api/billing/yookassa/sync/${props.paymentId}`)
                         receiptUrl = again.data?.fiscal_receipt_url || null
+                        fiscalStatus = again.data?.fiscal_status || fiscalStatus
+                        if (fiscalStatus === 'skipped' || fiscalStatus === 'error') break
                     } catch {
                         // ignore
                     }
@@ -96,6 +104,7 @@ const syncUntilPaid = async () => {
                     paymentId: props.paymentId,
                     amount: props.amount,
                     fiscal_receipt_url: receiptUrl,
+                    fiscal_status: fiscalStatus,
                 })
                 return
             }

@@ -1,22 +1,32 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import axios from 'axios'
 
 const props = defineProps<{
     isOpen: boolean
     receiptUrl: string | null
     amount?: number | null
     title?: string
-    autoCloseSec?: number | null
+    /** payment uuid — дотягиваем URL чека, если касса ответила позже */
+    paymentId?: string | null
+    fiscalStatus?: string | null
 }>()
 
 const emit = defineEmits<{
     close: []
 }>()
 
+const liveUrl = ref<string | null>(null)
+const liveStatus = ref<string | null>(null)
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+const effectiveUrl = computed(() => liveUrl.value || props.receiptUrl || null)
+const effectiveStatus = computed(() => liveStatus.value || props.fiscalStatus || null)
+
 const qrSrc = computed(() => {
-    if (!props.receiptUrl) return null
+    if (!effectiveUrl.value) return null
     return 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&data='
-        + encodeURIComponent(props.receiptUrl)
+        + encodeURIComponent(effectiveUrl.value)
 })
 
 const amountText = computed(() => {
@@ -24,6 +34,63 @@ const amountText = computed(() => {
     const n = Number(props.amount)
     return `${n > 0 ? '+' : ''}${Math.round(n)} ₽`
 })
+
+const statusHint = computed(() => {
+    if (qrSrc.value) return null
+    const s = effectiveStatus.value
+    if (s === 'skipped') {
+        return 'Оплата прошла. Электронный чек пока недоступен — касса на сервере выключена. После включения QR появится в логе транзакций.'
+    }
+    if (s === 'error') {
+        return 'Оплата прошла, но касса вернула ошибку. Чек появится в логе транзакций после исправления.'
+    }
+    if (s === 'pending' || props.paymentId) {
+        return 'Оплата прошла. Формируем электронный чек…'
+    }
+    return 'Оплата прошла. Чек можно открыть позже в логе транзакций.'
+})
+
+const stopPoll = () => {
+    if (pollTimer) {
+        clearInterval(pollTimer)
+        pollTimer = null
+    }
+}
+
+const pollOnce = async () => {
+    if (!props.paymentId) return
+    try {
+        const { data } = await axios.get(`/api/billing/yookassa/receipt/${props.paymentId}`)
+        if (data.fiscal_status) liveStatus.value = data.fiscal_status
+        if (data.fiscal_receipt_url) {
+            liveUrl.value = data.fiscal_receipt_url
+            stopPoll()
+        }
+        if (data.fiscal_status === 'skipped' || data.fiscal_status === 'error' || data.fiscal_status === 'success') {
+            if (data.fiscal_status !== 'success' || data.fiscal_receipt_url) stopPoll()
+        }
+    } catch {
+        // ignore
+    }
+}
+
+const startPoll = () => {
+    stopPoll()
+    liveUrl.value = props.receiptUrl
+    liveStatus.value = props.fiscalStatus
+    if (!props.isOpen || !props.paymentId) return
+    if (props.receiptUrl) return
+    void pollOnce()
+    pollTimer = setInterval(() => { void pollOnce() }, 1500)
+    setTimeout(() => stopPoll(), 45000)
+}
+
+watch(() => [props.isOpen, props.paymentId, props.receiptUrl], () => {
+    if (props.isOpen) startPoll()
+    else stopPoll()
+}, { immediate: true })
+
+onBeforeUnmount(stopPoll)
 </script>
 
 <template>
@@ -45,13 +112,13 @@ const amountText = computed(() => {
                 <div v-if="qrSrc" class="mx-auto w-[240px] h-[240px] bg-white rounded-2xl p-3 mb-6">
                     <img :src="qrSrc" alt="QR чека" class="w-full h-full object-contain" />
                 </div>
-                <div v-else class="mb-6 text-white/30 text-[11px] uppercase tracking-widest font-black italic py-10">
-                    Чек формируется… откройте позже в логе транзакций
+                <div v-else class="mb-6 text-white/45 text-[11px] uppercase tracking-widest font-black italic py-8 px-2 leading-relaxed">
+                    {{ statusHint }}
                 </div>
 
                 <a
-                    v-if="receiptUrl"
-                    :href="receiptUrl"
+                    v-if="effectiveUrl"
+                    :href="effectiveUrl"
                     target="_blank"
                     rel="noopener"
                     class="block text-[10px] text-cyan-400/80 hover:text-cyan-400 uppercase font-black tracking-widest mb-8 break-all"
@@ -66,9 +133,6 @@ const amountText = computed(() => {
                 >
                     Готово
                 </button>
-                <p v-if="autoCloseSec" class="mt-4 text-[9px] text-white/20 uppercase tracking-widest">
-                    Автозакрытие ~{{ autoCloseSec }} с
-                </p>
             </div>
         </div>
     </Teleport>

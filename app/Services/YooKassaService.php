@@ -257,11 +257,12 @@ class YooKassaService
         $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id]);
         $wallet->creditSpendable((float) $payment->amount);
 
+        // Источник должен попадать в config('fiscal.advance_sources'), иначе чек аванса не создаётся.
         $remoteMethod = $remote->getPaymentMethod()?->getType();
         $source = match ($remoteMethod) {
-            'bank_card' => 'card',
             'sbp' => 'sbp',
-            default => $remoteMethod ?: ($payment->method === 'sbp' ? 'sbp' : 'card'),
+            'bank_card', 'yoo_money', 'sberbank', 'tinkoff_bank', 'mir_pay', 'sber_loan' => 'card',
+            default => $payment->method === 'sbp' ? 'sbp' : 'yookassa',
         };
 
         $transaction = Transaction::create([
