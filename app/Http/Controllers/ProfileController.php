@@ -11,7 +11,10 @@ use App\Models\Order;
 use Carbon\Carbon;
 use App\Models\ReviewClaim;
 use App\Services\AchievementService;
+use App\Services\BookingSessionTimingService;
 use App\Services\FiscalService;
+use App\Services\GameBookingService;
+use Carbon\CarbonImmutable;
 
 class ProfileController extends Controller
 {
@@ -75,7 +78,11 @@ class ProfileController extends Controller
                 ];
             });
 
-        // 4. Активные бронирования (ЛОГИКА ИСПРАВЛЕНА)
+        // 4. Активные бронирования (включая опоздание в soft-grace окне)
+        $timing = app(BookingSessionTimingService::class);
+        $bookingService = app(GameBookingService::class);
+        $nowImmutable = CarbonImmutable::instance($now->copy()->timezone(config('app.timezone')));
+
         $activeBookings = Booking::where('user_id', $user->id)
             ->with([
                 'computer:id,name',
@@ -85,7 +92,7 @@ class ProfileController extends Controller
             ->whereIn('status', ['active', 'paid', 'confirmed', 'new'])
             ->where('date', '>=', $yesterday)
             ->get()
-            ->map(function ($booking) use ($now) {
+            ->map(function ($booking) use ($nowImmutable, $timing, $bookingService) {
                 $tz = config('app.timezone');
                 $startTime = (float) $booking->start_time;
                 $duration = (float) $booking->duration;
@@ -110,6 +117,31 @@ class ProfileController extends Controller
                         $startDateTime = $modernStart;
                         $endDateTime = $modernEnd;
                     }
+                }
+
+                $scheduledStart = CarbonImmutable::instance($startDateTime);
+                $scheduledEnd = CarbonImmutable::instance($endDateTime);
+                $paidMinutes = $timing->paidDurationMinutes($booking, $scheduledStart, $scheduledEnd);
+                $started = filled($booking->actual_started_at);
+                $waiting = $nowImmutable->lt($scheduledStart);
+
+                if ($started) {
+                    $remainingSeconds = $timing->remainingSeconds($booking, $nowImmutable);
+                    $isOverdue = false;
+                } elseif ($waiting) {
+                    $remainingSeconds = $paidMinutes * 60;
+                    $isOverdue = false;
+                } else {
+                    $following = $timing->hasFollowingBookingConflict(
+                        $booking,
+                        $scheduledStart,
+                        $scheduledEnd,
+                        $paidMinutes
+                    );
+                    $remainingSeconds = $following
+                        ? max(0, (int) floor($nowImmutable->diffInSeconds($scheduledEnd, false)))
+                        : $timing->softGraceRemainingSeconds($scheduledStart, $paidMinutes, $nowImmutable);
+                    $isOverdue = $remainingSeconds > 0;
                 }
 
                 // Обрабатываем pc_ids (Postgres часто отдает строку вместо массива)
@@ -138,18 +170,32 @@ class ProfileController extends Controller
                 }
                 $titles = array_values(array_unique($titles));
 
-                // Добавляем вычисленные поля для фронтенда
-                $booking->end_timestamp = $endDateTime->getTimestamp() * 1000;
-                $booking->is_expired = $now->greaterThan($endDateTime);
+                $effectiveEndMs = $waiting
+                    ? $scheduledEnd->getTimestamp() * 1000
+                    : ($nowImmutable->getTimestamp() + $remainingSeconds) * 1000;
+
+                $booking->end_timestamp = $effectiveEndMs;
+                $booking->start_timestamp = $scheduledStart->getTimestamp() * 1000;
+                $booking->remaining_seconds = $remainingSeconds;
+                $booking->is_overdue = $isOverdue;
+                $booking->is_started = $started;
+                $booking->is_expired = $remainingSeconds <= 0 && ! $waiting;
                 $booking->formatted_pc = $pcLabel;
-                $booking->games_titles = $titles;
-                $booking->games_label = implode(', ', $titles);
-                $booking->display_start = $startDateTime->format('H:i');
-                $booking->display_end = $endDateTime->format('H:i');
+                $booking->game_titles = $titles;
+                $booking->game_label = implode(', ', $titles);
+                $booking->display_start = $scheduledStart->format('H:i');
+                $booking->display_end = $scheduledEnd->format('H:i');
+
+                $group = $booking->group;
+                $canCancel = $group ? $bookingService->canUserCancel($group, $nowImmutable) : false;
+                $cancelDeadline = $group ? $bookingService->cancelDeadlineFor($group) : null;
+                $booking->can_cancel = $canCancel;
+                $booking->cancel_deadline_at = $cancelDeadline?->toIso8601String();
+                $booking->cancel_before_minutes = $bookingService->cancelBeforeMinutes();
 
                 return $booking;
             })
-            // Оставляем только те, что еще не закончились
+            // Будущие + идущие + опоздание, пока ещё можно войти
             ->filter(fn ($b) => ! $b->is_expired)
             ->values();
 

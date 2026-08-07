@@ -158,6 +158,11 @@ const shiftLabel = computed(() => {
                           :class="isActive('/admin/tariffs') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>🏷️</span> Тарифы и пакеты
                     </Link>
+                    <Link href="/admin/booking-settings"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/booking-settings') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>⏱️</span> Правила брони
+                    </Link>
                     <Link href="/admin/analytics"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/analytics') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">

@@ -391,6 +391,63 @@ class UnifiedGameBookingTest extends TestCase
         $this->assertSame(1, Transaction::where('booking_group_id', $groupId)->where('type', 'refund')->count());
     }
 
+    public function test_cancellation_blocked_inside_cancel_before_window(): void
+    {
+        \App\Models\ClubBookingSetting::current()->update([
+            'cancel_before_minutes' => 120,
+        ]);
+
+        $computer = $this->createComputer();
+        $this->fundWallet(500);
+
+        $startsAt = CarbonImmutable::now()->addMinutes(60);
+        $endsAt = $startsAt->addHour();
+
+        $reserveResponse = $this->actingAs($this->user)->postJson('/api/booking/reserve', [
+            'club_id' => $this->club->id,
+            'pc_ids' => [$computer->id],
+            'starts_at' => $startsAt->toIso8601String(),
+            'ends_at' => $endsAt->toIso8601String(),
+        ])->assertCreated();
+
+        $groupId = $reserveResponse->json('booking_group_id');
+
+        $this->postJson("/api/booking/{$groupId}/cancel")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['booking']);
+
+        $this->assertDatabaseHas('booking_groups', [
+            'id' => $groupId,
+            'status' => 'confirmed',
+        ]);
+    }
+
+    public function test_cancellation_allowed_outside_cancel_before_window(): void
+    {
+        \App\Models\ClubBookingSetting::current()->update([
+            'cancel_before_minutes' => 120,
+        ]);
+
+        $computer = $this->createComputer();
+        $this->fundWallet(500);
+
+        $startsAt = CarbonImmutable::now()->addHours(5);
+        $endsAt = $startsAt->addHour();
+
+        $reserveResponse = $this->actingAs($this->user)->postJson('/api/booking/reserve', [
+            'club_id' => $this->club->id,
+            'pc_ids' => [$computer->id],
+            'starts_at' => $startsAt->toIso8601String(),
+            'ends_at' => $endsAt->toIso8601String(),
+        ])->assertCreated();
+
+        $groupId = $reserveResponse->json('booking_group_id');
+
+        $this->postJson("/api/booking/{$groupId}/cancel")
+            ->assertOk()
+            ->assertJsonPath('booking_status', 'cancelled');
+    }
+
     public function test_postgresql_rejects_overlapping_reservations_for_the_same_account(): void
     {
         if (DB::getDriverName() !== 'pgsql') {

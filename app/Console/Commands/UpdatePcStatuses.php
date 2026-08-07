@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use App\Services\BookingSessionTimingService;
 use App\Services\ComputerPowerService;
 use App\Services\ComputerStatusService;
+use App\Services\FiscalService;
 
 class UpdatePcStatuses extends Command
 {
@@ -16,6 +17,7 @@ class UpdatePcStatuses extends Command
         BookingSessionTimingService $timing,
         ComputerStatusService $statuses,
         ComputerPowerService $power,
+        FiscalService $fiscal,
     ) {
         $noShows = $timing->cancelNoShows();
         if ($noShows > 0) {
@@ -25,6 +27,11 @@ class UpdatePcStatuses extends Command
         $closed = $timing->completeExpiredSessions();
         if ($closed > 0) {
             $this->info('Закрыто просроченных сессий: '.$closed);
+        }
+
+        $orphaned = $fiscal->settleOrphanedDeferredBookings();
+        if ($orphaned > 0) {
+            $this->info('Закрыто отложенных чеков (no-show/просрочка): '.$orphaned);
         }
 
         // Страховка: статусы уже пишутся синхронно при старте/закрытии сессии,

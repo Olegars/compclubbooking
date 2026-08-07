@@ -57,6 +57,9 @@ return [
     */
     'booking' => [
         'late_start_grace_minutes' => (int) env('CLUB_LATE_START_GRACE_MINUTES', 30),
+        // Самоотмена гостем с возвратом: не позднее чем за N минут до starts_at.
+        // Редактируется в админке (/admin/booking-settings); env — только дефолт для первого ряда.
+        'cancel_before_minutes' => (int) env('CLUB_CANCEL_BEFORE_MINUTES', 120),
     ],
 
     /*

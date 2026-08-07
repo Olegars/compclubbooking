@@ -319,7 +319,8 @@ class BookingSessionTimingService
     }
 
     /**
-     * Закрывает брони, у которых ends_at уже прошёл (или legacy-окно истекло).
+     * Закрывает активированные сессии, у которых ends_at уже прошёл (или legacy-окно истекло).
+     * Неначатые confirmed/paid сюда не попадают — их снимает cancelNoShows (с settle чека).
      * Возвращает число закрытых booking id.
      */
     public function completeExpiredSessions(?CarbonImmutable $now = null): int
@@ -332,8 +333,10 @@ class BookingSessionTimingService
 
         // Eloquent where('ends_at', '<=', $now) на timestamptz в PG даёт ложные промахи —
         // сравниваем через ::timestamptz.
+        // Только реально начатые сессии: иначе soft-grace / no-show + fiscal settle ломаются.
         $expiredIds = Booking::query()
-            ->whereIn('status', ['confirmed', 'active'])
+            ->where('status', 'active')
+            ->whereNotNull('actual_started_at')
             ->where(function ($query) use ($nowIso, $today, $nowH) {
                 $query->where(function ($modern) use ($nowIso) {
                     $modern->whereNotNull('ends_at')
@@ -347,7 +350,18 @@ class BookingSessionTimingService
             ->pluck('id');
 
         if ($expiredIds->isEmpty()) {
-            return 0;
+            // Legacy active без modern window / actual_started_at
+            $legacyClosed = Booking::query()
+                ->whereNull('starts_at')
+                ->where('date', '<=', $today)
+                ->where('status', 'active')
+                ->whereRaw('(start_time + duration) <= ?', [$nowH])
+                ->update([
+                    'status' => 'completed',
+                    'actual_ended_at' => $now,
+                ]);
+
+            return (int) $legacyClosed;
         }
 
         $expiredBookings = Booking::query()->whereIn('id', $expiredIds)->get();
@@ -383,10 +397,19 @@ class BookingSessionTimingService
                 'actual_ended_at' => $now,
             ]);
 
-        BookingGroup::query()
-            ->whereIn('status', ['confirmed', 'active'])
-            ->whereRaw('ends_at <= ?::timestamptz', [$nowIso])
-            ->update(['status' => 'completed']);
+        $groupIds = $expiredBookings->pluck('booking_group_id')->filter()->unique()->values();
+        foreach ($groupIds as $groupId) {
+            $open = Booking::query()
+                ->where('booking_group_id', $groupId)
+                ->whereIn('status', ['confirmed', 'paid', 'active', 'pending', 'pending_payment'])
+                ->exists();
+            if (! $open) {
+                BookingGroup::query()
+                    ->whereKey($groupId)
+                    ->whereIn('status', ['confirmed', 'active'])
+                    ->update(['status' => 'completed']);
+            }
+        }
 
         $this->computerStatuses->syncFor($expiredBookings->pluck('computer_id'), $now);
 
@@ -668,22 +691,25 @@ class BookingSessionTimingService
         $this->computerStatuses->syncFor((int) $booking->computer_id, $now);
 
         $group = $booking->group;
-        if (! $group) {
-            return;
+        $groupId = (int) ($booking->booking_group_id ?: 0);
+
+        if ($group) {
+            $open = $group->bookings()
+                ->whereIn('status', ['confirmed', 'paid', 'active', 'pending', 'pending_payment'])
+                ->exists();
+
+            if (! $open) {
+                $group->update([
+                    'status' => 'cancelled',
+                    'cancelled_at' => $now,
+                ]);
+            } else {
+                $groupId = 0;
+            }
         }
 
-        $open = $group->bookings()
-            ->whereIn('status', ['confirmed', 'paid', 'active', 'pending', 'pending_payment'])
-            ->exists();
-
-        if (! $open) {
-            $group->update([
-                'status' => 'cancelled',
-                'cancelled_at' => $now,
-            ]);
-
-            // Оплата удержана (нет возврата) — закрываем отложенный чек.
-            $groupId = (int) $group->id;
+        // Оплата удержана (нет возврата) — закрываем отложенный чек.
+        if ($groupId > 0) {
             DB::afterCommit(function () use ($groupId) {
                 try {
                     app(FiscalService::class)->settleDeferredForBookingGroup($groupId);
@@ -697,7 +723,7 @@ class BookingSessionTimingService
 
         Log::info('Booking no-show cancelled', [
             'booking_id' => $booking->id,
-            'booking_group_id' => $group->id,
+            'booking_group_id' => $booking->booking_group_id,
             'computer_id' => $booking->computer_id,
         ]);
     }

@@ -43,6 +43,7 @@ use App\Http\Controllers\Admin\PromoCodeAdminController;
 use App\Http\Controllers\Admin\AchievementAdminController;
 use App\Http\Controllers\Admin\OverlayAdminController;
 use App\Http\Controllers\Admin\VideoSurveillanceController;
+use App\Http\Controllers\Admin\BookingSettingsController;
 use App\Http\Controllers\Admin\SystemDocsController;
 use App\Http\Controllers\Admin\GameRequestAdminController;
 use App\Http\Controllers\Admin\AnalyticsController;
@@ -260,6 +261,9 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::post('/video-surveillance/events', [VideoSurveillanceController::class, 'storeEvent']);
         Route::put('/video-surveillance/events/{event}', [VideoSurveillanceController::class, 'updateEvent']);
         Route::delete('/video-surveillance/events/{event}', [VideoSurveillanceController::class, 'destroyEvent']);
+
+        Route::get('/booking-settings', [BookingSettingsController::class, 'index'])->name('admin.booking-settings');
+        Route::post('/booking-settings', [BookingSettingsController::class, 'update']);
 
         Route::prefix('api')->group(function () {
             Route::post('/incidents/{id}/resolve', [AdminController::class, 'resolveIncident']);

@@ -266,6 +266,44 @@ class FiscalService
         }
     }
 
+    /**
+     * Дозакрыть deferred-чеки броней, у которых уже нет открытых booking
+     * (completed/cancelled без входа — типичный зависший «После входа»).
+     */
+    public function settleOrphanedDeferredBookings(): int
+    {
+        $groupIds = Transaction::query()
+            ->where('fiscal_status', 'deferred')
+            ->whereIn('type', config('fiscal.deferred_settlement_types', ['booking', 'booking_upgrade']))
+            ->whereNotNull('booking_group_id')
+            ->pluck('booking_group_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->filter()
+            ->values();
+
+        if ($groupIds->isEmpty()) {
+            return 0;
+        }
+
+        $settled = 0;
+        foreach ($groupIds as $groupId) {
+            $open = \App\Models\Booking::query()
+                ->where('booking_group_id', $groupId)
+                ->whereIn('status', ['confirmed', 'paid', 'active', 'pending', 'pending_payment'])
+                ->exists();
+
+            if ($open) {
+                continue;
+            }
+
+            $results = $this->settleDeferredForBookingGroup($groupId);
+            $settled += count($results);
+        }
+
+        return $settled;
+    }
+
     protected function enrichBookingSettlementDescription(Transaction $transaction, ?\App\Models\Booking $booking): void
     {
         if (! $booking) {

@@ -64,16 +64,23 @@ const formatStartTime = (timeH: number | string) => {
 }
 
 const getRemainingTime = (b: any) => {
-    // Используем end_timestamp, который мы посчитали в контроллере
-    const endMs = b.end_timestamp || 0;
+    const endMs = b.end_timestamp || 0
+    const startMs = b.start_timestamp
+        || (() => {
+            const startH = Number(b.start_time)
+            const baseDate = new Date(b.date)
+            return new Date(
+                baseDate.getFullYear(),
+                baseDate.getMonth(),
+                baseDate.getDate(),
+                Math.floor(startH),
+                Math.round((startH % 1) * 60),
+            ).getTime()
+        })()
     const now = currentTime.value
 
-    // Если время старта еще не наступило (для будущих броней)
-    const startH = Number(b.start_time)
-    const baseDate = new Date(b.date)
-    const startMs = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), Math.floor(startH), Math.round((startH % 1) * 60)).getTime()
-
     if (now < startMs) return 'ОЖИДАНИЕ'
+    if (b.is_overdue && !b.is_started) return 'ПРОСРОЧЕНО'
 
     const diff = endMs - now
     if (diff <= 0) return '00:00:00'
@@ -84,18 +91,53 @@ const getRemainingTime = (b: any) => {
     return `${h}:${m}:${s}`
 }
 
+const bookingTimeClass = (b: any) => {
+    const label = getRemainingTime(b)
+    if (label === 'ОЖИДАНИЕ') return 'text-yellow-500 text-xl mt-2'
+    if (label === 'ПРОСРОЧЕНО' || label === '00:00:00') return 'text-red-500 text-xl mt-2'
+    return 'text-[#22c55e]'
+}
+
 const transactions = computed(() => {
     return (page.props.transactions as any[]) || [];
 })
 
-// Фильтруем брони: если время вышло — скрываем карточку в реальном времени
+// Фильтруем брони: скрываем, когда эффективное время истекло
 const activeBookings = computed(() => {
     const raw = (page.props.active_bookings as any[]) || [];
     return raw.filter(b => {
+        if (b.is_overdue && !b.is_started) {
+            const endMs = b.end_timestamp || 0
+            return currentTime.value < endMs
+        }
         const endMs = b.end_timestamp || 0;
+        const startMs = b.start_timestamp || 0
+        if (startMs && currentTime.value < startMs) return true
         return currentTime.value < endMs;
     });
 })
+
+const cancelError = ref('')
+const cancellingBookingId = ref<number | null>(null)
+
+const cancelBooking = async (b: any) => {
+    if (!b?.booking_group_id || !b.can_cancel || cancellingBookingId.value) return
+    if (!confirm('Отменить бронь? Средства вернутся на баланс.')) return
+
+    cancellingBookingId.value = b.id
+    cancelError.value = ''
+    try {
+        await axios.post(`/api/booking/${b.booking_group_id}/cancel`)
+        fetchDashboardData()
+    } catch (e: any) {
+        const msg = e.response?.data?.message
+            || e.response?.data?.errors?.booking?.[0]
+            || 'Не удалось отменить бронь'
+        cancelError.value = msg
+    } finally {
+        cancellingBookingId.value = null
+    }
+}
 
 const fetchDashboardData = () => {
     router.reload({
@@ -347,8 +389,28 @@ onMounted(() => {
                 </div>
 
                 <div v-if="activeBookings.length > 0" class="space-y-4">
-                    <div v-for="b in activeBookings" :key="b.id" class="bg-[#0a0a0a] border border-[#3b82f6]/40 rounded-[1rem] p-8 relative overflow-hidden group hover:border-[#3b82f6] transition-colors">
-                        <div class="absolute inset-0 bg-gradient-to-r from-[#3b82f6]/5 to-transparent pointer-events-none"></div>
+                    <div
+                        v-for="b in activeBookings"
+                        :key="b.id"
+                        class="bg-[#0a0a0a] border rounded-[1rem] p-8 relative overflow-hidden group transition-colors"
+                        :class="b.is_overdue && !b.is_started
+                            ? 'border-red-500/50 hover:border-red-500'
+                            : 'border-[#3b82f6]/40 hover:border-[#3b82f6]'"
+                    >
+                        <div
+                            class="absolute inset-0 pointer-events-none"
+                            :class="b.is_overdue && !b.is_started
+                                ? 'bg-gradient-to-r from-red-500/10 to-transparent'
+                                : 'bg-gradient-to-r from-[#3b82f6]/5 to-transparent'"
+                        ></div>
+
+                        <div
+                            v-if="b.is_overdue && !b.is_started"
+                            class="relative z-10 mb-5 inline-flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-lg border border-red-500/40 bg-red-500/10"
+                        >
+                            <span class="text-[10px] font-black uppercase tracking-[0.25em] text-red-400 italic">Просрочено</span>
+                            <span class="text-[10px] text-white/40 font-mono italic">войдите на ПК — остаток ещё доступен</span>
+                        </div>
 
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-6 relative z-10">
                             <div>
@@ -369,21 +431,58 @@ onMounted(() => {
                             </div>
 
                             <div class="text-right">
-                                <span class="text-[10px] text-[#22c55e] uppercase block mb-2 font-bold italic border-b border-[#22c55e]/20 pb-1">Осталось времени</span>
-                                <div class="text-3xl font-black font-mono tracking-tighter"
-                                     :class="getRemainingTime(b) === 'ОЖИДАНИЕ' ? 'text-yellow-500 text-xl mt-2' : (getRemainingTime(b) === '00:00:00' ? 'text-red-500' : 'text-[#22c55e]')">
+                                <span
+                                    class="text-[10px] uppercase block mb-2 font-bold italic border-b pb-1"
+                                    :class="b.is_overdue && !b.is_started
+                                        ? 'text-red-400 border-red-500/20'
+                                        : 'text-[#22c55e] border-[#22c55e]/20'"
+                                >{{ b.is_overdue && !b.is_started ? 'Статус' : 'Осталось времени' }}</span>
+                                <div
+                                    class="text-3xl font-black font-mono tracking-tighter"
+                                    :class="bookingTimeClass(b)"
+                                >
                                     {{ getRemainingTime(b) }}
+                                </div>
+                                <div
+                                    v-if="b.is_overdue && !b.is_started && (b.end_timestamp - currentTime) > 0"
+                                    class="mt-2 text-[10px] font-mono text-white/35 italic"
+                                >
+                                    ещё {{ Math.max(0, Math.floor((b.end_timestamp - currentTime) / 60000)) }} мин на вход
                                 </div>
                             </div>
                         </div>
 
-                        <div v-if="b.games_label" class="mt-6 pt-5 border-t border-white/5 relative z-10 flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <div v-if="b.game_label" class="mt-6 pt-5 border-t border-white/5 relative z-10 flex flex-wrap items-center gap-x-3 gap-y-2">
                             <span class="text-[10px] text-white/30 uppercase font-bold italic tracking-widest">Игры</span>
-                            <span class="text-sm font-black uppercase italic text-white/90 tracking-tight">{{ b.games_label }}</span>
+                            <span class="text-sm font-black uppercase italic text-white/90 tracking-tight">{{ b.game_label }}</span>
+                        </div>
+
+                        <div class="mt-6 pt-5 border-t border-white/5 relative z-10 flex flex-wrap items-center justify-between gap-3">
+                            <button
+                                v-if="b.can_cancel"
+                                type="button"
+                                class="px-5 py-3 rounded-xl border border-red-500/40 text-red-400 text-[10px] font-black uppercase tracking-widest hover:bg-red-500/10 transition-all disabled:opacity-50"
+                                :disabled="cancellingBookingId === b.id"
+                                @click="cancelBooking(b)"
+                            >
+                                {{ cancellingBookingId === b.id ? 'Отмена…' : 'Отменить бронь' }}
+                            </button>
+                            <span
+                                v-else-if="!b.is_started"
+                                class="text-[10px] text-white/25 font-mono italic"
+                            >
+                                Самоотмена недоступна (срок истёк)
+                            </span>
                         </div>
                     </div>
                 </div>
 
+                <div
+                    v-if="cancelError"
+                    class="px-5 py-4 rounded-2xl border border-red-500/30 bg-red-500/10 text-red-400 text-xs font-black uppercase tracking-wider"
+                >
+                    {{ cancelError }}
+                </div>
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-10 shadow-xl">
                     <span class="text-[10px] uppercase text-white/40 tracking-[0.4em] font-black italic block mb-10">Лог транзакций</span>
                     <div v-if="transactions.length > 0" class="space-y-6">

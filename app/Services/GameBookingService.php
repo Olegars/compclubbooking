@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Booking;
 use App\Models\BookingGame;
 use App\Models\BookingGroup;
+use App\Models\ClubBookingSetting;
 use App\Models\ClubGame;
 use App\Models\Computer;
 use App\Models\ComputerGame;
@@ -341,6 +342,14 @@ class GameBookingService
                 ]);
             }
 
+            if ($group->bookings()->whereNotNull('actual_started_at')->exists()) {
+                throw ValidationException::withMessages([
+                    'booking' => 'Сессия уже начата — отмена недоступна.',
+                ]);
+            }
+
+            $this->assertCancelAllowed($group);
+
             $refundMinor = max(0, $group->paid_total_minor - $group->refunded_total_minor);
             if ($refundMinor > 0) {
                 $wallet = Wallet::query()->where('user_id', $user->id)->lockForUpdate()->firstOrFail();
@@ -368,7 +377,10 @@ class GameBookingService
 
             $computerIds = $group->bookings()->pluck('computer_id');
 
-            $group->bookings()->update(['status' => 'cancelled']);
+            $group->bookings()->update([
+                'status' => 'cancelled',
+                'pin_code' => null,
+            ]);
             GameAccountReservation::query()
                 ->whereHas('bookingGame', fn ($query) => $query->where('booking_group_id', $group->id))
                 ->update(['status' => 'cancelled', 'released_at' => now()]);
@@ -384,6 +396,81 @@ class GameBookingService
 
             return $group->fresh();
         }, 3);
+    }
+
+    public function cancelBeforeMinutes(): int
+    {
+        return ClubBookingSetting::current()->cancelBeforeMinutes();
+    }
+
+    public function cancelDeadlineFor(BookingGroup $group): ?CarbonImmutable
+    {
+        $startsAt = $this->resolveGroupStartsAt($group);
+        if (! $startsAt) {
+            return null;
+        }
+
+        return ClubBookingSetting::current()->cancelDeadline($startsAt);
+    }
+
+    public function canUserCancel(BookingGroup $group, ?CarbonImmutable $now = null): bool
+    {
+        if (! in_array($group->status, ['confirmed', 'paid', 'pending_payment'], true)) {
+            return false;
+        }
+
+        if ($group->bookings()->whereNotNull('actual_started_at')->exists()) {
+            return false;
+        }
+
+        if ($group->bookings()->where('status', 'active')->exists()) {
+            return false;
+        }
+
+        $startsAt = $this->resolveGroupStartsAt($group);
+        if (! $startsAt) {
+            return false;
+        }
+
+        return ClubBookingSetting::current()->canCancelAt($startsAt, $now);
+    }
+
+    private function assertCancelAllowed(BookingGroup $group): void
+    {
+        $startsAt = $this->resolveGroupStartsAt($group);
+        if (! $startsAt) {
+            throw ValidationException::withMessages([
+                'booking' => 'Не удалось определить время начала брони.',
+            ]);
+        }
+
+        $settings = ClubBookingSetting::current();
+        if ($settings->canCancelAt($startsAt)) {
+            return;
+        }
+
+        $hours = $settings->cancelBeforeMinutes() / 60;
+        $label = $hours >= 1 && fmod($hours, 1.0) < 0.001
+            ? ((int) $hours).' ч'
+            : $settings->cancelBeforeMinutes().' мин';
+
+        throw ValidationException::withMessages([
+            'booking' => "Отмена возможна не позднее чем за {$label} до начала брони.",
+        ]);
+    }
+
+    private function resolveGroupStartsAt(BookingGroup $group): ?CarbonImmutable
+    {
+        if ($group->starts_at) {
+            return CarbonImmutable::parse($group->starts_at);
+        }
+
+        $bookingStart = $group->bookings()
+            ->whereNotNull('starts_at')
+            ->orderBy('starts_at')
+            ->value('starts_at');
+
+        return $bookingStart ? CarbonImmutable::parse($bookingStart) : null;
     }
 
     private function validateComputers(int $clubId, array $computerIds): Collection

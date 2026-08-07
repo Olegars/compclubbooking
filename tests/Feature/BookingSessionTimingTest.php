@@ -262,6 +262,20 @@ class BookingSessionTimingTest extends TestCase
         CarbonImmutable::setTestNow();
     }
 
+    public function test_complete_expired_does_not_close_unstarted_within_soft_grace(): void
+    {
+        $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));
+        $endsAt = $startsAt->addHour();
+        $booking = $this->makeBooking($startsAt, $endsAt);
+
+        // Past card end, but soft grace still playable until 11:30
+        $closed = $this->timing->completeExpiredSessions($startsAt->addMinutes(70));
+
+        $this->assertSame(0, $closed);
+        $booking->refresh();
+        $this->assertSame('confirmed', $booking->status);
+    }
+
     private function makeBooking(
         CarbonImmutable $startsAt,
         CarbonImmutable $endsAt,
