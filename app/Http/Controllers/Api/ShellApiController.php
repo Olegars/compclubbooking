@@ -237,10 +237,12 @@ class ShellApiController extends Controller
             'amount' => 'required|numeric|min:100|max:100000',
             'booking_id' => 'nullable|integer|min:1',
             'user_id' => 'nullable|integer|min:1',
+            'send_receipt' => 'nullable|boolean',
         ]);
 
         $terminalId = (int) $request->input('terminal_id');
         $amount = round((float) $request->input('amount'), 2);
+        $sendReceipt = $request->boolean('send_receipt');
 
         $user = null;
         $bookingId = (int) $request->input('booking_id', 0);
@@ -277,7 +279,7 @@ class ShellApiController extends Controller
             if (! in_array($mode, ['embedded', 'redirect'], true)) {
                 $mode = 'embedded';
             }
-            $payment = $yookassa->createTopUp($user, $amount, 'card', '/account/dashboard', $mode);
+            $payment = $yookassa->createTopUp($user, $amount, 'card', '/account/dashboard', $mode, $sendReceipt);
 
             if ($mode === 'redirect') {
                 $url = $payment->confirmation_url;

@@ -46,6 +46,7 @@ use App\Http\Controllers\Admin\VideoSurveillanceController;
 use App\Http\Controllers\Admin\SystemDocsController;
 use App\Http\Controllers\Admin\GameRequestAdminController;
 use App\Http\Controllers\Admin\AnalyticsController;
+use App\Http\Controllers\Admin\TransactionAdminController;
 use App\Http\Controllers\GameRequestController;
 
 /*
@@ -54,6 +55,7 @@ use App\Http\Controllers\GameRequestController;
 |--------------------------------------------------------------------------
 */
 Route::get('/', [HomeController::class, 'index'])->name('home');
+Route::get('/legal/offer', fn () => Inertia::render('Legal/Offer'))->name('legal.offer');
 Route::get('/booking/{slug?}', [ClubController::class, 'show'])->name('booking');
 Route::get('/terminal/{slug?}', [TerminalController::class, 'index'])->name('terminal.booking');
 
@@ -157,6 +159,9 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     Route::get('/search-user', [AdminController::class, 'searchUser']);
     Route::get('/orders', [AdminController::class, 'orders'])->name('admin.orders');
     Route::post('/orders/{id}/status', [AdminController::class, 'updateOrderStatus']);
+    Route::get('/transactions', [TransactionAdminController::class, 'index'])->name('admin.transactions');
+    Route::get('/transactions/{transaction}/print-copy', [TransactionAdminController::class, 'printCopy'])
+        ->name('admin.transactions.print-copy');
     Route::get('/shifts/transfer', [ShiftController::class, 'transferPage'])->name('admin.shift.transfer');
     Route::post('/api/shifts/complete', [ShiftController::class, 'completeTransfer']);
     Route::get('/shifts/history', [ShiftController::class, 'history'])->name('admin.shift.history');

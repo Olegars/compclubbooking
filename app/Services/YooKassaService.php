@@ -41,6 +41,7 @@ class YooKassaService
         string $method = 'card',
         ?string $returnTo = null,
         string $confirmation = 'redirect',
+        bool $sendReceipt = false,
     ): Payment {
         if (!$this->isConfigured()) {
             throw new \RuntimeException('ЮKassa не настроена: укажите YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY.');
@@ -60,6 +61,7 @@ class YooKassaService
             'payload' => [
                 'return_to' => $this->sanitizeReturnTo($returnTo),
                 'confirmation_type' => $confirmation,
+                'send_receipt' => $sendReceipt,
             ],
         ]);
 
@@ -76,6 +78,7 @@ class YooKassaService
                 'payment_uuid' => $payment->uuid,
                 'user_id' => (string) $user->id,
                 'purpose' => 'wallet_topup',
+                'send_receipt' => $sendReceipt ? '1' : '0',
             ],
         ];
 
@@ -267,6 +270,7 @@ class YooKassaService
             'type' => 'deposit',
             'source' => $source,
             'description' => 'Пополнение через ЮKassa',
+            'send_receipt' => (bool) data_get($payment->payload, 'send_receipt', false),
             'idempotency_key' => 'yookassa:' . ($remote->getId() ?: $payment->uuid),
             'payload' => [
                 'payment_uuid' => $payment->uuid,

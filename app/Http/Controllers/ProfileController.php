@@ -61,6 +61,9 @@ class ProfileController extends Controller
                     'description' => $description,
                     'games' => $titles->all(),
                     'date' => $t->created_at->format('d.m / H:i'),
+                    'fiscal_receipt_url' => $t->fiscal_receipt_url,
+                    'fiscal_status' => $t->fiscal_status,
+                    'has_receipt' => filled($t->fiscal_receipt_url),
                 ];
             });
 

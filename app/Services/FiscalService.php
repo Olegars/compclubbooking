@@ -287,6 +287,12 @@ class FiscalService
 
     protected function clientAddress(Transaction $transaction): ?string
     {
+        // Электронная доставка ОФД — только если клиент явно попросил
+        // галочкой «Отправить чек» при оплате.
+        if (! $transaction->send_receipt) {
+            return null;
+        }
+
         $user = $transaction->relationLoaded('user')
             ? $transaction->user
             : $transaction->user()->first();

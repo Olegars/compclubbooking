@@ -38,7 +38,7 @@ const legal = computed(() => props.contacts?.legal || {})
 
 const legalLinks = computed(() =>
     [
-        { url: legal.value.offer_url, label: 'Публичная оферта' },
+        { url: legal.value.offer_url || '/legal/offer', label: 'Публичная оферта' },
         { url: legal.value.privacy_url, label: 'Политика конфиденциальности' },
         { url: legal.value.rules_url, label: 'Правила клуба' },
     ].filter((item) => !!item.url)

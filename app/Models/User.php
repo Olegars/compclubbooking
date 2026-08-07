@@ -18,7 +18,8 @@ class User extends Authenticatable
         'password',
         'phone',
         'avatar',
-        'balance' // Добавь, если используешь локальный баланс
+        'balance',
+        'offer_accepted_at',
     ];
 
     protected $hidden = [
@@ -31,6 +32,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'offer_accepted_at' => 'datetime',
         ];
     }
 

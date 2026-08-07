@@ -54,7 +54,10 @@ class SmsAuthController extends Controller
             $user->email = $request->phone . '@reactor.club';
             $user->password = bcrypt(\Illuminate\Support\Str::random(16));
             $user->avatar = 'avatar_' . rand(1, 10) . '.png';
+            $user->offer_accepted_at = now();
             $user->save(); // Жестко пишем в БД
+        } elseif (! $user->offer_accepted_at) {
+            $user->forceFill(['offer_accepted_at' => now()])->save();
         }
 
         // --- СОЗДАНИЕ КОШЕЛЬКА ---

@@ -22,12 +22,14 @@ class BillingController extends Controller
             'amount' => 'required|numeric|min:100|max:100000',
             'method' => 'nullable|string|in:card,sbp',
             'return_to' => 'nullable|string|max:2048',
+            'send_receipt' => 'nullable|boolean',
         ]);
 
         $user = $request->user();
         $amount = round((float) $request->amount, 2);
         $method = $request->input('method', 'card');
         $returnTo = $request->input('return_to');
+        $sendReceipt = $request->boolean('send_receipt');
 
         try {
             $payment = $this->yookassa->createTopUp(
@@ -36,6 +38,7 @@ class BillingController extends Controller
                 $method,
                 $returnTo,
                 'embedded',
+                $sendReceipt,
             );
             $confirmationToken = $payment->confirmationToken();
 
@@ -153,12 +156,30 @@ class BillingController extends Controller
             ]);
         }
 
+        $local = $local->fresh();
+        $tx = null;
+        if ($local->transaction_id) {
+            $tx = \App\Models\Transaction::query()->find($local->transaction_id);
+        }
+        if (! $tx) {
+            $tx = \App\Models\Transaction::query()
+                ->where(function ($q) use ($local) {
+                    $key = 'yookassa:'.($local->provider_payment_id ?: $local->uuid);
+                    $q->where('idempotency_key', $key)
+                        ->orWhere('payload->payment_uuid', $local->uuid);
+                })
+                ->latest('id')
+                ->first();
+        }
+
         return response()->json([
             'status' => 'success',
             'payment_id' => $local->uuid,
             'payment_status' => $local->status,
             'amount' => $local->amount,
             'paid' => $local->isSucceeded(),
+            'fiscal_receipt_url' => $tx?->fiscal_receipt_url,
+            'transaction_id' => $tx?->id ?? $local->transaction_id,
         ]);
     }
 }

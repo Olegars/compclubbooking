@@ -23,12 +23,14 @@ class Transaction extends Model
         'fiscal_receipt_url',
         'fiscal_error',
         'fiscal_at',
+        'send_receipt',
     ];
 
     protected $casts = [
         'payload' => 'array',
         'amount' => 'float',
         'fiscal_at' => 'datetime',
+        'send_receipt' => 'boolean',
     ];
 
     public function user(): BelongsTo

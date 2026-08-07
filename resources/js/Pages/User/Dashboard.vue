@@ -4,6 +4,8 @@ import { usePage, Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import MainLayout from '@/Layouts/MainLayout.vue'
 import YooKassaWidgetModal from '@/Components/YooKassaWidgetModal.vue'
+import PaymentReceiptConsent from '@/Components/PaymentReceiptConsent.vue'
+import FiscalReceiptModal from '@/Components/FiscalReceiptModal.vue'
 
 const page = usePage()
 
@@ -124,6 +126,10 @@ const isPaymentProcessing = ref(false)
 const isPaymentWidgetOpen = ref(false)
 const paymentToken = ref('')
 const paymentId = ref('')
+const sendReceipt = ref(false)
+const isReceiptModalOpen = ref(false)
+const receiptModalUrl = ref<string | null>(null)
+const receiptModalAmount = ref<number | null>(null)
 const isReviewSubmitting = ref(false)
 const isGameRequestSubmitting = ref(false)
 const topUpAmount = ref(500)
@@ -213,6 +219,7 @@ const proceedToPayment = async () => {
             amount: topUpAmount.value,
             method: 'card',
             return_to: window.location.pathname + window.location.search,
+            send_receipt: sendReceipt.value,
         });
         if (data.confirmation_token && data.payment_id) {
             paymentToken.value = data.confirmation_token;
@@ -234,10 +241,20 @@ const closePaymentWidget = () => {
     paymentId.value = '';
 }
 
-const handlePaymentPaid = () => {
+const handlePaymentPaid = (payload: { paymentId: string; amount: number; fiscal_receipt_url?: string | null }) => {
     closePaymentWidget();
+    receiptModalUrl.value = payload.fiscal_receipt_url || null;
+    receiptModalAmount.value = payload.amount;
+    isReceiptModalOpen.value = true;
     fetchDashboardData();
     router.reload({ only: ['auth', 'transactions'], preserveScroll: true });
+}
+
+const openTxReceipt = (tx: any) => {
+    if (!tx?.fiscal_receipt_url) return
+    receiptModalUrl.value = tx.fiscal_receipt_url
+    receiptModalAmount.value = tx.amount
+    isReceiptModalOpen.value = true
 }
 
 onMounted(() => {
@@ -329,18 +346,26 @@ onMounted(() => {
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-10 shadow-xl">
                     <span class="text-[10px] uppercase text-white/40 tracking-[0.4em] font-black italic block mb-10">Лог транзакций</span>
                     <div v-if="transactions.length > 0" class="space-y-6">
-                        <div v-for="tx in transactions" :key="tx.id" class="flex items-center justify-between group transition-all">
-                            <div class="flex items-center gap-6">
-                                <div :class="['w-12 h-12 rounded-2xl flex items-center justify-center border transition-colors', tx.amount > 0 ? 'bg-[#22c55e]/5 border-[#22c55e]/20 text-[#22c55e]' : 'bg-white/5 border-white/10 text-white/20 group-hover:border-white/20']">
+                        <div v-for="tx in transactions" :key="tx.id" class="flex items-center justify-between group transition-all gap-4">
+                            <div class="flex items-center gap-6 min-w-0">
+                                <div :class="['w-12 h-12 rounded-2xl flex items-center justify-center border transition-colors shrink-0', tx.amount > 0 ? 'bg-[#22c55e]/5 border-[#22c55e]/20 text-[#22c55e]' : 'bg-white/5 border-white/10 text-white/20 group-hover:border-white/20']">
                                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path :d="tx.amount > 0 ? 'M12 6v12m6-6H6' : 'M18 12H6'" stroke-width="2.5" stroke-linecap="round"/></svg>
                                 </div>
-                                <div>
-                                    <div class="text-sm font-black uppercase italic tracking-tight group-hover:text-[#22c55e] transition-colors">{{ tx.description }}</div>
+                                <div class="min-w-0">
+                                    <div class="text-sm font-black uppercase italic tracking-tight group-hover:text-[#22c55e] transition-colors truncate">{{ tx.description }}</div>
                                     <div class="text-[10px] text-white/20 font-mono mt-1 italic">{{ tx.date }}</div>
                                 </div>
                             </div>
-                            <div :class="['text-xl font-black italic font-mono tracking-tighter', tx.amount > 0 ? 'text-[#22c55e]' : 'text-white/40']">
-                                {{ tx.amount > 0 ? '+' : '' }}{{ tx.amount }} ₽
+                            <div class="flex items-center gap-4 shrink-0">
+                                <button
+                                    v-if="tx.has_receipt"
+                                    type="button"
+                                    class="px-3 py-2 rounded-xl border border-[#22c55e]/30 text-[#22c55e] text-[9px] font-black uppercase tracking-widest hover:bg-[#22c55e]/10 transition-colors"
+                                    @click="openTxReceipt(tx)"
+                                >Чек</button>
+                                <div :class="['text-xl font-black italic font-mono tracking-tighter', tx.amount > 0 ? 'text-[#22c55e]' : 'text-white/40']">
+                                    {{ tx.amount > 0 ? '+' : '' }}{{ tx.amount }} ₽
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -414,7 +439,10 @@ onMounted(() => {
                             {{ amount }}
                         </button>
                     </div>
-                    <input v-model="topUpAmount" type="number" class="w-full bg-black border-2 border-white/5 rounded-[1rem] py-8 text-6xl font-black text-center text-white mb-10 outline-none focus:border-[#22c55e]/50 transition-colors" />
+                    <input v-model="topUpAmount" type="number" class="w-full bg-black border-2 border-white/5 rounded-[1rem] py-8 text-6xl font-black text-center text-white mb-8 outline-none focus:border-[#22c55e]/50 transition-colors" />
+                    <div class="mb-8">
+                        <PaymentReceiptConsent v-model="sendReceipt" pay-label="Подтвердить" />
+                    </div>
                     <button
                         @click="proceedToPayment"
                         :disabled="isPaymentProcessing"
@@ -534,6 +562,12 @@ onMounted(() => {
                 :amount="topUpAmount"
                 @close="closePaymentWidget"
                 @paid="handlePaymentPaid"
+            />
+            <FiscalReceiptModal
+                :is-open="isReceiptModalOpen"
+                :receipt-url="receiptModalUrl"
+                :amount="receiptModalAmount"
+                @close="isReceiptModalOpen = false"
             />
         </Teleport>
     </MainLayout>

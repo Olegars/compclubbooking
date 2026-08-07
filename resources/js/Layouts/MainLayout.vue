@@ -7,6 +7,8 @@ import ConfirmModal from '@/Components/ConfirmModal.vue'
 import SmsModal from '@/Components/SmsModal.vue'
 import FlashToast from '@/Components/FlashToast.vue'
 import YooKassaWidgetModal from '@/Components/YooKassaWidgetModal.vue'
+import PaymentReceiptConsent from '@/Components/PaymentReceiptConsent.vue'
+import FiscalReceiptModal from '@/Components/FiscalReceiptModal.vue'
 
 const page = usePage()
 
@@ -24,6 +26,10 @@ const paymentToken = ref('')
 const paymentId = ref('')
 const topUpAmount = ref(500)
 const paymentMethod = ref<'card' | 'sbp'>('card')
+const sendReceipt = ref(false)
+const isReceiptModalOpen = ref(false)
+const receiptModalUrl = ref<string | null>(null)
+const receiptModalAmount = ref<number | null>(null)
 const localBalance = ref<number | null>(null)
 
 const displayBalance = computed(() => {
@@ -105,6 +111,7 @@ const openTopUp = () => {
     }
     topUpAmount.value = 500
     paymentMethod.value = 'card'
+    sendReceipt.value = false
     isTopUpInputOpen.value = true
 }
 
@@ -119,6 +126,7 @@ const proceedToPayment = async () => {
             amount: topUpAmount.value,
             method: paymentMethod.value,
             return_to: window.location.pathname + window.location.search,
+            send_receipt: sendReceipt.value,
         })
         if (data.confirmation_token && data.payment_id) {
             paymentToken.value = data.confirmation_token
@@ -140,8 +148,11 @@ const closePaymentWidget = () => {
     paymentId.value = ''
 }
 
-const handlePaymentPaid = () => {
+const handlePaymentPaid = (payload: { paymentId: string; amount: number; fiscal_receipt_url?: string | null }) => {
     closePaymentWidget()
+    receiptModalUrl.value = payload.fiscal_receipt_url || null
+    receiptModalAmount.value = payload.amount
+    isReceiptModalOpen.value = true
     router.reload({
         only: ['auth', 'transactions'],
         preserveScroll: true,
@@ -340,6 +351,9 @@ onUnmounted(() => {
                         >Карта / ЮMoney</button>
                     </div>
                     <p class="text-[9px] text-white/30 uppercase tracking-widest mb-6">Тестовая ЮKassa: карта или ЮMoney</p>
+                    <div class="mb-8 text-left">
+                        <PaymentReceiptConsent v-model="sendReceipt" pay-label="Оплатить" />
+                    </div>
                     <button
                         type="button"
                         @click="proceedToPayment"
@@ -356,6 +370,12 @@ onUnmounted(() => {
                 :amount="topUpAmount"
                 @close="closePaymentWidget"
                 @paid="handlePaymentPaid"
+            />
+            <FiscalReceiptModal
+                :is-open="isReceiptModalOpen"
+                :receipt-url="receiptModalUrl"
+                :amount="receiptModalAmount"
+                @close="isReceiptModalOpen = false"
             />
         </Teleport>
 
