@@ -403,18 +403,13 @@ class GameBookingService
         return ClubBookingSetting::current()->cancelBeforeMinutes();
     }
 
-    public function cancelDeadlineFor(BookingGroup $group): ?CarbonImmutable
-    {
-        $startsAt = $this->resolveGroupStartsAt($group);
-        if (! $startsAt) {
-            return null;
-        }
+    public function canUserCancel(
+        BookingGroup $group,
+        ?CarbonImmutable $now = null,
+        ?CarbonImmutable $startsAt = null
+    ): bool {
+        $now = $now ?? CarbonImmutable::now();
 
-        return ClubBookingSetting::current()->cancelDeadline($startsAt);
-    }
-
-    public function canUserCancel(BookingGroup $group, ?CarbonImmutable $now = null): bool
-    {
         if (! in_array($group->status, ['confirmed', 'paid', 'pending_payment'], true)) {
             return false;
         }
@@ -427,12 +422,29 @@ class GameBookingService
             return false;
         }
 
-        $startsAt = $this->resolveGroupStartsAt($group);
+        $startsAt = $startsAt ?? $this->resolveGroupStartsAt($group);
         if (! $startsAt) {
             return false;
         }
 
+        // После наступления старта самоотмена закрыта в любом случае.
+        if ($now->gte($startsAt)) {
+            return false;
+        }
+
         return ClubBookingSetting::current()->canCancelAt($startsAt, $now);
+    }
+
+    public function cancelDeadlineFor(
+        BookingGroup $group,
+        ?CarbonImmutable $startsAt = null
+    ): ?CarbonImmutable {
+        $startsAt = $startsAt ?? $this->resolveGroupStartsAt($group);
+        if (! $startsAt) {
+            return null;
+        }
+
+        return ClubBookingSetting::current()->cancelDeadline($startsAt);
     }
 
     private function assertCancelAllowed(BookingGroup $group): void

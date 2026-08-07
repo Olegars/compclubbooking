@@ -63,26 +63,26 @@ const formatStartTime = (timeH: number | string) => {
     return `${hours}:${mins}`
 }
 
+const resolveBookingPhase = (b: any) => {
+    if (b.is_started || b.phase === 'active') return 'active'
+    const now = currentTime.value
+    const startMs = b.start_timestamp || 0
+    const billingMs = b.billing_start_timestamp || startMs
+    if (startMs && now < startMs) return 'waiting'
+    if (billingMs && now < billingMs) return 'late_waiting'
+    return 'late_billing'
+}
+
 const getRemainingTime = (b: any) => {
     const endMs = b.end_timestamp || 0
-    const startMs = b.start_timestamp
-        || (() => {
-            const startH = Number(b.start_time)
-            const baseDate = new Date(b.date)
-            return new Date(
-                baseDate.getFullYear(),
-                baseDate.getMonth(),
-                baseDate.getDate(),
-                Math.floor(startH),
-                Math.round((startH % 1) * 60),
-            ).getTime()
-        })()
-    const now = currentTime.value
+    const phase = resolveBookingPhase(b)
 
-    if (now < startMs) return 'ОЖИДАНИЕ'
-    if (b.is_overdue && !b.is_started) return 'ПРОСРОЧЕНО'
+    // До старта и в окне мягкого ожидания (grace) — статус ОЖИДАНИЕ, не «просрочено».
+    if (phase === 'waiting' || phase === 'late_waiting') {
+        return 'ОЖИДАНИЕ'
+    }
 
-    const diff = endMs - now
+    const diff = endMs - currentTime.value
     if (diff <= 0) return '00:00:00'
 
     const h = Math.floor(diff / 3600000).toString().padStart(2, '0')
@@ -93,8 +93,13 @@ const getRemainingTime = (b: any) => {
 
 const bookingTimeClass = (b: any) => {
     const label = getRemainingTime(b)
-    if (label === 'ОЖИДАНИЕ') return 'text-yellow-500 text-xl mt-2'
-    if (label === 'ПРОСРОЧЕНО' || label === '00:00:00') return 'text-red-500 text-xl mt-2'
+    const phase = resolveBookingPhase(b)
+    if (label === 'ОЖИДАНИЕ') {
+        return phase === 'late_waiting'
+            ? 'text-red-500 text-xl mt-2'
+            : 'text-yellow-500 text-xl mt-2'
+    }
+    if (label === '00:00:00') return 'text-red-500 text-xl mt-2'
     return 'text-[#22c55e]'
 }
 
@@ -106,14 +111,10 @@ const transactions = computed(() => {
 const activeBookings = computed(() => {
     const raw = (page.props.active_bookings as any[]) || [];
     return raw.filter(b => {
-        if (b.is_overdue && !b.is_started) {
-            const endMs = b.end_timestamp || 0
-            return currentTime.value < endMs
-        }
-        const endMs = b.end_timestamp || 0;
+        const endMs = b.end_timestamp || 0
         const startMs = b.start_timestamp || 0
         if (startMs && currentTime.value < startMs) return true
-        return currentTime.value < endMs;
+        return currentTime.value < endMs
     });
 })
 
@@ -393,24 +394,16 @@ onMounted(() => {
                         v-for="b in activeBookings"
                         :key="b.id"
                         class="bg-[#0a0a0a] border rounded-[1rem] p-8 relative overflow-hidden group transition-colors"
-                        :class="b.is_overdue && !b.is_started
-                            ? 'border-red-500/50 hover:border-red-500'
+                        :class="resolveBookingPhase(b) === 'late_waiting'
+                            ? 'border-red-500/40 hover:border-red-500/70'
                             : 'border-[#3b82f6]/40 hover:border-[#3b82f6]'"
                     >
                         <div
                             class="absolute inset-0 pointer-events-none"
-                            :class="b.is_overdue && !b.is_started
-                                ? 'bg-gradient-to-r from-red-500/10 to-transparent'
+                            :class="resolveBookingPhase(b) === 'late_waiting'
+                                ? 'bg-gradient-to-r from-red-500/8 to-transparent'
                                 : 'bg-gradient-to-r from-[#3b82f6]/5 to-transparent'"
                         ></div>
-
-                        <div
-                            v-if="b.is_overdue && !b.is_started"
-                            class="relative z-10 mb-5 inline-flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-lg border border-red-500/40 bg-red-500/10"
-                        >
-                            <span class="text-[10px] font-black uppercase tracking-[0.25em] text-red-400 italic">Просрочено</span>
-                            <span class="text-[10px] text-white/40 font-mono italic">войдите на ПК — остаток ещё доступен</span>
-                        </div>
 
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-6 relative z-10">
                             <div>
@@ -433,10 +426,12 @@ onMounted(() => {
                             <div class="text-right">
                                 <span
                                     class="text-[10px] uppercase block mb-2 font-bold italic border-b pb-1"
-                                    :class="b.is_overdue && !b.is_started
+                                    :class="resolveBookingPhase(b) === 'late_waiting'
                                         ? 'text-red-400 border-red-500/20'
                                         : 'text-[#22c55e] border-[#22c55e]/20'"
-                                >{{ b.is_overdue && !b.is_started ? 'Статус' : 'Осталось времени' }}</span>
+                                >{{ ['waiting', 'late_waiting'].includes(resolveBookingPhase(b))
+                                    ? 'Статус'
+                                    : 'Осталось времени' }}</span>
                                 <div
                                     class="text-3xl font-black font-mono tracking-tighter"
                                     :class="bookingTimeClass(b)"
@@ -444,10 +439,10 @@ onMounted(() => {
                                     {{ getRemainingTime(b) }}
                                 </div>
                                 <div
-                                    v-if="b.is_overdue && !b.is_started && (b.end_timestamp - currentTime) > 0"
+                                    v-if="resolveBookingPhase(b) === 'late_billing'"
                                     class="mt-2 text-[10px] font-mono text-white/35 italic"
                                 >
-                                    ещё {{ Math.max(0, Math.floor((b.end_timestamp - currentTime) / 60000)) }} мин на вход
+                                    время списывается — войдите на ПК
                                 </div>
                             </div>
                         </div>
@@ -457,7 +452,10 @@ onMounted(() => {
                             <span class="text-sm font-black uppercase italic text-white/90 tracking-tight">{{ b.game_label }}</span>
                         </div>
 
-                        <div class="mt-6 pt-5 border-t border-white/5 relative z-10 flex flex-wrap items-center justify-between gap-3">
+                        <div
+                            v-if="b.can_cancel || resolveBookingPhase(b) === 'waiting'"
+                            class="mt-6 pt-5 border-t border-white/5 relative z-10 flex flex-wrap items-center justify-between gap-3"
+                        >
                             <button
                                 v-if="b.can_cancel"
                                 type="button"
@@ -468,10 +466,10 @@ onMounted(() => {
                                 {{ cancellingBookingId === b.id ? 'Отмена…' : 'Отменить бронь' }}
                             </button>
                             <span
-                                v-else-if="!b.is_started"
+                                v-else
                                 class="text-[10px] text-white/25 font-mono italic"
                             >
-                                Самоотмена недоступна (срок истёк)
+                                Самоотмена недоступна (менее {{ Math.round((b.cancel_before_minutes || 120) / 60) }} ч до старта)
                             </span>
                         </div>
                     </div>
@@ -492,7 +490,13 @@ onMounted(() => {
                                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path :d="tx.amount > 0 ? 'M12 6v12m6-6H6' : 'M18 12H6'" stroke-width="2.5" stroke-linecap="round"/></svg>
                                 </div>
                                 <div class="min-w-0">
-                                    <div class="text-sm font-black uppercase italic tracking-tight group-hover:text-[#22c55e] transition-colors truncate">{{ tx.description }}</div>
+                                    <div class="flex flex-wrap items-center gap-2 min-w-0">
+                                        <div class="text-sm font-black uppercase italic tracking-tight group-hover:text-[#22c55e] transition-colors truncate">{{ tx.description }}</div>
+                                        <span
+                                            v-if="tx.is_no_show"
+                                            class="shrink-0 px-2 py-0.5 rounded-md border border-red-500/40 bg-red-500/10 text-[9px] font-black uppercase tracking-widest text-red-400"
+                                        >Просрочена</span>
+                                    </div>
                                     <div class="text-[10px] text-white/20 font-mono mt-1 italic">{{ tx.date }}</div>
                                 </div>
                             </div>

@@ -63,6 +63,22 @@ class ProfileController extends Controller
                 $isStub = $fiscal->isStubReceiptUrl($receiptUrl)
                     || ($t->fiscal_status === 'skipped' && filled($receiptUrl));
 
+                $isNoShow = false;
+                if (
+                    $t->booking_group_id
+                    && in_array((string) $t->type, ['booking', 'booking_upgrade'], true)
+                ) {
+                    $group = \App\Models\BookingGroup::query()->find($t->booking_group_id);
+                    if (
+                        $group
+                        && $group->status === 'cancelled'
+                        && $group->payment_status !== 'refunded'
+                        && ! $group->bookings()->whereNotNull('actual_started_at')->exists()
+                    ) {
+                        $isNoShow = true;
+                    }
+                }
+
                 return [
                     'id' => $t->id,
                     'type' => $t->type,
@@ -75,6 +91,7 @@ class ProfileController extends Controller
                     'payment_uuid' => data_get($t->payload, 'payment_uuid'),
                     'has_receipt' => filled($receiptUrl),
                     'is_stub_receipt' => $isStub,
+                    'is_no_show' => $isNoShow,
                 ];
             });
 
@@ -125,12 +142,27 @@ class ProfileController extends Controller
                 $started = filled($booking->actual_started_at);
                 $waiting = $nowImmutable->lt($scheduledStart);
 
+                // phase: waiting | late_waiting | late_billing | active
+                $phase = 'waiting';
+                $billingStart = $scheduledStart;
+
                 if ($started) {
                     $remainingSeconds = $timing->remainingSeconds($booking, $nowImmutable);
-                    $isOverdue = false;
+                    $phase = 'active';
+                    $effectiveEndMs = ($nowImmutable->getTimestamp() + $remainingSeconds) * 1000;
                 } elseif ($waiting) {
+                    $following = $timing->hasFollowingBookingConflict(
+                        $booking,
+                        $scheduledStart,
+                        $scheduledEnd,
+                        $paidMinutes
+                    );
+                    $graceMinutes = $following ? 0 : $timing->lateStartGraceMinutes();
+                    $billingStart = $scheduledStart->addMinutes($graceMinutes);
+                    $absoluteEnd = $billingStart->addMinutes($paidMinutes);
                     $remainingSeconds = $paidMinutes * 60;
-                    $isOverdue = false;
+                    $phase = 'waiting';
+                    $effectiveEndMs = $absoluteEnd->getTimestamp() * 1000;
                 } else {
                     $following = $timing->hasFollowingBookingConflict(
                         $booking,
@@ -138,10 +170,12 @@ class ProfileController extends Controller
                         $scheduledEnd,
                         $paidMinutes
                     );
-                    $remainingSeconds = $following
-                        ? max(0, (int) floor($nowImmutable->diffInSeconds($scheduledEnd, false)))
-                        : $timing->softGraceRemainingSeconds($scheduledStart, $paidMinutes, $nowImmutable);
-                    $isOverdue = $remainingSeconds > 0;
+                    $graceMinutes = $following ? 0 : $timing->lateStartGraceMinutes();
+                    $billingStart = $scheduledStart->addMinutes($graceMinutes);
+                    $absoluteEnd = $billingStart->addMinutes($paidMinutes);
+                    $remainingSeconds = max(0, (int) floor($nowImmutable->diffInSeconds($absoluteEnd, false)));
+                    $phase = $nowImmutable->lt($billingStart) ? 'late_waiting' : 'late_billing';
+                    $effectiveEndMs = $absoluteEnd->getTimestamp() * 1000;
                 }
 
                 // Обрабатываем pc_ids (Postgres часто отдает строку вместо массива)
@@ -170,14 +204,13 @@ class ProfileController extends Controller
                 }
                 $titles = array_values(array_unique($titles));
 
-                $effectiveEndMs = $waiting
-                    ? $scheduledEnd->getTimestamp() * 1000
-                    : ($nowImmutable->getTimestamp() + $remainingSeconds) * 1000;
-
                 $booking->end_timestamp = $effectiveEndMs;
                 $booking->start_timestamp = $scheduledStart->getTimestamp() * 1000;
+                $booking->billing_start_timestamp = $billingStart->getTimestamp() * 1000;
                 $booking->remaining_seconds = $remainingSeconds;
-                $booking->is_overdue = $isOverdue;
+                $booking->phase = $phase;
+                $booking->is_late_waiting = $phase === 'late_waiting';
+                $booking->is_late_billing = $phase === 'late_billing';
                 $booking->is_started = $started;
                 $booking->is_expired = $remainingSeconds <= 0 && ! $waiting;
                 $booking->formatted_pc = $pcLabel;
@@ -187,8 +220,12 @@ class ProfileController extends Controller
                 $booking->display_end = $scheduledEnd->format('H:i');
 
                 $group = $booking->group;
-                $canCancel = $group ? $bookingService->canUserCancel($group, $nowImmutable) : false;
-                $cancelDeadline = $group ? $bookingService->cancelDeadlineFor($group) : null;
+                $canCancel = $group
+                    ? $bookingService->canUserCancel($group, $nowImmutable, $scheduledStart)
+                    : false;
+                $cancelDeadline = $group
+                    ? $bookingService->cancelDeadlineFor($group, $scheduledStart)
+                    : null;
                 $booking->can_cancel = $canCancel;
                 $booking->cancel_deadline_at = $cancelDeadline?->toIso8601String();
                 $booking->cancel_before_minutes = $bookingService->cancelBeforeMinutes();
