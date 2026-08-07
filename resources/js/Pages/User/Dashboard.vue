@@ -406,7 +406,11 @@ onMounted(() => {
                                         ? 'border-[#22c55e]/30 text-[#22c55e] hover:bg-[#22c55e]/10'
                                         : 'border-white/15 text-white/35 hover:bg-white/5'"
                                     @click="openTxReceipt(tx)"
-                                >{{ tx.has_receipt ? (tx.is_stub_receipt ? 'Чек · демо' : 'Чек') : 'Статус' }}</button>
+                                >{{
+                                    tx.has_receipt
+                                        ? (tx.is_stub_receipt ? 'Чек · демо' : 'Чек')
+                                        : (tx.fiscal_status === 'deferred' ? 'После входа' : 'Статус')
+                                }}</button>
                                 <div :class="['text-xl font-black italic font-mono tracking-tighter', tx.amount > 0 ? 'text-[#22c55e]' : 'text-white/40']">
                                     {{ tx.amount > 0 ? '+' : '' }}{{ tx.amount }} ₽
                                 </div>

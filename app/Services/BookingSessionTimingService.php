@@ -137,7 +137,7 @@ class BookingSessionTimingService
     {
         $now = $now ?? CarbonImmutable::now();
 
-        return DB::transaction(function () use ($booking, $now) {
+        $result = DB::transaction(function () use ($booking, $now) {
             /** @var Booking $booking */
             $booking = Booking::query()->lockForUpdate()->findOrFail($booking->id);
 
@@ -176,6 +176,19 @@ class BookingSessionTimingService
 
             return $this->activateOnSchedule($booking, $now, $scheduledEnd);
         }, 3);
+
+        $receipts = [];
+        try {
+            $receipts = app(FiscalService::class)->settleDeferredForBooking($result['booking']);
+        } catch (\Throwable $e) {
+            Log::warning('Deferred fiscal settle after login failed: '.$e->getMessage(), [
+                'booking_id' => $result['booking']->id ?? null,
+            ]);
+        }
+
+        $result['fiscal_receipts'] = $receipts;
+
+        return $result;
     }
 
     /**
@@ -519,6 +532,18 @@ class BookingSessionTimingService
                 'status' => 'cancelled',
                 'cancelled_at' => $now,
             ]);
+
+            // Оплата удержана (нет возврата) — закрываем отложенный чек.
+            $groupId = (int) $group->id;
+            DB::afterCommit(function () use ($groupId) {
+                try {
+                    app(FiscalService::class)->settleDeferredForBookingGroup($groupId);
+                } catch (\Throwable $e) {
+                    Log::warning('Deferred fiscal settle after no-show failed: '.$e->getMessage(), [
+                        'booking_group_id' => $groupId,
+                    ]);
+                }
+            });
         }
 
         Log::info('Booking no-show cancelled', [

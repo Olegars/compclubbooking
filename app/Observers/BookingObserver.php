@@ -32,6 +32,7 @@ class BookingObserver
                     // 2. Создаем запись в логе для юзера
                     Transaction::create([
                         'user_id'     => $booking->user_id,
+                        'booking_group_id' => $booking->booking_group_id,
                         'amount'      => -$diff,
                         'type'        => 'booking_upgrade',
                         'source'      => 'balance',

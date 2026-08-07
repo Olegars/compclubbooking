@@ -197,6 +197,10 @@ class ShellApiController extends Controller
 
             $this->applyTvNetworkPolicy($terminalId, 'session_active');
 
+            $fiscalReceipts = $activation['fiscal_receipts'] ?? [];
+            $primaryReceipt = collect($fiscalReceipts)
+                ->first(fn ($r) => filled($r['fiscal_receipt_url'] ?? null));
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Авторизация успешна.',
@@ -212,6 +216,15 @@ class ShellApiController extends Controller
                 ],
                 'settings_pack' => $cloud['payload'],
                 'settings_updated_at' => $cloud['updated_at'],
+                'fiscal_receipt' => $primaryReceipt ? [
+                    'transaction_id' => $primaryReceipt['transaction_id'],
+                    'amount' => $primaryReceipt['amount'],
+                    'description' => $primaryReceipt['description'],
+                    'fiscal_status' => $primaryReceipt['fiscal_status'],
+                    'fiscal_receipt_url' => $primaryReceipt['fiscal_receipt_url'],
+                    'is_stub' => (bool) ($primaryReceipt['is_stub'] ?? false),
+                ] : null,
+                'fiscal_receipts' => $fiscalReceipts,
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {

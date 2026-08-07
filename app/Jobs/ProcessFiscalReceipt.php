@@ -32,9 +32,18 @@ class ProcessFiscalReceipt implements ShouldQueue
             return;
         }
 
+        if ($transaction->fiscal_status === 'void') {
+            return;
+        }
+
         $mode = $fiscal->resolveMode($transaction);
         if ($mode === null) {
             return;
+        }
+
+        // Отложенные бронь-чеки: job запускается уже после login / no-show.
+        if ($transaction->fiscal_status === 'deferred') {
+            $mode = $transaction->fiscal_mode ?: $mode;
         }
 
         if (! $fiscal->isEnabled()) {

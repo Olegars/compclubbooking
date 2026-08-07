@@ -19,6 +19,13 @@ class TransactionObserver
             return;
         }
 
+        // Бронь: деньги списаны, чек полного расчёта — после входа на ПК.
+        if ($this->fiscal->shouldDeferSettlement($transaction)) {
+            $this->fiscal->markDeferred($transaction, $mode);
+
+            return;
+        }
+
         if (! $this->fiscal->isEnabled()) {
             $this->fiscal->markSkippedWithStub($transaction, $mode);
 

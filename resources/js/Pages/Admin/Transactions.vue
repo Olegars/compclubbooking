@@ -77,7 +77,8 @@ const typeLabel = (t: string) => ({
 const statusClass = (s: string | null) => {
     if (s === 'success') return 'text-[#22c55e]'
     if (s === 'error') return 'text-red-400'
-    if (s === 'pending') return 'text-amber-400'
+    if (s === 'pending' || s === 'deferred') return 'text-amber-400'
+    if (s === 'void') return 'text-white/25'
     return 'text-white/30'
 }
 
@@ -162,6 +163,8 @@ const rows = computed(() => props.transactions?.data || [])
                         <option value="">Статус чека</option>
                         <option value="success">success</option>
                         <option value="pending">pending</option>
+                        <option value="deferred">deferred</option>
+                        <option value="void">void</option>
                         <option value="error">error</option>
                         <option value="skipped">skipped</option>
                     </select>

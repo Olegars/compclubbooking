@@ -360,6 +360,12 @@ class GameBookingService
                 );
             }
 
+            // Отмена до старта сессии — отложенный чек не бьём.
+            app(FiscalService::class)->voidDeferredForBookingGroup(
+                (int) $group->id,
+                'refunded_before_service'
+            );
+
             $computerIds = $group->bookings()->pluck('computer_id');
 
             $group->bookings()->update(['status' => 'cancelled']);

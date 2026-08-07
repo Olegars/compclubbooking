@@ -60,4 +60,14 @@ return [
         'purchase',
     ],
 
+    /*
+    | Эти settlement-типы НЕ бьём в момент списания с кошелька.
+    | Чек «полный расчёт» — при старте сессии (shell login) / no-show без возврата.
+    | purchase остаётся мгновенным (передача товара).
+    */
+    'deferred_settlement_types' => [
+        'booking',
+        'booking_upgrade',
+    ],
+
 ];
