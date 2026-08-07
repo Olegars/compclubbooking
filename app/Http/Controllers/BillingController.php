@@ -186,6 +186,7 @@ class BillingController extends Controller
             'fiscal_receipt_url' => $receiptUrl,
             'fiscal_status' => $tx?->fiscal_status ?: ($this->fiscal->isStubReceiptUrl($receiptUrl) ? 'skipped' : null),
             'is_stub_receipt' => $this->fiscal->isStubReceiptUrl($receiptUrl),
+            'description' => $tx?->description,
             'transaction_id' => $tx?->id ?? $local->transaction_id,
         ]);
     }
@@ -222,6 +223,7 @@ class BillingController extends Controller
             'fiscal_status' => $tx?->fiscal_status ?: ($this->fiscal->isStubReceiptUrl($receiptUrl) ? 'skipped' : null),
             'fiscal_receipt_url' => $receiptUrl,
             'is_stub_receipt' => $this->fiscal->isStubReceiptUrl($receiptUrl),
+            'description' => $tx?->description,
             'has_receipt' => filled($receiptUrl),
         ]);
     }

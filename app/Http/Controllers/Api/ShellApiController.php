@@ -1328,6 +1328,7 @@ class ShellApiController extends Controller
             $newBalance = $balance;
             $orderId = 0;
             $orderStatus = 'pending';
+            $transactionId = 0;
 
             DB::transaction(function () use (
                 $user,
@@ -1341,11 +1342,12 @@ class ShellApiController extends Controller
                 $stockService,
                 &$newBalance,
                 &$orderId,
-                &$orderStatus
+                &$orderStatus,
+                &$transactionId
             ) {
                 $newBalance = $wallet->debitSpendable($totalPrice);
 
-                \App\Models\Transaction::create([
+                $tx = \App\Models\Transaction::create([
                     'user_id' => $user->id,
                     'amount' => -$totalPrice,
                     'type' => 'purchase',
@@ -1356,6 +1358,7 @@ class ShellApiController extends Controller
                         'terminal_id' => (int) $request->terminal_id,
                     ],
                 ]);
+                $transactionId = (int) $tx->id;
 
                 $orderStatus = 'pending';
                 $orderId = (int) DB::table('orders')->insertGetId([
@@ -1376,12 +1379,43 @@ class ShellApiController extends Controller
                 $stockService->reserveMarkedForOrder($orderId, $lineItems);
             });
 
+            $fiscalReceipt = null;
+            if ($transactionId > 0) {
+                try {
+                    // Синхронно — шеллу нужен URL в ответе checkout.
+                    (new \App\Jobs\ProcessFiscalReceipt($transactionId))
+                        ->handle(app(\App\Services\FiscalService::class));
+                } catch (\Throwable $e) {
+                    Log::warning('Shell shop fiscal settle failed: '.$e->getMessage(), [
+                        'transaction_id' => $transactionId,
+                        'order_id' => $orderId,
+                    ]);
+                }
+
+                $tx = \App\Models\Transaction::query()->find($transactionId);
+                if ($tx) {
+                    $fiscal = app(\App\Services\FiscalService::class);
+                    $url = $fiscal->displayReceiptUrl($tx);
+                    if (filled($url)) {
+                        $fiscalReceipt = [
+                            'transaction_id' => (int) $tx->id,
+                            'amount' => (float) $tx->amount,
+                            'description' => $tx->description,
+                            'fiscal_status' => $tx->fiscal_status,
+                            'fiscal_receipt_url' => $url,
+                            'is_stub' => $fiscal->isStubReceiptUrl($url) || $tx->fiscal_status === 'skipped',
+                        ];
+                    }
+                }
+            }
+
             Log::info('Shell shop checkout OK', [
                 'user_id' => $user->id,
                 'order_id' => $orderId,
                 'items' => $lineItems,
                 'price' => $totalPrice,
                 'balance' => $newBalance,
+                'transaction_id' => $transactionId,
             ]);
 
             return response()->json([
@@ -1394,6 +1428,7 @@ class ShellApiController extends Controller
                 'status_label' => self::orderStatusLabel($orderStatus),
                 'items' => $lineItems,
                 'price' => $totalPrice,
+                'fiscal_receipt' => $fiscalReceipt,
             ]);
         } catch (\Exception $e) {
             Log::error('Shell shop checkout error: ' . $e->getMessage(), [

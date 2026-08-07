@@ -36,6 +36,11 @@ class ProcessFiscalReceipt implements ShouldQueue
             return;
         }
 
+        // Уже есть заглушка/URL — повторно не бьём.
+        if ($transaction->fiscal_status === 'skipped' && filled($transaction->fiscal_receipt_url)) {
+            return;
+        }
+
         $mode = $fiscal->resolveMode($transaction);
         if ($mode === null) {
             return;
