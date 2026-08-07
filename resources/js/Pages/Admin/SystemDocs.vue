@@ -66,7 +66,7 @@ const totalItems = computed(() =>
                     <input
                         v-model="query"
                         type="search"
-                        placeholder="Поиск: магазин, сессия, SOS…"
+                        placeholder="Поиск: вентилятор, TV shell, APK, SOS…"
                         class="flex-1 bg-black border border-white/10 rounded-2xl px-5 py-4 text-sm text-white placeholder:text-white/20 outline-none focus:border-[#22c55e]/40"
                     />
                     <select
@@ -106,7 +106,7 @@ const totalItems = computed(() =>
                                 {{ item.audience }}
                             </span>
                         </div>
-                        <p class="text-[12px] leading-relaxed text-white/45">
+                        <p class="text-[12px] leading-relaxed text-white/45 whitespace-pre-line">
                             {{ item.description }}
                         </p>
                         <div v-if="item.path" class="mt-4">

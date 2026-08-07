@@ -161,6 +161,84 @@ class SystemDocs
                         'path' => '/admin/video-surveillance',
                         'audience' => 'Supervisor+ / Shell',
                     ],
+                    [
+                        'title' => 'Вентиляция: железо и скорости',
+                        'description' => "Личный вентилятор места (SpaceFan) сидит на плате W5100 (RelayBoard): host + path-порт (по умолчанию 30000). URL команды: http://{host}/{port}/{cmd} — порт это сегмент пути, TCP обычно :80.\n\nДва канала каскада K1+K2 (пары 1+2, 3+4 … 15+16):\n• скорость 1 (night / 120V) — K1 OFF, K2 OFF\n• скорость 2 (mid / 170V) — K1 ON, K2 OFF\n• скорость 3 (high / 220V) — K1 OFF, K2 ON\n\nПолного электрического OFF на двух CO-реле нет: «выкл» = night. Прыжок 1↔3 идёт через mid ~2.5 с, чтобы не бить контакторы. На комнату (space) до 2 личных вентиляторов.",
+                        'path' => '/admin/fans',
+                        'audience' => 'Supervisor+ / Shell',
+                    ],
+                    [
+                        'title' => 'Вентиляция: кто крутит реле',
+                        'description' => "Облако (booking) только считает desired_power и факты (сессия / CPU°C / manual). Физический HTTP на W5100 делает Shell по LAN — сервер в интернет до платы не ходит.\n\nPC Shell (Qt): опрос fan state, ручные 50/75/100%, thermal report, apply → ack.\nTV Shell (APK): привязка пары каналов в Setup (discover → ТЕСТ mid ~2с → ПРИВЯЗАТЬ), те же API /api/shell/fan/*.\n\nРежимы: auto (по сессии и термопорогам), force_on, force_off(=night). Пороги thermal_on_c / thermal_off_c (дефолт 75 / 65). Пустая комната сбрасывает force_on в auto.",
+                        'path' => '/admin/fans',
+                        'audience' => 'Supervisor+ / Shell / TV',
+                    ],
+                    [
+                        'title' => 'Вентиляция: общие приток/вытяжка',
+                        'description' => "SharedFan (supply / exhaust) — общие вентиляторы клуба. К ним мапятся личные SpaceFan; нагрузка пересчитывается (SharedFanControlService) от desired_power мест.\n\nАктуация shared-реле — агент в LAN по токену FAN_SHARED_RELAY_TOKEN (или CLUB_WOL_RELAY_TOKEN). Админка: платы, личные вентиляторы, shared, карты привязок.",
+                        'path' => '/admin/fans',
+                        'audience' => 'Supervisor+ / Система',
+                    ],
+                ],
+            ],
+            [
+                'id' => 'tv-shell',
+                'title' => 'TV Shell (Android TV / приставка)',
+                'items' => [
+                    [
+                        'title' => 'Назначение',
+                        'description' => "APK ru.compclub.tvshell — киоск на Android TV / Google TV / ТВ-приставке (не PC Qt-шелл).\n\nIdle: логин + оверлеи (6 блоков как на PC: CAM/DAT/INF).\nСессия: таймер, баланс, лаунчер приложений, SOS, продление по QR, HDMI если прошивка отдаёт входы.\n\nСеть без сессии режется через MikroTik (MAC/IP isolate); с сессией — restore.",
+                        'path' => null,
+                        'audience' => 'Supervisor+ / TV',
+                    ],
+                    [
+                        'title' => 'Установка APK на устройство',
+                        'description' => "1) Включите отладку по USB / сетевую отладку на ТВ или приставке (Настройки → О устройстве → 7× по номеру сборки → Для разработчиков → USB debugging / Network debugging).\n\n2) Узнайте IP приставки в той же LAN, что ПК с ADB.\n\n3) С ПК (platform-tools):\n   adb connect IP:5555\n   adb devices\n   adb install -r путь\\к\\app-debug.apk\n\nDebug-сборка обычно:\n   C:\\Qt\\shell_apk\\app\\build\\outputs\\apk\\debug\\app-debug.apk\n\n4) Запуск:\n   adb shell am start -n ru.compclub.tvshell/.ui.LoginActivity\n\n5) Первичный Setup в приложении: 5× тап по заголовку входа → PIN 0451 → URL сервера (https://0451.space) → имя станции → ПРОВЕРИТЬ HWID → ЗАРЕГИСТРИРОВАТЬ TV. При необходимости — привязка вентиляторов (ТЕСТ → ПРИВЯЗАТЬ).\n\nСборка APK (JDK 17):\n   cd C:\\Qt\\shell_apk\n   set JAVA_HOME=C:\\Qt\\jdk-17\n   gradlew.bat assembleDebug",
+                        'path' => null,
+                        'audience' => 'Техник',
+                    ],
+                    [
+                        'title' => 'Киоск: Home и Device Owner',
+                        'description' => "Рекомендуется для клубных панелей:\n\n# Сделать шелл домашним лаунчером\nadb shell cmd package set-home-activity ru.compclub.tvshell/.ui.LoginActivity\n\n# Device Owner (только чистое устройство без аккаунтов Google / после factory reset):\nadb shell dpm set-device-owner ru.compclub.tvshell/.kiosk.ShellDeviceAdminReceiver\n\nС Device Owner: Lock Task режет Home/Recent жёстче; в whitelist сессии добавляются разрешённые приложения (YouTube и т.д.).\nБез DO киоск слабее: Home может открыть стоковый лаунчер — KioskGuard пытается вернуть шелл на idle.",
+                        'path' => null,
+                        'audience' => 'Техник',
+                    ],
+                    [
+                        'title' => 'Удаление APK',
+                        'description' => "Обычное удаление:\n  adb uninstall ru.compclub.tvshell\n\nЕсли был home-лаунчер — верните стоковый (имя пакета зависит от бренда), например:\n  adb shell cmd package set-home-activity com.google.android.tvlauncher/.MainActivity\n\nЕсли был Device Owner, uninstall может отказать. Сначала:\n  adb shell dpm remove-active-admin ru.compclub.tvshell/.kiosk.ShellDeviceAdminReceiver\nили\n  adb shell dpm clear-device-owner\n(иногда только factory reset). Затем снова adb uninstall.\n\nЧерез UI: Настройки → Приложения → CompClub TV → Удалить (если не Device Owner).",
+                        'path' => null,
+                        'audience' => 'Техник',
+                    ],
+                    [
+                        'title' => 'Idle (гость / нет сессии)',
+                        'description' => "Экран LoginActivity: телефон + PIN, экранная цифровая клавиатура (системная IME выключена).\n\nОверлеи: 6 слотов left/right (top/mid/bottom) из GET /api/shell/overlays. Слои image / video / text. Видео — ExoPlayer + SurfaceView, старт со сдвигом 0…1250 мс, mute, loop. На onPause / уходе с idle — полный release плееров (не просто hide).\n\nСеть: SessionNetworkPolicy → ui-state session_idle → очередь isolate на MikroTik (MAC с терминала).",
+                        'path' => '/admin/overlays',
+                        'audience' => 'TV / Система',
+                    ],
+                    [
+                        'title' => 'Авторизация и активная сессия',
+                        'description' => "POST /api/shell/login (phone, pin, terminal_id) → активация брони (BookingSessionTimingService), баланс, time_remaining.\n\nОверлеи убиваются (kill/release). ui-state session_active → MikroTik restore (интернет открыт).\n\nSessionActivity: имя, баланс, таймер (локальный tick + poll balance/heartbeat ~8 с), предупреждения 10/5/1 мин.\nKioskGuard выключен — можно уходить в YouTube/HDMI.\nЛаунчер: LEANBACK-приложения (YouTube/Кинопоиск в приоритете), Settings/Play скрыты.\nHDMI-кнопки — только если TvInputManager отдаёт passthrough (иначе блок скрыт).\nSOS → POST /api/shell/sos.\nПродлить → billing/topup confirmation=redirect → QR на телефоне.\nLAN CommandService :8787 (message, session_end, …).",
+                        'path' => null,
+                        'audience' => 'TV / Игрок',
+                    ],
+                    [
+                        'title' => 'Конец сессии на TV',
+                        'description' => "Триггеры: кнопка «Завершить», таймер 0, heartbeat/balance session_active=false, LAN session_end, истечение на сервере (completeExpiredSessions + isolate для kind=tv).\n\nДействия: logout API → очистка SessionStore → session_idle (isolate) → KioskGuard снова включён → Login + оверлеи.\nLock Task whitelist снова только пакет шелла.",
+                        'path' => null,
+                        'audience' => 'TV / Система',
+                    ],
+                    [
+                        'title' => 'Время сессии: кабинет vs шелл',
+                        'description' => "Кабинет игрока считает remaining по wall-clock: date + start_time + duration.\nШелл раньше мог брать «кривой» ends_at (+~3 ч из-за naive timestamp / timezone).\n\nСейчас Shell API (login + /api/shell/balance) использует ту же логику, что кабинет, и при перекосе чинит starts_at/ends_at (healSkewedWindow). После деплоя таймер на TV должен совпадать с кабинетом (~1 ч бронь → ~1 ч на экране).",
+                        'path' => '/account/dashboard',
+                        'audience' => 'Система / TV',
+                    ],
+                    [
+                        'title' => 'Эмулятор Android TV',
+                        'description' => "AVD Google TV удобнее запускать из CLI (Device Manager часто зависает на Starting up со скрытым окном):\n\n  C:\\Android\\emulator\\emulator.exe -avd Television_1080p -gpu host -no-snapshot-load\n\nЕсли чёрный экран — попробуйте -gpu swiftshader_indirect.\nЗатем в Studio Run на уже живой emulator-5554.\nAPI 34 стабильнее сырого API 36; RAM AVD лучше 3–4 ГБ.\nКириллица в пути профиля Windows (C:\\Users\\Админ) иногда ломает эмулятор — AVD на C:\\Android\\avd помогает.",
+                        'path' => null,
+                        'audience' => 'Техник',
+                    ],
                 ],
             ],
             [
@@ -253,7 +331,7 @@ class SystemDocs
                 'items' => [
                     [
                         'title' => 'Регистрация терминала',
-                        'description' => 'Привязка ПК по HWID: check и register-terminal.',
+                        'description' => 'Привязка ПК по HWID: check и register-terminal. Для TV используйте zone_type=tv (kind=tv) — см. раздел «TV Shell».',
                         'path' => null,
                         'audience' => 'Shell',
                     ],
@@ -265,7 +343,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Баланс и poll',
-                        'description' => 'Периодический опрос баланса. При опросе закрываются просроченные сессии.',
+                        'description' => 'Периодический опрос баланса. При опросе закрываются просроченные сессии; remaining считается согласованно с кабинетом (wall-clock / heal ends_at).',
                         'path' => null,
                         'audience' => 'Shell / Система',
                     ],
@@ -299,6 +377,12 @@ class SystemDocs
                         'path' => null,
                         'audience' => 'Shell',
                     ],
+                    [
+                        'title' => 'Климат на PC Shell',
+                        'description' => 'Плитка климата: режимы auto / 50% / 75% / 100%. Сервер отдаёт desired; Shell пульсирует W5100 по LAN и шлёт fan/applied. Подробности железа — в «Вентиляция» (Конфигурация клуба).',
+                        'path' => '/admin/fans',
+                        'audience' => 'Shell',
+                    ],
                 ],
             ],
             [
@@ -307,13 +391,13 @@ class SystemDocs
                 'items' => [
                     [
                         'title' => 'Активация и тайминг',
-                        'description' => 'Ранний старт сдвигает ends_at с сохранением оплаченной длительности. Опоздание сверх grace — no-show и отмена.',
+                        'description' => 'Ранний старт сдвигает ends_at с сохранением оплаченной длительности (поле duration — источник истины при перекосе timezone). Опоздание сверх grace — no-show и отмена.',
                         'path' => null,
                         'audience' => 'Система / Shell',
                     ],
                     [
                         'title' => 'Автозакрытие сессий',
-                        'description' => 'Команда reactor:update-statuses каждую минуту закрывает просроченные брони, обновляет busy/available ПК и снимает no-show.',
+                        'description' => 'Команда reactor:update-statuses каждую минуту закрывает просроченные брони, обновляет busy/available ПК и снимает no-show. Для kind=tv дополнительно ставит isolate в очередь MikroTik.',
                         'path' => null,
                         'audience' => 'Система',
                     ],
