@@ -411,7 +411,7 @@ class SystemDocs
             ],
             [
                 'id' => 'sessions',
-                'title' => 'Сессии и биллинг',
+                'title' => 'Сессии',
                 'items' => [
                     [
                         'title' => 'Активация и тайминг',
