@@ -22,7 +22,7 @@ class BookingSessionTimingService
 
     public function lateStartGraceMinutes(): int
     {
-        return max(0, (int) config('club.booking.late_start_grace_minutes', 15));
+        return max(0, (int) config('club.booking.late_start_grace_minutes', 30));
     }
 
     /**
@@ -128,8 +128,10 @@ class BookingSessionTimingService
      * Activate a confirmed booking at shell login.
      *
      * Early start (PC free): shift starts_at/ends_at to preserve paid duration.
-     * On-time / late within grace: keep ends_at, remaining = now→ends_at.
-     * Past grace without start: cancel as no-show.
+     * Late without a following booking: up to grace minutes free wait, then
+     * deduct from starts_at+grace (ends_at may extend past the paid card).
+     * Late with a following booking: deduct from starts_at, keep ends_at.
+     * Effective time fully elapsed without start → no-show.
      *
      * @return array{booking: Booking, time_remaining_minutes: int}
      */
@@ -159,22 +161,34 @@ class BookingSessionTimingService
             $scheduledStart = CarbonImmutable::parse($booking->starts_at);
             $scheduledEnd = CarbonImmutable::parse($booking->ends_at);
 
-            if ($now->gte($scheduledEnd)) {
-                throw new RuntimeException('Время брони уже закончилось.');
-            }
-
-            $graceDeadline = $scheduledStart->addMinutes($this->lateStartGraceMinutes());
-
             if ($now->lt($scheduledStart)) {
                 return $this->activateEarly($booking, $now, $scheduledStart, $scheduledEnd);
             }
 
-            if ($now->gt($graceDeadline)) {
-                $this->markNoShow($booking, $now);
-                throw new RuntimeException('Бронь аннулирована из‑за опоздания.');
+            $paidMinutes = $this->paidDurationMinutes($booking, $scheduledStart, $scheduledEnd);
+            $following = $this->hasFollowingBookingConflict($booking, $scheduledStart, $scheduledEnd, $paidMinutes);
+
+            if ($following) {
+                if ($now->gte($scheduledEnd)) {
+                    $this->markNoShow($booking, $now);
+                    throw new RuntimeException('Время брони уже закончилось.');
+                }
+
+                return $this->activateOnSchedule($booking, $now, $scheduledEnd);
             }
 
-            return $this->activateOnSchedule($booking, $now, $scheduledEnd);
+            $remainingSeconds = $this->softGraceRemainingSeconds(
+                $scheduledStart,
+                $paidMinutes,
+                $now
+            );
+
+            if ($remainingSeconds <= 0) {
+                $this->markNoShow($booking, $now);
+                throw new RuntimeException('Время брони уже закончилось.');
+            }
+
+            return $this->activateWithRemaining($booking, $now, $remainingSeconds);
         }, 3);
 
         $receipts = [];
@@ -192,21 +206,19 @@ class BookingSessionTimingService
     }
 
     /**
-     * Cancel confirmed/paid bookings that passed late-start grace without activation.
+     * Cancel confirmed/paid bookings whose effective playable time fully elapsed
+     * without activation (soft grace burned, or strict ends_at passed).
      */
     public function cancelNoShows(?CarbonImmutable $now = null): int
     {
         $now = $now ?? CarbonImmutable::now();
-        $grace = $this->lateStartGraceMinutes();
-        $deadline = $now->subMinutes($grace);
 
         $ids = Booking::query()
             ->whereIn('status', ['confirmed', 'paid'])
             ->whereNull('actual_started_at')
             ->whereNotNull('starts_at')
             ->whereNotNull('ends_at')
-            ->where('starts_at', '<=', $deadline)
-            ->where('ends_at', '>', $now)
+            ->where('starts_at', '<=', $now)
             ->pluck('id');
 
         if ($ids->isEmpty()) {
@@ -224,12 +236,86 @@ class BookingSessionTimingService
                     return;
                 }
 
+                $booking = $this->healSkewedWindow($booking);
+                if (! $booking->starts_at || ! $booking->ends_at) {
+                    return;
+                }
+
+                $scheduledStart = CarbonImmutable::parse($booking->starts_at);
+                $scheduledEnd = CarbonImmutable::parse($booking->ends_at);
+                $paidMinutes = $this->paidDurationMinutes($booking, $scheduledStart, $scheduledEnd);
+                $following = $this->hasFollowingBookingConflict(
+                    $booking,
+                    $scheduledStart,
+                    $scheduledEnd,
+                    $paidMinutes
+                );
+
+                $expired = $following
+                    ? $now->gte($scheduledEnd)
+                    : $this->softGraceRemainingSeconds($scheduledStart, $paidMinutes, $now) <= 0;
+
+                if (! $expired) {
+                    return;
+                }
+
                 $this->markNoShow($booking, $now);
                 $count++;
             }, 3);
         }
 
         return $count;
+    }
+
+    /**
+     * Soft grace applies only when no later booking would collide with the
+     * extended play window after the paid card ends.
+     */
+    public function hasFollowingBookingConflict(
+        Booking $booking,
+        CarbonImmutable $scheduledStart,
+        CarbonImmutable $scheduledEnd,
+        int $paidMinutes
+    ): bool {
+        $grace = $this->lateStartGraceMinutes();
+        $softMaxEnd = $scheduledStart->addMinutes($grace + $paidMinutes);
+
+        // Nothing to extend into → treat as strict (keep original ends_at).
+        if ($softMaxEnd->lte($scheduledEnd)) {
+            return true;
+        }
+
+        $computerId = (int) $booking->computer_id;
+        $occupied = $this->bookings->occupiedComputerIds(
+            [$computerId],
+            $scheduledEnd,
+            $softMaxEnd,
+            [(int) $booking->id]
+        );
+
+        return $occupied !== [];
+    }
+
+    /**
+     * Remaining playable seconds when soft grace is active (no following booking).
+     * Free wait until starts_at+grace, then paid duration burns.
+     */
+    public function softGraceRemainingSeconds(
+        CarbonImmutable $scheduledStart,
+        int $paidMinutes,
+        CarbonImmutable $now
+    ): int {
+        $grace = $this->lateStartGraceMinutes();
+        $billingStart = $scheduledStart->addMinutes($grace);
+        $paidSeconds = max(0, $paidMinutes * 60);
+
+        if ($now->lte($billingStart)) {
+            return $paidSeconds;
+        }
+
+        $elapsed = (int) floor($billingStart->diffInSeconds($now, false));
+
+        return max(0, $paidSeconds - max(0, $elapsed));
     }
 
     /**
@@ -417,6 +503,69 @@ class BookingSessionTimingService
         return [
             'booking' => $fresh,
             'time_remaining_minutes' => max(0, (int) floor($this->remainingSeconds($fresh, $now) / 60)),
+        ];
+    }
+
+    /**
+     * Late start under soft grace: set ends_at = now + remaining (may extend past card).
+     *
+     * @return array{booking: Booking, time_remaining_minutes: int}
+     */
+    private function activateWithRemaining(
+        Booking $booking,
+        CarbonImmutable $now,
+        int $remainingSeconds
+    ): array {
+        $newEndsAt = $now->addSeconds($remainingSeconds);
+
+        $computerId = (int) $booking->computer_id;
+        $occupied = $this->bookings->occupiedComputerIds(
+            [$computerId],
+            $now,
+            $newEndsAt,
+            [(int) $booking->id]
+        );
+
+        if ($occupied !== []) {
+            // Following booking appeared between checks — fall back to strict card end.
+            $scheduledEnd = CarbonImmutable::parse($booking->ends_at);
+            if ($now->gte($scheduledEnd)) {
+                $this->markNoShow($booking, $now);
+                throw new RuntimeException('Время брони уже закончилось.');
+            }
+
+            return $this->activateOnSchedule($booking, $now, $scheduledEnd);
+        }
+
+        if ($this->gameAccountWindowConflicts($booking, $now, $newEndsAt)) {
+            $scheduledEnd = CarbonImmutable::parse($booking->ends_at);
+            if ($now->gte($scheduledEnd)) {
+                $this->markNoShow($booking, $now);
+                throw new RuntimeException('Время брони уже закончилось.');
+            }
+
+            return $this->activateOnSchedule($booking, $now, $scheduledEnd);
+        }
+
+        $localStart = $now->timezone(config('app.timezone'));
+        $booking->update([
+            'status' => 'active',
+            'actual_started_at' => $now,
+            'pin_code' => null,
+            'starts_at' => $now,
+            'ends_at' => $newEndsAt,
+            'date' => $localStart->toDateString(),
+            'start_time' => $localStart->hour + ($localStart->minute / 60),
+            'duration' => $remainingSeconds / 3600,
+        ]);
+
+        $this->shiftReservations($booking, $now, $newEndsAt);
+        $this->syncGroupWindow($booking, 'active');
+        $this->computerStatuses->syncFor($computerId, $now);
+
+        return [
+            'booking' => $booking->fresh(),
+            'time_remaining_minutes' => max(0, (int) floor($remainingSeconds / 60)),
         ];
     }
 

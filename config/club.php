@@ -49,10 +49,14 @@ return [
     |--------------------------------------------------------------------------
     | early: если ПК свободен — старт в любой момент до starts_at; ends_at
     | сдвигается, чтобы сохранить оплаченную длительность.
-    | late: после starts_at + grace без активации бронь снимается (no-show).
+    | late: если после этой брони нет следующей на том же ПК в окне
+    | «мягкого» продления — ждём late_start_grace_minutes без списания,
+    | затем списываем от starts_at+grace. Появление следующей брони
+    | обнуляет жест: списание строго с starts_at (ends_at не двигается).
+    | Grace не удерживает слот после ends_at — следующий гость может бронировать.
     */
     'booking' => [
-        'late_start_grace_minutes' => (int) env('CLUB_LATE_START_GRACE_MINUTES', 15),
+        'late_start_grace_minutes' => (int) env('CLUB_LATE_START_GRACE_MINUTES', 30),
     ],
 
     /*

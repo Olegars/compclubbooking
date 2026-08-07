@@ -29,7 +29,7 @@ class BookingSessionTimingTest extends TestCase
     {
         parent::setUp();
 
-        config(['club.booking.late_start_grace_minutes' => 15]);
+        config(['club.booking.late_start_grace_minutes' => 30]);
 
         $this->user = User::create([
             'name' => 'Session Tester',
@@ -107,52 +107,104 @@ class BookingSessionTimingTest extends TestCase
         $this->timing->activate($booking, $now);
     }
 
-    public function test_late_within_grace_keeps_original_ends_at(): void
+    public function test_late_within_soft_grace_keeps_full_paid_duration(): void
     {
-        $startsAt = CarbonImmutable::parse('2026-08-01 12:00:00', config('app.timezone'));
-        $endsAt = $startsAt->addHours(2);
-        $now = $startsAt->addMinutes(10);
+        $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));
+        $endsAt = $startsAt->addHour();
+        $now = $startsAt->addMinutes(20);
 
         $booking = $this->makeBooking($startsAt, $endsAt);
         $result = $this->timing->activate($booking, $now);
 
-        $this->assertSame(110, $result['time_remaining_minutes']);
+        $this->assertSame(60, $result['time_remaining_minutes']);
         $booking->refresh();
         $this->assertSame('active', $booking->status);
+        $this->assertTrue($booking->ends_at->equalTo($now->addMinutes(60)));
+    }
+
+    public function test_late_past_soft_grace_deducts_from_billing_start(): void
+    {
+        // 10:00–11:00, arrive 10:50 → 30 min free wait, 20 min billed → 40 left
+        $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));
+        $endsAt = $startsAt->addHour();
+        $now = $startsAt->addMinutes(50);
+
+        $booking = $this->makeBooking($startsAt, $endsAt);
+        $result = $this->timing->activate($booking, $now);
+
+        $this->assertSame(40, $result['time_remaining_minutes']);
+        $booking->refresh();
+        $this->assertSame('active', $booking->status);
+        $this->assertTrue($booking->ends_at->equalTo($now->addMinutes(40)));
+    }
+
+    public function test_following_booking_forces_strict_deduction_from_start(): void
+    {
+        $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));
+        $endsAt = $startsAt->addHour();
+        $now = $startsAt->addMinutes(20);
+
+        $this->makeFollowingBooking($endsAt, $endsAt->addHour());
+
+        $booking = $this->makeBooking($startsAt, $endsAt);
+        $result = $this->timing->activate($booking, $now);
+
+        // Strict: keep original ends_at → 40 minutes left (11:00 − 10:20)
+        $this->assertSame(40, $result['time_remaining_minutes']);
+        $booking->refresh();
         $this->assertTrue($booking->ends_at->equalTo($endsAt));
         $this->assertTrue($booking->starts_at->equalTo($startsAt));
     }
 
-    public function test_late_past_grace_cancels_as_no_show(): void
+    public function test_following_booking_rejects_after_scheduled_end(): void
     {
-        $startsAt = CarbonImmutable::parse('2026-08-01 12:00:00', config('app.timezone'));
-        $endsAt = $startsAt->addHours(2);
-        $now = $startsAt->addMinutes(16);
+        $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));
+        $endsAt = $startsAt->addHour();
+        $now = $endsAt->addMinutes(5);
 
+        $this->makeFollowingBooking($endsAt, $endsAt->addHour());
         $booking = $this->makeBooking($startsAt, $endsAt);
 
         try {
             $this->timing->activate($booking, $now);
-            $this->fail('Expected no-show exception');
+            $this->fail('Expected expiry exception');
         } catch (RuntimeException $e) {
-            $this->assertStringContainsString('опоздания', $e->getMessage());
+            $this->assertStringContainsString('закончилось', $e->getMessage());
         }
 
         $booking->refresh();
         $this->assertSame('cancelled', $booking->status);
-        $this->assertNull($booking->pin_code);
-        $this->assertSame('cancelled', $booking->group()->first()->status);
     }
 
-    public function test_cancel_no_shows_releases_slot_after_grace(): void
+    public function test_soft_grace_allows_start_past_original_ends_at(): void
     {
-        $startsAt = CarbonImmutable::parse('2026-08-01 12:00:00', config('app.timezone'));
-        $endsAt = $startsAt->addHours(2);
+        // 10:00–11:00, arrive 11:10 → billed from 10:30 = 40 min → 20 left
+        $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));
+        $endsAt = $startsAt->addHour();
+        $now = $startsAt->addMinutes(70);
+
+        $booking = $this->makeBooking($startsAt, $endsAt);
+        $result = $this->timing->activate($booking, $now);
+
+        $this->assertSame(20, $result['time_remaining_minutes']);
+        $booking->refresh();
+        $this->assertSame('active', $booking->status);
+    }
+
+    public function test_cancel_no_shows_only_after_effective_time_elapsed(): void
+    {
+        $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));
+        $endsAt = $startsAt->addHour();
         $booking = $this->makeBooking($startsAt, $endsAt);
 
-        $now = $startsAt->addMinutes(16);
-        $count = $this->timing->cancelNoShows($now);
+        // 50 min late — still playable under soft grace
+        $count = $this->timing->cancelNoShows($startsAt->addMinutes(50));
+        $this->assertSame(0, $count);
+        $booking->refresh();
+        $this->assertSame('confirmed', $booking->status);
 
+        // starts_at + 30 grace + 60 paid = 11:30
+        $count = $this->timing->cancelNoShows($startsAt->addMinutes(90));
         $this->assertSame(1, $count);
         $booking->refresh();
         $this->assertSame('cancelled', $booking->status);
@@ -180,6 +232,32 @@ class BookingSessionTimingTest extends TestCase
         $booking->refresh();
         $this->assertSame('active', $booking->status);
         $this->assertTrue($booking->ends_at->equalTo($now->addHour()));
+
+        CarbonImmutable::setTestNow();
+    }
+
+    public function test_complete_expired_sessions_closes_active_past_ends_at(): void
+    {
+        $now = CarbonImmutable::parse('2026-07-31 00:30:00', 'Europe/Moscow');
+        CarbonImmutable::setTestNow($now);
+        $this->travelTo($now);
+
+        $booking = $this->makeBooking(
+            $now->subHour(),
+            $now->subMinutes(10),
+            '1111'
+        );
+        $booking->update([
+            'status' => 'active',
+            'actual_started_at' => $now->subHour(),
+        ]);
+
+        $closed = $this->timing->completeExpiredSessions($now);
+
+        $this->assertSame(1, $closed);
+        $booking->refresh();
+        $this->assertSame('completed', $booking->status);
+        $this->assertNotNull($booking->actual_ended_at);
 
         CarbonImmutable::setTestNow();
     }
@@ -224,29 +302,47 @@ class BookingSessionTimingTest extends TestCase
         ]);
     }
 
-    public function test_complete_expired_sessions_closes_active_past_ends_at(): void
+    private function makeFollowingBooking(CarbonImmutable $startsAt, CarbonImmutable $endsAt): Booking
     {
-        $now = CarbonImmutable::parse('2026-07-31 00:30:00', 'Europe/Moscow');
-        CarbonImmutable::setTestNow($now);
-        $this->travelTo($now);
-
-        $booking = $this->makeBooking(
-            $now->subHour(),
-            $now->subMinutes(10),
-            '1111'
-        );
-        $booking->update([
-            'status' => 'active',
-            'actual_started_at' => $now->subHour(),
+        $otherUser = User::create([
+            'name' => 'Next Guest',
+            'phone' => '+79990000097',
+            'email' => 'next@example.test',
+            'password' => 'password',
         ]);
 
-        $closed = $this->timing->completeExpiredSessions($now);
+        $local = $startsAt->timezone(config('app.timezone'));
+        $durationHours = $startsAt->diffInMinutes($endsAt) / 60;
 
-        $this->assertSame(1, $closed);
-        $booking->refresh();
-        $this->assertSame('completed', $booking->status);
-        $this->assertNotNull($booking->actual_ended_at);
+        $group = BookingGroup::create([
+            'user_id' => $otherUser->id,
+            'club_id' => $this->club->id,
+            'starts_at' => $startsAt,
+            'ends_at' => $endsAt,
+            'status' => 'confirmed',
+            'payment_status' => 'paid',
+            'currency' => 'RUB',
+            'computers_total_minor' => 10000,
+            'games_total_minor' => 0,
+            'total_minor' => 10000,
+            'paid_total_minor' => 10000,
+            'paid_at' => $startsAt->subDay(),
+        ]);
 
-        CarbonImmutable::setTestNow();
+        return Booking::create([
+            'booking_group_id' => $group->id,
+            'user_id' => $otherUser->id,
+            'computer_id' => $this->computer->id,
+            'pc_ids' => [(string) $this->computer->id],
+            'date' => $local->toDateString(),
+            'start_time' => $local->hour + ($local->minute / 60),
+            'duration' => $durationHours,
+            'price' => 100,
+            'price_minor' => 10000,
+            'status' => 'confirmed',
+            'pin_code' => '9999',
+            'starts_at' => $startsAt,
+            'ends_at' => $endsAt,
+        ]);
     }
 }
