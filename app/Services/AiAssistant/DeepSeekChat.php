@@ -2,13 +2,14 @@
 
 namespace App\Services\AiAssistant;
 
+use App\Models\AiAssistantSetting;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 class DeepSeekChat
 {
     /**
-     * @param  array{game_title:?string,player_name:?string,club_name:?string}  $context
+     * @param  array{game_title:?string,player_name:?string,club_name:?string,club_id?:?int}  $context
      */
     public function reply(string $userText, array $context = []): string
     {
@@ -21,6 +22,7 @@ class DeepSeekChat
         $model = (string) config('ai_assistant.deepseek.model', 'deepseek-chat');
         $timeout = (float) config('ai_assistant.http_timeout', 60);
         $maxChars = (int) config('ai_assistant.max_reply_chars', 420);
+        $settings = AiAssistantSetting::forClub(isset($context['club_id']) ? (int) $context['club_id'] : null);
 
         $response = Http::timeout($timeout)
             ->withToken($key)
@@ -30,7 +32,7 @@ class DeepSeekChat
                 'temperature' => 0.7,
                 'max_tokens' => 220,
                 'messages' => [
-                    ['role' => 'system', 'content' => $this->systemPrompt($context, $maxChars)],
+                    ['role' => 'system', 'content' => $settings->resolveCompanionPrompt($context, $maxChars)],
                     ['role' => 'user', 'content' => $userText],
                 ],
             ]);
@@ -63,7 +65,8 @@ class DeepSeekChat
      *   time_remaining:?string,
      *   is_first_visit:bool,
      *   visit_count_completed:int,
-     *   favorite_games:array<int, array{id:int,title:string,launch_count:int}>
+     *   favorite_games:array<int, array{id:int,title:string,launch_count:int}>,
+     *   club_id?:?int
      * }  $context
      */
     public function greet(array $context): string
@@ -77,6 +80,7 @@ class DeepSeekChat
         $model = (string) config('ai_assistant.deepseek.model', 'deepseek-chat');
         $timeout = (float) config('ai_assistant.http_timeout', 60);
         $maxChars = min(280, (int) config('ai_assistant.max_reply_chars', 420));
+        $settings = AiAssistantSetting::forClub(isset($context['club_id']) ? (int) $context['club_id'] : null);
 
         $response = Http::timeout($timeout)
             ->withToken($key)
@@ -86,7 +90,7 @@ class DeepSeekChat
                 'temperature' => 0.8,
                 'max_tokens' => 160,
                 'messages' => [
-                    ['role' => 'system', 'content' => $this->greetingSystemPrompt($context, $maxChars)],
+                    ['role' => 'system', 'content' => $settings->resolveGreetingPrompt($context, $maxChars)],
                     ['role' => 'user', 'content' => 'Сгенерируй короткое голосовое приветствие для этого игрока прямо сейчас.'],
                 ],
             ]);
@@ -107,89 +111,5 @@ class DeepSeekChat
         }
 
         return $text;
-    }
-
-    /**
-     * @param  array{game_title:?string,player_name:?string,club_name:?string}  $context
-     */
-    private function systemPrompt(array $context, int $maxChars): string
-    {
-        $game = $context['game_title'] ?: 'неизвестно (игра может быть не запущена)';
-        $player = $context['player_name'] ?: 'игрок';
-        $club = $context['club_name'] ?: 'компьютерный клуб';
-
-        return <<<PROMPT
-Ты голосовой компаньон за ПК в «{$club}». Тебя вызывают по F1 во время сессии, ответ сразу озвучивается в наушники.
-
-Игрок: {$player}
-Сейчас запущена / актуальна игра: {$game}
-
-Сам по смыслу реплики выбери тон — отдельный классификатор не нужен:
-- вопрос по игре / механике / прохождению — коротко и по делу; опирайся на название игры выше;
-- болтовня, поддержка, «по душам» — по-человечески, тепло, без морали и без роли психотерапевта;
-- про клуб (бронь, деньги, админ) — не выдумывай факты; скажи позвать администратора или посмотреть в Shell.
-
-Жёсткие правила:
-- ответ на русском, разговорный;
-- 1–3 коротких предложения, максимум ~{$maxChars} символов;
-- без markdown, списков, эмодзи, кавычек-ёлочек для оформления;
-- без преамбул вроде «Конечно!» и «Как ИИ я…»;
-- не спойлери сюжет, если прямо не просят.
-PROMPT;
-    }
-
-    /**
-     * @param  array{
-     *   player_name:?string,
-     *   club_name:?string,
-     *   pc_name:?string,
-     *   time_remaining:?string,
-     *   is_first_visit:bool,
-     *   visit_count_completed:int,
-     *   favorite_games:array<int, array{id:int,title:string,launch_count:int}>
-     * }  $context
-     */
-    private function greetingSystemPrompt(array $context, int $maxChars): string
-    {
-        $player = $context['player_name'] ?: 'игрок';
-        $club = $context['club_name'] ?: 'компьютерный клуб';
-        $pc = $context['pc_name'] ?: 'ПК';
-        $time = $context['time_remaining'] ?: 'неизвестно';
-        $first = ! empty($context['is_first_visit']);
-        $visits = (int) ($context['visit_count_completed'] ?? 0);
-
-        $games = $context['favorite_games'] ?? [];
-        $gameLines = [];
-        foreach (array_slice($games, 0, 5) as $g) {
-            $title = (string) ($g['title'] ?? '');
-            $count = (int) ($g['launch_count'] ?? 0);
-            if ($title === '') {
-                continue;
-            }
-            $gameLines[] = $count > 0 ? "{$title} ({$count})" : $title;
-        }
-        $gamesText = $gameLines ? implode(', ', $gameLines) : 'предпочтения пока неизвестны';
-
-        $visitLine = $first
-            ? 'Это похоже на первый визит (или прошлых сессий не было).'
-            : "Игрок уже бывал в клубе; завершённых визитов: {$visits}.";
-
-        return <<<PROMPT
-Ты голос станции в «{$club}». Сейчас игрок только авторизовался на «{$pc}», приветствие озвучивается в колонки.
-
-Игрок: {$player}
-Остаток сессии: {$time}
-{$visitLine}
-Любимые / частые игры: {$gamesText}
-
-Задача: тёплое короткое приветствие по-русски.
-- если первый визит — поприветствуй в клубе, без занудства;
-- если не первый — можно мягко узнать по любимым играм или просто сказать «с возвращением»;
-- можно коротко упомянуть одну игру из списка, если она есть;
-- не выдумывай акции, цены, правила и факты клуба;
-- 1–2 предложения, максимум ~{$maxChars} символов;
-- без markdown, списков, эмодзи, кавычек-ёлочек;
-- без «Конечно!» и «Как ИИ…».
-PROMPT;
     }
 }

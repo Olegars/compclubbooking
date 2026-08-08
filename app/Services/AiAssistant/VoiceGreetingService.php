@@ -2,6 +2,7 @@
 
 namespace App\Services\AiAssistant;
 
+use App\Models\AiAssistantSetting;
 use App\Models\Booking;
 use App\Models\Club;
 use App\Models\Computer;
@@ -19,9 +20,13 @@ class VoiceGreetingService
     ) {
     }
 
-    public function isConfigured(): bool
+    public function isConfigured(?int $clubId = null): bool
     {
         if (! config('ai_assistant.enabled')) {
+            return false;
+        }
+
+        if (! AiAssistantSetting::forClub($clubId)->is_enabled) {
             return false;
         }
 
@@ -43,13 +48,14 @@ class VoiceGreetingService
      */
     public function greet(int $terminalId, ?int $bookingId = null): array
     {
-        if (! $this->isConfigured()) {
-            throw new RuntimeException('AI-ассистент выключен или не настроен (ключи / AI_ASSISTANT_ENABLED).');
-        }
-
         $computer = Computer::query()->find($terminalId);
         if (! $computer) {
             throw new RuntimeException('Терминал не найден.');
+        }
+
+        $clubId = $computer->club_id ? (int) $computer->club_id : null;
+        if (! $this->isConfigured($clubId)) {
+            throw new RuntimeException('AI-ассистент выключен или не настроен (ключи / AI_ASSISTANT_ENABLED).');
         }
 
         $booking = $this->activeBookingForTerminal($terminalId);
@@ -67,6 +73,7 @@ class VoiceGreetingService
         }
 
         $club = Club::query()->find($computer->club_id);
+        $settings = AiAssistantSetting::forClub($clubId);
         $favoriteGames = $this->favoriteGamesForUser((int) $user->id);
         $visitCountCompleted = $this->completedVisitCount((int) $user->id);
         $isFirstVisit = $this->isFirstVisit((int) $user->id, (int) $booking->id);
@@ -80,10 +87,11 @@ class VoiceGreetingService
             'is_first_visit' => $isFirstVisit,
             'visit_count_completed' => $visitCountCompleted,
             'favorite_games' => $favoriteGames,
+            'club_id' => $clubId,
         ];
 
         $reply = $this->llm->greet($context);
-        $speech = $this->tts->synthesize($reply);
+        $speech = $this->tts->synthesize($reply, $settings->resolvedTtsVoice());
 
         Log::info('[AI-GREETING]', [
             'terminal_id' => $terminalId,

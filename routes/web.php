@@ -44,6 +44,7 @@ use App\Http\Controllers\Admin\AchievementAdminController;
 use App\Http\Controllers\Admin\OverlayAdminController;
 use App\Http\Controllers\Admin\VideoSurveillanceController;
 use App\Http\Controllers\Admin\BookingSettingsController;
+use App\Http\Controllers\Admin\AiAssistantSettingsController;
 use App\Http\Controllers\Admin\SystemDocsController;
 use App\Http\Controllers\Admin\GameRequestAdminController;
 use App\Http\Controllers\Admin\AnalyticsController;
@@ -264,6 +265,10 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 
         Route::get('/booking-settings', [BookingSettingsController::class, 'index'])->name('admin.booking-settings');
         Route::post('/booking-settings', [BookingSettingsController::class, 'update']);
+
+        Route::get('/ai-assistant', [AiAssistantSettingsController::class, 'index'])->name('admin.ai-assistant');
+        Route::post('/ai-assistant', [AiAssistantSettingsController::class, 'update']);
+        Route::post('/ai-assistant/reset-prompts', [AiAssistantSettingsController::class, 'resetPrompts']);
 
         Route::prefix('api')->group(function () {
             Route::post('/incidents/{id}/resolve', [AdminController::class, 'resolveIncident']);

@@ -2,6 +2,7 @@
 
 namespace App\Services\AiAssistant;
 
+use App\Models\AiAssistantSetting;
 use App\Models\Booking;
 use App\Models\Club;
 use App\Models\Computer;
@@ -20,9 +21,13 @@ class AiAssistantService
     ) {
     }
 
-    public function isConfigured(): bool
+    public function isConfigured(?int $clubId = null): bool
     {
         if (! config('ai_assistant.enabled')) {
+            return false;
+        }
+
+        if (! AiAssistantSetting::forClub($clubId)->is_enabled) {
             return false;
         }
 
@@ -47,13 +52,14 @@ class AiAssistantService
         ?int $gameId = null,
         ?string $gameTitle = null,
     ): array {
-        if (! $this->isConfigured()) {
-            throw new RuntimeException('AI-ассистент выключен или не настроен (ключи / AI_ASSISTANT_ENABLED).');
-        }
-
         $computer = Computer::query()->find($terminalId);
         if (! $computer) {
             throw new RuntimeException('Терминал не найден.');
+        }
+
+        $clubId = $computer->club_id ? (int) $computer->club_id : null;
+        if (! $this->isConfigured($clubId)) {
+            throw new RuntimeException('AI-ассистент выключен или не настроен (ключи / AI_ASSISTANT_ENABLED).');
         }
 
         $booking = $this->activeBookingForTerminal($terminalId);
@@ -63,6 +69,7 @@ class AiAssistantService
 
         $user = $booking->user_id ? User::query()->find($booking->user_id) : null;
         $club = Club::query()->find($computer->club_id);
+        $settings = AiAssistantSetting::forClub($clubId);
 
         $resolvedGame = $this->resolveGame($gameId, $gameTitle);
 
@@ -71,8 +78,9 @@ class AiAssistantService
             'game_title' => $resolvedGame['title'],
             'player_name' => $user?->name,
             'club_name' => $club?->name,
+            'club_id' => $clubId,
         ]);
-        $speech = $this->tts->synthesize($reply);
+        $speech = $this->tts->synthesize($reply, $settings->resolvedTtsVoice());
 
         Log::info('[AI-ASSISTANT]', [
             'terminal_id' => $terminalId,
