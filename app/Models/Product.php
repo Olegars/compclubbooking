@@ -14,16 +14,21 @@ class Product extends Model
         'name',
         'category',
         'price',
+        'cost_price',
         'stock',
+        'min_stock',
         'image',
         'is_active',
         'barcode',
         'requires_marking',
+        'supplier_id',
     ];
 
     protected $casts = [
         'price' => 'float',
+        'cost_price' => 'float',
         'stock' => 'integer',
+        'min_stock' => 'integer',
         'is_active' => 'boolean',
         'requires_marking' => 'boolean',
     ];
@@ -31,6 +36,11 @@ class Product extends Model
     public function units(): HasMany
     {
         return $this->hasMany(ProductUnit::class);
+    }
+
+    public function supplier(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
     }
 
     public function availableUnits(): HasMany

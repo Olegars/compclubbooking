@@ -103,6 +103,11 @@ const shiftLabel = computed(() => {
                           :class="isActive('/admin/inventory') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>📦</span> Склад
                     </Link>
+                    <Link v-if="isSupervisorPlus" href="/admin/suppliers"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/suppliers') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🚚</span> Поставщики
+                    </Link>
                     <Link href="/admin/shifts/transfer"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/shifts/transfer') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">

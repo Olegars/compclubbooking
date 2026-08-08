@@ -10,17 +10,23 @@ const props = defineProps<{
     canAdjustStock?: boolean
     reasonCodes?: { code: string, label: string }[]
     products?: any[]
+    suppliers?: { id: number, name: string }[]
 }>()
 
 const canManageCatalog = computed(() => Boolean(props.canManageCatalog))
 const canAdjustStock = computed(() => props.canAdjustStock !== false)
+const suppliers = computed(() => props.suppliers || [])
 const { receiveMode, enableReceiveMode, disableReceiveMode } = useAdminBarcodeScanner()
 
 const cloneProducts = (list: any[] = []) => list.map((p) => ({
     ...p,
     stock: Number(p.stock) || 0,
+    min_stock: p.min_stock == null ? null : Number(p.min_stock),
+    cost_price: p.cost_price == null ? null : Number(p.cost_price),
+    price: Number(p.price) || 0,
     id: Number(p.id),
     requires_marking: Boolean(p.requires_marking),
+    supplier_id: p.supplier_id == null ? null : Number(p.supplier_id),
 }))
 
 const products = ref<any[]>(cloneProducts(props.products || []))
@@ -31,6 +37,8 @@ const scannedId = ref<number | null>(null)
 const lastScannedName = ref('')
 const stockError = ref('')
 const receiveProductId = ref<number | null>(null)
+const receiveUnitCost = ref<number | null>(null)
+const receiveSupplierId = ref<number | null>(null)
 
 const isModalOpen = ref(false)
 const isWriteOffOpen = ref(false)
@@ -43,6 +51,9 @@ const writeOffReason = ref('')
 const isProcessing = ref(false)
 const imagePreview = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+
+const stockThreshold = (item: any) => (item.min_stock != null ? Number(item.min_stock) : 5)
+const isLow = (item: any) => Number(item.stock) <= stockThreshold(item)
 
 const reasonOptions = computed(() => {
     const list = props.reasonCodes?.length
@@ -72,9 +83,12 @@ const form = ref({
     name: '',
     category: 'Снэки',
     price: 100,
+    cost_price: null as number | null,
     stock: 0,
+    min_stock: null as number | null,
     barcode: '',
     requires_marking: false,
+    supplier_id: null as number | null,
     image: null as File | null,
     current_image_url: '',
 })
@@ -99,6 +113,10 @@ const processReceiveScan = async (code: string) => {
     try {
         const payload: Record<string, any> = { code }
         if (receiveProductId.value) payload.product_id = receiveProductId.value
+        if (receiveUnitCost.value != null && receiveUnitCost.value >= 0) {
+            payload.unit_cost = receiveUnitCost.value
+        }
+        if (receiveSupplierId.value) payload.supplier_id = receiveSupplierId.value
 
         const { data } = await axios.post('/admin/api/inventory/receive-scan', payload)
         applyProductStock(data.product)
@@ -139,6 +157,15 @@ const selectReceiveTarget = (id: number | null) => {
         return
     }
     receiveProductId.value = id
+    const p = products.value.find(x => Number(x.id) === Number(id))
+    if (p) {
+        if (receiveUnitCost.value == null && p.cost_price != null) {
+            receiveUnitCost.value = Number(p.cost_price)
+        }
+        if (!receiveSupplierId.value && p.supplier_id) {
+            receiveSupplierId.value = Number(p.supplier_id)
+        }
+    }
     if (id) setReceiveMode(true)
 }
 
@@ -163,9 +190,12 @@ const openModal = (product: any = null) => {
             name: product.name,
             category: product.category,
             price: Math.floor(product.price),
+            cost_price: product.cost_price == null ? null : Number(product.cost_price),
             stock: Number(product.stock),
+            min_stock: product.min_stock == null ? null : Number(product.min_stock),
             barcode: product.barcode || '',
             requires_marking: Boolean(product.requires_marking),
+            supplier_id: product.supplier_id == null ? null : Number(product.supplier_id),
             image: null,
             current_image_url: product.image || '',
         }
@@ -178,9 +208,12 @@ const openModal = (product: any = null) => {
             name: '',
             category: 'Снэки',
             price: 100,
+            cost_price: null,
             stock: 0,
+            min_stock: 5,
             barcode: '',
             requires_marking: false,
+            supplier_id: null,
             image: null,
             current_image_url: '',
         }
@@ -204,12 +237,17 @@ const saveProduct = async () => {
     isProcessing.value = true
     const formData = new FormData()
     Object.entries(form.value).forEach(([key, val]) => {
-        if (val !== null && key !== 'current_image_url') {
-            if (key === 'requires_marking') {
-                formData.append(key, val ? '1' : '0')
-            } else {
-                formData.append(key, val as any)
-            }
+        if (key === 'current_image_url') return
+        if (key === 'requires_marking') {
+            formData.append(key, val ? '1' : '0')
+            return
+        }
+        if (key === 'supplier_id' || key === 'min_stock' || key === 'cost_price') {
+            formData.append(key, val === null || val === undefined || val === '' ? '' : String(val))
+            return
+        }
+        if (val !== null) {
+            formData.append(key, val as any)
         }
     })
 
@@ -358,6 +396,15 @@ const receiveTargetName = computed(() => {
                                 : 'border-white/10 text-white/40 hover:text-white'">
                         {{ receiveMode ? 'Приёмка · вкл' : 'Режим приёмки' }}
                     </button>
+                    <template v-if="receiveMode && canManageCatalog">
+                        <input v-model.number="receiveUnitCost" type="number" min="0" step="0.01" placeholder="Закуп ₽"
+                               class="w-28 bg-black border border-amber-500/40 rounded-xl px-3 py-3 text-[11px] text-amber-300 font-bold outline-none" />
+                        <select v-model.number="receiveSupplierId"
+                                class="bg-black border border-amber-500/40 rounded-xl px-3 py-3 text-[11px] text-white/70 outline-none max-w-[180px]">
+                            <option :value="null">Поставщик</option>
+                            <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+                        </select>
+                    </template>
                     <div class="flex gap-2 p-1.5 bg-white/5 rounded-2xl border border-white/5 backdrop-blur-md">
                         <button v-for="cat in categories" :key="cat" type="button" @click="activeCategory = cat"
                                 class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer"
@@ -393,7 +440,7 @@ const receiveTargetName = computed(() => {
                      class="bg-[#050505] border rounded-[1.125rem] p-8 group transition-all duration-500 flex flex-col relative overflow-hidden"
                      :class="[
                         receiveProductId === item.id ? 'border-cyan-500 ring-2 ring-cyan-500/40' : '',
-                        item.stock <= 0 ? 'border-red-500/50 bg-red-950/20 opacity-80' : item.stock <= 5 ? 'border-red-500/40 bg-red-900/5' : 'border-white/5',
+                        item.stock <= 0 ? 'border-red-500/50 bg-red-950/20 opacity-80' : isLow(item) ? 'border-red-500/40 bg-red-900/5' : 'border-white/5',
                         scannedId === item.id ? 'ring-4 ring-cyan-500 border-cyan-500 scale-[1.03] z-20 shadow-[0_0_60px_rgba(6,182,212,0.4)] bg-cyan-500/5' : ''
                      ]">
 
@@ -404,20 +451,26 @@ const receiveTargetName = computed(() => {
                     <div v-if="item.stock <= 0" class="absolute top-4 right-4 z-10 px-3 py-1 rounded-lg bg-red-600 text-white text-[9px] font-black uppercase tracking-widest">
                         Нет в наличии
                     </div>
+                    <div v-else-if="item.min_stock != null && isLow(item)" class="absolute top-4 right-4 z-10 px-3 py-1 rounded-lg bg-amber-500 text-black text-[9px] font-black uppercase tracking-widest">
+                        Мало (≤{{ item.min_stock }})
+                    </div>
 
                     <div class="aspect-square bg-white/5 rounded-[1rem] mb-6 flex items-center justify-center border border-white/5 relative overflow-hidden group-hover:bg-cyan-500/5 transition-all">
                         <img :src="item.image ? (item.image.startsWith('/') ? item.image : '/' + item.image) : '/images/shop/default.png'"
                              :alt="item.name" loading="lazy" decoding="async"
                              class="w-3/4 h-3/4 object-contain transition-transform duration-700 group-hover:scale-110" />
                         <div class="absolute top-5 right-5 px-4 py-1.5 bg-black/80 backdrop-blur-xl rounded-full border border-white/10 flex items-center gap-2">
-                            <span class="w-1.5 h-1.5 rounded-full" :class="item.stock <= 5 ? 'bg-red-500 animate-ping' : 'bg-cyan-500'"></span>
+                            <span class="w-1.5 h-1.5 rounded-full" :class="isLow(item) ? 'bg-red-500 animate-ping' : 'bg-cyan-500'"></span>
                             <span class="text-[11px] font-black text-white italic">{{ item.stock }} <span class="opacity-30">шт</span></span>
                         </div>
                     </div>
 
                     <div class="flex justify-between items-start mb-3">
                         <div class="text-base font-black text-white uppercase italic tracking-tighter leading-tight">{{ item.name }}</div>
-                        <div class="text-2xl font-black text-cyan-500 italic tracking-tighter">{{ Math.floor(item.price) }}₽</div>
+                        <div class="text-right">
+                            <div class="text-2xl font-black text-cyan-500 italic tracking-tighter">{{ Math.floor(item.price) }}₽</div>
+                            <div v-if="item.cost_price != null" class="text-[9px] text-white/30 uppercase font-black">себ. {{ Number(item.cost_price).toFixed(0) }}₽</div>
+                        </div>
                     </div>
 
                     <button type="button"
@@ -489,6 +542,26 @@ const receiveTargetName = computed(() => {
                                 <label class="text-[10px] text-white/30 uppercase font-black mb-2 block italic">Остаток</label>
                                 <input v-model.number="form.stock" type="number" :disabled="form.requires_marking"
                                        class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold disabled:opacity-40" />
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-3 gap-6">
+                            <div>
+                                <label class="text-[10px] text-white/30 uppercase font-black mb-2 block italic">Себестоимость</label>
+                                <input v-model.number="form.cost_price" type="number" min="0" step="0.01"
+                                       class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold" />
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-white/30 uppercase font-black mb-2 block italic">Мин. остаток</label>
+                                <input v-model.number="form.min_stock" type="number" min="0"
+                                       class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold" placeholder="алерт" />
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-white/30 uppercase font-black mb-2 block italic">Поставщик</label>
+                                <select v-model.number="form.supplier_id" class="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white font-bold outline-none">
+                                    <option :value="null">—</option>
+                                    <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+                                </select>
                             </div>
                         </div>
 

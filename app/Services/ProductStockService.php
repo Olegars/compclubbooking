@@ -20,6 +20,16 @@ class ProductStockService
         StockMovement::REASON_OTHER,
     ];
 
+    public function __construct(
+        private readonly ?InventoryCostService $costs = null,
+    ) {
+    }
+
+    private function costs(): InventoryCostService
+    {
+        return $this->costs ?? app(InventoryCostService::class);
+    }
+
     public function availableUnitsCount(int $productId): int
     {
         return ProductUnit::query()
@@ -139,8 +149,15 @@ class ProductStockService
     /**
      * Receive one marked unit by DataMatrix. Returns the unit.
      */
-    public function receiveByMarkingCode(Product $product, string $rawCode, int $adminId): ProductUnit
-    {
+    public function receiveByMarkingCode(
+        Product $product,
+        string $rawCode,
+        int $adminId,
+        ?float $unitCost = null,
+        ?int $supplierId = null,
+        bool $createInvoice = true,
+        ?string $invoiceNumber = null,
+    ): ProductUnit {
         if (! $product->requires_marking) {
             throw new RuntimeException('Эта позиция не требует поэкземплярной маркировки');
         }
@@ -154,7 +171,7 @@ class ProductStockService
             throw new RuntimeException('Этот код маркировки уже принят на склад');
         }
 
-        return DB::transaction(function () use ($product, $code, $adminId) {
+        return DB::transaction(function () use ($product, $code, $adminId, $unitCost, $supplierId, $createInvoice, $invoiceNumber) {
             $unit = ProductUnit::create([
                 'product_id' => $product->id,
                 'marking_code' => $code,
@@ -165,7 +182,67 @@ class ProductStockService
 
             $this->syncMarkedStock($product);
 
+            $cost = $unitCost !== null
+                ? (float) $unitCost
+                : (float) ($product->fresh()->cost_price ?? 0);
+            $supplier = $supplierId ?? $product->supplier_id;
+
+            $this->costs()->receive(
+                $product->fresh(),
+                1,
+                $cost,
+                $supplier ? (int) $supplier : null,
+                $adminId,
+                (int) $unit->id,
+                $createInvoice,
+                $invoiceNumber,
+            );
+
             return $unit;
+        });
+    }
+
+    /**
+     * Receive unmarked qty (+N) with cost/batch booking.
+     */
+    public function receiveUnmarked(
+        Product $product,
+        int $qty,
+        int $adminId,
+        ?float $unitCost = null,
+        ?int $supplierId = null,
+        bool $createInvoice = true,
+        ?string $invoiceNumber = null,
+    ): Product {
+        if ($product->requires_marking) {
+            throw new RuntimeException('Маркированный товар принимается сканом КМ');
+        }
+
+        $qty = max(1, $qty);
+
+        return DB::transaction(function () use ($product, $qty, $adminId, $unitCost, $supplierId, $createInvoice, $invoiceNumber) {
+            /** @var Product $locked */
+            $locked = Product::query()->lockForUpdate()->findOrFail($product->id);
+            $locked->increment('stock', $qty);
+            $locked->refresh();
+
+            $cost = $unitCost !== null
+                ? (float) $unitCost
+                : (float) ($locked->cost_price ?? 0);
+            $supplier = $supplierId ?? $locked->supplier_id;
+
+            $this->costs()->receive(
+                $locked,
+                $qty,
+                $cost,
+                $supplier ? (int) $supplier : null,
+                $adminId,
+                null,
+                $createInvoice,
+                $invoiceNumber,
+            );
+
+            return $locked->fresh();
         });
     }
 
@@ -182,20 +259,34 @@ class ProductStockService
             throw new RuntimeException("Недостаточно «{$product->name}» на складе");
         }
 
-        $before = (int) $product->stock;
-        $product->decrement('stock', $qty);
-        $product->refresh();
+        DB::transaction(function () use ($product, $qty, $orderId) {
+            /** @var Product $locked */
+            $locked = Product::query()->lockForUpdate()->findOrFail($product->id);
+            if ((int) $locked->stock < $qty) {
+                throw new RuntimeException("Недостаточно «{$locked->name}» на складе");
+            }
 
-        $this->recordMovement([
-            'product_id' => (int) $product->id,
-            'order_id' => $orderId,
-            'type' => StockMovement::TYPE_SALE,
-            'qty' => -$qty,
-            'stock_before' => $before,
-            'stock_after' => (int) $product->stock,
-            'reason_code' => null,
-            'reason' => 'Продажа',
-        ]);
+            $before = (int) $locked->stock;
+            $locked->decrement('stock', $qty);
+            $locked->refresh();
+
+            $fifo = $this->costs()->consumeFifo((int) $locked->id, $qty);
+
+            $this->recordMovement([
+                'product_id' => (int) $locked->id,
+                'order_id' => $orderId,
+                'type' => StockMovement::TYPE_SALE,
+                'qty' => -$qty,
+                'stock_before' => $before,
+                'stock_after' => (int) $locked->stock,
+                'reason_code' => null,
+                'reason' => 'Продажа',
+                'meta' => [
+                    'cogs' => $fifo['cogs'],
+                    'fifo_layers' => $fifo['layers'],
+                ],
+            ]);
+        });
     }
 
     /**
@@ -212,26 +303,32 @@ class ProductStockService
                 continue;
             }
 
-            /** @var Product|null $product */
-            $product = Product::query()->lockForUpdate()->find($productId);
-            if (! $product || $product->requires_marking) {
-                continue;
-            }
+            DB::transaction(function () use ($orderId, $productId, $qty) {
+                /** @var Product|null $product */
+                $product = Product::query()->lockForUpdate()->find($productId);
+                if (! $product || $product->requires_marking) {
+                    return;
+                }
 
-            $before = (int) $product->stock;
-            $product->increment('stock', $qty);
-            $product->refresh();
+                $before = (int) $product->stock;
+                $product->increment('stock', $qty);
+                $product->refresh();
 
-            $this->recordMovement([
-                'product_id' => $productId,
-                'order_id' => $orderId,
-                'type' => StockMovement::TYPE_SALE_RESTORE,
-                'qty' => $qty,
-                'stock_before' => $before,
-                'stock_after' => (int) $product->stock,
-                'reason_code' => StockMovement::REASON_CANCEL,
-                'reason' => StockMovement::formatReason(StockMovement::REASON_CANCEL, "заказ #{$orderId}"),
-            ]);
+                $unitCost = (float) ($product->cost_price ?? 0);
+                $this->costs()->restoreBatch($productId, $qty, $unitCost);
+
+                $this->recordMovement([
+                    'product_id' => $productId,
+                    'order_id' => $orderId,
+                    'type' => StockMovement::TYPE_SALE_RESTORE,
+                    'qty' => $qty,
+                    'stock_before' => $before,
+                    'stock_after' => (int) $product->stock,
+                    'reason_code' => StockMovement::REASON_CANCEL,
+                    'reason' => StockMovement::formatReason(StockMovement::REASON_CANCEL, "заказ #{$orderId}"),
+                    'meta' => ['unit_cost' => $unitCost],
+                ]);
+            });
         }
     }
 
@@ -264,6 +361,8 @@ class ProductStockService
                 throw new RuntimeException('Код относится к другому товару');
             }
 
+            $before = $this->sellableUnitsCount((int) $unit->product_id);
+
             $unit->update([
                 'status' => ProductUnit::STATUS_SOLD,
                 'sold_order_id' => $orderId,
@@ -271,7 +370,24 @@ class ProductStockService
             ]);
 
             $this->consumeReservation($orderId, (int) $unit->product_id, 1);
-            $this->syncMarkedStock((int) $unit->product_id);
+            $after = $this->syncMarkedStock((int) $unit->product_id);
+
+            $fifo = $this->costs()->consumeUnit((int) $unit->id, (int) $unit->product_id);
+
+            $this->recordMovement([
+                'product_id' => (int) $unit->product_id,
+                'product_unit_id' => (int) $unit->id,
+                'order_id' => $orderId,
+                'type' => StockMovement::TYPE_SALE,
+                'qty' => -1,
+                'stock_before' => $before,
+                'stock_after' => $after,
+                'reason' => 'Продажа (КМ)',
+                'meta' => [
+                    'cogs' => $fifo['cogs'],
+                    'fifo_layers' => $fifo['layers'],
+                ],
+            ]);
 
             return $unit->fresh(['product']);
         });
@@ -347,6 +463,8 @@ class ProductStockService
 
             $after = $this->syncMarkedStock((int) $unit->product_id);
 
+            $fifo = $this->costs()->consumeUnit((int) $unit->id, (int) $unit->product_id);
+
             $this->recordMovement([
                 'product_id' => (int) $unit->product_id,
                 'product_unit_id' => (int) $unit->id,
@@ -357,6 +475,10 @@ class ProductStockService
                 'qty' => -1,
                 'stock_before' => $before,
                 'stock_after' => $after,
+                'meta' => [
+                    'cogs' => $fifo['cogs'],
+                    'fifo_layers' => $fifo['layers'],
+                ],
             ]);
 
             return $unit->fresh(['product']);
@@ -408,6 +530,8 @@ class ProductStockService
             $after = $before - $qty;
             $locked->update(['stock' => $after]);
 
+            $fifo = $this->costs()->consumeFifo((int) $locked->id, $qty);
+
             $movement = $this->recordMovement([
                 'product_id' => (int) $locked->id,
                 'admin_id' => $adminId,
@@ -418,6 +542,10 @@ class ProductStockService
                 'qty' => -$qty,
                 'stock_before' => $before,
                 'stock_after' => $after,
+                'meta' => [
+                    'cogs' => $fifo['cogs'],
+                    'fifo_layers' => $fifo['layers'],
+                ],
             ]);
 
             return [

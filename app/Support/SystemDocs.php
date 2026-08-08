@@ -31,9 +31,15 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Склад',
-                        'description' => 'Каталог, приёмка сканом, списание и угощение с причиной (просрочка / бой / комп) — пишется в journal stock_movements, чтобы не всплывало как «кража» на пересменке. КМ — по DataMatrix; немеченое — количеством.',
+                        'description' => 'Каталог, приёмка сканом, списание и угощение с причиной (просрочка / бой / комп) — пишется в journal stock_movements, чтобы не всплывало как «кража» на пересменке. КМ — по DataMatrix; немеченое — количеством.\n\nСебестоимость: при приёмке указывается закупочная цена (unit_cost) и поставщик → создаётся партия inventory_batches (FIFO), пересчитывается средневзвешенная cost_price на карточке, при поставщике и цене > 0 — открытый счёт в долгах. При продаже/списании себестоимость (COGS) списывается FIFO и пишется в meta движения.\n\nМин. остаток (min_stock): если задан и stock ≤ порога, reactor:check-quality создаёт инцидент low_stock (без дублей, пока не закрыт).',
                         'path' => '/admin/inventory',
                         'audience' => 'Админ / Supervisor+',
+                    ],
+                    [
+                        'title' => 'Поставщики, долги и маржа',
+                        'description' => 'Карточки поставщиков (ИНН, отсрочка payment_terms_days). Приёмка со скана/склада автоматически копит долг; можно добавить ручной счёт и вносить оплаты частями (open → partial → paid). Просрочка считается по due_at. Вкладка «Маржа» — price vs cost_price по каталогу. Excel не используется — всё в админке.',
+                        'path' => '/admin/suppliers',
+                        'audience' => 'Supervisor+',
                     ],
                     [
                         'title' => 'Пересменка',
@@ -196,6 +202,12 @@ class SystemDocs
                         'description' => "Цель: пускать в Wi-Fi только авторизованных игроков (телефон из аккаунта), лог MAC↔user — задел под идентификацию публичного доступа.\n\nСхема (интернета априори нет):\n1) Телефон в SSID Hotspot — полный интернет закрыт; в walled garden белый список: этот хост (APP_URL), как минимум /wifi/* и /login + SMS API.\n2) QR на наклейке/стойке → GET /wifi/join?station={WIFI_STATION_CODE}&mac=$(mac)&ip=$(ip) (mac/ip подставляет MikroTik Hotspot login-link).\n3) Гость логинится по SMS (если ещё нет сессии) → «Открыть интернет» → POST /api/wifi/authorize → запись wifi_access_sessions (pending).\n4) MikroTik pull: GET /api/wifi/grant-targets?token=… → список MAC на grant/revoke; после применения POST /api/wifi/grant-applied { grant_ids, revoke_ids, enrich? }.\n5) Роутер добавляет MAC в hotspot bypass / ip binding — интернет открыт. Срок WIFI_SESSION_HOURS.\n\nEnv: WIFI_ACCESS_ENABLED, WIFI_STATION_CODE, WIFI_SESSION_HOURS, WIFI_RELAY_TOKEN (или CLUB_WOL_RELAY_TOKEN).\nНе путать с isolate ПК/TV (другая очередь /api/power/isolate-*). Админки списка сессий пока нет — только API + таблица.",
                         'path' => '/wifi/join',
                         'audience' => 'Техник / Игрок / MikroTik',
+                    ],
+                    [
+                        'title' => 'Health-check / мониторинг — что есть',
+                        'description' => "Отдельной страницы «мониторинг клуба» (Ping WAN, CPU/RAM сервера, баланс SMS, uptime W5100) в booking нет и не планируется как Zabbix-замена. Живём на облаке + резервный интернет (dual-WAN / LTE на MikroTik) — канал важнее offline-edge.\n\nУже есть по контурам:\n• ПК / Shell online — power heartbeat (~30 с), last_seen_at, stale по CLUB_POWER_HEARTBEAT_STALE_SECONDS; снимок питания и ошибки WOL на дашборде.\n• Сессия на шелле — poll balance/heartbeat (~8 с); падение session_active / logout закрывает UI.\n• Вентиляция — desired на сервере, apply→ack с Shell; thermal CPU°C с ПК для авто-скорости; shared-реле через LAN-агент. Отдельного «W5100 не пингуется» инцидента нет: смотрим, что шелл/агент живы и applied доходит.\n• Качество сервиса — reactor:check-quality: late_order, low_stock → /admin/incidents.\n• SOS / HID / вызов админа — лента инцидентов и бейджи сайдбара.\n• Автозакрытие сессий / питание — reactor:update-statuses каждую минуту.\n\nНет в продукте: ICMP ping провайдера, CPU/RAM хоста booking, опрос баланса SMS-шлюза, watchdog desired≠applied по W5100. WAN/failover — на стороне MikroTik или внешнего Uptime; SMS-баланс — когда шлюз боевой (сейчас SMS-вход ещё тестовый код в логах).",
+                        'path' => '/admin/dashboard',
+                        'audience' => 'Supervisor+ / Техник',
                     ],
                     [
                         'title' => 'Видео-метки',
@@ -475,7 +487,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Контроль качества заказов',
-                        'description' => 'reactor:check-quality каждую минуту создаёт инцидент late_order, если заказ висит pending дольше 5 минут.',
+                        'description' => 'reactor:check-quality каждую минуту: инцидент late_order, если заказ висит pending дольше 5 минут; инцидент low_stock, если у товара задан min_stock и stock ≤ порога (без дублей, пока инцидент не закрыт).',
                         'path' => null,
                         'audience' => 'Система',
                     ],

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Product;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -9,6 +10,7 @@ class CheckServiceQuality extends Command
 {
     // Название команды для запуска вручную или через крон
     protected $signature = 'reactor:check-quality';
+
     protected $description = 'Аудит качества обслуживания: поиск задержек и нарушений';
 
     public function handle()
@@ -28,7 +30,7 @@ class CheckServiceQuality extends Command
                 ->where('order_id', $order->id)
                 ->exists();
 
-            if (!$exists) {
+            if (! $exists) {
                 DB::table('incidents')->insert([
                     'type' => 'late_order',
                     'order_id' => $order->id,
@@ -42,10 +44,37 @@ class CheckServiceQuality extends Command
             }
         }
 
-        // 2. СЮДА МОЖНО ДОБАВИТЬ ДРУГИЕ ПРОВЕРКИ
-        // Например: если в зале есть люди, а админ не заходил в панель 30 минут
+        // 2. НИЗКИЙ ОСТАТОК (stock <= min_stock), дедуп по открытому инциденту на product_id в meta/description
+        $lowProducts = Product::query()
+            ->whereNotNull('min_stock')
+            ->whereColumn('stock', '<=', 'min_stock')
+            ->get(['id', 'name', 'stock', 'min_stock']);
+
+        foreach ($lowProducts as $product) {
+            $open = DB::table('incidents')
+                ->where('type', 'low_stock')
+                ->whereNull('resolved_at')
+                ->where('description', 'like', '%#SKU'.$product->id.'#%')
+                ->exists();
+
+            if ($open) {
+                continue;
+            }
+
+            DB::table('incidents')->insert([
+                'type' => 'low_stock',
+                'order_id' => null,
+                'severity' => 'medium',
+                'description' => "Низкий остаток #SKU{$product->id}#: «{$product->name}» — {$product->stock} шт (порог {$product->min_stock}).",
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $this->warn("Низкий остаток: {$product->name} ({$product->stock}/{$product->min_stock}).");
+        }
 
         $this->info('✅ Аудит завершен.');
+
         return Command::SUCCESS;
     }
 }

@@ -48,6 +48,7 @@ use App\Http\Controllers\Admin\VideoSurveillanceController;
 use App\Http\Controllers\Admin\BookingSettingsController;
 use App\Http\Controllers\Admin\AiAssistantSettingsController;
 use App\Http\Controllers\Admin\SystemDocsController;
+use App\Http\Controllers\Admin\SupplierController;
 use App\Http\Controllers\Admin\GameRequestAdminController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\TransactionAdminController;
@@ -229,6 +230,12 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::post('/save', [AdminController::class, 'saveProduct']);
             Route::delete('/delete/{id}', [AdminController::class, 'deleteProduct']);
         });
+
+        Route::get('/suppliers', [SupplierController::class, 'index'])->name('admin.suppliers');
+        Route::post('/suppliers', [SupplierController::class, 'store']);
+        Route::put('/suppliers/{supplier}', [SupplierController::class, 'update']);
+        Route::post('/suppliers/invoices', [SupplierController::class, 'storeInvoice']);
+        Route::post('/suppliers/invoices/{invoice}/pay', [SupplierController::class, 'payInvoice']);
 
         // КАРТА И ТАРИФЫ
         Route::get('/map-builder', fn() => Inertia::render('Admin/MapBuilder', [

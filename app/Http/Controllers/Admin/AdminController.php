@@ -143,9 +143,16 @@ class AdminController extends Controller
                 ])
                 ->values()
                 ->all(),
+            'suppliers' => \App\Models\Supplier::query()
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get(['id', 'name']),
             'products' => Product::query()
                 ->orderBy('name')
-                ->get(['id', 'name', 'category', 'price', 'stock', 'barcode', 'image', 'requires_marking']),
+                ->get([
+                    'id', 'name', 'category', 'price', 'cost_price', 'stock', 'min_stock',
+                    'barcode', 'image', 'requires_marking', 'supplier_id',
+                ]),
         ]);
     }
 
@@ -154,7 +161,10 @@ class AdminController extends Controller
         return response()->json(
             Product::query()
                 ->orderBy('name')
-                ->get(['id', 'name', 'category', 'price', 'stock', 'barcode', 'image', 'requires_marking'])
+                ->get([
+                    'id', 'name', 'category', 'price', 'cost_price', 'stock', 'min_stock',
+                    'barcode', 'image', 'requires_marking', 'supplier_id',
+                ])
         );
     }
 
@@ -166,9 +176,12 @@ class AdminController extends Controller
             'name' => 'required|string|max:255',
             'category' => 'required|string',
             'price' => 'required|numeric',
+            'cost_price' => 'nullable|numeric|min:0',
             'stock' => 'nullable|integer|min:0',
+            'min_stock' => 'nullable|integer|min:0',
             'barcode' => 'nullable|string|max:64',
             'requires_marking' => 'nullable|boolean',
+            'supplier_id' => 'nullable|integer|exists:suppliers,id',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
         ]);
 
@@ -180,7 +193,20 @@ class AdminController extends Controller
             'price' => $request->price,
             'barcode' => $request->barcode ?: null,
             'requires_marking' => $requiresMarking,
+            'supplier_id' => $request->input('supplier_id') !== null && $request->input('supplier_id') !== ''
+                ? (int) $request->supplier_id
+                : null,
+            'min_stock' => $request->input('min_stock') !== null && $request->input('min_stock') !== ''
+                ? (int) $request->min_stock
+                : null,
         ];
+
+        if ($request->has('cost_price')) {
+            $rawCost = $request->input('cost_price');
+            $data['cost_price'] = ($rawCost === null || $rawCost === '')
+                ? null
+                : round((float) $rawCost, 2);
+        }
 
         // Stock for marked products is derived from units — only allow manual stock for unmarked
         if (! $requiresMarking) {
@@ -236,17 +262,33 @@ class AdminController extends Controller
         $request->validate([
             'code' => 'required|string|max:512',
             'product_id' => 'nullable|integer|exists:products,id',
+            'unit_cost' => 'nullable|numeric|min:0',
+            'supplier_id' => 'nullable|integer|exists:suppliers,id',
+            'invoice_number' => 'nullable|string|max:64',
+            'create_invoice' => 'nullable|boolean',
         ]);
 
         $admin = auth('admin')->user();
         $code = ProductUnit::normalizeCode($request->code);
+        $unitCost = $request->filled('unit_cost') ? (float) $request->unit_cost : null;
+        $supplierId = $request->filled('supplier_id') ? (int) $request->supplier_id : null;
+        $createInvoice = filter_var($request->input('create_invoice', true), FILTER_VALIDATE_BOOLEAN);
+        $invoiceNumber = $request->input('invoice_number');
 
         try {
             // Explicit product (receive mode)
             if ($request->filled('product_id')) {
                 $product = Product::findOrFail($request->product_id);
                 if ($product->requires_marking) {
-                    $unit = $stock->receiveByMarkingCode($product, $code, (int) $admin->id);
+                    $unit = $stock->receiveByMarkingCode(
+                        $product,
+                        $code,
+                        (int) $admin->id,
+                        $unitCost,
+                        $supplierId,
+                        $createInvoice,
+                        $invoiceNumber,
+                    );
 
                     return response()->json([
                         'status' => 'received',
@@ -257,14 +299,21 @@ class AdminController extends Controller
                     ]);
                 }
 
-                // Unmarked: treat as confirm +1 for selected product
-                $product->increment('stock', 1);
+                $fresh = $stock->receiveUnmarked(
+                    $product,
+                    1,
+                    (int) $admin->id,
+                    $unitCost,
+                    $supplierId,
+                    $createInvoice,
+                    $invoiceNumber,
+                );
 
                 return response()->json([
                     'status' => 'received',
                     'mode' => 'quantity',
-                    'product' => $product->fresh(),
-                    'new_stock' => (int) $product->fresh()->stock,
+                    'product' => $fresh,
+                    'new_stock' => (int) $fresh->stock,
                 ]);
             }
 
@@ -302,7 +351,15 @@ class AdminController extends Controller
                     ], 422);
                 }
 
-                $unit = $stock->receiveByMarkingCode($product, $code, (int) $admin->id);
+                $unit = $stock->receiveByMarkingCode(
+                    $product,
+                    $code,
+                    (int) $admin->id,
+                    $unitCost,
+                    $supplierId,
+                    $createInvoice,
+                    $invoiceNumber,
+                );
 
                 return response()->json([
                     'status' => 'received',
@@ -313,13 +370,21 @@ class AdminController extends Controller
                 ]);
             }
 
-            $product->increment('stock', 1);
+            $fresh = $stock->receiveUnmarked(
+                $product,
+                1,
+                (int) $admin->id,
+                $unitCost,
+                $supplierId,
+                $createInvoice,
+                $invoiceNumber,
+            );
 
             return response()->json([
                 'status' => 'received',
                 'mode' => 'quantity',
-                'product' => $product->fresh(),
-                'new_stock' => (int) $product->fresh()->stock,
+                'product' => $fresh,
+                'new_stock' => (int) $fresh->stock,
             ]);
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -1130,6 +1195,7 @@ class AdminController extends Controller
         return match ($type) {
             'late_order' => 'Задержка сервиса',
             'inventory_discrepancy' => 'Расхождение склада',
+            'low_stock' => 'Низкий остаток',
             'manual_balance_edit' => 'Ручная правка баланса',
             default => 'Нарушение протокола',
         };
