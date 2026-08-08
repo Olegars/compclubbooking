@@ -26,12 +26,9 @@ class VoiceGreetingService
             return false;
         }
 
-        if (! AiAssistantSetting::forClub($clubId)->is_enabled) {
-            return false;
-        }
+        $settings = AiAssistantSetting::forClub($clubId);
 
-        return filled(config('ai_assistant.deepseek.api_key'))
-            && filled(config('ai_assistant.openai.api_key'));
+        return $settings->is_enabled && $settings->hasCredentials();
     }
 
     /**
@@ -91,7 +88,11 @@ class VoiceGreetingService
         ];
 
         $reply = $this->llm->greet($context);
-        $speech = $this->tts->synthesize($reply, $settings->resolvedTtsVoice());
+        $speech = $this->tts->synthesize($reply, $settings->resolvedTtsVoice(), [
+            'api_key' => $settings->resolvedOpenAiApiKey(),
+            'base_url' => $settings->resolvedOpenAiBaseUrl(),
+            'model' => $settings->resolvedTtsModel(),
+        ]);
 
         Log::info('[AI-GREETING]', [
             'terminal_id' => $terminalId,

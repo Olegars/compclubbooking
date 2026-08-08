@@ -13,16 +13,16 @@ class DeepSeekChat
      */
     public function reply(string $userText, array $context = []): string
     {
-        $key = (string) config('ai_assistant.deepseek.api_key');
+        $settings = AiAssistantSetting::forClub(isset($context['club_id']) ? (int) $context['club_id'] : null);
+        $key = $settings->resolvedLlmApiKey();
         if ($key === '') {
-            throw new RuntimeException('DEEPSEEK_API_KEY не задан.');
+            throw new RuntimeException('LLM API-ключ не задан (админка или .env).');
         }
 
-        $base = (string) config('ai_assistant.deepseek.base_url');
-        $model = (string) config('ai_assistant.deepseek.model', 'deepseek-chat');
+        $base = $settings->resolvedLlmBaseUrl();
+        $model = $settings->resolvedLlmModel();
         $timeout = (float) config('ai_assistant.http_timeout', 60);
-        $maxChars = (int) config('ai_assistant.max_reply_chars', 420);
-        $settings = AiAssistantSetting::forClub(isset($context['club_id']) ? (int) $context['club_id'] : null);
+        $maxChars = $settings->resolvedMaxReplyChars();
 
         $response = Http::timeout($timeout)
             ->withToken($key)
@@ -71,16 +71,16 @@ class DeepSeekChat
      */
     public function greet(array $context): string
     {
-        $key = (string) config('ai_assistant.deepseek.api_key');
+        $settings = AiAssistantSetting::forClub(isset($context['club_id']) ? (int) $context['club_id'] : null);
+        $key = $settings->resolvedLlmApiKey();
         if ($key === '') {
-            throw new RuntimeException('DEEPSEEK_API_KEY не задан.');
+            throw new RuntimeException('LLM API-ключ не задан (админка или .env).');
         }
 
-        $base = (string) config('ai_assistant.deepseek.base_url');
-        $model = (string) config('ai_assistant.deepseek.model', 'deepseek-chat');
+        $base = $settings->resolvedLlmBaseUrl();
+        $model = $settings->resolvedLlmModel();
         $timeout = (float) config('ai_assistant.http_timeout', 60);
-        $maxChars = min(280, (int) config('ai_assistant.max_reply_chars', 420));
-        $settings = AiAssistantSetting::forClub(isset($context['club_id']) ? (int) $context['club_id'] : null);
+        $maxChars = min(280, $settings->resolvedMaxReplyChars());
 
         $response = Http::timeout($timeout)
             ->withToken($key)

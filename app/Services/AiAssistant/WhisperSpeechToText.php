@@ -8,15 +8,18 @@ use RuntimeException;
 
 class WhisperSpeechToText
 {
-    public function transcribe(UploadedFile $audio): string
+    /**
+     * @param  array{api_key?:string,base_url?:string,model?:string}|null  $credentials
+     */
+    public function transcribe(UploadedFile $audio, ?array $credentials = null): string
     {
-        $key = (string) config('ai_assistant.openai.api_key');
+        $key = trim((string) ($credentials['api_key'] ?? config('ai_assistant.openai.api_key', '')));
         if ($key === '') {
             throw new RuntimeException('OPENAI_API_KEY не задан (нужен для Whisper STT).');
         }
 
-        $base = (string) config('ai_assistant.openai.base_url');
-        $model = (string) config('ai_assistant.openai.stt_model', 'whisper-1');
+        $base = rtrim(trim((string) ($credentials['base_url'] ?? config('ai_assistant.openai.base_url', 'https://api.openai.com/v1'))), '/');
+        $model = trim((string) ($credentials['model'] ?? config('ai_assistant.openai.stt_model', 'whisper-1')));
         $timeout = (float) config('ai_assistant.http_timeout', 60);
 
         $response = Http::timeout($timeout)

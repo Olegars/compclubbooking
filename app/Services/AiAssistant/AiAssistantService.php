@@ -27,12 +27,9 @@ class AiAssistantService
             return false;
         }
 
-        if (! AiAssistantSetting::forClub($clubId)->is_enabled) {
-            return false;
-        }
+        $settings = AiAssistantSetting::forClub($clubId);
 
-        return filled(config('ai_assistant.deepseek.api_key'))
-            && filled(config('ai_assistant.openai.api_key'));
+        return $settings->is_enabled && $settings->hasCredentials();
     }
 
     /**
@@ -73,14 +70,24 @@ class AiAssistantService
 
         $resolvedGame = $this->resolveGame($gameId, $gameTitle);
 
-        $transcript = $this->stt->transcribe($audio);
+        $openAiCreds = [
+            'api_key' => $settings->resolvedOpenAiApiKey(),
+            'base_url' => $settings->resolvedOpenAiBaseUrl(),
+            'model' => $settings->resolvedSttModel(),
+        ];
+
+        $transcript = $this->stt->transcribe($audio, $openAiCreds);
         $reply = $this->llm->reply($transcript, [
             'game_title' => $resolvedGame['title'],
             'player_name' => $user?->name,
             'club_name' => $club?->name,
             'club_id' => $clubId,
         ]);
-        $speech = $this->tts->synthesize($reply, $settings->resolvedTtsVoice());
+        $speech = $this->tts->synthesize($reply, $settings->resolvedTtsVoice(), [
+            'api_key' => $settings->resolvedOpenAiApiKey(),
+            'base_url' => $settings->resolvedOpenAiBaseUrl(),
+            'model' => $settings->resolvedTtsModel(),
+        ]);
 
         Log::info('[AI-ASSISTANT]', [
             'terminal_id' => $terminalId,

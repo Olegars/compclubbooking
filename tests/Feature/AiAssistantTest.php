@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AiAssistantSetting;
 use App\Models\Booking;
 use App\Models\Club;
 use App\Models\Computer;
@@ -144,7 +145,7 @@ class AiAssistantTest extends TestCase
             'ends_at' => now()->addHour(),
         ]);
 
-        \App\Models\AiAssistantSetting::forClub($this->club->id)->update([
+        AiAssistantSetting::forClub($this->club->id)->update([
             'is_enabled' => true,
             'tts_voice' => 'onyx',
             'companion_prompt' => 'CUSTOM_COMPANION for {{player}} in {{game}} club {{club}} max {{max_chars}}',
@@ -196,7 +197,7 @@ class AiAssistantTest extends TestCase
 
     public function test_disabled_in_admin_settings(): void
     {
-        \App\Models\AiAssistantSetting::forClub($this->club->id)->update([
+        AiAssistantSetting::forClub($this->club->id)->update([
             'is_enabled' => false,
         ]);
 
@@ -246,5 +247,131 @@ class AiAssistantTest extends TestCase
             'audio' => $audio,
         ])->assertStatus(422)
             ->assertJsonPath('status', 'error');
+    }
+
+    public function test_uses_api_keys_from_database(): void
+    {
+        $this->createActiveBooking();
+
+        AiAssistantSetting::forClub($this->club->id)->update([
+            'llm_api_key' => 'sk-db-llm',
+            'openai_api_key' => 'sk-db-openai',
+            'llm_provider' => 'deepseek',
+        ]);
+
+        Http::fake([
+            'api.openai.com/v1/audio/transcriptions' => Http::response(['text' => 'тест'], 200),
+            'api.deepseek.com/chat/completions' => Http::response([
+                'choices' => [['message' => ['content' => 'ок']]],
+            ], 200),
+            'api.openai.com/v1/audio/speech' => Http::response('ID3', 200),
+        ]);
+
+        $this->post('/api/shell/ai-assistant', [
+            'terminal_id' => $this->computer->id,
+            'audio' => UploadedFile::fake()->create('ask.webm', 20, 'audio/webm'),
+            'game_id' => $this->game->id,
+        ])->assertOk();
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'chat/completions')
+                && $request->hasHeader('Authorization', 'Bearer sk-db-llm');
+        });
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'audio/transcriptions')
+                && $request->hasHeader('Authorization', 'Bearer sk-db-openai');
+        });
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'audio/speech')
+                && $request->hasHeader('Authorization', 'Bearer sk-db-openai');
+        });
+    }
+
+    public function test_cleared_db_key_falls_back_to_env(): void
+    {
+        $this->createActiveBooking();
+
+        $settings = AiAssistantSetting::forClub($this->club->id);
+        $settings->update([
+            'llm_api_key' => 'sk-db-llm',
+            'openai_api_key' => 'sk-db-openai',
+        ]);
+        $settings->update([
+            'llm_api_key' => null,
+            'openai_api_key' => null,
+        ]);
+
+        $this->assertSame('env', $settings->fresh()->llmKeySource());
+        $this->assertSame('sk-deepseek-test', $settings->fresh()->resolvedLlmApiKey());
+        $this->assertSame('sk-openai-test', $settings->fresh()->resolvedOpenAiApiKey());
+
+        Http::fake([
+            'api.openai.com/v1/audio/transcriptions' => Http::response(['text' => 'тест'], 200),
+            'api.deepseek.com/chat/completions' => Http::response([
+                'choices' => [['message' => ['content' => 'ок']]],
+            ], 200),
+            'api.openai.com/v1/audio/speech' => Http::response('ID3', 200),
+        ]);
+
+        $this->post('/api/shell/ai-assistant', [
+            'terminal_id' => $this->computer->id,
+            'audio' => UploadedFile::fake()->create('ask.webm', 20, 'audio/webm'),
+        ])->assertOk();
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'chat/completions')
+                && $request->hasHeader('Authorization', 'Bearer sk-deepseek-test');
+        });
+    }
+
+    public function test_openai_llm_provider_uses_openai_chat_endpoint(): void
+    {
+        $this->createActiveBooking();
+
+        AiAssistantSetting::forClub($this->club->id)->update([
+            'llm_provider' => 'openai',
+            'llm_api_key' => 'sk-openai-llm',
+            'llm_base_url' => null,
+            'llm_model' => null,
+            'openai_api_key' => 'sk-db-openai',
+        ]);
+
+        Http::fake([
+            'api.openai.com/v1/audio/transcriptions' => Http::response(['text' => 'тест'], 200),
+            'api.openai.com/v1/chat/completions' => Http::response([
+                'choices' => [['message' => ['content' => 'ответ openai']]],
+            ], 200),
+            'api.openai.com/v1/audio/speech' => Http::response('ID3', 200),
+        ]);
+
+        $this->post('/api/shell/ai-assistant', [
+            'terminal_id' => $this->computer->id,
+            'audio' => UploadedFile::fake()->create('ask.webm', 20, 'audio/webm'),
+        ])->assertOk()
+            ->assertJsonPath('reply_text', 'ответ openai');
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'api.openai.com/v1/chat/completions')
+                && ($request['model'] ?? null) === 'gpt-4o-mini'
+                && $request->hasHeader('Authorization', 'Bearer sk-openai-llm');
+        });
+    }
+
+    private function createActiveBooking(): void
+    {
+        Booking::create([
+            'user_id' => $this->user->id,
+            'computer_id' => $this->computer->id,
+            'pc_ids' => [(string) $this->computer->id],
+            'date' => now()->toDateString(),
+            'start_time' => 12.0,
+            'duration' => 2,
+            'price' => 100,
+            'status' => 'active',
+            'starts_at' => now()->subMinute(),
+            'ends_at' => now()->addHour(),
+        ]);
     }
 }

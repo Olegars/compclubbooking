@@ -8,17 +8,18 @@ use RuntimeException;
 class OpenAiTextToSpeech
 {
     /**
+     * @param  array{api_key?:string,base_url?:string,model?:string}|null  $credentials
      * @return array{mime:string,binary:string}
      */
-    public function synthesize(string $text, ?string $voice = null): array
+    public function synthesize(string $text, ?string $voice = null, ?array $credentials = null): array
     {
-        $key = (string) config('ai_assistant.openai.api_key');
+        $key = trim((string) ($credentials['api_key'] ?? config('ai_assistant.openai.api_key', '')));
         if ($key === '') {
             throw new RuntimeException('OPENAI_API_KEY не задан (нужен для TTS).');
         }
 
-        $base = (string) config('ai_assistant.openai.base_url');
-        $model = (string) config('ai_assistant.openai.tts_model', 'tts-1');
+        $base = rtrim(trim((string) ($credentials['base_url'] ?? config('ai_assistant.openai.base_url', 'https://api.openai.com/v1'))), '/');
+        $model = trim((string) ($credentials['model'] ?? config('ai_assistant.openai.tts_model', 'tts-1')));
         $resolvedVoice = $voice !== null && trim($voice) !== ''
             ? strtolower(trim($voice))
             : (string) config('ai_assistant.openai.tts_voice', 'nova');

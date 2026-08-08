@@ -10,13 +10,30 @@ class AiAssistantSetting extends Model
     protected $fillable = [
         'club_id',
         'is_enabled',
+        'llm_provider',
+        'llm_api_key',
+        'llm_base_url',
+        'llm_model',
+        'openai_api_key',
+        'openai_base_url',
+        'stt_model',
+        'tts_model',
         'tts_voice',
+        'max_reply_chars',
         'companion_prompt',
         'greeting_prompt',
     ];
 
     protected $casts = [
         'is_enabled' => 'boolean',
+        'llm_api_key' => 'encrypted',
+        'openai_api_key' => 'encrypted',
+        'max_reply_chars' => 'integer',
+    ];
+
+    protected $hidden = [
+        'llm_api_key',
+        'openai_api_key',
     ];
 
     public const VOICES = [
@@ -26,6 +43,22 @@ class AiAssistantSetting extends Model
         'onyx' => 'Onyx',
         'nova' => 'Nova',
         'shimmer' => 'Shimmer',
+    ];
+
+    public const LLM_PROVIDERS = [
+        'deepseek' => 'DeepSeek',
+        'openai' => 'OpenAI',
+    ];
+
+    public const LLM_PRESETS = [
+        'deepseek' => [
+            'base_url' => 'https://api.deepseek.com',
+            'model' => 'deepseek-chat',
+        ],
+        'openai' => [
+            'base_url' => 'https://api.openai.com/v1',
+            'model' => 'gpt-4o-mini',
+        ],
     ];
 
     public function club(): BelongsTo
@@ -41,11 +74,125 @@ class AiAssistantSetting extends Model
             ['club_id' => $clubId],
             [
                 'is_enabled' => true,
+                'llm_provider' => 'deepseek',
                 'tts_voice' => (string) config('ai_assistant.openai.tts_voice', 'nova'),
                 'companion_prompt' => null,
                 'greeting_prompt' => null,
             ]
         );
+    }
+
+    public function resolvedLlmProvider(): string
+    {
+        $provider = strtolower(trim((string) ($this->llm_provider ?: 'deepseek')));
+
+        return array_key_exists($provider, self::LLM_PROVIDERS) ? $provider : 'deepseek';
+    }
+
+    public function resolvedLlmApiKey(): string
+    {
+        $fromDb = trim((string) ($this->llm_api_key ?? ''));
+        if ($fromDb !== '') {
+            return $fromDb;
+        }
+
+        $provider = $this->resolvedLlmProvider();
+        if ($provider === 'openai') {
+            $fromOpenAiDb = trim((string) ($this->openai_api_key ?? ''));
+            if ($fromOpenAiDb !== '') {
+                return $fromOpenAiDb;
+            }
+
+            return trim((string) config('ai_assistant.openai.api_key', ''));
+        }
+
+        return trim((string) config('ai_assistant.deepseek.api_key', ''));
+    }
+
+    public function resolvedLlmBaseUrl(): string
+    {
+        $fromDb = rtrim(trim((string) ($this->llm_base_url ?? '')), '/');
+        if ($fromDb !== '') {
+            return $fromDb;
+        }
+
+        $provider = $this->resolvedLlmProvider();
+        if ($provider === 'openai') {
+            $env = rtrim(trim((string) config('ai_assistant.openai.base_url', '')), '/');
+            if ($env !== '') {
+                return $env;
+            }
+        } else {
+            $env = rtrim(trim((string) config('ai_assistant.deepseek.base_url', '')), '/');
+            if ($env !== '') {
+                return $env;
+            }
+        }
+
+        return self::LLM_PRESETS[$provider]['base_url'] ?? self::LLM_PRESETS['deepseek']['base_url'];
+    }
+
+    public function resolvedLlmModel(): string
+    {
+        $fromDb = trim((string) ($this->llm_model ?? ''));
+        if ($fromDb !== '') {
+            return $fromDb;
+        }
+
+        $provider = $this->resolvedLlmProvider();
+        if ($provider === 'openai') {
+            // OpenAI chat model is not in config as deepseek.model — use preset / optional env later
+            return self::LLM_PRESETS['openai']['model'];
+        }
+
+        $env = trim((string) config('ai_assistant.deepseek.model', ''));
+        if ($env !== '') {
+            return $env;
+        }
+
+        return self::LLM_PRESETS['deepseek']['model'];
+    }
+
+    public function resolvedOpenAiApiKey(): string
+    {
+        $fromDb = trim((string) ($this->openai_api_key ?? ''));
+        if ($fromDb !== '') {
+            return $fromDb;
+        }
+
+        return trim((string) config('ai_assistant.openai.api_key', ''));
+    }
+
+    public function resolvedOpenAiBaseUrl(): string
+    {
+        $fromDb = rtrim(trim((string) ($this->openai_base_url ?? '')), '/');
+        if ($fromDb !== '') {
+            return $fromDb;
+        }
+
+        $env = rtrim(trim((string) config('ai_assistant.openai.base_url', '')), '/');
+
+        return $env !== '' ? $env : 'https://api.openai.com/v1';
+    }
+
+    public function resolvedSttModel(): string
+    {
+        $fromDb = trim((string) ($this->stt_model ?? ''));
+        if ($fromDb !== '') {
+            return $fromDb;
+        }
+
+        return (string) config('ai_assistant.openai.stt_model', 'whisper-1');
+    }
+
+    public function resolvedTtsModel(): string
+    {
+        $fromDb = trim((string) ($this->tts_model ?? ''));
+        if ($fromDb !== '') {
+            return $fromDb;
+        }
+
+        return (string) config('ai_assistant.openai.tts_model', 'tts-1');
     }
 
     public function resolvedTtsVoice(): string
@@ -56,6 +203,31 @@ class AiAssistantSetting extends Model
         }
 
         return $voice;
+    }
+
+    public function resolvedMaxReplyChars(): int
+    {
+        if ($this->max_reply_chars !== null && (int) $this->max_reply_chars > 0) {
+            return (int) $this->max_reply_chars;
+        }
+
+        return max(80, (int) config('ai_assistant.max_reply_chars', 420));
+    }
+
+    public function hasCredentials(): bool
+    {
+        return $this->resolvedLlmApiKey() !== ''
+            && $this->resolvedOpenAiApiKey() !== '';
+    }
+
+    public function llmKeySource(): string
+    {
+        return trim((string) ($this->llm_api_key ?? '')) !== '' ? 'db' : 'env';
+    }
+
+    public function openAiKeySource(): string
+    {
+        return trim((string) ($this->openai_api_key ?? '')) !== '' ? 'db' : 'env';
     }
 
     /**
@@ -127,7 +299,7 @@ class AiAssistantSetting extends Model
             '{{pc}}' => $pc,
             '{{time}}' => $time,
             '{{visit_line}}' => $visitLine,
-            '{{games}}' => $gamesText,
+            '{{games}}' => $gameText,
             '{{max_chars}}' => (string) $maxChars,
         ]);
     }
@@ -177,15 +349,31 @@ PROMPT;
 
     public function toAdminArray(): array
     {
+        $provider = $this->resolvedLlmProvider();
+
         return [
             'id' => $this->id,
             'club_id' => $this->club_id,
             'is_enabled' => (bool) $this->is_enabled,
+            'llm_provider' => $provider,
+            'llm_base_url' => $this->llm_base_url ?: '',
+            'llm_model' => $this->llm_model ?: '',
+            'has_llm_api_key' => trim((string) ($this->llm_api_key ?? '')) !== '',
+            'llm_key_source' => $this->llmKeySource(),
+            'openai_base_url' => $this->openai_base_url ?: '',
+            'stt_model' => $this->stt_model ?: '',
+            'tts_model' => $this->tts_model ?: '',
+            'has_openai_api_key' => trim((string) ($this->openai_api_key ?? '')) !== '',
+            'openai_key_source' => $this->openAiKeySource(),
             'tts_voice' => $this->resolvedTtsVoice(),
+            'max_reply_chars' => $this->max_reply_chars ?: (int) config('ai_assistant.max_reply_chars', 420),
             'companion_prompt' => $this->companion_prompt ?: self::defaultCompanionPromptTemplate(),
             'greeting_prompt' => $this->greeting_prompt ?: self::defaultGreetingPromptTemplate(),
             'using_default_companion' => trim((string) ($this->companion_prompt ?? '')) === '',
             'using_default_greeting' => trim((string) ($this->greeting_prompt ?? '')) === '',
+            'credentials_ok' => $this->hasCredentials(),
+            'llm_preset_base_url' => self::LLM_PRESETS[$provider]['base_url'] ?? '',
+            'llm_preset_model' => self::LLM_PRESETS[$provider]['model'] ?? '',
         ];
     }
 }
