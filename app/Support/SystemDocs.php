@@ -186,6 +186,12 @@ class SystemDocs
                         'audience' => 'Supervisor+ / Shell',
                     ],
                     [
+                        'title' => 'ИИ-ассистент',
+                        'description' => "Голосовой компаньон Shell (F1) и персональное приветствие при логине. Настройки на клуб: вкл/выкл, LLM (DeepSeek или OpenAI), ключи LLM и OpenAI (STT Whisper + TTS), base URL и модели, голос TTS (alloy/echo/fable/onyx/nova/shimmer), макс. длина ответа, системные промпты F1 и приветствия с плейсхолдерами {{club}}, {{player}}, {{game}}, {{pc}}, {{time}}, {{visit_line}}, {{games}}, {{max_chars}}.\n\nКлючи в админке шифруются в БД; пустое поле при сохранении не затирает; «очистить» возвращает fallback на .env. Аварийный выключатель: AI_ASSISTANT_ENABLED в .env (должен быть true вместе с тумблером в админке). Без ключей (ни БД, ни .env) пайплайн не стартует.\n\nShell: POST /api/shell/ai-assistant (аудио → STT → LLM → TTS), POST /api/shell/voice-greeting (контекст игрока → LLM → TTS в колонки лобби).",
+                        'path' => '/admin/ai-assistant',
+                        'audience' => 'Supervisor+ / Shell',
+                    ],
+                    [
                         'title' => 'Вентиляция: железо и скорости',
                         'description' => "Личный вентилятор места (SpaceFan) сидит на плате W5100 (RelayBoard): host + path-порт (по умолчанию 30000). URL команды: http://{host}/{port}/{cmd} — порт это сегмент пути, TCP обычно :80.\n\nДва канала каскада K1+K2 (пары 1+2, 3+4 … 15+16):\n• скорость 1 (night / 120V) — K1 OFF, K2 OFF\n• скорость 2 (mid / 170V) — K1 ON, K2 OFF\n• скорость 3 (high / 220V) — K1 OFF, K2 ON\n\nПолного электрического OFF на двух CO-реле нет: «выкл» = night. Прыжок 1↔3 идёт через mid ~2.5 с, чтобы не бить контакторы. На комнату (space) до 2 личных вентиляторов.",
                         'path' => '/admin/fans',
@@ -406,6 +412,12 @@ class SystemDocs
                         'description' => 'Плитка климата: режимы auto / 50% / 75% / 100%. Сервер отдаёт desired; Shell пульсирует W5100 по LAN и шлёт fan/applied. Подробности железа — в «Вентиляция» (Конфигурация клуба).',
                         'path' => '/admin/fans',
                         'audience' => 'Shell',
+                    ],
+                    [
+                        'title' => 'Голосовой ИИ (F1 и приветствие)',
+                        'description' => "F1 во время сессии: запись с микрофона → POST /api/shell/ai-assistant → Whisper STT → LLM (DeepSeek/OpenAI из админки) → OpenAI TTS в наушники. Нужна активная бронь на ПК.\n\nПосле логина: POST /api/shell/voice-greeting — короткое персональное приветствие в колонки лобби (имя, первый визит / любимые игры). Промпты, голос и ключи — /admin/ai-assistant; Shell только шлёт аудио/terminal_id и воспроизводит ответ.",
+                        'path' => '/admin/ai-assistant',
+                        'audience' => 'Shell / Supervisor+',
                     ],
                 ],
             ],
