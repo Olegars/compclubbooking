@@ -298,4 +298,81 @@ class ProfileController extends Controller
 
         return back();
     }
+
+    public function transferTargets(\App\Services\BookingSeatTransferService $transfers)
+    {
+        $user = Auth::user();
+        $booking = Booking::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->latest('id')
+            ->first();
+
+        if (! $booking) {
+            return response()->json(['message' => 'Нет активной сессии'], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'booking_id' => $booking->id,
+            'from_computer_id' => (int) $booking->computer_id,
+            'targets' => $transfers->freeTargets($booking),
+        ]);
+    }
+
+    public function transferPreview(Request $request, \App\Services\BookingSeatTransferService $transfers)
+    {
+        $user = Auth::user();
+        $data = $request->validate([
+            'target_computer_id' => 'required|integer',
+        ]);
+
+        $booking = Booking::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->latest('id')
+            ->first();
+
+        if (! $booking) {
+            return response()->json(['message' => 'Нет активной сессии'], 404);
+        }
+
+        try {
+            $preview = $transfers->preview($booking, (int) $data['target_computer_id']);
+
+            return response()->json(['status' => 'success', 'preview' => $preview]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function transferConfirm(Request $request, \App\Services\BookingSeatTransferService $transfers)
+    {
+        $user = Auth::user();
+        $data = $request->validate([
+            'target_computer_id' => 'required|integer',
+        ]);
+
+        $booking = Booking::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->latest('id')
+            ->first();
+
+        if (! $booking) {
+            return response()->json(['message' => 'Нет активной сессии'], 404);
+        }
+
+        try {
+            $result = $transfers->transfer($booking, (int) $data['target_computer_id'], $user);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Пересадка выполнена. Войдите PIN на новом ПК.',
+                'result' => $result,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
 }

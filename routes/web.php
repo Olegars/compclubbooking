@@ -142,6 +142,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/dashboard', [ProfileController::class, 'dashboard'])->name('dashboard');
         Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::get('/transfer/targets', [ProfileController::class, 'transferTargets']);
+        Route::post('/transfer/preview', [ProfileController::class, 'transferPreview']);
+        Route::post('/transfer/confirm', [ProfileController::class, 'transferConfirm']);
     });
 
     Route::get('/shop', [ShopController::class, 'index'])->name('shop');
@@ -401,6 +404,9 @@ Route::prefix('api/shell')->group(function () {
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
     Route::post('/login', [ShellApiController::class, 'login']);
     Route::get('/balance', [ShellApiController::class, 'getBalance']);
+    Route::get('/transfer/targets', [ShellApiController::class, 'transferTargets']);
+    Route::post('/transfer/preview', [ShellApiController::class, 'transferPreview']);
+    Route::post('/transfer/confirm', [ShellApiController::class, 'transferConfirm']);
     Route::post('/billing/topup', [ShellApiController::class, 'topUp']);
     Route::get('/games', [ShellApiController::class, 'getGames']);
     Route::get('/quick-apps', [ShellApiController::class, 'getQuickApps']);

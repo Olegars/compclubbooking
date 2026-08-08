@@ -23,6 +23,7 @@ use App\Models\ComputerSosAlert;
 use App\Services\AchievementService;
 use App\Services\AiAssistant\AiAssistantService;
 use App\Services\AiAssistant\VoiceGreetingService;
+use App\Services\BookingSeatTransferService;
 use App\Services\BookingSessionTimingService;
 use App\Services\ComputerPowerService;
 use App\Services\ComputerStatusService;
@@ -408,21 +409,32 @@ class ShellApiController extends Controller
             $timeRemaining = '00:00:00';
             $sessionActive = false;
             if ($booking && $booking->status === 'active') {
-                $sessionActive = true;
-                $timing = app(BookingSessionTimingService::class);
-                $booking = $timing->healSkewedWindow($booking);
-                $timeRemaining = $timing->formatRemainingHms($booking);
+                // После пересадки booking_id ещё жив, но уже на другом ПК —
+                // старый шелл должен получить session_active=false (soft-kick).
+                $onThisTerminal = true;
+                if ($terminalId > 0) {
+                    $pcIds = array_map('strval', $booking->pc_ids ?? []);
+                    $onThisTerminal = (int) $booking->computer_id === $terminalId
+                        || in_array((string) $terminalId, $pcIds, true);
+                }
+                if ($onThisTerminal) {
+                    $sessionActive = true;
+                    $timing = app(BookingSessionTimingService::class);
+                    $booking = $timing->healSkewedWindow($booking);
+                    $timeRemaining = $timing->formatRemainingHms($booking);
+                }
             }
 
             return response()->json([
                 'status' => 'success',
                 'user_id' => $user->id,
-                'booking_id' => $booking?->id,
+                'booking_id' => $sessionActive ? $booking?->id : null,
                 'balance' => $balance,
                 'deposit_balance' => $balance,
                 'total_balance' => $balance,
                 'session_active' => $sessionActive,
                 'time_remaining' => $timeRemaining,
+                'relocated' => $booking && $terminalId > 0 && ! $sessionActive && $booking->status === 'active',
             ]);
         } catch (\Throwable $e) {
             Log::error('Shell API getBalance: '.$e->getMessage());
@@ -1936,6 +1948,93 @@ class ShellApiController extends Controller
             Log::error("Shell API Check Terminal Error: " . $e->getMessage());
             return response()->json(['status' => 'error', 'computer_id' => 0], 500);
         }
+    }
+
+    /**
+     * Free PCs for seat transfer from the active session on this terminal.
+     */
+    public function transferTargets(Request $request, BookingSeatTransferService $transfers)
+    {
+        try {
+            $request->validate(['terminal_id' => 'required|integer']);
+            $booking = $this->activeBookingOnTerminal((int) $request->terminal_id);
+            if (! $booking) {
+                return response()->json(['message' => 'Нет активной сессии'], 404);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'booking_id' => $booking->id,
+                'from_computer_id' => (int) $booking->computer_id,
+                'targets' => $transfers->freeTargets($booking),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function transferPreview(Request $request, BookingSeatTransferService $transfers)
+    {
+        try {
+            $data = $request->validate([
+                'terminal_id' => 'required|integer',
+                'target_computer_id' => 'required|integer',
+            ]);
+            $booking = $this->activeBookingOnTerminal((int) $data['terminal_id']);
+            if (! $booking) {
+                return response()->json(['message' => 'Нет активной сессии'], 404);
+            }
+
+            $preview = $transfers->preview($booking, (int) $data['target_computer_id']);
+
+            return response()->json(['status' => 'success', 'preview' => $preview]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function transferConfirm(Request $request, BookingSeatTransferService $transfers)
+    {
+        try {
+            $data = $request->validate([
+                'terminal_id' => 'required|integer',
+                'target_computer_id' => 'required|integer',
+            ]);
+            $booking = $this->activeBookingOnTerminal((int) $data['terminal_id']);
+            if (! $booking) {
+                return response()->json(['message' => 'Нет активной сессии'], 404);
+            }
+
+            $user = User::find($booking->user_id);
+            if (! $user) {
+                return response()->json(['message' => 'Игрок не найден'], 404);
+            }
+
+            $result = $transfers->transfer($booking, (int) $data['target_computer_id'], $user);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Пересадка выполнена. Войдите PIN на новом ПК.',
+                'result' => $result,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    private function activeBookingOnTerminal(int $terminalId): ?Booking
+    {
+        if ($terminalId < 1) {
+            return null;
+        }
+
+        return Booking::query()
+            ->where('status', 'active')
+            ->where(function ($query) use ($terminalId) {
+                $query->whereJsonContains('pc_ids', (string) $terminalId)
+                    ->orWhere('computer_id', $terminalId);
+            })
+            ->first();
     }
 
     public function logout(Request $request)

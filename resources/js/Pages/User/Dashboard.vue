@@ -163,6 +163,76 @@ const minReviewLength = computed(() => Number(reviewMeta.value.min_text_length ?
 // --- МОДАЛКИ ---
 const isTopUpInputOpen = ref(false)
 const isQuickStartOpen = ref(false)
+const isTransferOpen = ref(false)
+const transferTargets = ref<any[]>([])
+const transferLoading = ref(false)
+const transferPreview = ref<any>(null)
+const transferTargetId = ref<number | null>(null)
+const transferError = ref('')
+const transferBusy = ref(false)
+
+const hasLiveSession = computed(() =>
+    activeBookings.value.some((b: any) => b.status === 'active' || b.is_started || b.phase === 'active')
+)
+
+const openSeatAction = async () => {
+    if (hasLiveSession.value) {
+        await openTransferModal()
+        return
+    }
+    isQuickStartOpen.value = true
+}
+
+const openTransferModal = async () => {
+    transferError.value = ''
+    transferPreview.value = null
+    transferTargetId.value = null
+    isTransferOpen.value = true
+    transferLoading.value = true
+    try {
+        const { data } = await axios.get('/account/transfer/targets')
+        transferTargets.value = data.targets || []
+    } catch (e: any) {
+        transferError.value = e?.response?.data?.message || 'Не удалось загрузить ПК'
+        transferTargets.value = []
+    } finally {
+        transferLoading.value = false
+    }
+}
+
+const selectTransferTarget = async (id: number) => {
+    transferTargetId.value = id
+    transferError.value = ''
+    transferBusy.value = true
+    try {
+        const { data } = await axios.post('/account/transfer/preview', { target_computer_id: id })
+        transferPreview.value = data.preview
+    } catch (e: any) {
+        transferPreview.value = null
+        transferError.value = e?.response?.data?.message || 'Ошибка расчёта'
+    } finally {
+        transferBusy.value = false
+    }
+}
+
+const confirmTransfer = async () => {
+    if (!transferTargetId.value) return
+    if (!confirm(transferPreview.value?.warning || 'Подтвердить пересадку?')) return
+    transferBusy.value = true
+    transferError.value = ''
+    try {
+        const { data } = await axios.post('/account/transfer/confirm', {
+            target_computer_id: transferTargetId.value,
+        })
+        alert(data.message || 'Пересадка выполнена. Войдите PIN на новом ПК.')
+        isTransferOpen.value = false
+        window.location.reload()
+    } catch (e: any) {
+        transferError.value = e?.response?.data?.message || 'Не удалось пересесть'
+    } finally {
+        transferBusy.value = false
+    }
+}
 const isReviewModalOpen = ref(false)
 const isGameRequestOpen = ref(false)
 const isPaymentProcessing = ref(false)
@@ -381,7 +451,9 @@ onMounted(() => {
 
                     <div class="mt-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 relative z-10">
                         <button @click="isTopUpInputOpen = true" class="py-4 bg-[#22c55e] text-black font-black rounded-xl text-[9px] tracking-widest hover:scale-105 transition-all uppercase italic">Пополнить</button>
-                        <button @click="isQuickStartOpen = true" class="py-4 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-xl text-[9px] tracking-widest hover:bg-[#22c55e]/10 transition-all uppercase italic">Сесть за ПК</button>
+                        <button @click="openSeatAction" class="py-4 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-xl text-[9px] tracking-widest hover:bg-[#22c55e]/10 transition-all uppercase italic">
+                            {{ hasLiveSession ? 'Пересесть' : 'Сесть за ПК' }}
+                        </button>
                         <Link href="/booking" class="py-4 bg-white/5 border border-white/10 text-white font-black rounded-xl text-[9px] flex items-center justify-center tracking-widest hover:bg-white/10 transition-all uppercase italic">Бронь</Link>
                         <Link href="/shop" class="py-4 bg-white/5 border border-white/10 text-white font-black rounded-xl text-[9px] flex items-center justify-center tracking-widest hover:bg-white/10 transition-all uppercase italic">Маркет</Link>
                         <button @click="openReviewModal" class="py-4 bg-white/5 border border-yellow-500/40 text-yellow-500 font-black rounded-xl text-[9px] tracking-widest hover:bg-yellow-500/10 transition-all uppercase italic">Бонус</button>
@@ -608,6 +680,49 @@ onMounted(() => {
                     <h2 class="text-[#22c55e] text-4xl font-black uppercase italic mb-10 tracking-tighter">Вход в узел</h2>
                     <input v-model="quickStartPc" type="number" placeholder="№ ПК" class="w-full bg-black border-2 border-white/5 rounded-[1rem] py-10 text-7xl font-black text-center text-[#22c55e] mb-12 outline-none focus:border-[#22c55e]/50 transition-colors" />
                     <button @click="isQuickStartOpen = false" class="w-full py-7 bg-[#22c55e] text-black font-black uppercase rounded-[1rem] italic shadow-[0_0_20px_rgba(34,197,94,0.2)]">Подключиться</button>
+                </div>
+            </div>
+
+            <div v-if="isTransferOpen" class="fixed inset-0 flex items-center justify-center z-[9998] p-6 animate-in fade-in duration-300">
+                <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="isTransferOpen = false"></div>
+                <div class="relative max-w-lg w-full bg-[#0a0a0a] border border-cyan-500/30 rounded-[1.25rem] p-8 sm:p-10 shadow-[0_0_80px_rgba(6,182,212,0.12)]">
+                    <h2 class="text-cyan-400 text-3xl font-black uppercase italic mb-2 tracking-tighter">Пересадка</h2>
+                    <p class="text-white/30 text-[10px] uppercase tracking-widest font-black mb-6">Свободные ПК · тариф с предупреждением</p>
+
+                    <div v-if="transferLoading" class="py-10 text-center text-white/40 text-xs uppercase font-black">Загрузка…</div>
+                    <div v-else-if="!transferTargets.length" class="py-10 text-center text-white/40 text-xs uppercase font-black">Нет свободных ПК</div>
+                    <div v-else class="space-y-2 max-h-64 overflow-y-auto mb-6">
+                        <button
+                            v-for="t in transferTargets"
+                            :key="t.id"
+                            type="button"
+                            @click="selectTransferTarget(t.id)"
+                            class="w-full text-left px-4 py-3 rounded-xl border transition-all cursor-pointer"
+                            :class="transferTargetId === t.id ? 'border-cyan-500 bg-cyan-500/10' : 'border-white/10 hover:border-white/30'"
+                        >
+                            <div class="font-black uppercase italic text-white">{{ t.name }}</div>
+                            <div class="text-[10px] text-white/40 uppercase tracking-widest mt-1">
+                                {{ t.zone || 'зона —' }} · {{ Math.round(t.hourly_rate) }} ₽/ч
+                            </div>
+                        </button>
+                    </div>
+
+                    <div v-if="transferPreview" class="mb-6 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm">
+                        {{ transferPreview.warning }}
+                        <div class="text-[10px] uppercase tracking-widest mt-2 text-amber-200/60">
+                            Доплата: {{ Number(transferPreview.charge || 0).toFixed(2) }} ₽
+                            · баланс после: {{ Number(transferPreview.balance_after || 0).toFixed(2) }} ₽
+                        </div>
+                    </div>
+                    <div v-if="transferError" class="mb-4 text-red-400 text-xs font-bold">{{ transferError }}</div>
+
+                    <div class="flex gap-3">
+                        <button type="button" @click="isTransferOpen = false" class="flex-1 py-4 border border-white/10 text-white/40 uppercase font-black rounded-xl text-[10px] cursor-pointer">Отмена</button>
+                        <button type="button" @click="confirmTransfer" :disabled="!transferPreview || transferBusy"
+                                class="flex-[2] py-4 bg-cyan-500 text-black uppercase font-black rounded-xl text-[10px] cursor-pointer disabled:opacity-40">
+                            {{ transferBusy ? '…' : 'Подтвердить' }}
+                        </button>
+                    </div>
                 </div>
             </div>
 
