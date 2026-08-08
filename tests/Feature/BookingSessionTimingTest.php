@@ -149,6 +149,26 @@ class BookingSessionTimingTest extends TestCase
         $this->assertEqualsWithDelta(40 * 60, $remaining, 5);
     }
 
+    public function test_activate_uses_wall_clock_when_starts_at_is_timezone_skewed(): void
+    {
+        // Wall: 10:00–11:00. Modern starts_at skewed +3h → без wall выглядело бы как early start.
+        $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));
+        $endsAt = $startsAt->addHour();
+        $now = $startsAt->addMinutes(50);
+
+        $booking = $this->makeBooking($startsAt, $endsAt);
+        $booking->forceFill([
+            'starts_at' => $startsAt->addHours(3),
+            'ends_at' => $endsAt->addHours(3),
+        ])->saveQuietly();
+
+        $result = $this->timing->activate($booking->fresh(), $now);
+
+        // 30 мин grace + 20 мин списания → 40 мин, НЕ полный час (early).
+        $this->assertSame(40, $result['time_remaining_minutes']);
+        $this->assertSame(40 * 60, $result['time_remaining_seconds']);
+    }
+
     public function test_following_booking_forces_strict_deduction_from_start(): void
     {
         $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));

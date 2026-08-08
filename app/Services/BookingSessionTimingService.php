@@ -144,7 +144,8 @@ class BookingSessionTimingService
      */
     public function activate(Booking $booking, ?CarbonImmutable $now = null): array
     {
-        $now = $now ?? CarbonImmutable::now();
+        $tz = config('app.timezone');
+        $now = ($now ?? CarbonImmutable::now())->timezone($tz);
 
         $result = DB::transaction(function () use ($booking, $now) {
             /** @var Booking $booking */
@@ -165,8 +166,11 @@ class BookingSessionTimingService
             // Heal timezone-skewed modern window against wall-clock duration.
             $booking = $this->healSkewedWindow($booking);
 
-            $scheduledStart = CarbonImmutable::parse($booking->starts_at);
-            $scheduledEnd = CarbonImmutable::parse($booking->ends_at);
+            // Тайминг активации — только wall-clock (date+start_time+duration).
+            // parse(starts_at) после fresh() из PG снова даёт +N ч skew → ложный early/full hour.
+            $wall = $this->wallClockWindow($booking);
+            $scheduledStart = $wall['start'];
+            $scheduledEnd = $wall['end'];
 
             if ($now->lt($scheduledStart)) {
                 return $this->activateEarly($booking, $now, $scheduledStart, $scheduledEnd);
@@ -248,8 +252,9 @@ class BookingSessionTimingService
                     return;
                 }
 
-                $scheduledStart = CarbonImmutable::parse($booking->starts_at);
-                $scheduledEnd = CarbonImmutable::parse($booking->ends_at);
+                $wall = $this->wallClockWindow($booking);
+                $scheduledStart = $wall['start'];
+                $scheduledEnd = $wall['end'];
                 $paidMinutes = $this->paidDurationMinutes($booking, $scheduledStart, $scheduledEnd);
                 $following = $this->hasFollowingBookingConflict(
                     $booking,
@@ -312,6 +317,9 @@ class BookingSessionTimingService
         int $paidMinutes,
         CarbonImmutable $now
     ): int {
+        $tz = config('app.timezone');
+        $now = $now->timezone($tz);
+        $scheduledStart = $scheduledStart->timezone($tz);
         $grace = $this->lateStartGraceMinutes();
         $billingStart = $scheduledStart->addMinutes($grace);
         $paidSeconds = max(0, $paidMinutes * 60);
@@ -646,7 +654,11 @@ class BookingSessionTimingService
             'ends_at' => $wall['end'],
         ]);
 
-        return $booking->fresh() ?? $booking;
+        // Не fresh(): повторное чтение timestamptz из PG снова даёт skew.
+        $booking->starts_at = $wall['start'];
+        $booking->ends_at = $wall['end'];
+
+        return $booking;
     }
 
     /**
