@@ -375,6 +375,8 @@ class ProfileController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Пересадка выполнена. Войдите PIN на новом ПК.',
+                'pin_code' => $result['pin_code'] ?? null,
+                'to' => $result['to'] ?? null,
                 'result' => $result,
             ]);
         } catch (\Throwable $e) {

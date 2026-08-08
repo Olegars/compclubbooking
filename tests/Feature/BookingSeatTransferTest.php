@@ -106,6 +106,8 @@ class BookingSeatTransferTest extends TestCase
         $this->assertSame((int) $this->to->id, (int) $this->booking->computer_id);
         $this->assertContains((string) $this->to->id, $this->booking->pc_ids);
         $this->assertTrue($result['applied'] ?? false);
+        $this->assertNotEmpty($result['pin_code'] ?? null);
+        $this->assertSame($result['pin_code'], $this->booking->pin_code);
 
         // Old terminal poll → session not active
         $this->getJson('/api/shell/balance?terminal_id='.$this->from->id.'&booking_id='.$this->booking->id)

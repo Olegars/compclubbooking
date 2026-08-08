@@ -176,6 +176,7 @@ const transferComputers = ref<any[]>([])
 const transferOccupiedIds = ref<string[]>([])
 const transferSelectableIds = ref<string[]>([])
 const transferFromComputerId = ref<number | null>(null)
+const transferDone = ref<{ pin: string; pcName: string } | null>(null)
 
 const transferSelectedIds = computed(() => {
     const ids: string[] = []
@@ -204,6 +205,7 @@ const openTransferModal = async () => {
     transferError.value = ''
     transferPreview.value = null
     transferTargetId.value = null
+    transferDone.value = null
     transferMapConfig.value = null
     transferComputers.value = []
     transferOccupiedIds.value = []
@@ -233,6 +235,7 @@ const onTransferMapToggle = (id: string) => {
 }
 
 const selectTransferTarget = async (id: number) => {
+    if (transferDone.value) return
     transferTargetId.value = id
     transferError.value = ''
     transferBusy.value = true
@@ -248,22 +251,27 @@ const selectTransferTarget = async (id: number) => {
 }
 
 const confirmTransfer = async () => {
-    if (!transferTargetId.value) return
-    if (!confirm(transferPreview.value?.warning || 'Подтвердить пересадку?')) return
+    if (!transferTargetId.value || transferDone.value) return
     transferBusy.value = true
     transferError.value = ''
     try {
         const { data } = await axios.post('/account/transfer/confirm', {
             target_computer_id: transferTargetId.value,
         })
-        alert(data.message || 'Пересадка выполнена. Войдите PIN на новом ПК.')
-        isTransferOpen.value = false
-        window.location.reload()
+        const pin = String(data.pin_code || data.result?.pin_code || '')
+        const pcName = String(data.to?.name || data.result?.to?.name || transferSelectedMeta.value?.name || '')
+        transferDone.value = { pin, pcName }
+        transferPreview.value = null
     } catch (e: any) {
         transferError.value = e?.response?.data?.message || 'Не удалось пересесть'
     } finally {
         transferBusy.value = false
     }
+}
+
+const finishTransferModal = () => {
+    isTransferOpen.value = false
+    window.location.reload()
 }
 const isReviewModalOpen = ref(false)
 const isGameRequestOpen = ref(false)
@@ -716,49 +724,67 @@ onMounted(() => {
             </div>
 
             <div v-if="isTransferOpen" class="fixed inset-0 flex items-center justify-center z-[9998] p-4 sm:p-6 animate-in fade-in duration-300">
-                <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="isTransferOpen = false"></div>
+                <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="transferDone ? finishTransferModal() : (isTransferOpen = false)"></div>
                 <div class="relative max-w-3xl w-full bg-[#0a0a0a] border border-cyan-500/30 rounded-[1.25rem] p-6 sm:p-8 shadow-[0_0_80px_rgba(6,182,212,0.12)] max-h-[92vh] overflow-y-auto">
-                    <h2 class="text-cyan-400 text-3xl font-black uppercase italic mb-2 tracking-tighter">Пересадка</h2>
-                    <p class="text-white/30 text-[10px] uppercase tracking-widest font-black mb-6">Карта клуба · клик по свободному ПК</p>
-
-                    <div v-if="transferLoading" class="py-10 text-center text-white/40 text-xs uppercase font-black">Загрузка…</div>
-                    <div v-else-if="!transferTargets.length" class="py-10 text-center text-white/40 text-xs uppercase font-black">Нет свободных ПК</div>
-                    <template v-else>
-                        <div class="w-full h-[min(52vh,420px)] mb-4">
-                            <ClubMap
-                                :mapConfig="transferMapConfig"
-                                :computers="transferComputers"
-                                :occupiedIds="transferOccupiedIds"
-                                :selectedIds="transferSelectedIds"
-                                @toggle-seat="onTransferMapToggle"
-                            />
-                        </div>
-                        <p v-if="transferSelectedMeta" class="mb-4 text-[10px] text-white/50 uppercase tracking-widest font-black">
-                            Цель: {{ transferSelectedMeta.name }}
-                            · {{ transferSelectedMeta.zone || 'зона —' }}
-                            · {{ Math.round(transferSelectedMeta.hourly_rate) }} ₽/ч
+                    <template v-if="transferDone">
+                        <h2 class="text-cyan-400 text-3xl font-black uppercase italic mb-2 tracking-tighter">Готово</h2>
+                        <p class="text-white/30 text-[10px] uppercase tracking-widest font-black mb-8">
+                            Войдите PIN на {{ transferDone.pcName || 'новом ПК' }}
                         </p>
-                        <p v-else class="mb-4 text-[10px] text-white/30 uppercase tracking-widest font-black">
-                            Ваш ПК подсвечен · выберите свободный
-                        </p>
-                    </template>
-
-                    <div v-if="transferPreview" class="mb-6 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm">
-                        {{ transferPreview.warning }}
-                        <div class="text-[10px] uppercase tracking-widest mt-2 text-amber-200/60">
-                            Доплата: {{ Number(transferPreview.charge || 0).toFixed(2) }} ₽
-                            · баланс после: {{ Number(transferPreview.balance_after || 0).toFixed(2) }} ₽
+                        <div class="mb-10 text-center">
+                            <div class="text-[10px] text-white/30 uppercase tracking-widest font-black mb-3">Новый PIN</div>
+                            <div class="text-7xl font-mono font-black text-[#22c55e] tracking-[0.35em] drop-shadow-[0_0_20px_rgba(34,197,94,0.35)]">
+                                {{ transferDone.pin || '—' }}
+                            </div>
                         </div>
-                    </div>
-                    <div v-if="transferError" class="mb-4 text-red-400 text-xs font-bold">{{ transferError }}</div>
-
-                    <div class="flex gap-3">
-                        <button type="button" @click="isTransferOpen = false" class="flex-1 py-4 border border-white/10 text-white/40 uppercase font-black rounded-xl text-[10px] cursor-pointer">Отмена</button>
-                        <button type="button" @click="confirmTransfer" :disabled="!transferPreview || transferBusy"
-                                class="flex-[2] py-4 bg-cyan-500 text-black uppercase font-black rounded-xl text-[10px] cursor-pointer disabled:opacity-40">
-                            {{ transferBusy ? '…' : 'Подтвердить' }}
+                        <button type="button" @click="finishTransferModal"
+                                class="w-full py-4 bg-cyan-500 text-black uppercase font-black rounded-xl text-[10px] cursor-pointer">
+                            Понятно
                         </button>
-                    </div>
+                    </template>
+                    <template v-else>
+                        <h2 class="text-cyan-400 text-3xl font-black uppercase italic mb-2 tracking-tighter">Пересадка</h2>
+                        <p class="text-white/30 text-[10px] uppercase tracking-widest font-black mb-6">Карта клуба · клик по свободному ПК</p>
+
+                        <div v-if="transferLoading" class="py-10 text-center text-white/40 text-xs uppercase font-black">Загрузка…</div>
+                        <div v-else-if="!transferTargets.length" class="py-10 text-center text-white/40 text-xs uppercase font-black">Нет свободных ПК</div>
+                        <template v-else>
+                            <div class="w-full h-[min(52vh,420px)] mb-4">
+                                <ClubMap
+                                    :mapConfig="transferMapConfig"
+                                    :computers="transferComputers"
+                                    :occupiedIds="transferOccupiedIds"
+                                    :selectedIds="transferSelectedIds"
+                                    @toggle-seat="onTransferMapToggle"
+                                />
+                            </div>
+                            <p v-if="transferSelectedMeta" class="mb-4 text-[10px] text-white/50 uppercase tracking-widest font-black">
+                                Цель: {{ transferSelectedMeta.name }}
+                                · {{ transferSelectedMeta.zone || 'зона —' }}
+                                · {{ Math.round(transferSelectedMeta.hourly_rate) }} ₽/ч
+                            </p>
+                            <p v-else class="mb-4 text-[10px] text-white/30 uppercase tracking-widest font-black">
+                                Ваш ПК подсвечен · выберите свободный
+                            </p>
+                        </template>
+
+                        <div v-if="transferPreview" class="mb-6 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm">
+                            {{ transferPreview.warning }}
+                            <div class="text-[10px] uppercase tracking-widest mt-2 text-amber-200/60">
+                                Доплата: {{ Number(transferPreview.charge || 0).toFixed(2) }} ₽
+                                · баланс после: {{ Number(transferPreview.balance_after || 0).toFixed(2) }} ₽
+                            </div>
+                        </div>
+                        <div v-if="transferError" class="mb-4 text-red-400 text-xs font-bold">{{ transferError }}</div>
+
+                        <div class="flex gap-3">
+                            <button type="button" @click="isTransferOpen = false" class="flex-1 py-4 border border-white/10 text-white/40 uppercase font-black rounded-xl text-[10px] cursor-pointer">Отмена</button>
+                            <button type="button" @click="confirmTransfer" :disabled="!transferPreview || transferBusy"
+                                    class="flex-[2] py-4 bg-cyan-500 text-black uppercase font-black rounded-xl text-[10px] cursor-pointer disabled:opacity-40">
+                                {{ transferBusy ? '…' : 'Подтвердить' }}
+                            </button>
+                        </div>
+                    </template>
                 </div>
             </div>
 

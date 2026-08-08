@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Booking;
 use App\Models\Computer;
+use App\Models\Space;
 use App\Models\Transaction;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -331,10 +332,12 @@ class BookingSeatTransferService
         }
 
         $oldId = (int) $from->id;
+        $newPin = (string) random_int(1000, 9999);
         $booking->update([
             'computer_id' => (int) $to->id,
             'pc_ids' => [(string) $to->id],
             'ends_at' => $newEndsAt,
+            'pin_code' => $newPin,
         ]);
 
         // duration / legacy window — подтянуть под новый ends_at
@@ -355,6 +358,7 @@ class BookingSeatTransferService
 
         $result['booking_id'] = (int) $booking->id;
         $result['applied'] = true;
+        $result['pin_code'] = $newPin;
         $result['balance_after'] = (float) $user->fresh()->availableBalance();
 
         return $result;
