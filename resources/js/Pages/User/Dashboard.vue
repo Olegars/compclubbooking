@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { usePage, Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import MainLayout from '@/Layouts/MainLayout.vue'
+import ClubMap from '@/Components/ClubMap.vue'
 import YooKassaWidgetModal from '@/Components/YooKassaWidgetModal.vue'
 import PaymentReceiptConsent from '@/Components/PaymentReceiptConsent.vue'
 import FiscalReceiptModal from '@/Components/FiscalReceiptModal.vue'
@@ -170,6 +171,22 @@ const transferPreview = ref<any>(null)
 const transferTargetId = ref<number | null>(null)
 const transferError = ref('')
 const transferBusy = ref(false)
+const transferMapConfig = ref<any>(null)
+const transferComputers = ref<any[]>([])
+const transferOccupiedIds = ref<string[]>([])
+const transferSelectableIds = ref<string[]>([])
+const transferFromComputerId = ref<number | null>(null)
+
+const transferSelectedIds = computed(() => {
+    const ids: string[] = []
+    if (transferFromComputerId.value) ids.push(String(transferFromComputerId.value))
+    if (transferTargetId.value) ids.push(String(transferTargetId.value))
+    return ids
+})
+
+const transferSelectedMeta = computed(() =>
+    transferTargets.value.find((t: any) => t.id === transferTargetId.value) || null
+)
 
 const hasLiveSession = computed(() =>
     activeBookings.value.some((b: any) => b.status === 'active' || b.is_started || b.phase === 'active')
@@ -187,17 +204,32 @@ const openTransferModal = async () => {
     transferError.value = ''
     transferPreview.value = null
     transferTargetId.value = null
+    transferMapConfig.value = null
+    transferComputers.value = []
+    transferOccupiedIds.value = []
+    transferSelectableIds.value = []
+    transferFromComputerId.value = null
     isTransferOpen.value = true
     transferLoading.value = true
     try {
         const { data } = await axios.get('/account/transfer/targets')
         transferTargets.value = data.targets || []
+        transferMapConfig.value = data.map_config || null
+        transferComputers.value = data.computers || []
+        transferOccupiedIds.value = (data.occupied_ids || []).map(String)
+        transferSelectableIds.value = (data.selectable_ids || []).map(String)
+        transferFromComputerId.value = data.from_computer_id ? Number(data.from_computer_id) : null
     } catch (e: any) {
         transferError.value = e?.response?.data?.message || 'Не удалось загрузить ПК'
         transferTargets.value = []
     } finally {
         transferLoading.value = false
     }
+}
+
+const onTransferMapToggle = (id: string) => {
+    if (!transferSelectableIds.value.includes(String(id))) return
+    void selectTransferTarget(Number(id))
 }
 
 const selectTransferTarget = async (id: number) => {
@@ -683,29 +715,33 @@ onMounted(() => {
                 </div>
             </div>
 
-            <div v-if="isTransferOpen" class="fixed inset-0 flex items-center justify-center z-[9998] p-6 animate-in fade-in duration-300">
+            <div v-if="isTransferOpen" class="fixed inset-0 flex items-center justify-center z-[9998] p-4 sm:p-6 animate-in fade-in duration-300">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="isTransferOpen = false"></div>
-                <div class="relative max-w-lg w-full bg-[#0a0a0a] border border-cyan-500/30 rounded-[1.25rem] p-8 sm:p-10 shadow-[0_0_80px_rgba(6,182,212,0.12)]">
+                <div class="relative max-w-3xl w-full bg-[#0a0a0a] border border-cyan-500/30 rounded-[1.25rem] p-6 sm:p-8 shadow-[0_0_80px_rgba(6,182,212,0.12)] max-h-[92vh] overflow-y-auto">
                     <h2 class="text-cyan-400 text-3xl font-black uppercase italic mb-2 tracking-tighter">Пересадка</h2>
-                    <p class="text-white/30 text-[10px] uppercase tracking-widest font-black mb-6">Свободные ПК · тариф с предупреждением</p>
+                    <p class="text-white/30 text-[10px] uppercase tracking-widest font-black mb-6">Карта клуба · клик по свободному ПК</p>
 
                     <div v-if="transferLoading" class="py-10 text-center text-white/40 text-xs uppercase font-black">Загрузка…</div>
                     <div v-else-if="!transferTargets.length" class="py-10 text-center text-white/40 text-xs uppercase font-black">Нет свободных ПК</div>
-                    <div v-else class="space-y-2 max-h-64 overflow-y-auto mb-6">
-                        <button
-                            v-for="t in transferTargets"
-                            :key="t.id"
-                            type="button"
-                            @click="selectTransferTarget(t.id)"
-                            class="w-full text-left px-4 py-3 rounded-xl border transition-all cursor-pointer"
-                            :class="transferTargetId === t.id ? 'border-cyan-500 bg-cyan-500/10' : 'border-white/10 hover:border-white/30'"
-                        >
-                            <div class="font-black uppercase italic text-white">{{ t.name }}</div>
-                            <div class="text-[10px] text-white/40 uppercase tracking-widest mt-1">
-                                {{ t.zone || 'зона —' }} · {{ Math.round(t.hourly_rate) }} ₽/ч
-                            </div>
-                        </button>
-                    </div>
+                    <template v-else>
+                        <div class="w-full h-[min(52vh,420px)] mb-4">
+                            <ClubMap
+                                :mapConfig="transferMapConfig"
+                                :computers="transferComputers"
+                                :occupiedIds="transferOccupiedIds"
+                                :selectedIds="transferSelectedIds"
+                                @toggle-seat="onTransferMapToggle"
+                            />
+                        </div>
+                        <p v-if="transferSelectedMeta" class="mb-4 text-[10px] text-white/50 uppercase tracking-widest font-black">
+                            Цель: {{ transferSelectedMeta.name }}
+                            · {{ transferSelectedMeta.zone || 'зона —' }}
+                            · {{ Math.round(transferSelectedMeta.hourly_rate) }} ₽/ч
+                        </p>
+                        <p v-else class="mb-4 text-[10px] text-white/30 uppercase tracking-widest font-black">
+                            Ваш ПК подсвечен · выберите свободный
+                        </p>
+                    </template>
 
                     <div v-if="transferPreview" class="mb-6 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm">
                         {{ transferPreview.warning }}

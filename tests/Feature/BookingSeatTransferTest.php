@@ -127,6 +127,23 @@ class BookingSeatTransferTest extends TestCase
             ->assertJsonFragment(['id' => $this->to->id]);
     }
 
+    public function test_account_targets_include_map_payload(): void
+    {
+        $this->actingAs($this->user)
+            ->getJson('/account/transfer/targets')
+            ->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('from_computer_id', $this->from->id)
+            ->assertJsonFragment(['id' => $this->to->id])
+            ->assertJsonStructure([
+                'map_config',
+                'computers',
+                'occupied_ids',
+                'selectable_ids',
+                'targets',
+            ]);
+    }
+
     public function test_rejects_occupied_target(): void
     {
         $now = CarbonImmutable::now(config('app.timezone'));

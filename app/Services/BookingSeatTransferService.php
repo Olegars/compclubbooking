@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\Booking;
 use App\Models\Computer;
-use App\Models\Space;
 use App\Models\Transaction;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -21,6 +20,7 @@ class BookingSeatTransferService
         private readonly TariffService $tariffs,
         private readonly GameBookingService $bookings,
         private readonly ComputerStatusService $statuses,
+        private readonly MapPresentationService $mapPresentation,
     ) {
     }
 
@@ -29,9 +29,92 @@ class BookingSeatTransferService
      */
     public function freeTargets(Booking $booking): array
     {
+        return array_values(array_map(
+            fn (array $row) => [
+                'id' => $row['id'],
+                'name' => $row['name'],
+                'zone' => $row['zone'],
+                'hourly_rate' => $row['hourly_rate'],
+            ],
+            $this->candidateRows($booking)['free']
+        ));
+    }
+
+    /**
+     * Карта клуба + занятость для модалки пересадки (ЛК).
+     *
+     * @return array{
+     *   map_config: mixed,
+     *   computers: list<array<string,mixed>>,
+     *   occupied_ids: list<string>,
+     *   selectable_ids: list<string>,
+     *   from_computer_id: int,
+     *   targets: list<array{id:int,name:string,zone:string|null,hourly_rate:float}>
+     * }
+     */
+    public function mapForTransfer(Booking $booking): array
+    {
+        $pack = $this->candidateRows($booking);
+        $from = Computer::query()->find((int) $booking->computer_id);
+        $clubId = (int) ($from?->club_id ?? 0);
+
+        $club = $clubId
+            ? \App\Models\Club::query()->find($clubId)
+            : null;
+        $mapConfig = $club?->map_config;
+        if (is_string($mapConfig)) {
+            $mapConfig = json_decode($mapConfig, true) ?: [];
+        }
+        if (! is_array($mapConfig)) {
+            $mapConfig = [];
+        }
+        $mapConfig = $this->mapPresentation->decorate($mapConfig, $clubId);
+
+        $computers = Computer::query()
+            ->where('club_id', $clubId)
+            ->get(['id', 'name', 'x', 'y', 'kind', 'space_id', 'status'])
+            ->map(fn (Computer $pc) => [
+                'id' => (int) $pc->id,
+                'name' => (string) $pc->name,
+                'x' => (float) $pc->x,
+                'y' => (float) $pc->y,
+                'kind' => $pc->kind,
+            ])
+            ->values()
+            ->all();
+
+        $selectable = array_map(fn (array $t) => (string) $t['id'], $pack['free']);
+        $fromId = (string) ($from?->id ?? 0);
+        $allIds = array_map(fn ($c) => (string) $c['id'], $computers);
+        // Текущий ПК не в occupied: на карте подсвечивается selectedIds; клик игнорируется на фронте.
+        $occupied = array_values(array_diff($allIds, $selectable, $fromId !== '0' ? [$fromId] : []));
+
+        return [
+            'map_config' => $mapConfig,
+            'computers' => $computers,
+            'occupied_ids' => $occupied,
+            'selectable_ids' => $selectable,
+            'from_computer_id' => (int) ($from?->id ?? 0),
+            'targets' => array_values(array_map(
+                fn (array $row) => [
+                    'id' => $row['id'],
+                    'name' => $row['name'],
+                    'zone' => $row['zone'],
+                    'hourly_rate' => $row['hourly_rate'],
+                ],
+                $pack['free']
+            )),
+        ];
+    }
+
+    /**
+     * @return array{free: list<array{id:int,name:string,zone:string|null,hourly_rate:float}>, from:?Computer}
+     */
+    private function candidateRows(Booking $booking): array
+    {
         $from = Computer::query()->with('space')->find((int) $booking->computer_id);
         if (! $from) {
-            return [];
+            return ['free' => [], 'from' => null];
         }
 
         $clubId = (int) $from->club_id;
@@ -56,7 +139,7 @@ class BookingSeatTransferService
         );
         $occupiedMap = array_fill_keys($occupied, true);
 
-        $out = [];
+        $free = [];
         foreach ($candidates as $pc) {
             if (isset($occupiedMap[(int) $pc->id])) {
                 continue;
@@ -65,7 +148,7 @@ class BookingSeatTransferService
                 continue;
             }
             $rate = $this->hourlyRateForComputer($pc, $clubId, $now);
-            $out[] = [
+            $free[] = [
                 'id' => (int) $pc->id,
                 'name' => (string) $pc->name,
                 'zone' => $pc->space?->zone?->name,
@@ -73,7 +156,7 @@ class BookingSeatTransferService
             ];
         }
 
-        return $out;
+        return ['free' => $free, 'from' => $from];
     }
 
     /**

@@ -312,11 +312,17 @@ class ProfileController extends Controller
             return response()->json(['message' => 'Нет активной сессии'], 404);
         }
 
+        $map = $transfers->mapForTransfer($booking);
+
         return response()->json([
             'status' => 'success',
             'booking_id' => $booking->id,
-            'from_computer_id' => (int) $booking->computer_id,
-            'targets' => $transfers->freeTargets($booking),
+            'from_computer_id' => $map['from_computer_id'],
+            'targets' => $map['targets'],
+            'map_config' => $map['map_config'],
+            'computers' => $map['computers'],
+            'occupied_ids' => $map['occupied_ids'],
+            'selectable_ids' => $map['selectable_ids'],
         ]);
     }
 
