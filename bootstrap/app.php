@@ -50,6 +50,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/billing/yookassa/webhook',
             'api/billing/yookassa/sync/*',
             'admin/yookassaStatusSave',
+            'api/wifi/grant-applied',
+            'api/power/wol-sent',
+            'api/power/isolate-applied',
+            'api/fans/shared-applied',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

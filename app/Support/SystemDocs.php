@@ -175,9 +175,27 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Игры и лицензии',
-                        'description' => 'Каталог игр, Steam/игровые аккаунты, офферы клуба (free / per_seat_hour и др.). Shell берёт и освобождает аккаунты, обновляет VDF-кэш.',
+                        'description' => "Каталог игр, Steam/игровые аккаунты, офферы клуба (free / per_seat_hour и др.). Shell: take/free аккаунта, запись запуска, обновление VDF-кэша на станции (machine cache, pivot аккаунт×ПК).\n\nЭто облачный пул лицензий для уже установленного софта на диске/образе ПК — не управление diskless-образами и не Steam Caching / Game Center. Интеграций CCBoot / SENET Boot / NDEV / iCafemenu нет: переключение OS-образа, назначение кэш-сервера и централизованный апдейт игр из админки не реализованы.",
                         'path' => '/admin/licenses',
                         'audience' => 'Supervisor+ / Shell',
+                    ],
+                    [
+                        'title' => 'Питание ПК: WOL и выключение',
+                        'description' => "Уже есть (без IPMI / Smart PDU):\n\n• ComputerPowerService: desired on/off по активным и ближайшим броням (warmup CLUB_POWER_WARMUP_MINUTES, по умолчанию 30 мин до старта).\n• Онлайн = свежий heartbeat шелла (last_seen_at; stale CLUB_POWER_HEARTBEAT_STALE_SECONDS).\n• Состояния: on / off / booting / error (таймаут WOL или нет MAC).\n• Wake-on-LAN: облако само magic packet в LAN не шлёт. MikroTik (или LAN-агент) pull’ит очередь GET /api/power/wol-targets?token=… и подтверждает POST /api/power/wol-sent (токен CLUB_WOL_RELAY_TOKEN). MAC приходит с шелла в /api/shell/power/heartbeat.\n• После logout / idle при desired=off сервер отдаёт power_action=shutdown|reboot; Shell (Qt) принимает команду. reboot — через shutdown /r; shutdown в агенте сейчас stub (отключён для отладки) — смотри ProcessManager::applyPowerAction.\n• Дашборд: снимок питания ПК, в т.ч. «Ошибка WOL».\n• Cron reactor:update-statuses пересчитывает desired/state вместе со статусами сессий.\n\nНет: IPMI, Smart PDU, кнопка «принудительно выключить/перезагрузить» из админки поверх расписания, интеграция с diskless-бутлоадерами.",
+                        'path' => '/admin/dashboard',
+                        'audience' => 'Supervisor+ / Shell / MikroTik',
+                    ],
+                    [
+                        'title' => 'Diskless / кэш игр — статус',
+                        'description' => "Не реализовано: управление бездисковой загрузкой из админки (образ OS, локальный кэш-сервер), синхронизация списков игр/путей из единого diskless-хранилища, контроль Steam Caching / Game Center как локального сервера обновлений, драйверы CCBoot / SENET / NDEV / iCafemenu.\n\nРядом по смыслу уже есть: каталог и офферы (/admin/licenses), выдача Steam-аккаунтов и VDF на ПК, заявки «Хочу игру», WOL по брони (см. «Питание ПК»). Станции предполагаются уже с установленным образом/диском; booking не оркестрирует PXE/iSCSI.",
+                        'path' => '/admin/licenses',
+                        'audience' => 'Supervisor+ / Техник',
+                    ],
+                    [
+                        'title' => 'Гостевой Wi-Fi (идентификация)',
+                        'description' => "Цель: пускать в Wi-Fi только авторизованных игроков (телефон из аккаунта), лог MAC↔user — задел под идентификацию публичного доступа.\n\nСхема (интернета априори нет):\n1) Телефон в SSID Hotspot — полный интернет закрыт; в walled garden белый список: этот хост (APP_URL), как минимум /wifi/* и /login + SMS API.\n2) QR на наклейке/стойке → GET /wifi/join?station={WIFI_STATION_CODE}&mac=$(mac)&ip=$(ip) (mac/ip подставляет MikroTik Hotspot login-link).\n3) Гость логинится по SMS (если ещё нет сессии) → «Открыть интернет» → POST /api/wifi/authorize → запись wifi_access_sessions (pending).\n4) MikroTik pull: GET /api/wifi/grant-targets?token=… → список MAC на grant/revoke; после применения POST /api/wifi/grant-applied { grant_ids, revoke_ids, enrich? }.\n5) Роутер добавляет MAC в hotspot bypass / ip binding — интернет открыт. Срок WIFI_SESSION_HOURS.\n\nEnv: WIFI_ACCESS_ENABLED, WIFI_STATION_CODE, WIFI_SESSION_HOURS, WIFI_RELAY_TOKEN (или CLUB_WOL_RELAY_TOKEN).\nНе путать с isolate ПК/TV (другая очередь /api/power/isolate-*). Админки списка сессий пока нет — только API + таблица.",
+                        'path' => '/wifi/join',
+                        'audience' => 'Техник / Игрок / MikroTik',
                     ],
                     [
                         'title' => 'Видео-метки',
@@ -232,6 +250,12 @@ class SystemDocs
                         'description' => "Рекомендуется для клубных панелей:\n\n# Сделать шелл домашним лаунчером\nadb shell cmd package set-home-activity ru.compclub.tvshell/.ui.LoginActivity\n\n# Device Owner (только чистое устройство без аккаунтов Google / после factory reset):\nadb shell dpm set-device-owner ru.compclub.tvshell/.kiosk.ShellDeviceAdminReceiver\n\nС Device Owner: Lock Task режет Home/Recent жёстче; в whitelist сессии добавляются разрешённые приложения (YouTube и т.д.).\nБез DO киоск слабее: Home может открыть стоковый лаунчер — KioskGuard пытается вернуть шелл на idle.",
                         'path' => null,
                         'audience' => 'Техник',
+                    ],
+                    [
+                        'title' => 'Железо ТВ: CEC, HDMI и киоск',
+                        'description' => "Шелл не управляет физическим селектором входов ТВ и HDMI-CEC. Стабильность на клубе = настройки железа + Device Owner/Home, а не только APK.\n\n1) HDMI-CEC / Auto Input Switch (обязательно на панелях у PS5/приставок):\nПри нажатии PS на геймпаде консоль шлёт CEC Active Source — многие ТВ сами переключают вход на HDMI приставки и «съедают» Android-слой. В настройках ТВ выключите:\n• HDMI-CEC / Anynet+ / Bravia Sync / Simplink / EasyLink (или отдельно «Auto Input Switch» / «автопереключение входа»)\n• при необходимости оставьте CEC только для пульта/питания, без auto-switch\nADB (если пункт спрятан; имена зависят от OEM):\n  adb shell settings put global hdmi_control_auto_device_off_enabled 0\n  adb shell settings put global hdmi_control_enabled 0\nПроверьте на конкретной модели — ключи не универсальны.\n\n2) HDMI passthrough / PiP (TCL, Xiaomi, Hisense и др.):\nКнопка HDMI в сессии работает только если TvInputManager отдаёт passthrough. На части прошивок переход на HDMI уводит Android в PiP/фон или рвёт лаунчер. Это ограничение OEM: шелл не эмулирует релейный HDMI-switcher. Если passthrough нестабилен — не выставляйте HDMI как основной сценарий; используйте отдельный монитор/матрицу или внешний свитчер.\nВ сессии KioskGuard выключен специально (YouTube/HDMI разрешены) — CEC/PiP в этот момент кодом не отбиваются.\n\n3) Чеклист установки панели:\n• factory reset → без Google-аккаунта → install APK → set-home-activity → Device Owner\n• выключить CEC Auto Input Switch\n• отключить автообновления прошивки/магазинов, которые сбрасывают home\n• проверить: idle (логин держится), Home не уходит в сток, сессия → YouTube и назад, PS5 не перехватывает вход без разрешения\n• сеть: MAC ТВ в MikroTik isolate на idle / restore на сессии\n\n4) Что делает код:\nKioskGuard на idle: если шелл ушёл в фон — moveToFront + startActivity (SINGLE_TOP) ~каждые 800 мс, пока снова не на переднем плане. Это не shell «am start» и не замена Device Owner/CEC-настроек. На сессии guard выключен.",
+                        'path' => null,
+                        'audience' => 'Техник / Supervisor+',
                     ],
                     [
                         'title' => 'Удаление APK',
@@ -366,6 +390,12 @@ class SystemDocs
                         'audience' => 'Shell',
                     ],
                     [
+                        'title' => 'Киоск Windows (SecurityManager)',
+                        'description' => "PC Shell: src/core/securitymanager.cpp — локдаун гостевой сессии Windows (реестр HKCU Policies).\n\nЧто делает lockDownSystem(): DisableCMD / DisableRegistryTools / DisableTaskMgr / DisableChangePassword / DisableLockWorkstation; Explorer: NoWindowsKey, NoRun, NoDrives, NoFind, NoViewContextMenu; StickyKeys Flags=506; Shell=путь к REACTOR вместо explorer.exe. unlockSystem() откатывает (обслуживание образа).\n\nСейчас выключено: в main.cpp флаг isProduction=false — SecurityManager не вызывается (режим DEVELOPMENT). Для клуба на бездиске: собрать образ → включить isProduction=true (или вынести в конфиг) → проверить выход админа/обновление образа через unlock. Без этого гость может уйти в TaskMgr/Win+R/проводник.\n\nНе путать с TV KioskGuard / Device Owner и с MikroTik isolate сети.",
+                        'path' => null,
+                        'audience' => 'Shell / Техник',
+                    ],
+                    [
                         'title' => 'Логин сессии',
                         'description' => 'Телефон + PIN брони + terminal_id → активация сессии, остаток времени, баланс и settings_pack (Cloud Saves) для накатки конфигов на этот ПК.',
                         'path' => null,
@@ -408,6 +438,12 @@ class SystemDocs
                         'audience' => 'Shell',
                     ],
                     [
+                        'title' => 'Питание и WOL на PC Shell',
+                        'description' => "POST /api/shell/power/heartbeat (~30 с) + MAC NIC → online / очередь WOL.\nPOST /api/shell/power/offline при штатном уходе.\nВ ответах logout/balance/poll может прийти power_action=reboot|shutdown по desired питания (бронь ± warmup).\nMagic packet шлёт MikroTik из /api/power/wol-targets, не шелл и не облако напрямую. Настройка токена и warmup — .env CLUB_*; статусы на дашборде. Подробности — «Питание ПК» в Конфигурации.",
+                        'path' => '/admin/dashboard',
+                        'audience' => 'Shell / MikroTik',
+                    ],
+                    [
                         'title' => 'Климат на PC Shell',
                         'description' => 'Плитка климата: режимы auto / 50% / 75% / 100%. Сервер отдаёт desired; Shell пульсирует W5100 по LAN и шлёт fan/applied. Подробности железа — в «Вентиляция» (Конфигурация клуба).',
                         'path' => '/admin/fans',
@@ -433,7 +469,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Автозакрытие сессий',
-                        'description' => 'Команда reactor:update-statuses каждую минуту: no-show (неначатые с истекшим эффективным временем + settle чека), закрытие активных сессий по ends_at, дозакрытие зависших deferred-чеков, busy/available ПК. Для kind=tv — isolate в очередь MikroTik.',
+                        'description' => 'Команда reactor:update-statuses каждую минуту: no-show (неначатые с истекшим эффективным временем + settle чека), закрытие активных сессий по ends_at, дозакрытие зависших deferred-чеков, busy/available ПК, пересчёт питания ПК (desired/WOL-state). Для kind=tv — isolate в очередь MikroTik.',
                         'path' => null,
                         'audience' => 'Система',
                     ],

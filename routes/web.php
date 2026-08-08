@@ -20,6 +20,8 @@ use App\Http\Controllers\Api\ShellApiController;
 use App\Http\Controllers\Api\WolRelayController;
 use App\Http\Controllers\Api\SharedFanRelayController;
 use App\Http\Controllers\Api\ShellIsolateRelayController;
+use App\Http\Controllers\Api\WifiGrantRelayController;
+use App\Http\Controllers\WifiAccessController;
 
 // Контроллеры Авторизации
 use App\Http\Controllers\Auth\SmsAuthController;
@@ -84,6 +86,22 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::post('/logout', [LogoutController::class, 'logout'])->name('logout');
+
+/*
+|--------------------------------------------------------------------------
+| Гостевой Wi-Fi (walled garden → QR/join → MikroTik grant)
+| Хост должен быть в allowlist Hotspot до полного интернета.
+|--------------------------------------------------------------------------
+*/
+Route::get('/wifi/join', [WifiAccessController::class, 'join'])->name('wifi.join');
+Route::middleware(['auth:web'])->group(function () {
+    Route::post('/api/wifi/authorize', [WifiAccessController::class, 'authorize']);
+    Route::post('/api/wifi/revoke', [WifiAccessController::class, 'revoke']);
+});
+Route::prefix('api/wifi')->group(function () {
+    Route::get('/grant-targets', [WifiGrantRelayController::class, 'targets']);
+    Route::post('/grant-applied', [WifiGrantRelayController::class, 'applied']);
+});
 
 // ЮKassa HTTP-уведомления (без сессии / CSRF)
 Route::post('/api/billing/yookassa/webhook', [BillingController::class, 'webhook'])
