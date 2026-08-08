@@ -25,9 +25,9 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Очередь заказов',
-                        'description' => 'Активные заказы бара и магазина. Смена статусов, скан кодов маркировки перед выдачей, глобальный HID-сканер для списания КМ в заказ.',
+                        'description' => "Активные заказы бара и магазина (в т.ч. с Shell ПК). Смена статусов, скан кодов маркировки перед выдачей, глобальный HID-сканер для списания КМ в заказ.\n\nЗвук при новом заказе: на /admin/orders очередь опрашивается ~каждые 7 с; при появлении нового id играется /sounds/notification.mp3 и тост «Новый заказ в очереди» (нужна открытая вкладка очереди; браузер может требовать жест пользователя для Audio). В сайдбаре — бейдж pending_orders.\n\nАвтопечать чек-ордера ESC/POS (один Ethernet-принтер бара, TCP :9100): при создании заказа (Shell/магазин) в очередь order_kitchen_prints кладётся слип вида «ПК-08 | #123» + строки «2x Энергетик». Кнопки «Печать» нет — сразу в очередь. Облако само на принтер не ходит: LAN-агент scripts/kitchen-print-agent.ps1 pull’ит GET /api/kitchen/print-targets?token=… и шлёт raw ESC/POS, затем POST /api/kitchen/print-applied. Env: KITCHEN_PRINT_ENABLED, KITCHEN_PRINT_RELAY_TOKEN (или CLUB_WOL_RELAY_TOKEN), на агенте — KITCHEN_API_BASE / KITCHEN_PRINT_TOKEN / KITCHEN_PRINTER_HOST / KITCHEN_PRINTER_PORT. Не путать с копией фискального чека в /admin/transactions.\n\nСтраховка: reactor:check-quality → инцидент late_order, если pending дольше 5 минут (см. «Контроль качества заказов»).",
                         'path' => '/admin/orders',
-                        'audience' => 'Админ',
+                        'audience' => 'Админ / Бар / Техник',
                     ],
                     [
                         'title' => 'Склад',
@@ -487,7 +487,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Контроль качества заказов',
-                        'description' => 'reactor:check-quality каждую минуту: инцидент late_order, если заказ висит pending дольше 5 минут; инцидент low_stock, если у товара задан min_stock и stock ≤ порога (без дублей, пока инцидент не закрыт).',
+                        'description' => "reactor:check-quality каждую минуту: инцидент late_order, если заказ висит pending дольше 5 минут; инцидент low_stock, если у товара задан min_stock и stock ≤ порога (без дублей, пока инцидент не закрыт).\n\nПрофилактика задержки: звук + тост на /admin/orders при новом заказе (см. «Очередь заказов») — late_order остаётся страховкой, если очередь не смотрели.",
                         'path' => null,
                         'audience' => 'Система',
                     ],

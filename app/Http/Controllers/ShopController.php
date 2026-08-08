@@ -290,6 +290,14 @@ class ShopController extends Controller
                 }
 
                 $stockService->reserveMarkedForOrder((int) $order->id, $lineItems);
+
+                try {
+                    app(\App\Services\KitchenOrderPrintService::class)->enqueue($order);
+                } catch (\Throwable $e) {
+                    Log::warning('Kitchen print enqueue (shop): '.$e->getMessage(), [
+                        'order_id' => $order->id,
+                    ]);
+                }
             });
 
             return response()->json([

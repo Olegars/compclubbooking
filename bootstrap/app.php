@@ -54,6 +54,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/power/wol-sent',
             'api/power/isolate-applied',
             'api/fans/shared-applied',
+            'api/kitchen/print-applied',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

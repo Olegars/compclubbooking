@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\WolRelayController;
 use App\Http\Controllers\Api\SharedFanRelayController;
 use App\Http\Controllers\Api\ShellIsolateRelayController;
 use App\Http\Controllers\Api\WifiGrantRelayController;
+use App\Http\Controllers\Api\KitchenPrintRelayController;
 use App\Http\Controllers\WifiAccessController;
 
 // Контроллеры Авторизации
@@ -377,6 +378,11 @@ Route::prefix('api/power')->group(function () {
 Route::prefix('api/fans')->group(function () {
     Route::get('/shared-targets', [SharedFanRelayController::class, 'targets']);
     Route::post('/shared-applied', [SharedFanRelayController::class, 'applied']);
+});
+
+Route::prefix('api/kitchen')->group(function () {
+    Route::get('/print-targets', [KitchenPrintRelayController::class, 'targets']);
+    Route::post('/print-applied', [KitchenPrintRelayController::class, 'applied']);
 });
 
 /*

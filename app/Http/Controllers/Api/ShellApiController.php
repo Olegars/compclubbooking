@@ -1390,6 +1390,14 @@ class ShellApiController extends Controller
                 $stockService->reserveMarkedForOrder($orderId, $lineItems);
             });
 
+            try {
+                app(\App\Services\KitchenOrderPrintService::class)->enqueue($orderId);
+            } catch (\Throwable $e) {
+                Log::warning('Kitchen print enqueue (shell): '.$e->getMessage(), [
+                    'order_id' => $orderId,
+                ]);
+            }
+
             $fiscalReceipt = null;
             if ($transactionId > 0) {
                 try {
