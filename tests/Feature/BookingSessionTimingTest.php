@@ -242,6 +242,24 @@ class BookingSessionTimingTest extends TestCase
         $this->assertSame('cancelled', $booking->group()->first()->status);
     }
 
+    public function test_cancel_no_shows_finds_booking_when_starts_at_is_timezone_skewed(): void
+    {
+        $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));
+        $endsAt = $startsAt->addHour();
+        $booking = $this->makeBooking($startsAt, $endsAt);
+
+        // starts_at skewed +3h into the future — old query never candidates this row.
+        $booking->forceFill([
+            'starts_at' => $startsAt->addHours(3),
+            'ends_at' => $endsAt->addHours(3),
+        ])->saveQuietly();
+
+        $count = $this->timing->cancelNoShows($startsAt->addMinutes(90));
+        $this->assertSame(1, $count);
+        $booking->refresh();
+        $this->assertSame('cancelled', $booking->status);
+    }
+
     public function test_shell_login_early_start_returns_full_paid_duration(): void
     {
         $startsAt = CarbonImmutable::parse('2026-08-01 12:00:00', config('app.timezone'));

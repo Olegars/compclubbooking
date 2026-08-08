@@ -222,14 +222,28 @@ class BookingSessionTimingService
      */
     public function cancelNoShows(?CarbonImmutable $now = null): int
     {
-        $now = $now ?? CarbonImmutable::now();
+        $now = ($now ?? CarbonImmutable::now())->timezone(config('app.timezone'));
+        $today = $now->toDateString();
+        $nowFractionalHour = $now->hour + ($now->minute / 60.0) + ($now->second / 3600.0);
 
+        // Кандидаты: modern starts_at уже в прошлом ИЛИ wall-clock (date+start_time)
+        // уже после старта. Иначе PG/timestamptz skew (+N ч у starts_at) вечно
+        // держит «После входа» без no-show settle.
         $ids = Booking::query()
             ->whereIn('status', ['confirmed', 'paid'])
             ->whereNull('actual_started_at')
-            ->whereNotNull('starts_at')
-            ->whereNotNull('ends_at')
-            ->where('starts_at', '<=', $now)
+            ->where(function ($q) use ($now, $today, $nowFractionalHour) {
+                $q->where(function ($modern) use ($now) {
+                    $modern->whereNotNull('starts_at')
+                        ->where('starts_at', '<=', $now);
+                })->orWhere(function ($wall) use ($today, $nowFractionalHour) {
+                    $wall->where('date', '<', $today)
+                        ->orWhere(function ($sameDay) use ($today, $nowFractionalHour) {
+                            $sameDay->whereDate('date', $today)
+                                ->where('start_time', '<=', $nowFractionalHour);
+                        });
+                });
+            })
             ->pluck('id');
 
         if ($ids->isEmpty()) {
@@ -247,9 +261,8 @@ class BookingSessionTimingService
                     return;
                 }
 
-                $booking = $this->healSkewedWindow($booking);
-                if (! $booking->starts_at || ! $booking->ends_at) {
-                    return;
+                if ($booking->starts_at && $booking->ends_at) {
+                    $booking = $this->healSkewedWindow($booking);
                 }
 
                 $wall = $this->wallClockWindow($booking);

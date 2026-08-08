@@ -315,28 +315,59 @@ class FiscalService
             $pc = 'ПК #'.((int) $booking->computer_id);
         }
 
-        $hours = (float) $booking->duration;
-        $hoursLabel = $hours > 0
-            ? (fmod($hours, 1.0) < 0.05 ? ((int) $hours).' ч' : rtrim(rtrim(number_format($hours, 1, '.', ''), '0'), '.').' ч')
-            : null;
+        // Оплаченная длительность из quote при оплате — не remaining после late activate
+        // (booking.duration тогда переписывается на фактический остаток, напр. 0.8 ч).
+        $hours = $this->bookedHoursFromTransaction($transaction, $booking);
+        $hoursLabel = $this->formatHoursLabel($hours);
 
         $base = trim((string) ($transaction->description ?? ''));
         if ($base === '') {
             $base = $transaction->type === 'booking_upgrade' ? 'Апгрейд игрового времени' : 'Игровое время';
         }
 
-        // Не дублируем, если ПК уже в описании.
-        if (str_contains(mb_strtolower($base), mb_strtolower($pc))) {
-            $name = $base;
-        } else {
-            $name = $hoursLabel
-                ? "{$base} · {$pc} · {$hoursLabel}"
-                : "{$base} · {$pc}";
-        }
+        // Снимаем прошлый суффикс «· PC · N ч», чтобы повторный settle был идемпотентным.
+        $escapedPc = preg_quote($pc, '/');
+        $base = preg_replace('/\s*·\s*'.$escapedPc.'(?:\s*·\s*[\d.,]+\s*ч)?$/iu', '', $base) ?? $base;
+        $base = preg_replace('/\s*·\s*[\d.,]+\s*ч\s*$/u', '', $base) ?? $base;
+        $base = trim($base);
+
+        $name = $hoursLabel
+            ? "{$base} · {$pc} · {$hoursLabel}"
+            : "{$base} · {$pc}";
 
         $transaction->forceFill([
             'description' => mb_substr($name, 0, 240),
         ])->saveQuietly();
+    }
+
+    /**
+     * Booked (paid) hours for receipt text — prefer quote payload over mutated booking.duration.
+     */
+    public function bookedHoursFromTransaction(Transaction $transaction, ?\App\Models\Booking $booking = null): float
+    {
+        $minutes = (int) data_get($transaction->payload, 'duration_minutes', 0);
+        if ($minutes > 0) {
+            return $minutes / 60.0;
+        }
+
+        if ($booking && (float) $booking->duration > 0 && ! $booking->actual_started_at) {
+            return (float) $booking->duration;
+        }
+
+        return $booking ? max(0.0, (float) $booking->duration) : 0.0;
+    }
+
+    public function formatHoursLabel(float $hours): ?string
+    {
+        if ($hours <= 0) {
+            return null;
+        }
+
+        if (fmod($hours, 1.0) < 0.05) {
+            return ((int) round($hours)).' ч';
+        }
+
+        return rtrim(rtrim(number_format($hours, 1, '.', ''), '0'), '.').' ч';
     }
 
     protected function refundNeedsFiscal(Transaction $transaction): bool

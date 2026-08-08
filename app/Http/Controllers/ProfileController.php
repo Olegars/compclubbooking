@@ -32,6 +32,11 @@ class ProfileController extends Controller
             ['deposit_balance' => 0]
         );
 
+        // No-show / отложенные чеки до отрисовки истории (не ждать только cron).
+        $timing = app(BookingSessionTimingService::class);
+        $timing->cancelNoShows();
+        $fiscal->settleOrphanedDeferredBookings();
+
         // 2. Активные заказы из магазина
         $activeOrders = Order::where('user_id', $user->id)
             ->whereIn('status', ['pending', 'cooking', 'new', 'waiting'])
@@ -57,6 +62,13 @@ class ProfileController extends Controller
                     || preg_match('/^бронь #\d+:\s*компьютеры$/iu', (string) $description)
                 )) {
                     $description = 'Бронь #'.($t->booking_group_id ?: '—').': '.$titles->implode(', ');
+                }
+
+                // В чеке/логе — забронированные часы из quote, не remaining после activate.
+                $bookedHours = $fiscal->bookedHoursFromTransaction($t);
+                $hoursLabel = $fiscal->formatHoursLabel($bookedHours);
+                if ($hoursLabel && preg_match('/·\s*[\d.,]+\s*ч/u', (string) $description)) {
+                    $description = preg_replace('/·\s*[\d.,]+\s*ч/u', '· '.$hoursLabel, (string) $description, 1);
                 }
 
                 $receiptUrl = $fiscal->displayReceiptUrl($t);
@@ -96,7 +108,6 @@ class ProfileController extends Controller
             });
 
         // 4. Активные бронирования (включая опоздание в soft-grace окне)
-        $timing = app(BookingSessionTimingService::class);
         $bookingService = app(GameBookingService::class);
         $nowImmutable = CarbonImmutable::instance($now->copy()->timezone(config('app.timezone')));
 
