@@ -163,7 +163,7 @@ class ShellApiController extends Controller
             // Пересадка: бронь уже active + actual_started_at, выдан новый PIN.
             // Нельзя звать activate() — он ответит «Сессия уже была активирована».
             if ($booking->status === 'active' && $booking->actual_started_at) {
-                $booking->update(['pin_code' => null]);
+                app(BookingSeatTransferService::class)->clearTransferPending($booking);
                 $booking = $timing->healSkewedWindow($booking->fresh());
                 $formattedTime = $timing->formatRemainingHms($booking);
             } else {
@@ -379,6 +379,7 @@ class ShellApiController extends Controller
             // Пока шелл поллит баланс — закрываем просроченные сессии сразу,
             // не дожидаясь минуты scheduler'а.
             app(BookingSessionTimingService::class)->completeExpiredSessions();
+            app(BookingSeatTransferService::class)->reclaimAbandonedTransfers();
 
             $bookingId = (int) $request->query('booking_id', 0);
             $terminalId = (int) $request->query('terminal_id', 0);

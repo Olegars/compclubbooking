@@ -17,6 +17,9 @@ use RuntimeException;
  */
 class BookingSeatTransferService
 {
+    /** Минут без PIN-логина на новом месте → откат на исходный ПК. */
+    public const ABANDONED_GRACE_MINUTES = 10;
+
     public function __construct(
         private readonly TariffService $tariffs,
         private readonly GameBookingService $bookings,
@@ -338,6 +341,8 @@ class BookingSeatTransferService
             'pc_ids' => [(string) $to->id],
             'ends_at' => $newEndsAt,
             'pin_code' => $newPin,
+            'transfer_from_computer_id' => $oldId,
+            'transfer_pending_at' => $now,
         ]);
 
         // duration / legacy window — подтянуть под новый ends_at
@@ -362,6 +367,103 @@ class BookingSeatTransferService
         $result['balance_after'] = (float) $user->fresh()->availableBalance();
 
         return $result;
+    }
+
+    /**
+     * Успешный вход на целевом месте после пересадки — снять «ожидание PIN».
+     */
+    public function clearTransferPending(Booking $booking): void
+    {
+        if ($booking->transfer_pending_at === null && $booking->transfer_from_computer_id === null) {
+            if ($booking->pin_code !== null) {
+                $booking->update(['pin_code' => null]);
+            }
+
+            return;
+        }
+
+        $booking->update([
+            'pin_code' => null,
+            'transfer_from_computer_id' => null,
+            'transfer_pending_at' => null,
+        ]);
+    }
+
+    /**
+     * Пересадка без логина: через grace минут вернуть бронь на исходный ПК,
+     * иначе целевой зависает busy до ends_at, хотя никто не сел.
+     *
+     * @return int число откатанных броней
+     */
+    public function reclaimAbandonedTransfers(?CarbonImmutable $now = null, ?int $graceMinutes = null): int
+    {
+        $now = $now ?? CarbonImmutable::now(config('app.timezone'));
+        $grace = $graceMinutes ?? self::ABANDONED_GRACE_MINUTES;
+        $deadline = $now->subMinutes(max(1, $grace));
+
+        $ids = Booking::query()
+            ->where('status', 'active')
+            ->whereNotNull('transfer_pending_at')
+            ->whereNotNull('transfer_from_computer_id')
+            ->whereNotNull('pin_code')
+            ->where('transfer_pending_at', '<=', $deadline)
+            ->pluck('id');
+
+        if ($ids->isEmpty()) {
+            return 0;
+        }
+
+        $reclaimed = 0;
+        foreach ($ids as $id) {
+            $reclaimed += (int) DB::transaction(function () use ($id) {
+                $booking = Booking::query()->lockForUpdate()->find($id);
+                if (! $booking
+                    || $booking->status !== 'active'
+                    || $booking->transfer_pending_at === null
+                    || $booking->transfer_from_computer_id === null
+                    || $booking->pin_code === null
+                ) {
+                    return 0;
+                }
+
+                $fromId = (int) $booking->transfer_from_computer_id;
+                $toId = (int) $booking->computer_id;
+                if ($fromId <= 0 || $fromId === $toId) {
+                    $booking->update([
+                        'pin_code' => null,
+                        'transfer_from_computer_id' => null,
+                        'transfer_pending_at' => null,
+                    ]);
+
+                    return 0;
+                }
+
+                // Исходный ПК снова занят — ждём, не трогаем pending/PIN.
+                $occupied = $this->bookings->occupiedComputerIds(
+                    [$fromId],
+                    CarbonImmutable::now(config('app.timezone')),
+                    $this->endsAt($booking),
+                    [(int) $booking->id]
+                );
+                if ($occupied !== []) {
+                    return 0;
+                }
+
+                $booking->update([
+                    'computer_id' => $fromId,
+                    'pc_ids' => [(string) $fromId],
+                    'pin_code' => null,
+                    'transfer_from_computer_id' => null,
+                    'transfer_pending_at' => null,
+                ]);
+
+                $this->statuses->syncFor([$fromId, $toId]);
+
+                return 1;
+            });
+        }
+
+        return $reclaimed;
     }
 
     private function endsAt(Booking $booking): CarbonImmutable

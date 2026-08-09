@@ -132,6 +132,65 @@ class BookingSeatTransferTest extends TestCase
 
         $this->booking->refresh();
         $this->assertNull($this->booking->pin_code);
+        $this->assertNull($this->booking->transfer_pending_at);
+        $this->assertNull($this->booking->transfer_from_computer_id);
+    }
+
+    public function test_abandoned_transfer_reclaims_target_after_grace(): void
+    {
+        $svc = app(BookingSeatTransferService::class);
+        $svc->transfer($this->booking, (int) $this->to->id, $this->user);
+
+        $this->booking->refresh();
+        $this->from->refresh();
+        $this->to->refresh();
+        $this->assertSame((int) $this->to->id, (int) $this->booking->computer_id);
+        $this->assertSame('available', $this->from->status);
+        $this->assertSame('busy', $this->to->status);
+        $this->assertNotNull($this->booking->transfer_pending_at);
+        $this->assertSame((int) $this->from->id, (int) $this->booking->transfer_from_computer_id);
+
+        // Ещё внутри grace — не откатываем
+        $reclaimed = $svc->reclaimAbandonedTransfers(
+            CarbonImmutable::now(config('app.timezone'))->addMinutes(5),
+            10
+        );
+        $this->assertSame(0, $reclaimed);
+        $this->to->refresh();
+        $this->assertSame('busy', $this->to->status);
+
+        // После grace — бронь обратно на исходный ПК, целевой свободен
+        $reclaimed = $svc->reclaimAbandonedTransfers(
+            CarbonImmutable::now(config('app.timezone'))->addMinutes(11),
+            10
+        );
+        $this->assertSame(1, $reclaimed);
+
+        $this->booking->refresh();
+        $this->from->refresh();
+        $this->to->refresh();
+        $this->assertSame((int) $this->from->id, (int) $this->booking->computer_id);
+        $this->assertNull($this->booking->pin_code);
+        $this->assertNull($this->booking->transfer_pending_at);
+        $this->assertSame('busy', $this->from->status);
+        $this->assertSame('available', $this->to->status);
+    }
+
+    public function test_expired_abandoned_transfer_frees_target(): void
+    {
+        $svc = app(BookingSeatTransferService::class);
+        $svc->transfer($this->booking, (int) $this->to->id, $this->user);
+
+        $this->booking->refresh();
+        $past = CarbonImmutable::parse($this->booking->ends_at)->addMinute();
+
+        $closed = app(\App\Services\BookingSessionTimingService::class)->completeExpiredSessions($past);
+        $this->assertGreaterThanOrEqual(1, $closed);
+
+        $this->to->refresh();
+        $this->assertSame('available', $this->to->status);
+        $this->booking->refresh();
+        $this->assertSame('completed', $this->booking->status);
     }
 
     public function test_shell_targets_endpoint(): void

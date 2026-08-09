@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use App\Services\BookingSeatTransferService;
 use App\Services\BookingSessionTimingService;
 use App\Services\ComputerPowerService;
 use App\Services\ComputerStatusService;
@@ -15,6 +16,7 @@ class UpdatePcStatuses extends Command
 
     public function handle(
         BookingSessionTimingService $timing,
+        BookingSeatTransferService $transfers,
         ComputerStatusService $statuses,
         ComputerPowerService $power,
         FiscalService $fiscal,
@@ -27,6 +29,11 @@ class UpdatePcStatuses extends Command
         $closed = $timing->completeExpiredSessions();
         if ($closed > 0) {
             $this->info('Закрыто просроченных сессий: '.$closed);
+        }
+
+        $reclaimed = $transfers->reclaimAbandonedTransfers();
+        if ($reclaimed > 0) {
+            $this->info('Откат незавершённых пересадок: '.$reclaimed);
         }
 
         $orphaned = $fiscal->settleOrphanedDeferredBookings();

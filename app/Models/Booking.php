@@ -16,6 +16,7 @@ class Booking extends Model
         'user_id',
         'pc_ids',
         'computer_id',
+        'transfer_from_computer_id',
         'date',
         'start_time',
         'duration',
@@ -23,6 +24,7 @@ class Booking extends Model
         'price_minor',
         'status',
         'pin_code',
+        'transfer_pending_at',
         'starts_at',
         'ends_at',
         'actual_started_at',
@@ -60,6 +62,7 @@ class Booking extends Model
         'ends_at' => 'immutable_datetime',
         'actual_started_at' => 'immutable_datetime',
         'actual_ended_at' => 'immutable_datetime',
+        'transfer_pending_at' => 'immutable_datetime',
     ];
 
 }
