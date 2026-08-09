@@ -191,6 +191,7 @@ class BookingSessionExtendService
             $booking->update([
                 'ends_at' => $newEnds,
                 'duration' => $durationHours,
+                'price' => round((float) $booking->price + $cost, 2),
             ]);
 
             $this->statuses->syncFor((int) $pc->id);

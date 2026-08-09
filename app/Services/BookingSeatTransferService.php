@@ -234,7 +234,9 @@ class BookingSeatTransferService
         }
 
         $clubId = (int) $from->club_id;
-        $rateFrom = $this->hourlyRateForComputer($from, $clubId, $now);
+        // Ставка «откуда»: что реально оплачено за час по брони (пакет 375 ≠ текущий hourly 400).
+        // Ставка «куда»: актуальный тариф целевого места.
+        $rateFrom = $this->effectivePaidHourlyRate($booking, $from, $clubId, $now);
         $rateTo = $this->hourlyRateForComputer($to, $clubId, $now);
 
         $remainingHours = max(0.01, $now->diffInSeconds($endsAt) / 3600);
@@ -330,20 +332,27 @@ class BookingSeatTransferService
                     'booking_id' => $booking->id,
                     'from_computer_id' => $from->id,
                     'to_computer_id' => $to->id,
+                    'rate_from' => $rateFrom,
+                    'rate_to' => $rateTo,
+                    'delta_per_hour' => $deltaPerHour,
                 ],
             ]);
         }
 
         $oldId = (int) $from->id;
         $newPin = (string) random_int(1000, 9999);
-        $booking->update([
+        $bookingPatch = [
             'computer_id' => (int) $to->id,
             'pc_ids' => [(string) $to->id],
             'ends_at' => $newEndsAt,
             'pin_code' => $newPin,
             'transfer_from_computer_id' => $oldId,
             'transfer_pending_at' => $now,
-        ]);
+        ];
+        if ($charge > 0) {
+            $bookingPatch['price'] = round((float) $booking->price + $charge, 2);
+        }
+        $booking->update($bookingPatch);
 
         // duration / legacy window — подтянуть под новый ends_at
         if ($booking->actual_started_at || $booking->starts_at) {
@@ -474,6 +483,25 @@ class BookingSeatTransferService
         }
 
         return CarbonImmutable::now($tz);
+    }
+
+    /**
+     * Эффективная ₽/ч текущей брони (price/duration), иначе тариф исходного ПК.
+     * Иначе пакет 375 ₽/ч и hourly 400 ₽/ч на обеих зонах даёт ложное «тариф тот же».
+     */
+    private function effectivePaidHourlyRate(
+        Booking $booking,
+        Computer $from,
+        int $clubId,
+        CarbonImmutable $at,
+    ): float {
+        $duration = (float) ($booking->duration ?? 0);
+        $price = (float) ($booking->price ?? 0);
+        if ($duration >= 0.05 && $price > 0.009) {
+            return round($price / $duration, 2);
+        }
+
+        return $this->hourlyRateForComputer($from, $clubId, $at);
     }
 
     private function hourlyRateForComputer(Computer $pc, int $clubId, CarbonImmutable $at): float

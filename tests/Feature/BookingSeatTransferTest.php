@@ -55,13 +55,13 @@ class BookingSeatTransferTest extends TestCase
             'club_id' => $this->club->id,
             'zone_id' => $zoneA->id,
             'name' => 'Room A',
-            'surcharge_per_hour' => 0,
+            'surcharge_per_hour' => 150, // DEFAULT 250 + 150 = 400
         ]);
         $spaceB = Space::create([
             'club_id' => $this->club->id,
             'zone_id' => $zoneB->id,
             'name' => 'Room B',
-            'surcharge_per_hour' => 0,
+            'surcharge_per_hour' => 150, // тот же текущий hourly 400
         ]);
 
         $this->from = Computer::create([
@@ -86,8 +86,8 @@ class BookingSeatTransferTest extends TestCase
             'pc_ids' => [(string) $this->from->id],
             'date' => $now->toDateString(),
             'start_time' => $now->hour + $now->minute / 60,
-            'duration' => 2,
-            'price' => 200,
+            'duration' => 1,
+            'price' => 375, // пакет/оплаченная ставка 375, при текущем hourly 400
             'status' => 'active',
             'pin_code' => '1234',
             'starts_at' => $now->subHour(),
@@ -96,11 +96,35 @@ class BookingSeatTransferTest extends TestCase
         ]);
     }
 
+    public function test_transfer_charges_when_target_rate_above_paid_booking_rate(): void
+    {
+        // Оба ПК сейчас по 400 ₽/ч, но бронь оплачена как 375 ₽/ч → должна быть доплата.
+        $svc = app(BookingSeatTransferService::class);
+        $preview = $svc->preview($this->booking, (int) $this->to->id);
+
+        $this->assertSame('charge', $preview['action']);
+        $this->assertEqualsWithDelta(375.0, (float) $preview['from']['hourly_rate'], 0.01);
+        $this->assertEqualsWithDelta(400.0, (float) $preview['to']['hourly_rate'], 0.01);
+        $this->assertGreaterThan(0.009, (float) $preview['charge']);
+
+        $balanceBefore = (float) $this->user->fresh()->availableBalance();
+        $result = $svc->transfer($this->booking, (int) $this->to->id, $this->user);
+        $this->assertTrue($result['applied'] ?? false);
+        $this->assertGreaterThan(0.009, (float) $result['charge']);
+
+        $this->user->refresh();
+        $this->assertLessThan($balanceBefore, (float) $this->user->availableBalance());
+
+        $this->booking->refresh();
+        $this->assertGreaterThan(375.0, (float) $this->booking->price);
+    }
+
     public function test_transfer_moves_booking_and_soft_kick_balance(): void
     {
-        // Same default hourly → no charge
+        // Выравниваем оплаченную ставку с текущим тарифом → без доплаты.
+        $this->booking->update(['price' => 400, 'duration' => 1]);
         $svc = app(BookingSeatTransferService::class);
-        $result = $svc->transfer($this->booking, (int) $this->to->id, $this->user);
+        $result = $svc->transfer($this->booking->fresh(), (int) $this->to->id, $this->user);
 
         $this->booking->refresh();
         $this->assertSame((int) $this->to->id, (int) $this->booking->computer_id);
