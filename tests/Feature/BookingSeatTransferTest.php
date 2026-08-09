@@ -115,10 +115,23 @@ class BookingSeatTransferTest extends TestCase
             ->assertJsonPath('session_active', false)
             ->assertJsonPath('relocated', true);
 
-        // New terminal → active
+        // New terminal → booking already bound (API), but Shell UI needs PIN login
         $this->getJson('/api/shell/balance?terminal_id='.$this->to->id.'&booking_id='.$this->booking->id)
             ->assertOk()
             ->assertJsonPath('session_active', true);
+
+        $pin = (string) $result['pin_code'];
+        $this->postJson('/api/shell/login', [
+            'phone' => $this->user->phone,
+            'pin' => $pin,
+            'terminal_id' => $this->to->id,
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('booking_id', $this->booking->id);
+
+        $this->booking->refresh();
+        $this->assertNull($this->booking->pin_code);
     }
 
     public function test_shell_targets_endpoint(): void

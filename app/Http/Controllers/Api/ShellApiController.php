@@ -157,28 +157,38 @@ class ShellApiController extends Controller
                 ]);
             }
 
-            try {
-                $activation = app(BookingSessionTimingService::class)->activate($booking);
-            } catch (RuntimeException $e) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => $e->getMessage(),
-                ]);
-            }
-
-            $booking = $activation['booking'];
             $timing = app(BookingSessionTimingService::class);
-            // Prefer seconds returned by activate (avoids timestamptz re-read skew).
-            if (isset($activation['time_remaining_seconds'])) {
-                $secs = max(0, (int) $activation['time_remaining_seconds']);
-                $formattedTime = sprintf(
-                    '%02d:%02d:%02d',
-                    intdiv($secs, 3600),
-                    intdiv($secs % 3600, 60),
-                    $secs % 60
-                );
-            } else {
+            $fiscalReceipts = [];
+
+            // Пересадка: бронь уже active + actual_started_at, выдан новый PIN.
+            // Нельзя звать activate() — он ответит «Сессия уже была активирована».
+            if ($booking->status === 'active' && $booking->actual_started_at) {
+                $booking->update(['pin_code' => null]);
+                $booking = $timing->healSkewedWindow($booking->fresh());
                 $formattedTime = $timing->formatRemainingHms($booking);
+            } else {
+                try {
+                    $activation = $timing->activate($booking);
+                } catch (RuntimeException $e) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $e->getMessage(),
+                    ]);
+                }
+
+                $booking = $activation['booking'];
+                if (isset($activation['time_remaining_seconds'])) {
+                    $secs = max(0, (int) $activation['time_remaining_seconds']);
+                    $formattedTime = sprintf(
+                        '%02d:%02d:%02d',
+                        intdiv($secs, 3600),
+                        intdiv($secs % 3600, 60),
+                        $secs % 60
+                    );
+                } else {
+                    $formattedTime = $timing->formatRemainingHms($booking);
+                }
+                $fiscalReceipts = $activation['fiscal_receipts'] ?? [];
             }
 
             // Sync legacy users.balance / wallets.balance into deposit_balance so shell matches admin.
@@ -209,7 +219,6 @@ class ShellApiController extends Controller
 
             $this->applyTvNetworkPolicy($terminalId, 'session_active');
 
-            $fiscalReceipts = $activation['fiscal_receipts'] ?? [];
             $primaryReceipt = collect($fiscalReceipts)
                 ->first(fn ($r) => filled($r['fiscal_receipt_url'] ?? null));
 
