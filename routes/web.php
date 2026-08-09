@@ -407,6 +407,8 @@ Route::prefix('api/shell')->group(function () {
     Route::get('/transfer/targets', [ShellApiController::class, 'transferTargets']);
     Route::post('/transfer/preview', [ShellApiController::class, 'transferPreview']);
     Route::post('/transfer/confirm', [ShellApiController::class, 'transferConfirm']);
+    Route::get('/session/extend/options', [ShellApiController::class, 'extendOptions']);
+    Route::post('/session/extend', [ShellApiController::class, 'extendSession']);
     Route::post('/billing/topup', [ShellApiController::class, 'topUp']);
     Route::get('/games', [ShellApiController::class, 'getGames']);
     Route::get('/quick-apps', [ShellApiController::class, 'getQuickApps']);

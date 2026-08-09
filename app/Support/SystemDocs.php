@@ -247,7 +247,7 @@ class SystemDocs
                 'items' => [
                     [
                         'title' => 'Назначение',
-                        'description' => "APK ru.compclub.tvshell — киоск на Android TV / Google TV / ТВ-приставке (не PC Qt-шелл).\n\nIdle: логин + оверлеи (6 блоков как на PC: CAM/DAT/INF).\nСессия: таймер, баланс, лаунчер приложений, SOS, продление по QR, HDMI (ручные кнопки + авто: сессия→HDMI1 / конец→HDMI2, настраивается в Setup).\n\nСеть без сессии режется через MikroTik (MAC/IP isolate); с сессией — restore.",
+                        'description' => "APK ru.compclub.tvshell — киоск на Android TV / Google TV / ТВ-приставке (не PC Qt-шелл).\n\nIdle: логин + оверлеи (6 блоков как на PC: CAM/DAT/INF).\nСессия: таймер, баланс, лаунчер приложений, SOS, продление с баланса (или QR если не хватает), HDMI (ручные кнопки + авто: сессия→HDMI1 / конец→HDMI2, настраивается в Setup).\n\nСеть без сессии режется через MikroTik (MAC/IP isolate); с сессией — restore.",
                         'path' => null,
                         'audience' => 'Supervisor+ / TV',
                     ],
@@ -283,7 +283,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Авторизация и активная сессия',
-                        'description' => "POST /api/shell/login (phone, pin, terminal_id) → активация брони (BookingSessionTimingService), баланс, time_remaining.\n\nОверлеи убиваются (kill/release). ui-state session_active → MikroTik restore (интернет открыт).\n\nSessionActivity: имя, баланс, таймер (локальный tick + poll balance/heartbeat ~8 с), предупреждения 10/5/1 мин.\nKioskGuard выключен — можно уходить в YouTube/HDMI.\nАвто HDMI: сразу после входа шелл переключает passthrough на HDMI сессии (дефолт HDMI1 = ПС), если OEM отдаёт входы.\nЛаунчер: LEANBACK-приложения (YouTube/Кинопоиск в приоритете), Settings/Play скрыты.\nHDMI-кнопки вручную — если TvInputManager отдаёт passthrough (иначе блок скрыт).\nSOS → POST /api/shell/sos.\nПродлить → billing/topup confirmation=redirect → QR на телефоне.\nLAN CommandService :8787 (message, session_end, …).",
+                        'description' => "POST /api/shell/login (phone, pin, terminal_id) → активация брони (BookingSessionTimingService), баланс, time_remaining.\n\nОверлеи убиваются (kill/release). ui-state session_active → MikroTik restore (интернет открыт).\n\nSessionActivity: имя, баланс, таймер (локальный tick + poll balance/heartbeat ~8 с), предупреждения 10/5/1 мин.\nKioskGuard выключен — можно уходить в YouTube/HDMI.\nАвто HDMI: сразу после входа шелл переключает passthrough на HDMI сессии (дефолт HDMI1 = ПС), если OEM отдаёт входы.\nЛаунчер: LEANBACK-приложения (YouTube/Кинопоиск в приоритете), Settings/Play скрыты.\nHDMI-кнопки вручную — если TvInputManager отдаёт passthrough (иначе блок скрыт).\nSOS → POST /api/shell/sos.\nПродлить → сначала длительность (30м/1–3ч) и списание с баланса; QR-оплата только если средств не хватает.\nLAN CommandService :8787 (message, session_end, …).",
                         'path' => null,
                         'audience' => 'TV / Игрок',
                     ],

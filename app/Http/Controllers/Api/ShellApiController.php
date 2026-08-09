@@ -24,6 +24,7 @@ use App\Services\AchievementService;
 use App\Services\AiAssistant\AiAssistantService;
 use App\Services\AiAssistant\VoiceGreetingService;
 use App\Services\BookingSeatTransferService;
+use App\Services\BookingSessionExtendService;
 use App\Services\BookingSessionTimingService;
 use App\Services\ComputerPowerService;
 use App\Services\ComputerStatusService;
@@ -2032,6 +2033,88 @@ class ShellApiController extends Controller
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
+    }
+
+    /**
+     * Варианты продления активной сессии (длительность + цена с баланса).
+     */
+    public function extendOptions(Request $request, BookingSessionExtendService $extends)
+    {
+        try {
+            $data = $request->validate([
+                'terminal_id' => 'required|integer',
+                'booking_id' => 'nullable|integer',
+            ]);
+            $booking = $this->resolveActiveBookingForExtend(
+                (int) $data['terminal_id'],
+                isset($data['booking_id']) ? (int) $data['booking_id'] : 0,
+            );
+            if (! $booking) {
+                return response()->json(['status' => 'error', 'message' => 'Нет активной сессии'], 404);
+            }
+
+            $pack = $extends->options($booking);
+
+            return response()->json(['status' => 'success'] + $pack);
+        } catch (\Throwable $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * Продлить сессию с баланса. При нехватке — needs_topup + suggested_topup (без списания).
+     */
+    public function extendSession(Request $request, BookingSessionExtendService $extends)
+    {
+        try {
+            $data = $request->validate([
+                'terminal_id' => 'required|integer',
+                'minutes' => 'required|integer',
+                'booking_id' => 'nullable|integer',
+            ]);
+            $booking = $this->resolveActiveBookingForExtend(
+                (int) $data['terminal_id'],
+                isset($data['booking_id']) ? (int) $data['booking_id'] : 0,
+            );
+            if (! $booking) {
+                return response()->json(['status' => 'error', 'message' => 'Нет активной сессии'], 404);
+            }
+
+            $user = User::find($booking->user_id);
+            if (! $user) {
+                return response()->json(['status' => 'error', 'message' => 'Игрок не найден'], 404);
+            }
+
+            $result = $extends->extend($booking, $user, (int) $data['minutes']);
+            $status = ($result['applied'] ?? false) ? 'success' : 'error';
+            if (! empty($result['needs_topup'])) {
+                $status = 'success'; // клиент обработает needs_topup
+            }
+
+            return response()->json(array_merge(['status' => $status], $result));
+        } catch (\Throwable $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    private function resolveActiveBookingForExtend(int $terminalId, int $bookingId = 0): ?Booking
+    {
+        if ($bookingId > 0) {
+            $booking = Booking::query()
+                ->where('id', $bookingId)
+                ->where('status', 'active')
+                ->where(function ($q) use ($terminalId) {
+                    $q->where('computer_id', $terminalId)
+                        ->orWhereJsonContains('pc_ids', $terminalId)
+                        ->orWhereJsonContains('pc_ids', (string) $terminalId);
+                })
+                ->first();
+            if ($booking) {
+                return $booking;
+            }
+        }
+
+        return $this->activeBookingOnTerminal($terminalId);
     }
 
     private function activeBookingOnTerminal(int $terminalId): ?Booking
