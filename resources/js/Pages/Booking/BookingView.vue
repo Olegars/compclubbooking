@@ -948,11 +948,11 @@ onUnmounted(() => {
 
 <template>
     <component :is="layout">
-        <div class="booking-frame flex flex-col lg:flex-row bg-black rounded-[12px] lg:rounded-[16px] border border-[#22c55e]/30 p-2 mx-auto w-full lg:w-fit h-auto lg:h-[880px] relative shadow-[0_0_50px_rgba(34,197,94,0.1)] overflow-visible lg:overflow-hidden select-none">
+        <div class="booking-frame flex flex-col lg:flex-row bg-black rounded-[10px] sm:rounded-[12px] lg:rounded-[16px] border border-[#22c55e]/30 p-0 sm:p-2 mx-auto w-full lg:w-fit h-auto lg:h-[880px] relative shadow-[0_0_50px_rgba(34,197,94,0.1)] overflow-visible lg:overflow-hidden select-none">
 
-            <section class="p-3 sm:p-5 lg:p-6 border-b lg:border-b-0 lg:border-r border-[#22c55e]/30 flex flex-col gap-3 bg-[#080808] rounded-t-[12px] lg:rounded-t-none lg:rounded-l-[16px] w-full lg:w-auto lg:min-w-[960px] lg:h-full lg:min-h-0 relative">
+            <section class="px-2 py-3 sm:p-5 lg:p-6 border-b lg:border-b-0 lg:border-r border-[#22c55e]/30 flex flex-col gap-4 sm:gap-3 bg-[#080808] rounded-t-[10px] sm:rounded-t-[12px] lg:rounded-t-none lg:rounded-l-[16px] w-full lg:w-auto lg:min-w-[960px] lg:h-full lg:min-h-0 relative">
                 <div ref="gamesBanner"
-                     :class="['shrink-0 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 rounded-2xl border px-4 py-3 transition-all duration-500',
+                     :class="['shrink-0 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 rounded-2xl border px-3 sm:px-4 py-3 transition-all duration-500',
                               highlightGames ? 'border-[#22c55e] shadow-[0_0_0_3px_rgba(34,197,94,0.22)] bg-[#22c55e]/[0.08]'
                               : 'border-[#22c55e]/25 bg-[#22c55e]/[0.04]']">
                     <div class="min-w-0 flex-1">
@@ -975,27 +975,44 @@ onUnmounted(() => {
                     </button>
                 </div>
 
-                <div class="w-full flex-1 min-h-[280px] h-[min(62vh,560px)] lg:h-auto lg:min-h-0">
-                    <ClubMap
-                        :selectedIds="selectedIds"
-                        :selectedAddonKeys="selectedAddonKeys"
-                        :occupiedIds="occupiedIds"
-                        :computers="props.computersList"
-                        :zones="props.zonesList"
-                        :zoneRects="props.zoneRectsList"
-                        :mapConfig="cleanMapConfig"
-                        :viewbox="cleanMapConfig.viewbox || props.clubData.viewbox"
-                        @show-info="(room) => { selectedRoomInfo = room; showOverlay = true; showInfoModal = true }"
-                        @seat-error="handleSeatError"
-                        @toggle-seat="toggleSeatSelection"
-                        @toggle-addon-seats="toggleAddonSeats"
+                <div class="map-pan relative w-full flex-1 min-h-[260px] h-[min(48vh,440px)] lg:h-auto lg:min-h-0">
+                    <div
+                        class="map-pan-viewport h-full w-full overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x lg:overflow-visible"
+                        style="-webkit-overflow-scrolling: touch;"
+                    >
+                        <div class="map-pan-canvas h-full w-[200%] min-w-[200%] lg:w-full lg:min-w-0">
+                            <ClubMap
+                                :selectedIds="selectedIds"
+                                :selectedAddonKeys="selectedAddonKeys"
+                                :occupiedIds="occupiedIds"
+                                :computers="props.computersList"
+                                :zones="props.zonesList"
+                                :zoneRects="props.zoneRectsList"
+                                :mapConfig="cleanMapConfig"
+                                :viewbox="cleanMapConfig.viewbox || props.clubData.viewbox"
+                                @show-info="(room) => { selectedRoomInfo = room; showOverlay = true; showInfoModal = true }"
+                                @seat-error="handleSeatError"
+                                @toggle-seat="toggleSeatSelection"
+                                @toggle-addon-seats="toggleAddonSeats"
+                            />
+                        </div>
+                    </div>
+                    <div
+                        class="pointer-events-none absolute inset-y-2 right-0 w-12 bg-gradient-to-l from-[#080808] via-[#080808]/70 to-transparent lg:hidden"
+                        aria-hidden="true"
                     />
+                    <div
+                        class="pointer-events-none absolute bottom-2 right-2 lg:hidden rounded-lg border border-white/10 bg-black/70 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-white/45"
+                        aria-hidden="true"
+                    >
+                        ← сдвинь
+                    </div>
                 </div>
             </section>
 
-            <aside class="w-full lg:w-[460px] p-5 sm:p-6 lg:p-8 flex flex-col bg-[#050505] rounded-b-[12px] lg:rounded-b-none lg:rounded-r-[16px] lg:h-full lg:min-h-0">
+            <aside class="w-full lg:w-[460px] px-2 py-4 sm:p-6 lg:p-8 flex flex-col bg-[#050505] rounded-b-[10px] sm:rounded-b-[12px] lg:rounded-b-none lg:rounded-r-[16px] lg:h-full lg:min-h-0">
 
-                <div class="mb-4 flex justify-between items-end px-2 shrink-0">
+                <div class="mb-5 flex justify-between items-end shrink-0">
                     <h3 class="text-[#22c55e] text-xl font-black uppercase italic tracking-widest leading-none">{{ props.clubData.name }}</h3>
                     <div class="font-mono text-[10px] flex items-center gap-1" :class="seatError ? 'text-red-500 animate-pulse' : 'text-[#22c55e]'">
                         ● {{ seatError ? 'ОТКАЗ: ЗАНЯТО' : 'СИСТЕМА АКТИВНА' }}
@@ -1130,7 +1147,7 @@ onUnmounted(() => {
                     </div>
                 </div>
 
-                <div class="shrink-0 pt-3 sticky bottom-0 z-30 -mx-5 sm:-mx-6 lg:mx-0 px-5 sm:px-6 lg:px-0 pb-1 lg:pb-0 bg-[#050505] lg:static border-t border-white/5 lg:border-t-0">
+                <div class="shrink-0 pt-3 sticky bottom-0 z-30 -mx-2 sm:-mx-6 lg:mx-0 px-2 sm:px-6 lg:px-0 pb-1 lg:pb-0 bg-[#050505] lg:static border-t border-white/5 lg:border-t-0">
                     <p v-if="priceError" class="mb-2 text-[9px] text-red-400 uppercase tracking-widest leading-snug">
                         {{ priceError }}
                     </p>
@@ -1190,6 +1207,11 @@ onUnmounted(() => {
 
 <style scoped>
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+.map-pan-viewport {
+    scrollbar-width: none;
+}
+.map-pan-viewport::-webkit-scrollbar { display: none; }
 
 .step-label {
     display: flex;

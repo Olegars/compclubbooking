@@ -63,6 +63,7 @@ const displayBalance = computed(() => {
 })
 
 const isAuthenticated = computed(() => !!(page.props.auth?.user || page.props.user))
+const isBookingPage = computed(() => String(page.url || '').startsWith('/booking'))
 
 type ActiveOrder = {
     id: number
@@ -383,7 +384,12 @@ onUnmounted(() => {
             </div>
         </header>
 
-        <div class="flex-grow w-full py-6 sm:py-10 flex flex-col items-center px-4 sm:px-6">
+        <div
+            class="flex-grow w-full flex flex-col items-center"
+            :class="isBookingPage
+                ? 'py-2 sm:py-6 lg:py-10 px-1 sm:px-4 lg:px-6'
+                : 'py-6 sm:py-10 px-4 sm:px-6'"
+        >
             <div
                 v-if="isAuthenticated && hasActiveOrder"
                 class="order-live-bar w-full max-w-xl mb-6 rounded-2xl overflow-hidden"
