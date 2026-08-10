@@ -110,13 +110,33 @@ class BookingSeatTransferTest extends TestCase
         $balanceBefore = (float) $this->user->fresh()->availableBalance();
         $result = $svc->transfer($this->booking, (int) $this->to->id, $this->user);
         $this->assertTrue($result['applied'] ?? false);
-        $this->assertGreaterThan(0.009, (float) $result['charge']);
+        $this->assertSame((int) round((float) $result['charge']), (int) $result['charge']);
+        $this->assertGreaterThan(0, (int) $result['charge']);
 
         $this->user->refresh();
-        $this->assertLessThan($balanceBefore, (float) $this->user->availableBalance());
+        $debited = $balanceBefore - (float) $this->user->availableBalance();
+        $this->assertEqualsWithDelta((float) $result['charge'], $debited, 0.01);
+
+        // Одна доплата — без дубля «Апгрейд тарифа» из BookingObserver.
+        $upgradeCount = \App\Models\Transaction::query()
+            ->where('user_id', $this->user->id)
+            ->where('type', 'booking_upgrade')
+            ->count();
+        $transferCount = \App\Models\Transaction::query()
+            ->where('user_id', $this->user->id)
+            ->where('source', 'seat_transfer')
+            ->count();
+        $this->assertSame(0, $upgradeCount);
+        $this->assertSame(1, $transferCount);
 
         $this->booking->refresh();
         $this->assertGreaterThan(375, (int) $this->booking->price);
+
+        // Wall-clock совпадает с ends_at — кабинет и TV показывают одно remaining.
+        $timing = app(\App\Services\BookingSessionTimingService::class);
+        $fromEnds = CarbonImmutable::parse($this->booking->ends_at)->timezone(config('app.timezone'));
+        $wallEnd = $timing->wallClockWindow($this->booking)['end'];
+        $this->assertEqualsWithDelta(0, abs($fromEnds->diffInSeconds($wallEnd)), 1);
     }
 
     public function test_transfer_moves_booking_and_soft_kick_balance(): void

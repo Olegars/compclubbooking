@@ -242,12 +242,13 @@ class BookingSeatTransferService
         $remainingHours = max(0.01, $now->diffInSeconds($endsAt) / 3600);
         $prepaidValue = round($rateFrom * $remainingHours, 2);
         $deltaPerHour = round($rateTo - $rateFrom, 2);
-        $extraIfKeepTime = round(max(0, $deltaPerHour * $remainingHours), 2);
+        // Доплата в целых ₽ — колонка price integer + без копеек в UI/логе.
+        $extraIfKeepTime = (int) round(max(0, $deltaPerHour * $remainingHours));
 
         $user = User::query()->findOrFail($booking->user_id);
         $balance = (float) $user->availableBalance();
 
-        $charge = 0.0;
+        $charge = 0;
         $newEndsAt = $endsAt;
         $action = 'same';
         $warning = 'Тариф тот же — можно пересесть без доплаты.';
@@ -257,7 +258,7 @@ class BookingSeatTransferService
                 $charge = $extraIfKeepTime;
                 $action = 'charge';
                 $warning = sprintf(
-                    'ПК дороже (+%.0f ₽/ч). Будет списано %.2f ₽ с баланса, время сессии сохранится.',
+                    'ПК дороже (+%.0f ₽/ч). Будет списано %d ₽ с баланса, время сессии сохранится.',
                     $deltaPerHour,
                     $charge
                 );
@@ -266,13 +267,13 @@ class BookingSeatTransferService
                 $hNew = $rateTo > 0 ? ($affordable / $rateTo) : $remainingHours;
                 $hNew = max(0.05, min($remainingHours, $hNew));
                 $newEndsAt = $now->addSeconds((int) round($hNew * 3600));
-                $charge = round(max(0, min($balance, ($rateTo * $hNew) - $prepaidValue)), 2);
+                $charge = (int) round(max(0, min($balance, ($rateTo * $hNew) - $prepaidValue)));
                 $action = 'shorten';
                 $minsLost = max(0, (int) round(($remainingHours - $hNew) * 60));
                 $warning = sprintf(
                     'ПК дороже, на балансе не хватает на полное время. Сессия сократится примерно на %d мин%s.',
                     $minsLost,
-                    $charge > 0 ? sprintf(', дополнительно спишется %.2f ₽', $charge) : ''
+                    $charge > 0 ? sprintf(', дополнительно спишется %d ₽', $charge) : ''
                 );
             }
         } elseif ($deltaPerHour < -0.009) {
@@ -300,8 +301,8 @@ class BookingSeatTransferService
             'warning' => $warning,
             'ends_at' => $newEndsAt->toIso8601String(),
             'ends_at_before' => $endsAt->toIso8601String(),
-            'balance' => $balance,
-            'balance_after' => round($balance - $charge, 2),
+            'balance' => (int) round($balance),
+            'balance_after' => (int) round($balance - $charge),
         ];
 
         if (! $apply) {
@@ -317,7 +318,7 @@ class BookingSeatTransferService
             if (! $wallet || (float) $user->fresh()->availableBalance() + 0.009 < $charge) {
                 throw new RuntimeException('Недостаточно средств для доплаты');
             }
-            $wallet->debitSpendable($charge);
+            $wallet->debitSpendable((float) $charge);
             Transaction::create([
                 'user_id' => $user->id,
                 'amount' => -$charge,
@@ -350,22 +351,31 @@ class BookingSeatTransferService
             'transfer_pending_at' => $now,
         ];
         if ($charge > 0) {
-            // bookings.price — integer (₽); дробную доплату округляем.
-            $chargeRounded = (int) round($charge);
             $baseMinor = (int) ($booking->price_minor ?: ((int) $booking->price * 100));
-            $bookingPatch['price'] = (int) $booking->price + $chargeRounded;
-            $bookingPatch['price_minor'] = $baseMinor + ($chargeRounded * 100);
+            $bookingPatch['price'] = (int) $booking->price + $charge;
+            $bookingPatch['price_minor'] = $baseMinor + ($charge * 100);
         }
-        $booking->update($bookingPatch);
 
-        // duration / legacy window — подтянуть под новый ends_at
-        if ($booking->actual_started_at || $booking->starts_at) {
-            $start = $booking->actual_started_at
-                ? CarbonImmutable::parse($booking->actual_started_at, $tz)
-                : CarbonImmutable::parse($booking->starts_at, $tz);
-            $mins = max(1, (int) ceil($start->diffInSeconds($newEndsAt) / 60));
-            $booking->update(['duration' => round($mins / 60, 2)]);
-        }
+        // Без observer: иначе повторное списание «Апгрейд тарифа».
+        Booking::withoutEvents(function () use ($booking, $bookingPatch, $newEndsAt, $tz) {
+            $booking->update($bookingPatch);
+
+            // Wall-clock в секундах = modern ends_at (без ceil → без рассинхрона ~30 с).
+            if ($booking->actual_started_at || $booking->starts_at) {
+                $start = $booking->actual_started_at
+                    ? CarbonImmutable::parse($booking->actual_started_at, $tz)
+                    : CarbonImmutable::parse($booking->starts_at, $tz);
+                $secs = max(1, (int) $start->diffInSeconds($newEndsAt));
+                $localStart = $start->timezone($tz);
+                $booking->update([
+                    'duration' => $secs / 3600,
+                    'date' => $localStart->toDateString(),
+                    'start_time' => $localStart->hour
+                        + ($localStart->minute / 60)
+                        + ($localStart->second / 3600),
+                ]);
+            }
+        });
 
         \App\Models\GameAccount::query()
             ->where('current_pc_id', $oldId)
@@ -377,7 +387,7 @@ class BookingSeatTransferService
         $result['booking_id'] = (int) $booking->id;
         $result['applied'] = true;
         $result['pin_code'] = $newPin;
-        $result['balance_after'] = (float) $user->fresh()->availableBalance();
+        $result['balance_after'] = (int) round((float) $user->fresh()->availableBalance());
 
         return $result;
     }

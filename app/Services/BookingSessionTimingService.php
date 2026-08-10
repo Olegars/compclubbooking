@@ -84,8 +84,8 @@ class BookingSessionTimingService
 
         $start = CarbonImmutable::parse($dateString, $tz)
             ->startOfDay()
-            ->addMinutes((int) round($startTime * 60));
-        $end = $start->addMinutes((int) round(max(0.0, $duration) * 60));
+            ->addSeconds((int) round($startTime * 3600));
+        $end = $start->addSeconds((int) round(max(0.0, $duration) * 3600));
 
         return ['start' => $start, 'end' => $end];
     }

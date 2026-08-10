@@ -627,7 +627,7 @@ onMounted(() => {
                                         : (tx.fiscal_status === 'deferred' ? 'После входа' : 'Статус')
                                 }}</button>
                                 <div :class="['text-xl font-black italic font-mono tracking-tighter', tx.amount > 0 ? 'text-[#22c55e]' : 'text-white/40']">
-                                    {{ tx.amount > 0 ? '+' : '' }}{{ tx.amount }} ₽
+                                    {{ tx.amount > 0 ? '+' : '' }}{{ Math.round(Number(tx.amount)) }} ₽
                                 </div>
                             </div>
                         </div>
@@ -771,8 +771,8 @@ onMounted(() => {
                         <div v-if="transferPreview" class="mb-6 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm">
                             {{ transferPreview.warning }}
                             <div class="text-[10px] uppercase tracking-widest mt-2 text-amber-200/60">
-                                Доплата: {{ Number(transferPreview.charge || 0).toFixed(2) }} ₽
-                                · баланс после: {{ Number(transferPreview.balance_after || 0).toFixed(2) }} ₽
+                                Доплата: {{ Math.round(Number(transferPreview.charge || 0)) }} ₽
+                                · баланс после: {{ Math.round(Number(transferPreview.balance_after || 0)) }} ₽
                             </div>
                         </div>
                         <div v-if="transferError" class="mb-4 text-red-400 text-xs font-bold">{{ transferError }}</div>

@@ -186,17 +186,24 @@ class BookingSessionExtendService
                 : ($booking->starts_at
                     ? CarbonImmutable::parse($booking->starts_at, $tz)
                     : $now);
-            $durationHours = max(0.05, round($start->diffInSeconds($newEnds) / 3600, 2));
-
+            $secs = max(1, (int) $start->diffInSeconds($newEnds));
+            $localStart = $start->timezone($tz);
             $costRounded = (int) round($cost);
             $baseMinor = (int) ($booking->price_minor ?: ((int) $booking->price * 100));
-            $booking->update([
-                'ends_at' => $newEnds,
-                'duration' => $durationHours,
-                // bookings.price — integer (₽)
-                'price' => (int) $booking->price + $costRounded,
-                'price_minor' => $baseMinor + ($costRounded * 100),
-            ]);
+
+            // Без observer — иначе двойное списание «Апгрейд тарифа».
+            Booking::withoutEvents(function () use ($booking, $newEnds, $secs, $localStart, $costRounded, $baseMinor) {
+                $booking->update([
+                    'ends_at' => $newEnds,
+                    'duration' => $secs / 3600,
+                    'date' => $localStart->toDateString(),
+                    'start_time' => $localStart->hour
+                        + ($localStart->minute / 60)
+                        + ($localStart->second / 3600),
+                    'price' => (int) $booking->price + $costRounded,
+                    'price_minor' => $baseMinor + ($costRounded * 100),
+                ]);
+            });
 
             $this->statuses->syncFor((int) $pc->id);
             $booking = $this->timing->healSkewedWindow($booking->fresh());
@@ -252,7 +259,7 @@ class BookingSessionExtendService
 
     private function costForMinutes(float $hourlyRate, int $minutes): float
     {
-        return round(max(0, $hourlyRate) * ($minutes / 60), 2);
+        return (float) (int) round(max(0, $hourlyRate) * ($minutes / 60));
     }
 
     private function suggestedTopUp(float $shortage): float

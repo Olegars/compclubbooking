@@ -3,48 +3,16 @@
 namespace App\Observers;
 
 use App\Models\Booking;
-use App\Models\Transaction;
-use Illuminate\Support\Facades\DB;
 
 class BookingObserver
 {
     /**
-     * Срабатывает при обновлении брони (например, когда увеличили время)
+     * Ранее здесь автосписывался diff price → type=booking_upgrade.
+     * Это давало двойное списание при пересадке/продлении (сервис уже создаёт purchase).
+     * Биллинг цены — только в сервисах (GameBooking / SeatTransfer / SessionExtend).
      */
-    public function updated(Booking $booking)
+    public function updated(Booking $booking): void
     {
-        // Проверяем, изменилась ли цена после сохранения
-        if ($booking->wasChanged('price')) {
-            $oldPrice = (float) $booking->getOriginal('price');
-            $newPrice = (float) $booking->price;
-            $diff = $newPrice - $oldPrice;
-
-            // Если разница положительная (апгрейд тарифа)
-            if ($diff > 0) {
-                DB::transaction(function () use ($booking, $diff) {
-                    // 1. Списываем разницу с кошелька (DB debit — safe after balance→deposit rename)
-                    $booking->user->syncBalanceToWallet();
-                    $wallet = $booking->user->wallet()->first();
-                    if ($wallet) {
-                        $wallet->debitSpendable($diff);
-                    }
-
-                    // 2. Создаем запись в логе для юзера
-                    Transaction::create([
-                        'user_id'     => $booking->user_id,
-                        'booking_group_id' => $booking->booking_group_id,
-                        'amount'      => -$diff,
-                        'type'        => 'booking_upgrade',
-                        'source'      => 'balance',
-                        'description' => "Апгрейд тарифа: ПК №" . $booking->computer_id . " ({$booking->duration} ч.)",
-                    ]);
-                });
-            }
-        }
+        //
     }
-
-    /**
-     * Если ты планируешь пересчитывать цену ПЕРЕД созданием,
-     * можешь добавить сюда метод creating или saving
-     */
 }

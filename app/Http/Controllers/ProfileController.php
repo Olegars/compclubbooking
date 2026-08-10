@@ -94,7 +94,7 @@ class ProfileController extends Controller
                 return [
                     'id' => $t->id,
                     'type' => $t->type,
-                    'amount' => (float) $t->amount,
+                    'amount' => (float) round((float) $t->amount),
                     'description' => $description,
                     'games' => $titles->all(),
                     'date' => $t->created_at->format('d.m / H:i'),
