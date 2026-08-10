@@ -1060,7 +1060,7 @@ onUnmounted(() => {
                     </button>
                 </div>
 
-                <div class="map-pan relative w-full shrink-0 h-[min(32vh,280px)] min-h-[190px] max-h-[300px] lg:h-auto lg:min-h-0 lg:max-h-none lg:flex-1">
+                <div class="map-pan relative w-full shrink-0 h-[min(64vh,560px)] min-h-[380px] max-h-[600px] lg:h-auto lg:min-h-0 lg:max-h-none lg:flex-1">
                     <div
                         ref="mapPanViewport"
                         class="map-pan-viewport h-full w-full overflow-x-auto overflow-y-hidden overscroll-x-contain lg:overflow-visible"
