@@ -63,7 +63,10 @@ const displayBalance = computed(() => {
 })
 
 const isAuthenticated = computed(() => !!(page.props.auth?.user || page.props.user))
-const isBookingPage = computed(() => String(page.url || '').startsWith('/booking'))
+const isEdgeTightPage = computed(() => {
+    const url = String(page.url || '')
+    return url.startsWith('/booking') || url.startsWith('/account')
+})
 
 type ActiveOrder = {
     id: number
@@ -386,7 +389,7 @@ onUnmounted(() => {
 
         <div
             class="flex-grow w-full flex flex-col items-center"
-            :class="isBookingPage
+            :class="isEdgeTightPage
                 ? 'py-2 sm:py-6 lg:py-10 px-1 sm:px-4 lg:px-6'
                 : 'py-6 sm:py-10 px-4 sm:px-6'"
         >

@@ -457,24 +457,24 @@ onMounted(() => {
 
 <template>
     <MainLayout>
-        <div class="max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-3 gap-8 font-mono pb-20 px-4 text-white animate-in fade-in duration-700">
+        <div class="max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 md:gap-8 font-mono pb-16 sm:pb-20 px-1 sm:px-2 md:px-4 text-white animate-in fade-in duration-700">
 
-            <div class="md:col-span-2 space-y-8">
+            <div class="md:col-span-2 space-y-4 sm:space-y-6 md:space-y-8">
 
-                <div class="bg-[#0a0a0a] border border-[#22c55e]/20 rounded-[1.125rem] p-10 relative overflow-hidden shadow-2xl shadow-[#22c55e]/5">
-                    <div class="absolute top-0 right-0 p-8 opacity-10">
-                        <svg class="w-32 h-32 text-[#22c55e]" fill="currentColor" viewBox="0 0 24 24"><path d="M21 18l-3-3h-5l-2 2h-3l-2-2H4l-3 3V5l3-3h5l2 2h3l2-2h5l3 3v13z"/></svg>
+                <div class="bg-[#0a0a0a] border border-[#22c55e]/20 rounded-[1rem] sm:rounded-[1.125rem] p-4 sm:p-8 md:p-10 relative overflow-hidden shadow-2xl shadow-[#22c55e]/5">
+                    <div class="absolute top-0 right-0 p-4 sm:p-8 opacity-10">
+                        <svg class="w-24 h-24 sm:w-32 sm:h-32 text-[#22c55e]" fill="currentColor" viewBox="0 0 24 24"><path d="M21 18l-3-3h-5l-2 2h-3l-2-2H4l-3 3V5l3-3h5l2 2h3l2-2h5l3 3v13z"/></svg>
                     </div>
 
                     <span class="text-[10px] uppercase text-[#22c55e] tracking-[0.4em] font-black italic">Лицевой счет REACTOR</span>
-                    <div class="mt-4 flex items-baseline gap-4">
-                        <span class="text-8xl font-black italic tracking-tighter text-white drop-shadow-[0_0_25px_rgba(34,197,94,0.4)]">
+                    <div class="mt-3 sm:mt-4 flex items-baseline gap-3 sm:gap-4">
+                        <span class="text-6xl sm:text-8xl font-black italic tracking-tighter text-white drop-shadow-[0_0_25px_rgba(34,197,94,0.4)]">
                             {{ Math.floor(displayBalance) }}
                         </span>
-                        <span class="text-3xl font-bold text-[#22c55e] uppercase italic">RUB</span>
+                        <span class="text-2xl sm:text-3xl font-bold text-[#22c55e] uppercase italic">RUB</span>
                     </div>
 
-                    <div class="mt-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 relative z-10">
+                    <div class="mt-6 sm:mt-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 relative z-10">
                         <button @click="isTopUpInputOpen = true" class="py-4 bg-[#22c55e] text-black font-black rounded-xl text-[9px] tracking-widest hover:scale-105 transition-all uppercase italic">Пополнить</button>
                         <button @click="openSeatAction" class="py-4 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-xl text-[9px] tracking-widest hover:bg-[#22c55e]/10 transition-all uppercase italic">
                             {{ hasLiveSession ? 'Пересесть' : 'Сесть за ПК' }}
@@ -490,7 +490,7 @@ onMounted(() => {
                     <div
                         v-for="b in activeBookings"
                         :key="b.id"
-                        class="bg-[#0a0a0a] border rounded-[1rem] p-8 relative overflow-hidden group transition-colors"
+                        class="bg-[#0a0a0a] border rounded-[1rem] p-4 sm:p-6 md:p-8 relative overflow-hidden group transition-colors"
                         :class="resolveBookingPhase(b) === 'late_waiting'
                             ? 'border-red-500/40 hover:border-red-500/70'
                             : 'border-[#3b82f6]/40 hover:border-[#3b82f6]'"
@@ -578,7 +578,7 @@ onMounted(() => {
                 >
                     {{ cancelError }}
                 </div>
-                <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-10 shadow-xl">
+                <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] sm:rounded-[1.125rem] p-4 sm:p-8 md:p-10 shadow-xl">
                     <span class="text-[10px] uppercase text-white/40 tracking-[0.4em] font-black italic block mb-10">Лог транзакций</span>
                     <div v-if="transactions.length > 0" class="space-y-6">
                         <div v-for="tx in transactions" :key="tx.id" class="flex items-center justify-between group transition-all gap-4">
@@ -621,8 +621,8 @@ onMounted(() => {
                 </div>
             </div>
 
-            <div class="space-y-8 md:sticky md:top-28 md:self-start">
-                <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-10 flex flex-col items-center shadow-xl">
+            <div class="space-y-4 sm:space-y-6 md:space-y-8 md:sticky md:top-28 md:self-start">
+                <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] sm:rounded-[1.125rem] p-4 sm:p-8 md:p-10 flex flex-col items-center shadow-xl">
                     <div class="w-32 h-32 rounded-full bg-black flex items-center justify-center text-5xl font-black text-[#22c55e] italic border-2 border-[#22c55e]/30 mb-6 overflow-hidden shadow-[0_0_40px_rgba(34,197,94,0.1)]">
                         <img v-if="page.props.user?.avatar" :src="`/images/avatars/${page.props.user.avatar}`" class="w-full h-full object-cover" />
                         <span v-else>{{ (page.props.user?.name || 'S')[0] }}</span>
@@ -631,7 +631,7 @@ onMounted(() => {
                     <div class="mt-4 px-6 py-2 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[10px] text-[#22c55e] font-black uppercase italic tracking-widest">СТАЛКЕР</div>
                 </div>
 
-                <div v-if="achievements.length > 0" class="bg-[#0a0a0a] border border-purple-500/20 rounded-[1.125rem] p-8 shadow-xl">
+                <div v-if="achievements.length > 0" class="bg-[#0a0a0a] border border-purple-500/20 rounded-[1rem] sm:rounded-[1.125rem] p-4 sm:p-6 md:p-8 shadow-xl">
                     <span class="text-[10px] uppercase text-purple-400 tracking-[0.4em] font-black italic block mb-6">Достижения и трофеи</span>
                     <div class="space-y-4">
                         <div v-for="a in achievements" :key="a.id"
@@ -663,12 +663,12 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <nav class="flex flex-col gap-4">
-                    <Link href="/account/profile" class="p-6 bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] flex items-center justify-between hover:bg-white/5 transition-all group">
+                <nav class="flex flex-col gap-3 sm:gap-4">
+                    <Link href="/account/profile" class="p-4 sm:p-6 bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] flex items-center justify-between hover:bg-white/5 transition-all group">
                         <span class="text-[10px] font-black uppercase text-white/40 group-hover:text-white transition-colors italic tracking-widest">Настройки профиля</span>
                         <svg class="w-6 h-6 text-[#22c55e] transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
                     </Link>
-                    <button @click="router.post('/logout')" class="p-6 bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] flex items-center justify-between hover:bg-red-500/10 transition-all group">
+                    <button @click="router.post('/logout')" class="p-4 sm:p-6 bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] flex items-center justify-between hover:bg-red-500/10 transition-all group">
                         <span class="text-[10px] font-black uppercase text-white/40 group-hover:text-red-500 transition-colors italic tracking-widest">Завершить рейд</span>
                         <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M17 16l4-4m0 0l-4-4m4 4H7"/></svg>
                     </button>
