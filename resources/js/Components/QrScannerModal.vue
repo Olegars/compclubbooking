@@ -23,7 +23,6 @@ const errorMessage = ref('')
 const hint = ref('Наведите камеру на QR на экране ПК')
 const videoRef = ref<HTMLVideoElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
-const manualToken = ref('')
 
 const token = ref('')
 const computerName = ref('')
@@ -138,7 +137,6 @@ const resetState = () => {
     phase.value = 'scan'
     errorMessage.value = ''
     token.value = ''
-    manualToken.value = ''
     computerName.value = ''
     balance.value = 0
     durationMinutes.value = 60
@@ -193,16 +191,6 @@ const handleRedeem = async (scanned: string) => {
     } finally {
         redeemLock.value = false
     }
-}
-
-const submitManual = () => {
-    const t = parseToken(manualToken.value)
-    if (!t) {
-        errorMessage.value = 'Неверный формат кода'
-        phase.value = 'error'
-        return
-    }
-    void handleRedeem(t)
 }
 
 const fetchQuote = async () => {
@@ -356,20 +344,9 @@ defineExpose({
                         </div>
                     </div>
                     <p class="text-center text-white/50 text-xs">{{ hint }}</p>
-                    <div class="pt-2">
-                        <input
-                            v-model="manualToken"
-                            type="text"
-                            placeholder="или вставьте код вручную"
-                            class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#22c55e]/40"
-                            @keydown.enter.prevent="submitManual"
-                        />
-                        <button
-                            type="button"
-                            class="mt-2 w-full py-3 border border-white/10 rounded-xl text-[10px] uppercase tracking-widest text-white/50 hover:text-[#22c55e] hover:border-[#22c55e]/40"
-                            @click="submitManual"
-                        >Активировать код</button>
-                    </div>
+                    <p class="text-center text-white/25 text-[9px] uppercase tracking-widest leading-relaxed">
+                        PIN — на клавиатуре ПК · здесь только камера на QR
+                    </p>
                 </div>
 
                 <div v-else-if="phase === 'needs_booking'" class="space-y-5 text-center">

@@ -349,7 +349,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Сканер QR (вход на ПК)',
-                        'description' => "Иконка QR в навигации ЛК (только mobile/tablet, lg скрыта) на любой странице с MainLayout. Камера телефона читает QR с экрана idle PC Shell (jsQR; можно вставить UUID вручную).\n\nPOST /account/qr/redeem {token}:\n• есть бронь на этот ПК (confirmed/paid/active) → та же активация, что по PIN, challenge → consumed, шелл подхватывает вход;\n• ПК свободен, брони нет → needs_booking: выбор длительности от 60 мин шагом ±15, quote/book с баланса; не хватает денег → пополнение (Reactor Pay) и повтор «Открыть сессию»;\n• ПК занят чужой сессией → occupied.\n\nPayload QR: {APP_URL}/account/dashboard?qr={uuid} — по ссылке сканер открывается сам. TTL challenge 120 с (таблица shell_qr_challenges).",
+                        'description' => "Иконка QR в навигации ЛК (только mobile/tablet, lg скрыта) на любой странице с MainLayout. Камера телефона читает QR с экрана idle PC Shell (jsQR).\n\nPOST /account/qr/redeem {token}:\n• есть бронь на этот ПК (confirmed/paid/active) → та же активация, что по PIN, challenge → consumed, шелл подхватывает вход;\n• ПК свободен, брони нет → needs_booking: выбор длительности от 60 мин шагом ±15, quote/book с баланса; не хватает денег → пополнение (Reactor Pay) и повтор «Открыть сессию»;\n• ПК занят чужой сессией → occupied.\n\nPayload QR: {APP_URL}/account/dashboard?qr={uuid} — по ссылке сканер открывается сам. TTL challenge 120 с (таблица shell_qr_challenges).",
                         'path' => '/account/dashboard',
                         'audience' => 'Игрок',
                     ],
