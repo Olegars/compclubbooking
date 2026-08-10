@@ -487,6 +487,86 @@ const hasHiddenPanelContent = ref(false)
 const highlightGames = ref(false)
 let highlightTimer: ReturnType<typeof setTimeout> | null = null
 
+const mapPanViewport = ref<HTMLElement | null>(null)
+const mapCanPanLeft = ref(false)
+const mapCanPanRight = ref(false)
+
+type MapPanAxis = null | 'x' | 'y'
+let mapPanDrag: {
+    pointerId: number
+    lastX: number
+    startX: number
+    startY: number
+    axis: MapPanAxis
+} | null = null
+
+const isNarrowBooking = () =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches
+
+const syncMapPanHints = () => {
+    const el = mapPanViewport.value
+    if (!el || !isNarrowBooking()) {
+        mapCanPanLeft.value = false
+        mapCanPanRight.value = false
+        return
+    }
+    mapCanPanLeft.value = el.scrollLeft > 4
+    mapCanPanRight.value = el.scrollLeft < el.scrollWidth - el.clientWidth - 4
+}
+
+const onMapPanScroll = () => syncMapPanHints()
+
+const onMapPointerDown = (e: PointerEvent) => {
+    if (!isNarrowBooking()) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    mapPanDrag = {
+        pointerId: e.pointerId,
+        lastX: e.clientX,
+        startX: e.clientX,
+        startY: e.clientY,
+        axis: null,
+    }
+}
+
+const onMapPointerMove = (e: PointerEvent) => {
+    if (!mapPanDrag || mapPanDrag.pointerId !== e.pointerId) return
+    const el = mapPanViewport.value
+    if (!el) return
+
+    const dx = e.clientX - mapPanDrag.startX
+    const dy = e.clientY - mapPanDrag.startY
+
+    if (!mapPanDrag.axis) {
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return
+        // Вертикаль — отдаём жест странице; горизонталь — двигаем карту.
+        mapPanDrag.axis = Math.abs(dx) > Math.abs(dy) * 1.15 ? 'x' : 'y'
+        if (mapPanDrag.axis === 'x') {
+            el.setPointerCapture?.(e.pointerId)
+        } else {
+            mapPanDrag = null
+            return
+        }
+    }
+
+    if (mapPanDrag.axis !== 'x') return
+    e.preventDefault()
+    el.scrollLeft -= e.clientX - mapPanDrag.lastX
+    mapPanDrag.lastX = e.clientX
+    syncMapPanHints()
+}
+
+const onMapPointerUp = (e: PointerEvent) => {
+    if (!mapPanDrag || mapPanDrag.pointerId !== e.pointerId) return
+    mapPanDrag = null
+}
+
+const nudgeMap = (dir: -1 | 1) => {
+    const el = mapPanViewport.value
+    if (!el) return
+    el.scrollBy({ left: dir * Math.max(120, el.clientWidth * 0.4), behavior: 'smooth' })
+    window.setTimeout(syncMapPanHints, 280)
+}
+
 const updatePanelScrollState = () => {
     const el = panelScroller.value
     if (!el) {
@@ -528,9 +608,13 @@ watch([availableGames, selectedIds, isGamesLoading, gamesError], async () => {
     updatePanelScrollState()
 }, { deep: true })
 
-onMounted(() => {
+onMounted(async () => {
     updatePanelScrollState()
     window.addEventListener('resize', updatePanelScrollState)
+    window.addEventListener('resize', syncMapPanHints)
+    await nextTick()
+    syncMapPanHints()
+    requestAnimationFrame(syncMapPanHints)
 })
 
 watch([() => props.clubData.id, selectedDate, startH, duration], fetchOccupiedSeats, {
@@ -943,6 +1027,7 @@ onUnmounted(() => {
     closeAllModals()
     if (highlightTimer) clearTimeout(highlightTimer)
     window.removeEventListener('resize', updatePanelScrollState)
+    window.removeEventListener('resize', syncMapPanHints)
 })
 </script>
 
@@ -975,10 +1060,16 @@ onUnmounted(() => {
                     </button>
                 </div>
 
-                <div class="map-pan relative w-full flex-1 min-h-[260px] h-[min(48vh,440px)] lg:h-auto lg:min-h-0">
+                <div class="map-pan relative w-full shrink-0 h-[min(32vh,280px)] min-h-[190px] max-h-[300px] lg:h-auto lg:min-h-0 lg:max-h-none lg:flex-1">
                     <div
-                        class="map-pan-viewport h-full w-full overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x lg:overflow-visible"
-                        style="-webkit-overflow-scrolling: touch;"
+                        ref="mapPanViewport"
+                        class="map-pan-viewport h-full w-full overflow-x-auto overflow-y-hidden overscroll-x-contain lg:overflow-visible"
+                        style="touch-action: pan-y; -webkit-overflow-scrolling: touch;"
+                        @scroll="onMapPanScroll"
+                        @pointerdown="onMapPointerDown"
+                        @pointermove="onMapPointerMove"
+                        @pointerup="onMapPointerUp"
+                        @pointercancel="onMapPointerUp"
                     >
                         <div class="map-pan-canvas h-full w-[200%] min-w-[200%] lg:w-full lg:min-w-0">
                             <ClubMap
@@ -997,16 +1088,24 @@ onUnmounted(() => {
                             />
                         </div>
                     </div>
+                    <button
+                        v-if="mapCanPanLeft"
+                        type="button"
+                        class="lg:hidden absolute left-1 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full border border-white/15 bg-black/75 text-white/80 text-lg leading-none flex items-center justify-center"
+                        aria-label="Сдвинуть карту влево"
+                        @click="nudgeMap(-1)"
+                    >‹</button>
+                    <button
+                        v-if="mapCanPanRight"
+                        type="button"
+                        class="lg:hidden absolute right-1 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full border border-white/15 bg-black/75 text-white/80 text-lg leading-none flex items-center justify-center"
+                        aria-label="Сдвинуть карту вправо"
+                        @click="nudgeMap(1)"
+                    >›</button>
                     <div
-                        class="pointer-events-none absolute inset-y-2 right-0 w-12 bg-gradient-to-l from-[#080808] via-[#080808]/70 to-transparent lg:hidden"
+                        class="pointer-events-none absolute inset-y-2 right-0 w-10 bg-gradient-to-l from-[#080808] via-[#080808]/55 to-transparent lg:hidden"
                         aria-hidden="true"
                     />
-                    <div
-                        class="pointer-events-none absolute bottom-2 right-2 lg:hidden rounded-lg border border-white/10 bg-black/70 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-white/45"
-                        aria-hidden="true"
-                    >
-                        ← сдвинь
-                    </div>
                 </div>
             </section>
 
