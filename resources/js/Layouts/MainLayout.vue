@@ -63,9 +63,12 @@ const displayBalance = computed(() => {
 })
 
 const isAuthenticated = computed(() => !!(page.props.auth?.user || page.props.user))
-const isEdgeTightPage = computed(() => {
-    const url = String(page.url || '')
-    return url.startsWith('/booking') || url.startsWith('/account')
+const isBookingPage = computed(() => String(page.url || '').startsWith('/booking'))
+const isAccountPage = computed(() => String(page.url || '').startsWith('/account'))
+const contentPadClass = computed(() => {
+    if (isAccountPage.value) return 'py-0 sm:py-6 lg:py-10 px-0 sm:px-4 lg:px-6'
+    if (isBookingPage.value) return 'py-2 sm:py-6 lg:py-10 px-1 sm:px-4 lg:px-6'
+    return 'py-6 sm:py-10 px-4 sm:px-6'
 })
 
 type ActiveOrder = {
@@ -389,9 +392,7 @@ onUnmounted(() => {
 
         <div
             class="flex-grow w-full flex flex-col items-center"
-            :class="isEdgeTightPage
-                ? 'py-2 sm:py-6 lg:py-10 px-1 sm:px-4 lg:px-6'
-                : 'py-6 sm:py-10 px-4 sm:px-6'"
+            :class="contentPadClass"
         >
             <div
                 v-if="isAuthenticated && hasActiveOrder"

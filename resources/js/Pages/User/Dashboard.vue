@@ -457,44 +457,44 @@ onMounted(() => {
 
 <template>
     <MainLayout>
-        <div class="max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 md:gap-8 font-mono pb-16 sm:pb-20 px-1 sm:px-2 md:px-4 text-white animate-in fade-in duration-700">
+        <div class="cabinet max-w-7xl mx-auto w-full font-mono pb-16 sm:pb-20 text-white animate-in fade-in duration-700">
+            <div class="grid grid-cols-1 md:grid-cols-3 md:gap-6 lg:gap-8 md:px-0">
 
-            <div class="md:col-span-2 space-y-4 sm:space-y-6 md:space-y-8">
+            <div class="md:col-span-2 flex flex-col gap-px md:gap-6 bg-white/[0.06] md:bg-transparent">
 
-                <div class="bg-[#0a0a0a] border border-[#22c55e]/20 rounded-[1rem] sm:rounded-[1.125rem] p-4 sm:p-8 md:p-10 relative overflow-hidden shadow-2xl shadow-[#22c55e]/5">
-                    <div class="absolute top-0 right-0 p-4 sm:p-8 opacity-10">
-                        <svg class="w-24 h-24 sm:w-32 sm:h-32 text-[#22c55e]" fill="currentColor" viewBox="0 0 24 24"><path d="M21 18l-3-3h-5l-2 2h-3l-2-2H4l-3 3V5l3-3h5l2 2h3l2-2h5l3 3v13z"/></svg>
+                <div class="cabinet-block bg-[#0a0a0a] border-0 md:border md:border-[#22c55e]/20 rounded-none md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 relative overflow-hidden md:shadow-2xl md:shadow-[#22c55e]/5">
+                    <div class="absolute top-0 right-0 p-4 sm:p-8 opacity-10 pointer-events-none">
+                        <svg class="w-20 h-20 sm:w-32 sm:h-32 text-[#22c55e]" fill="currentColor" viewBox="0 0 24 24"><path d="M21 18l-3-3h-5l-2 2h-3l-2-2H4l-3 3V5l3-3h5l2 2h3l2-2h5l3 3v13z"/></svg>
                     </div>
 
-                    <span class="text-[10px] uppercase text-[#22c55e] tracking-[0.4em] font-black italic">Лицевой счет REACTOR</span>
-                    <div class="mt-3 sm:mt-4 flex items-baseline gap-3 sm:gap-4">
-                        <span class="text-6xl sm:text-8xl font-black italic tracking-tighter text-white drop-shadow-[0_0_25px_rgba(34,197,94,0.4)]">
+                    <span class="text-[10px] uppercase text-[#22c55e] tracking-[0.35em] font-black italic relative z-10">Лицевой счет REACTOR</span>
+                    <div class="mt-2 sm:mt-4 flex items-baseline gap-2 sm:gap-4 relative z-10">
+                        <span class="text-5xl sm:text-8xl font-black italic tracking-tighter text-white drop-shadow-[0_0_25px_rgba(34,197,94,0.4)] leading-none">
                             {{ Math.floor(displayBalance) }}
                         </span>
-                        <span class="text-2xl sm:text-3xl font-bold text-[#22c55e] uppercase italic">RUB</span>
+                        <span class="text-xl sm:text-3xl font-bold text-[#22c55e] uppercase italic">RUB</span>
                     </div>
 
-                    <div class="mt-6 sm:mt-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 relative z-10">
-                        <button @click="isTopUpInputOpen = true" class="py-4 bg-[#22c55e] text-black font-black rounded-xl text-[9px] tracking-widest hover:scale-105 transition-all uppercase italic">Пополнить</button>
-                        <button @click="openSeatAction" class="py-4 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-xl text-[9px] tracking-widest hover:bg-[#22c55e]/10 transition-all uppercase italic">
+                    <div class="mt-5 sm:mt-10 grid grid-cols-3 gap-1.5 sm:gap-3 relative z-10">
+                        <button @click="isTopUpInputOpen = true" class="py-3.5 sm:py-4 bg-[#22c55e] text-black font-black rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] tracking-widest hover:scale-[1.02] transition-all uppercase italic">Пополнить</button>
+                        <button @click="openSeatAction" class="py-3.5 sm:py-4 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] tracking-widest hover:bg-[#22c55e]/10 transition-all uppercase italic">
                             {{ hasLiveSession ? 'Пересесть' : 'Сесть за ПК' }}
                         </button>
-                        <Link href="/booking" class="py-4 bg-white/5 border border-white/10 text-white font-black rounded-xl text-[9px] flex items-center justify-center tracking-widest hover:bg-white/10 transition-all uppercase italic">Бронь</Link>
-                        <Link href="/shop" class="py-4 bg-white/5 border border-white/10 text-white font-black rounded-xl text-[9px] flex items-center justify-center tracking-widest hover:bg-white/10 transition-all uppercase italic">Маркет</Link>
-                        <button @click="openReviewModal" class="py-4 bg-white/5 border border-yellow-500/40 text-yellow-500 font-black rounded-xl text-[9px] tracking-widest hover:bg-yellow-500/10 transition-all uppercase italic">Бонус</button>
-                        <button @click="openGameRequestModal" class="py-4 bg-white/5 border border-cyan-500/40 text-cyan-400 font-black rounded-xl text-[9px] tracking-widest hover:bg-cyan-500/10 transition-all uppercase italic">Хочу игру</button>
+                        <Link href="/booking" class="py-3.5 sm:py-4 bg-white/5 border border-white/10 text-white font-black rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] flex items-center justify-center tracking-widest hover:bg-white/10 transition-all uppercase italic">Бронь</Link>
+                        <Link href="/shop" class="py-3.5 sm:py-4 bg-white/5 border border-white/10 text-white font-black rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] flex items-center justify-center tracking-widest hover:bg-white/10 transition-all uppercase italic">Маркет</Link>
+                        <button @click="openReviewModal" class="py-3.5 sm:py-4 bg-white/5 border border-yellow-500/40 text-yellow-500 font-black rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] tracking-widest hover:bg-yellow-500/10 transition-all uppercase italic">Бонус</button>
+                        <button @click="openGameRequestModal" class="py-3.5 sm:py-4 bg-white/5 border border-cyan-500/40 text-cyan-400 font-black rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] tracking-widest hover:bg-cyan-500/10 transition-all uppercase italic">Хочу игру</button>
                     </div>
                 </div>
 
-                <div v-if="activeBookings.length > 0" class="space-y-4">
-                    <div
-                        v-for="b in activeBookings"
-                        :key="b.id"
-                        class="bg-[#0a0a0a] border rounded-[1rem] p-4 sm:p-6 md:p-8 relative overflow-hidden group transition-colors"
-                        :class="resolveBookingPhase(b) === 'late_waiting'
-                            ? 'border-red-500/40 hover:border-red-500/70'
-                            : 'border-[#3b82f6]/40 hover:border-[#3b82f6]'"
-                    >
+                <div
+                    v-for="b in activeBookings"
+                    :key="b.id"
+                    class="cabinet-block bg-[#0a0a0a] border-0 md:border rounded-none md:rounded-[1rem] p-4 sm:p-6 md:p-8 relative overflow-hidden group transition-colors"
+                    :class="resolveBookingPhase(b) === 'late_waiting'
+                        ? 'md:border-red-500/40 hover:md:border-red-500/70'
+                        : 'md:border-[#3b82f6]/40 hover:md:border-[#3b82f6]'"
+                >
                         <div
                             class="absolute inset-0 pointer-events-none"
                             :class="resolveBookingPhase(b) === 'late_waiting'
@@ -502,35 +502,35 @@ onMounted(() => {
                                 : 'bg-gradient-to-r from-[#3b82f6]/5 to-transparent'"
                         ></div>
 
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 relative z-10">
+                        <div class="grid grid-cols-2 gap-x-3 gap-y-4 md:grid-cols-4 md:gap-6 relative z-10">
                             <div>
-                                <span class="text-[10px] text-white/30 uppercase block mb-2 font-bold italic">Объект</span>
-                                <div class="text-3xl font-black italic text-white uppercase">ПК №{{ b.formatted_pc }}</div>
+                                <span class="text-[9px] sm:text-[10px] text-white/30 uppercase block mb-1.5 font-bold italic">Объект</span>
+                                <div class="text-2xl sm:text-3xl font-black italic text-white uppercase leading-none">ПК №{{ b.formatted_pc }}</div>
                             </div>
 
                             <div>
-                                <span class="text-[10px] text-white/30 uppercase block mb-2 font-bold italic">PIN-КОД</span>
-                                <div class="text-3xl font-mono font-black text-[#22c55e] tracking-widest drop-shadow-[0_0_10px_rgba(34,197,94,0.2)]">
+                                <span class="text-[9px] sm:text-[10px] text-white/30 uppercase block mb-1.5 font-bold italic">PIN-КОД</span>
+                                <div class="text-2xl sm:text-3xl font-mono font-black text-[#22c55e] tracking-widest drop-shadow-[0_0_10px_rgba(34,197,94,0.2)] leading-none">
                                     {{ b.pin_code || '—' }}
                                 </div>
                             </div>
 
-                            <div class="text-right">
-                                <span class="text-[10px] text-white/30 uppercase block mb-2 font-bold italic">Старт</span>
-                                <div class="text-2xl font-black text-[#3b82f6] font-mono">{{ formatStartTime(b.start_time) }}</div>
+                            <div class="text-left md:text-right">
+                                <span class="text-[9px] sm:text-[10px] text-white/30 uppercase block mb-1.5 font-bold italic">Старт</span>
+                                <div class="text-xl sm:text-2xl font-black text-[#3b82f6] font-mono leading-none">{{ formatStartTime(b.start_time) }}</div>
                             </div>
 
-                            <div class="text-right">
+                            <div class="text-left md:text-right">
                                 <span
-                                    class="text-[10px] uppercase block mb-2 font-bold italic border-b pb-1"
+                                    class="text-[9px] sm:text-[10px] uppercase block mb-1.5 font-bold italic border-b pb-1"
                                     :class="resolveBookingPhase(b) === 'late_waiting'
                                         ? 'text-red-400 border-red-500/20'
                                         : 'text-[#22c55e] border-[#22c55e]/20'"
                                 >{{ ['waiting', 'late_waiting'].includes(resolveBookingPhase(b))
                                     ? 'Статус'
-                                    : 'Осталось времени' }}</span>
+                                    : 'Осталось' }}</span>
                                 <div
-                                    class="text-3xl font-black font-mono tracking-tighter"
+                                    class="text-2xl sm:text-3xl font-black font-mono tracking-tighter leading-none"
                                     :class="bookingTimeClass(b)"
                                 >
                                     {{ getRemainingTime(b) }}
@@ -544,14 +544,14 @@ onMounted(() => {
                             </div>
                         </div>
 
-                        <div v-if="b.game_label" class="mt-6 pt-5 border-t border-white/5 relative z-10 flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <div v-if="b.game_label" class="mt-4 sm:mt-6 pt-4 sm:pt-5 border-t border-white/5 relative z-10 flex flex-wrap items-center gap-x-3 gap-y-2">
                             <span class="text-[10px] text-white/30 uppercase font-bold italic tracking-widest">Игры</span>
                             <span class="text-sm font-black uppercase italic text-white/90 tracking-tight">{{ b.game_label }}</span>
                         </div>
 
                         <div
                             v-if="b.can_cancel || resolveBookingPhase(b) === 'waiting'"
-                            class="mt-6 pt-5 border-t border-white/5 relative z-10 flex flex-wrap items-center justify-between gap-3"
+                            class="mt-4 sm:mt-6 pt-4 sm:pt-5 border-t border-white/5 relative z-10 flex flex-wrap items-center justify-between gap-3"
                         >
                             <button
                                 v-if="b.can_cancel"
@@ -569,26 +569,26 @@ onMounted(() => {
                                 Самоотмена недоступна (менее {{ Math.round((b.cancel_before_minutes || 120) / 60) }} ч до старта)
                             </span>
                         </div>
-                    </div>
                 </div>
 
                 <div
                     v-if="cancelError"
-                    class="px-5 py-4 rounded-2xl border border-red-500/30 bg-red-500/10 text-red-400 text-xs font-black uppercase tracking-wider"
+                    class="px-4 py-3 bg-red-500/10 text-red-400 text-xs font-black uppercase tracking-wider md:rounded-2xl md:border md:border-red-500/30"
                 >
                     {{ cancelError }}
                 </div>
-                <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] sm:rounded-[1.125rem] p-4 sm:p-8 md:p-10 shadow-xl">
-                    <span class="text-[10px] uppercase text-white/40 tracking-[0.4em] font-black italic block mb-10">Лог транзакций</span>
-                    <div v-if="transactions.length > 0" class="space-y-6">
-                        <div v-for="tx in transactions" :key="tx.id" class="flex items-center justify-between group transition-all gap-4">
-                            <div class="flex items-center gap-6 min-w-0">
-                                <div :class="['w-12 h-12 rounded-2xl flex items-center justify-center border transition-colors shrink-0', tx.amount > 0 ? 'bg-[#22c55e]/5 border-[#22c55e]/20 text-[#22c55e]' : 'bg-white/5 border-white/10 text-white/20 group-hover:border-white/20']">
-                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path :d="tx.amount > 0 ? 'M12 6v12m6-6H6' : 'M18 12H6'" stroke-width="2.5" stroke-linecap="round"/></svg>
+
+                <div class="cabinet-block bg-[#0a0a0a] border-0 md:border md:border-white/5 rounded-none md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 md:shadow-xl">
+                    <span class="text-[10px] uppercase text-white/40 tracking-[0.35em] font-black italic block mb-5 sm:mb-8">Лог транзакций</span>
+                    <div v-if="transactions.length > 0" class="space-y-4 sm:space-y-6">
+                        <div v-for="tx in transactions" :key="tx.id" class="flex items-center justify-between group transition-all gap-3 sm:gap-4">
+                            <div class="flex items-center gap-3 sm:gap-6 min-w-0">
+                                <div :class="['w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center border transition-colors shrink-0', tx.amount > 0 ? 'bg-[#22c55e]/5 border-[#22c55e]/20 text-[#22c55e]' : 'bg-white/5 border-white/10 text-white/20 group-hover:border-white/20']">
+                                    <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path :d="tx.amount > 0 ? 'M12 6v12m6-6H6' : 'M18 12H6'" stroke-width="2.5" stroke-linecap="round"/></svg>
                                 </div>
                                 <div class="min-w-0">
                                     <div class="flex flex-wrap items-center gap-2 min-w-0">
-                                        <div class="text-sm font-black uppercase italic tracking-tight group-hover:text-[#22c55e] transition-colors truncate">{{ tx.description }}</div>
+                                        <div class="text-xs sm:text-sm font-black uppercase italic tracking-tight group-hover:text-[#22c55e] transition-colors truncate">{{ tx.description }}</div>
                                         <span
                                             v-if="tx.is_no_show"
                                             class="shrink-0 px-2 py-0.5 rounded-md border border-red-500/40 bg-red-500/10 text-[9px] font-black uppercase tracking-widest text-red-400"
@@ -597,11 +597,11 @@ onMounted(() => {
                                     <div class="text-[10px] text-white/20 font-mono mt-1 italic">{{ tx.date }}</div>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-4 shrink-0">
+                            <div class="flex items-center gap-2 sm:gap-4 shrink-0">
                                 <button
                                     v-if="tx.has_receipt || tx.fiscal_status || tx.type === 'deposit'"
                                     type="button"
-                                    class="px-3 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-colors"
+                                    class="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border text-[8px] sm:text-[9px] font-black uppercase tracking-widest transition-colors"
                                     :class="tx.has_receipt
                                         ? 'border-[#22c55e]/30 text-[#22c55e] hover:bg-[#22c55e]/10'
                                         : 'border-white/15 text-white/35 hover:bg-white/5'"
@@ -611,31 +611,33 @@ onMounted(() => {
                                         ? (tx.is_stub_receipt ? 'Чек · демо' : 'Чек')
                                         : (tx.fiscal_status === 'deferred' ? 'После входа' : 'Статус')
                                 }}</button>
-                                <div :class="['text-xl font-black italic font-mono tracking-tighter', tx.amount > 0 ? 'text-[#22c55e]' : 'text-white/40']">
+                                <div :class="['text-base sm:text-xl font-black italic font-mono tracking-tighter', tx.amount > 0 ? 'text-[#22c55e]' : 'text-white/40']">
                                     {{ tx.amount > 0 ? '+' : '' }}{{ Math.round(Number(tx.amount)) }} ₽
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div v-else class="text-center py-10 text-white/10 italic uppercase text-[10px] tracking-widest border border-dashed border-white/5 rounded-2xl">История пуста</div>
+                    <div v-else class="text-center py-8 sm:py-10 text-white/10 italic uppercase text-[10px] tracking-widest border border-dashed border-white/5 rounded-xl">История пуста</div>
                 </div>
             </div>
 
-            <div class="space-y-4 sm:space-y-6 md:space-y-8 md:sticky md:top-28 md:self-start">
-                <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] sm:rounded-[1.125rem] p-4 sm:p-8 md:p-10 flex flex-col items-center shadow-xl">
-                    <div class="w-32 h-32 rounded-full bg-black flex items-center justify-center text-5xl font-black text-[#22c55e] italic border-2 border-[#22c55e]/30 mb-6 overflow-hidden shadow-[0_0_40px_rgba(34,197,94,0.1)]">
+            <div class="flex flex-col gap-px md:gap-6 md:space-y-0 bg-white/[0.06] md:bg-transparent md:sticky md:top-28 md:self-start mt-px md:mt-0">
+                <div class="cabinet-block bg-[#0a0a0a] border-0 md:border md:border-white/5 rounded-none md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 flex flex-row md:flex-col items-center gap-4 md:gap-0 md:shadow-xl">
+                    <div class="w-16 h-16 md:w-32 md:h-32 rounded-full bg-black flex items-center justify-center text-2xl md:text-5xl font-black text-[#22c55e] italic border-2 border-[#22c55e]/30 md:mb-6 overflow-hidden shadow-[0_0_40px_rgba(34,197,94,0.1)] shrink-0">
                         <img v-if="page.props.user?.avatar" :src="`/images/avatars/${page.props.user.avatar}`" class="w-full h-full object-cover" />
                         <span v-else>{{ (page.props.user?.name || 'S')[0] }}</span>
                     </div>
-                    <h3 class="text-3xl font-black uppercase italic tracking-tighter text-white text-center">{{ page.props.user?.name }}</h3>
-                    <div class="mt-4 px-6 py-2 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[10px] text-[#22c55e] font-black uppercase italic tracking-widest">СТАЛКЕР</div>
+                    <div class="min-w-0 flex-1 md:flex-none text-left md:text-center">
+                        <h3 class="text-xl md:text-3xl font-black uppercase italic tracking-tighter text-white truncate">{{ page.props.user?.name }}</h3>
+                        <div class="mt-2 md:mt-4 inline-flex px-4 md:px-6 py-1.5 md:py-2 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[9px] md:text-[10px] text-[#22c55e] font-black uppercase italic tracking-widest">СТАЛКЕР</div>
+                    </div>
                 </div>
 
-                <div v-if="achievements.length > 0" class="bg-[#0a0a0a] border border-purple-500/20 rounded-[1rem] sm:rounded-[1.125rem] p-4 sm:p-6 md:p-8 shadow-xl">
-                    <span class="text-[10px] uppercase text-purple-400 tracking-[0.4em] font-black italic block mb-6">Достижения и трофеи</span>
-                    <div class="space-y-4">
+                <div v-if="achievements.length > 0" class="cabinet-block bg-[#0a0a0a] border-0 md:border md:border-purple-500/20 rounded-none md:rounded-[1.125rem] p-4 sm:p-6 md:p-8 md:shadow-xl">
+                    <span class="text-[10px] uppercase text-purple-400 tracking-[0.35em] font-black italic block mb-4 sm:mb-6">Достижения и трофеи</span>
+                    <div class="space-y-3 sm:space-y-4">
                         <div v-for="a in achievements" :key="a.id"
-                             class="border rounded-2xl p-4 transition-colors"
+                             class="border rounded-xl sm:rounded-2xl p-3 sm:p-4 transition-colors"
                              :class="a.completed ? 'border-purple-500/40 bg-purple-500/[0.06]' : 'border-white/5 bg-black/40'">
                             <div class="flex items-start justify-between gap-3 mb-3">
                                 <div class="min-w-0">
@@ -663,16 +665,17 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <nav class="flex flex-col gap-3 sm:gap-4">
-                    <Link href="/account/profile" class="p-4 sm:p-6 bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] flex items-center justify-between hover:bg-white/5 transition-all group">
+                <nav class="flex flex-col gap-px md:gap-3 bg-white/[0.06] md:bg-transparent">
+                    <Link href="/account/profile" class="p-4 sm:p-5 md:p-6 bg-[#0a0a0a] border-0 md:border md:border-white/5 rounded-none md:rounded-[0.875rem] flex items-center justify-between hover:bg-white/5 transition-all group">
                         <span class="text-[10px] font-black uppercase text-white/40 group-hover:text-white transition-colors italic tracking-widest">Настройки профиля</span>
-                        <svg class="w-6 h-6 text-[#22c55e] transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+                        <svg class="w-5 h-5 sm:w-6 sm:h-6 text-[#22c55e] transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
                     </Link>
-                    <button @click="router.post('/logout')" class="p-4 sm:p-6 bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] flex items-center justify-between hover:bg-red-500/10 transition-all group">
+                    <button @click="router.post('/logout')" class="p-4 sm:p-5 md:p-6 bg-[#0a0a0a] border-0 md:border md:border-white/5 rounded-none md:rounded-[0.875rem] flex items-center justify-between hover:bg-red-500/10 transition-all group">
                         <span class="text-[10px] font-black uppercase text-white/40 group-hover:text-red-500 transition-colors italic tracking-widest">Завершить рейд</span>
-                        <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M17 16l4-4m0 0l-4-4m4 4H7"/></svg>
+                        <svg class="w-5 h-5 sm:w-6 sm:h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M17 16l4-4m0 0l-4-4m4 4H7"/></svg>
                     </button>
                 </nav>
+            </div>
             </div>
         </div>
 
