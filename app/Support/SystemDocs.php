@@ -343,13 +343,13 @@ class SystemDocs
                 'items' => [
                     [
                         'title' => 'Личный кабинет',
-                        'description' => "Баланс, активные брони с таймером, заказы магазина, транзакции, прогресс достижений, статус заявки на бонус за отзыв.\n\nВ шапке сайта (MainLayout) у авторизованного гостя всегда есть кнопка «Сканер» — вход на ПК по QR с экрана шелла (см. «Вход по QR»).\n\nКнопка «Сесть за ПК» без живой сессии — заготовка быстрого входа (логика «Подключиться» ещё заглушка). При активной сессии кнопка становится «Пересесть» (см. «Пересадка на другой ПК»).",
+                        'description' => "Баланс, активные брони с таймером, заказы магазина, транзакции, прогресс достижений, статус заявки на бонус за отзыв.\n\nВ шапке на мобильных/планшетах — иконка QR-сканера (на десктопе скрыта: вход с телефона). См. «Вход по QR».\n\nКнопка «Сесть за ПК» без живой сессии — заготовка быстрого входа (логика «Подключиться» ещё заглушка). При активной сессии кнопка становится «Пересесть» (см. «Пересадка на другой ПК»).",
                         'path' => '/account/dashboard',
                         'audience' => 'Игрок',
                     ],
                     [
                         'title' => 'Сканер QR (вход на ПК)',
-                        'description' => "Кнопка «Сканер» в навигации ЛК на любой странице с MainLayout. Камера телефона читает QR с экрана idle PC Shell (jsQR; можно вставить UUID вручную).\n\nPOST /account/qr/redeem {token}:\n• есть бронь на этот ПК (confirmed/paid/active) → та же активация, что по PIN, challenge → consumed, шелл подхватывает вход;\n• ПК свободен, брони нет → needs_booking: выбор длительности от 60 мин шагом ±15, quote/book с баланса; не хватает денег → пополнение (Reactor Pay) и повтор «Открыть сессию»;\n• ПК занят чужой сессией → occupied.\n\nPayload QR: {APP_URL}/account/dashboard?qr={uuid} — по ссылке сканер открывается сам. TTL challenge 120 с (таблица shell_qr_challenges).",
+                        'description' => "Иконка QR в навигации ЛК (только mobile/tablet, lg скрыта) на любой странице с MainLayout. Камера телефона читает QR с экрана idle PC Shell (jsQR; можно вставить UUID вручную).\n\nPOST /account/qr/redeem {token}:\n• есть бронь на этот ПК (confirmed/paid/active) → та же активация, что по PIN, challenge → consumed, шелл подхватывает вход;\n• ПК свободен, брони нет → needs_booking: выбор длительности от 60 мин шагом ±15, quote/book с баланса; не хватает денег → пополнение (Reactor Pay) и повтор «Открыть сессию»;\n• ПК занят чужой сессией → occupied.\n\nPayload QR: {APP_URL}/account/dashboard?qr={uuid} — по ссылке сканер открывается сам. TTL challenge 120 с (таблица shell_qr_challenges).",
                         'path' => '/account/dashboard',
                         'audience' => 'Игрок',
                     ],
@@ -421,7 +421,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Вход по QR',
-                        'description' => "Дубль PIN: гость сканирует QR терминала в ЛК → сессия на этом ПК активируется без ввода PIN на клавиатуре шелла.\n\nShell (idle):\n• POST /api/shell/qr/challenge {terminal_id} → token, expires_at, qr_payload;\n• картинка QR (qr_payload) на панели «ВХОД ПО QR»;\n• poll GET /api/shell/qr/status?token= ~1.5 с; status=consumed → тот же loginSucceeded, что после PIN; expired → новый challenge.\n\nЛК: «Сканер» → redeem / quote / book (см. «Сканер QR»).\nНет брони на ПК: бронь «с сейчас» на выбранную длительность (≥60 мин, шаг 15), оплата с баланса или топап, затем activate+consume.\n\nКод: ShellQrLoginService, ShellQrLoginController, NetworkManager::requestQrChallenge; TTL 120 с; тесты tests/Feature/ShellQrLoginTest.php.\nМиграция: shell_qr_challenges.",
+                        'description' => "Дубль PIN: гость сканирует QR терминала в ЛК → сессия на этом ПК активируется без ввода PIN на клавиатуре шелла.\n\nShell (idle):\n• POST /api/shell/qr/challenge {terminal_id} → token, expires_at, qr_payload;\n• картинка QR (qr_payload) на панели «ВХОД ПО QR»;\n• poll GET /api/shell/qr/status?token= ~1.5 с; status=consumed → тот же loginSucceeded, что после PIN; expired → новый challenge.\n\nЛК: иконка QR-сканера (mobile) → redeem / quote / book (см. «Сканер QR»).\nНет брони на ПК: бронь «с сейчас» на выбранную длительность (≥60 мин, шаг 15), оплата с баланса или топап, затем activate+consume.\n\nКод: ShellQrLoginService, ShellQrLoginController, NetworkManager::requestQrChallenge; TTL 120 с; тесты tests/Feature/ShellQrLoginTest.php.\nМиграция: shell_qr_challenges.",
                         'path' => null,
                         'audience' => 'Shell / Игрок',
                     ],

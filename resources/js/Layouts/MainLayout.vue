@@ -340,10 +340,23 @@ onUnmounted(() => {
                     <button
                         v-if="isAuthenticated"
                         type="button"
-                        class="nav-btn"
+                        class="nav-btn-icon lg:hidden"
                         :class="{ 'active': isQrScannerOpen }"
+                        title="Сканировать QR"
+                        aria-label="Сканировать QR"
                         @click="openQrScanner"
-                    >Сканер</button>
+                    >
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+                            <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+                            <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+                            <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+                            <rect x="7" y="7" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
+                            <rect x="13.5" y="7" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
+                            <rect x="7" y="13.5" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
+                            <path d="M13.5 13.5h1.5v1.5h-1.5zm2 0h1.5v1.5H15.5zm0 2h1.5V17H15.5zm-2 0h1.5V17h-1.5z" fill="currentColor" stroke="none" />
+                        </svg>
+                    </button>
 
                     <template v-if="isAuthenticated">
                         <div class="nav-meta">
@@ -534,6 +547,13 @@ onUnmounted(() => {
 }
 @media (min-width: 1024px) { .nav-btn { min-width: 170px; } }
 .nav-btn.active { @apply bg-[#22c55e] text-black border-transparent shadow-[0_0_20px_rgba(34,197,94,0.4)]; }
+
+.nav-btn-icon {
+    @apply inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 border border-white/10 rounded-xl
+           text-white/70 transition-all cursor-pointer bg-transparent shrink-0;
+}
+.nav-btn-icon:hover { @apply border-[#22c55e]/40 text-[#22c55e]; }
+.nav-btn-icon.active { @apply bg-[#22c55e] text-black border-transparent shadow-[0_0_20px_rgba(34,197,94,0.4)]; }
 
 .nav-meta {
     @apply inline-flex items-center gap-2 sm:gap-3 px-4 py-2.5 sm:px-6 sm:py-3 border border-white/10 rounded-xl
