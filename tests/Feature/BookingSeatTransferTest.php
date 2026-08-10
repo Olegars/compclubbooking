@@ -96,6 +96,35 @@ class BookingSeatTransferTest extends TestCase
         ]);
     }
 
+    public function test_transfer_charges_delta_not_full_rate_when_ends_at_skewed(): void
+    {
+        // Wall: ~1 ч осталось. ends_at +3ч skew → раньше remaining~4ч и доплата ~400 вместо ~100.
+        $now = CarbonImmutable::now(config('app.timezone'));
+        $this->booking->forceFill([
+            'price' => 300,
+            'price_minor' => 30000,
+            'duration' => 1,
+            'date' => $now->toDateString(),
+            'start_time' => ($now->hour + ($now->minute / 60)) - 0.02, // чуть началась
+            'starts_at' => $now->subMinutes(1)->addHours(3),
+            'ends_at' => $now->addHour()->addHours(3),
+            'actual_started_at' => $now->subMinutes(1)->addHours(3),
+        ])->saveQuietly();
+
+        // Целевой ПК реально дороже: VIP surcharge 250 → 250+250=500? 
+        // В setUp оба по 400. Поднимем to до 400 vs paid 300.
+        // from/to оба 400 hourly; paid rate 300 → delta 100.
+        $svc = app(BookingSeatTransferService::class);
+        $preview = $svc->preview($this->booking->fresh(), (int) $this->to->id);
+
+        $this->assertSame('charge', $preview['action']);
+        $this->assertEqualsWithDelta(300.0, (float) $preview['from']['hourly_rate'], 0.01);
+        $this->assertEqualsWithDelta(400.0, (float) $preview['to']['hourly_rate'], 0.01);
+        // ~1ч × 100 ₽/ч, НЕ ~4ч × 100.
+        $this->assertGreaterThan(50, (int) $preview['charge']);
+        $this->assertLessThan(150, (int) $preview['charge']);
+    }
+
     public function test_transfer_charges_when_target_rate_above_paid_booking_rate(): void
     {
         // Оба ПК сейчас по 400 ₽/ч, но бронь оплачена как 375 ₽/ч → должна быть доплата.

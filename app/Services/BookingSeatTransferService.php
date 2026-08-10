@@ -25,6 +25,7 @@ class BookingSeatTransferService
         private readonly GameBookingService $bookings,
         private readonly ComputerStatusService $statuses,
         private readonly MapPresentationService $mapPresentation,
+        private readonly BookingSessionTimingService $timing,
     ) {
     }
 
@@ -122,8 +123,10 @@ class BookingSeatTransferService
         }
 
         $clubId = (int) $from->club_id;
-        $endsAt = $this->endsAt($booking);
         $now = CarbonImmutable::now(config('app.timezone'));
+        $booking = $this->timing->healSkewedWindow($booking);
+        $remaining = $this->timing->remainingSeconds($booking, $now);
+        $endsAt = $remaining > 0 ? $now->addSeconds($remaining) : $now;
 
         $candidates = Computer::query()
             ->with('space.zone')
@@ -218,10 +221,15 @@ class BookingSeatTransferService
 
         $tz = config('app.timezone');
         $now = CarbonImmutable::now($tz);
-        $endsAt = $this->endsAt($booking);
-        if ($endsAt <= $now) {
+
+        // Не raw ends_at: PG/timestamptz skew (+N ч) раздувает remaining → доплата ×N
+        // (300→400 ₽/ч при «+3ч» даёт ~399 вместо ~99).
+        $booking = $this->timing->healSkewedWindow($booking);
+        $remainingSeconds = $this->timing->remainingSeconds($booking, $now);
+        if ($remainingSeconds <= 0) {
             throw new RuntimeException('Сессия уже истекла');
         }
+        $endsAt = $now->addSeconds($remainingSeconds);
 
         $occupied = $this->bookings->occupiedComputerIds(
             [(int) $to->id],
@@ -234,15 +242,15 @@ class BookingSeatTransferService
         }
 
         $clubId = (int) $from->club_id;
-        // Ставка «откуда»: что реально оплачено за час по брони (пакет 375 ≠ текущий hourly 400).
+        // Ставка «откуда»: оплачено за час по брони (пакет 300 ≠ текущий hourly ПК).
         // Ставка «куда»: актуальный тариф целевого места.
         $rateFrom = $this->effectivePaidHourlyRate($booking, $from, $clubId, $now);
         $rateTo = $this->hourlyRateForComputer($to, $clubId, $now);
 
-        $remainingHours = max(0.01, $now->diffInSeconds($endsAt) / 3600);
+        $remainingHours = max(0.01, $remainingSeconds / 3600);
         $prepaidValue = round($rateFrom * $remainingHours, 2);
         $deltaPerHour = round($rateTo - $rateFrom, 2);
-        // Доплата в целых ₽ — колонка price integer + без копеек в UI/логе.
+        // Доплата = разница тарифов × оставшееся время (целые ₽).
         $extraIfKeepTime = (int) round(max(0, $deltaPerHour * $remainingHours));
 
         $user = User::query()->findOrFail($booking->user_id);
@@ -462,10 +470,12 @@ class BookingSeatTransferService
                 }
 
                 // Исходный ПК снова занят — ждём, не трогаем pending/PIN.
+                $nowLocal = CarbonImmutable::now(config('app.timezone'));
+                $remain = $this->timing->remainingSeconds($booking, $nowLocal);
                 $occupied = $this->bookings->occupiedComputerIds(
                     [$fromId],
-                    CarbonImmutable::now(config('app.timezone')),
-                    $this->endsAt($booking),
+                    $nowLocal,
+                    $remain > 0 ? $nowLocal->addSeconds($remain) : $nowLocal,
                     [(int) $booking->id]
                 );
                 if ($occupied !== []) {
@@ -500,8 +510,8 @@ class BookingSeatTransferService
     }
 
     /**
-     * Эффективная ₽/ч текущей брони (price/duration), иначе тариф исходного ПК.
-     * Иначе пакет 375 ₽/ч и hourly 400 ₽/ч на обеих зонах даёт ложное «тариф тот же».
+     * Эффективная ₽/ч текущей брони (оплачено / забронированные часы), иначе тариф исходного ПК.
+     * Длительность берём из quote/payload — не из duration после late activate (там remaining).
      */
     private function effectivePaidHourlyRate(
         Booking $booking,
@@ -509,10 +519,31 @@ class BookingSeatTransferService
         int $clubId,
         CarbonImmutable $at,
     ): float {
-        $duration = (float) ($booking->duration ?? 0);
-        $price = (float) ($booking->price ?? 0);
-        if ($duration >= 0.05 && $price > 0.009) {
-            return round($price / $duration, 2);
+        $paid = (int) ($booking->price_minor ?? 0) > 0
+            ? ((int) $booking->price_minor) / 100.0
+            : (float) ($booking->price ?? 0);
+
+        $minutes = 0;
+        if ($booking->booking_group_id) {
+            $group = $booking->relationLoaded('group')
+                ? $booking->group
+                : $booking->group()->first();
+            $minutes = (int) data_get($group?->pricing_snapshot, 'duration_minutes', 0);
+            if ($minutes < 1) {
+                $tx = Transaction::query()
+                    ->where('booking_group_id', $booking->booking_group_id)
+                    ->where('type', 'booking')
+                    ->orderBy('id')
+                    ->first();
+                $minutes = (int) data_get($tx?->payload, 'duration_minutes', 0);
+            }
+        }
+        if ($minutes < 1) {
+            $minutes = (int) round(((float) ($booking->duration ?? 0)) * 60);
+        }
+
+        if ($minutes >= 1 && $paid > 0.009) {
+            return round($paid / ($minutes / 60.0), 2);
         }
 
         return $this->hourlyRateForComputer($from, $clubId, $at);
