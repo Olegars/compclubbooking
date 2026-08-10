@@ -295,7 +295,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Время сессии: кабинет vs шелл',
-                        'description' => "Кабинет игрока считает remaining по wall-clock: date + start_time + duration.\nШелл раньше мог брать «кривой» ends_at (+~3 ч из-за naive timestamp / timezone).\n\nСейчас Shell API (login + /api/shell/balance) использует ту же логику, что кабинет, и при перекосе чинит starts_at/ends_at (healSkewedWindow). После деплоя таймер на TV должен совпадать с кабинетом (~1 ч бронь → ~1 ч на экране).",
+                        'description' => "Кабинет игрока считает remaining по wall-clock: date + start_time + duration.\nШелл раньше мог брать «кривой» ends_at (+~3 ч из-за naive timestamp / timezone).\n\nСейчас Shell API (login + /api/shell/balance) использует ту же логику, что кабинет, и при перекосе чинит starts_at/ends_at (healSkewedWindow).\n\nКабинет: для active — remainingSeconds (как шелл); для опоздания до входа — softGraceRemainingSeconds (оплаченные минуты, без +grace в «Осталось»). QR book-from-idle → activateFromNow(duration), не soft-grace activate.\nПосле деплоя таймер ЛК ≈ шелл (~2 ч бронь → ~2 ч на экране).",
                         'path' => '/account/dashboard',
                         'audience' => 'Система / TV',
                     ],

@@ -107,6 +107,23 @@ class BookingSessionTimingTest extends TestCase
         $this->timing->activate($booking, $now);
     }
 
+    public function test_activate_from_now_uses_exact_paid_minutes(): void
+    {
+        $startsAt = CarbonImmutable::parse('2026-08-01 12:00:00', config('app.timezone'));
+        $endsAt = $startsAt->addHours(2);
+        $now = $startsAt->addMinutes(5);
+
+        $booking = $this->makeBooking($startsAt, $endsAt);
+        $result = $this->timing->activateFromNow($booking, 120, $now);
+
+        $this->assertSame(120, $result['time_remaining_minutes']);
+        $this->assertSame(120 * 60, $result['time_remaining_seconds']);
+        $booking->refresh();
+        $this->assertSame('active', $booking->status);
+        $this->assertTrue($booking->ends_at->equalTo($now->addMinutes(120)));
+        $this->assertEqualsWithDelta(2.0, (float) $booking->duration, 0.05);
+    }
+
     public function test_late_within_soft_grace_keeps_full_paid_duration(): void
     {
         $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));

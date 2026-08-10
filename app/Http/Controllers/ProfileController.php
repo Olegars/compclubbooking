@@ -150,7 +150,9 @@ class ProfileController extends Controller
                 $scheduledStart = CarbonImmutable::instance($startDateTime);
                 $scheduledEnd = CarbonImmutable::instance($endDateTime);
                 $paidMinutes = $timing->paidDurationMinutes($booking, $scheduledStart, $scheduledEnd);
-                $started = filled($booking->actual_started_at);
+                // Active без actual_started_at (legacy) всё равно считаем начатой —
+                // иначе кабинет рисует start+grace+duration (~+30–60 мин к оплаченному).
+                $started = filled($booking->actual_started_at) || $booking->status === 'active';
                 $waiting = $nowImmutable->lt($scheduledStart);
 
                 // phase: waiting | late_waiting | late_billing | active
@@ -158,6 +160,7 @@ class ProfileController extends Controller
                 $billingStart = $scheduledStart;
 
                 if ($started) {
+                    $booking = $timing->healSkewedWindow($booking);
                     $remainingSeconds = $timing->remainingSeconds($booking, $nowImmutable);
                     $phase = 'active';
                     $effectiveEndMs = ($nowImmutable->getTimestamp() + $remainingSeconds) * 1000;
@@ -170,10 +173,10 @@ class ProfileController extends Controller
                     );
                     $graceMinutes = $following ? 0 : $timing->lateStartGraceMinutes();
                     $billingStart = $scheduledStart->addMinutes($graceMinutes);
-                    $absoluteEnd = $billingStart->addMinutes($paidMinutes);
+                    // До старта в UI «Ожидание»; конец сессии если войти сразу = now-эквивалент оплаченных минут.
                     $remainingSeconds = $paidMinutes * 60;
                     $phase = 'waiting';
-                    $effectiveEndMs = $absoluteEnd->getTimestamp() * 1000;
+                    $effectiveEndMs = ($nowImmutable->getTimestamp() + $remainingSeconds) * 1000;
                 } else {
                     $following = $timing->hasFollowingBookingConflict(
                         $booking,
@@ -183,10 +186,15 @@ class ProfileController extends Controller
                     );
                     $graceMinutes = $following ? 0 : $timing->lateStartGraceMinutes();
                     $billingStart = $scheduledStart->addMinutes($graceMinutes);
-                    $absoluteEnd = $billingStart->addMinutes($paidMinutes);
-                    $remainingSeconds = max(0, (int) floor($nowImmutable->diffInSeconds($absoluteEnd, false)));
+                    // Важно: softGraceRemainingSeconds = оплаченные минуты (не +grace).
+                    // Раньше absoluteEnd = start+grace+paid раздувал «Осталось» до ~3 ч при заказе 2 ч.
+                    $remainingSeconds = $timing->softGraceRemainingSeconds(
+                        $scheduledStart,
+                        $paidMinutes,
+                        $nowImmutable
+                    );
                     $phase = $nowImmutable->lt($billingStart) ? 'late_waiting' : 'late_billing';
-                    $effectiveEndMs = $absoluteEnd->getTimestamp() * 1000;
+                    $effectiveEndMs = ($nowImmutable->getTimestamp() + $remainingSeconds) * 1000;
                 }
 
                 // Обрабатываем pc_ids (Postgres часто отдает строку вместо массива)

@@ -116,12 +116,25 @@ class ShellQrLoginTest extends TestCase
     public function test_book_from_qr_activates_session(): void
     {
         $issued = $this->qr->issue($this->computer);
-        $result = $this->qr->bookFromQr($this->user, $issued['token'], 60);
+        $result = $this->qr->bookFromQr($this->user, $issued['token'], 120);
         $this->assertSame('activated', $result['status'], json_encode($result));
 
         $challenge = ShellQrChallenge::query()->where('token', $issued['token'])->first();
         $this->assertSame('consumed', $challenge->status);
         $this->assertNotNull($challenge->booking_id);
+
+        $booking = Booking::query()->findOrFail($challenge->booking_id);
+        $this->assertSame('active', $booking->status);
+        $this->assertNotNull($booking->actual_started_at);
+        $this->assertEqualsWithDelta(2.0, (float) $booking->duration, 0.05);
+
+        $timing = app(\App\Services\BookingSessionTimingService::class);
+        $remaining = $timing->remainingSeconds($booking->fresh());
+        $this->assertGreaterThanOrEqual(119 * 60, $remaining);
+        $this->assertLessThanOrEqual(120 * 60 + 5, $remaining);
+
+        $userTime = (string) data_get($result, 'user.time_remaining', '');
+        $this->assertMatchesRegularExpression('/^0?2:\d{2}:\d{2}$/', $userTime);
     }
 
     public function test_book_needs_topup_when_balance_low(): void

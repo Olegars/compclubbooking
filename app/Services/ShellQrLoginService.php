@@ -241,7 +241,7 @@ class ShellQrLoginService
             ->where('computer_id', $terminalId)
             ->firstOrFail();
 
-        return $this->activateAndConsume($user, $challenge, $booking);
+        return $this->activateAndConsume($user, $challenge, $booking, $durationMinutes);
     }
 
     public function qrPayload(string $token): string
@@ -312,8 +312,12 @@ class ShellQrLoginService
     /**
      * @return array<string, mixed>
      */
-    private function activateAndConsume(User $user, ShellQrChallenge $challenge, Booking $booking): array
-    {
+    private function activateAndConsume(
+        User $user,
+        ShellQrChallenge $challenge,
+        Booking $booking,
+        ?int $forcePaidMinutes = null
+    ): array {
         $timing = $this->timing;
         $fiscalReceipts = [];
 
@@ -323,7 +327,9 @@ class ShellQrLoginService
                 $booking = $timing->healSkewedWindow($booking->fresh());
                 $formattedTime = $timing->formatRemainingHms($booking);
             } else {
-                $activation = $timing->activate($booking);
+                $activation = $forcePaidMinutes !== null
+                    ? $timing->activateFromNow($booking, $forcePaidMinutes)
+                    : $timing->activate($booking);
                 $booking = $activation['booking'];
                 if (isset($activation['time_remaining_seconds'])) {
                     $secs = max(0, (int) $activation['time_remaining_seconds']);

@@ -56,6 +56,18 @@ const currentTime = ref(
 )
 let secInterval: ReturnType<typeof setInterval> | null = null
 
+watch(
+    () => page.props.server_time,
+    (value) => {
+        if (typeof value === 'string' && value.length > 0) {
+            const parsed = new Date(value).getTime()
+            if (!Number.isNaN(parsed)) {
+                currentTime.value = parsed
+            }
+        }
+    }
+)
+
 const formatStartTime = (timeH: number | string) => {
     const h = Number(timeH)
     if (isNaN(h)) return '--:--'
@@ -143,7 +155,7 @@ const cancelBooking = async (b: any) => {
 
 const fetchDashboardData = () => {
     router.reload({
-        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements'],
+        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'server_time'],
         preserveScroll: true
     })
 }

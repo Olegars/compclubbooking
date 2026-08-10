@@ -132,6 +132,47 @@ class BookingSessionTimingService
     }
 
     /**
+     * Немедленный старт «с сейчас» на ровно оплаченные минуты (QR book-from-idle и т.п.).
+     * Не идём через soft-grace: иначе карточка в кабинете могла показать start+grace+duration.
+     *
+     * @return array{booking: Booking, time_remaining_minutes: int, time_remaining_seconds?: int, fiscal_receipts?: list<array<string, mixed>>}
+     */
+    public function activateFromNow(Booking $booking, int $paidMinutes, ?CarbonImmutable $now = null): array
+    {
+        $tz = config('app.timezone');
+        $now = ($now ?? CarbonImmutable::now())->timezone($tz);
+        $paidMinutes = max(1, $paidMinutes);
+
+        $result = DB::transaction(function () use ($booking, $now, $paidMinutes) {
+            /** @var Booking $booking */
+            $booking = Booking::query()->lockForUpdate()->findOrFail($booking->id);
+
+            if (! in_array($booking->status, ['paid', 'confirmed', 'active'], true)) {
+                throw new RuntimeException('Бронь недоступна для входа.');
+            }
+
+            if ($booking->status === 'active' && $booking->actual_started_at) {
+                throw new RuntimeException('Сессия уже была активирована.');
+            }
+
+            return $this->activateWithRemaining($booking, $now, $paidMinutes * 60);
+        }, 3);
+
+        $receipts = [];
+        try {
+            $receipts = app(FiscalService::class)->settleDeferredForBooking($result['booking']);
+        } catch (\Throwable $e) {
+            Log::warning('Deferred fiscal settle after login failed: '.$e->getMessage(), [
+                'booking_id' => $result['booking']->id ?? null,
+            ]);
+        }
+
+        $result['fiscal_receipts'] = $receipts;
+
+        return $result;
+    }
+
+    /**
      * Activate a confirmed booking at shell login.
      *
      * Early start (PC free): shift starts_at/ends_at to preserve paid duration.

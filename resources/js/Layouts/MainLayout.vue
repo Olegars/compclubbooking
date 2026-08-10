@@ -168,7 +168,7 @@ const onQrRequestTopUp = (amount: number) => {
 
 const onQrActivated = () => {
     router.reload({
-        only: ['auth', 'transactions', 'active_bookings'],
+        only: ['auth', 'transactions', 'active_bookings', 'server_time'],
         preserveScroll: true,
     })
 }
