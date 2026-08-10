@@ -145,6 +145,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/transfer/targets', [ProfileController::class, 'transferTargets']);
         Route::post('/transfer/preview', [ProfileController::class, 'transferPreview']);
         Route::post('/transfer/confirm', [ProfileController::class, 'transferConfirm']);
+        Route::post('/qr/redeem', [\App\Http\Controllers\ShellQrLoginController::class, 'redeem']);
+        Route::post('/qr/quote', [\App\Http\Controllers\ShellQrLoginController::class, 'quote']);
+        Route::post('/qr/book', [\App\Http\Controllers\ShellQrLoginController::class, 'book']);
     });
 
     Route::get('/shop', [ShopController::class, 'index'])->name('shop');
@@ -403,6 +406,8 @@ Route::prefix('api/shell')->group(function () {
 
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
     Route::post('/login', [ShellApiController::class, 'login']);
+    Route::post('/qr/challenge', [ShellApiController::class, 'qrChallenge']);
+    Route::get('/qr/status', [ShellApiController::class, 'qrStatus']);
     Route::get('/balance', [ShellApiController::class, 'getBalance']);
     Route::get('/transfer/targets', [ShellApiController::class, 'transferTargets']);
     Route::post('/transfer/preview', [ShellApiController::class, 'transferPreview']);

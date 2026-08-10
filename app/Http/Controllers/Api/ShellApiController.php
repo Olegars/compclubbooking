@@ -33,7 +33,7 @@ use App\Services\GameRequestService;
 use App\Services\ProductStockService;
 use App\Services\UserCloudSettingsService;
 use App\Services\VideoMarkerService;
-use App\Services\YooKassaService;
+use App\Services\ShellQrLoginService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -259,6 +259,30 @@ class ShellApiController extends Controller
                 'message' => 'Ошибка сервера: ' . $e->getMessage()
             ]);
         }
+    }
+
+    public function qrChallenge(Request $request, ShellQrLoginService $qr)
+    {
+        $data = $request->validate([
+            'terminal_id' => 'required|integer',
+        ]);
+        $computer = Computer::query()->find((int) $data['terminal_id']);
+        if (! $computer) {
+            return response()->json(['status' => 'error', 'message' => 'Терминал не найден']);
+        }
+
+        $issued = $qr->issue($computer);
+
+        return response()->json(array_merge(['status' => 'ok'], $issued));
+    }
+
+    public function qrStatus(Request $request, ShellQrLoginService $qr)
+    {
+        $data = $request->validate([
+            'token' => 'required|uuid',
+        ]);
+
+        return response()->json($qr->status($data['token']));
     }
 
     /**

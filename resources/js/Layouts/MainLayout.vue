@@ -9,6 +9,7 @@ import FlashToast from '@/Components/FlashToast.vue'
 import YooKassaWidgetModal from '@/Components/YooKassaWidgetModal.vue'
 import PaymentReceiptConsent from '@/Components/PaymentReceiptConsent.vue'
 import FiscalReceiptModal from '@/Components/FiscalReceiptModal.vue'
+import QrScannerModal from '@/Components/QrScannerModal.vue'
 
 const page = usePage()
 
@@ -17,6 +18,9 @@ const isPhoneModalOpen = ref(false)
 const isSmsModalOpen = ref(false)
 const authPhone = ref('')
 const smsModalRef = ref<InstanceType<typeof SmsModal> | null>(null)
+const isQrScannerOpen = ref(false)
+const qrScannerRef = ref<InstanceType<typeof QrScannerModal> | null>(null)
+const pendingQrTopUp = ref(false)
 
 // --- ПОПОЛНЕНИЕ (ЮKassa) ---
 const isTopUpInputOpen = ref(false)
@@ -123,15 +127,43 @@ watch(isAuthenticated, (ok) => {
     }
 }, { immediate: true })
 
-const openTopUp = () => {
+const openTopUp = (suggestedAmount?: number) => {
     if (!isAuthenticated.value) {
         isPhoneModalOpen.value = true
         return
     }
-    topUpAmount.value = 500
+    const amount = typeof suggestedAmount === 'number' && Number.isFinite(suggestedAmount) && suggestedAmount >= 100
+        ? Math.ceil(suggestedAmount)
+        : 500
+    topUpAmount.value = amount
     paymentMethod.value = 'card'
     sendReceipt.value = false
     isTopUpInputOpen.value = true
+}
+
+const openQrScanner = () => {
+    if (!isAuthenticated.value) {
+        isPhoneModalOpen.value = true
+        return
+    }
+    isQrScannerOpen.value = true
+}
+
+const closeQrScanner = () => {
+    isQrScannerOpen.value = false
+    pendingQrTopUp.value = false
+}
+
+const onQrRequestTopUp = (amount: number) => {
+    pendingQrTopUp.value = true
+    openTopUp(amount)
+}
+
+const onQrActivated = () => {
+    router.reload({
+        only: ['auth', 'transactions', 'active_bookings'],
+        preserveScroll: true,
+    })
 }
 
 const proceedToPayment = async () => {
@@ -182,9 +214,19 @@ const handlePaymentPaid = (payload: {
         || !!(payload.fiscal_receipt_url && String(payload.fiscal_receipt_url).includes('/receipt/stub/'))
     isReceiptModalOpen.value = true
     clearReceiptSession()
+    if (typeof payload.amount === 'number' && localBalance.value !== null) {
+        localBalance.value = localBalance.value + payload.amount
+    } else if (typeof payload.amount === 'number') {
+        localBalance.value = displayBalance.value + payload.amount
+    }
     router.reload({
         only: ['auth', 'transactions'],
         preserveScroll: true,
+        onFinish: () => {
+            if (pendingQrTopUp.value && qrScannerRef.value) {
+                void qrScannerRef.value.refreshAfterTopUp?.()
+            }
+        },
     })
 }
 
@@ -242,6 +284,12 @@ const triggerRoll = async () => {
 onMounted(() => {
     clearReceiptSession()
     setTimeout(() => { triggerRoll() }, 500)
+    try {
+        const params = new URLSearchParams(window.location.search)
+        if (params.get('qr') && isAuthenticated.value) {
+            isQrScannerOpen.value = true
+        }
+    } catch { /* ignore */ }
 })
 
 // Layout живёт между страницами Inertia — гасим попап пополнения/чека при уходе.
@@ -289,6 +337,13 @@ onUnmounted(() => {
                         :class="{ 'active': $page.url.startsWith('/account') }"
                     >Кабинет</Link>
                     <Link href="/booking" class="nav-btn" :class="{ 'active': $page.url.startsWith('/booking') }">Бронирование</Link>
+                    <button
+                        v-if="isAuthenticated"
+                        type="button"
+                        class="nav-btn"
+                        :class="{ 'active': isQrScannerOpen }"
+                        @click="openQrScanner"
+                    >Сканер</button>
 
                     <template v-if="isAuthenticated">
                         <div class="nav-meta">
@@ -417,6 +472,14 @@ onUnmounted(() => {
                 :fiscal-status="receiptFiscalStatus"
                 :is-stub="receiptIsStub"
                 @close="closeReceiptModal"
+            />
+
+            <QrScannerModal
+                ref="qrScannerRef"
+                :is-open="isQrScannerOpen"
+                @close="closeQrScanner"
+                @activated="onQrActivated"
+                @request-topup="onQrRequestTopUp"
             />
         </Teleport>
 
