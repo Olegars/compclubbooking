@@ -35,33 +35,20 @@ const receiptFiscalStatus = ref<string | null>(null)
 const receiptIsStub = ref(false)
 const localBalance = ref<number | null>(null)
 
-const saveReceiptSession = () => {
+const clearReceiptSession = () => {
     try {
-        sessionStorage.setItem('reactor_receipt', JSON.stringify({
-            url: receiptModalUrl.value,
-            amount: receiptModalAmount.value,
-            paymentId: receiptPaymentId.value,
-            fiscalStatus: receiptFiscalStatus.value,
-            isStub: receiptIsStub.value,
-            at: Date.now(),
-        }))
+        sessionStorage.removeItem('reactor_receipt')
     } catch { /* ignore */ }
 }
 
-const restoreReceiptModal = () => {
-    try {
-        const raw = sessionStorage.getItem('reactor_receipt')
-        if (!raw) return
-        const data = JSON.parse(raw)
-        sessionStorage.removeItem('reactor_receipt')
-        if (!data || Date.now() - Number(data.at || 0) > 180000) return
-        receiptModalUrl.value = data.url || null
-        receiptModalAmount.value = data.amount ?? null
-        receiptPaymentId.value = data.paymentId || null
-        receiptFiscalStatus.value = data.fiscalStatus || null
-        receiptIsStub.value = !!data.isStub
-        isReceiptModalOpen.value = true
-    } catch { /* ignore */ }
+const closeReceiptModal = () => {
+    isReceiptModalOpen.value = false
+    receiptModalUrl.value = null
+    receiptModalAmount.value = null
+    receiptPaymentId.value = null
+    receiptFiscalStatus.value = null
+    receiptIsStub.value = false
+    clearReceiptSession()
 }
 
 const displayBalance = computed(() => {
@@ -194,7 +181,7 @@ const handlePaymentPaid = (payload: {
     receiptIsStub.value = payload.fiscal_status === 'skipped'
         || !!(payload.fiscal_receipt_url && String(payload.fiscal_receipt_url).includes('/receipt/stub/'))
     isReceiptModalOpen.value = true
-    saveReceiptSession()
+    clearReceiptSession()
     router.reload({
         only: ['auth', 'transactions'],
         preserveScroll: true,
@@ -253,8 +240,16 @@ const triggerRoll = async () => {
 }
 
 onMounted(() => {
-    restoreReceiptModal()
+    clearReceiptSession()
     setTimeout(() => { triggerRoll() }, 500)
+})
+
+// Layout живёт между страницами Inertia — гасим попап пополнения/чека при уходе.
+watch(() => page.url, () => {
+    closeReceiptModal()
+    closePaymentWidget()
+    isTopUpInputOpen.value = false
+    isPaymentProcessing.value = false
 })
 
 onUnmounted(() => {
@@ -421,7 +416,7 @@ onUnmounted(() => {
                 :payment-id="receiptPaymentId"
                 :fiscal-status="receiptFiscalStatus"
                 :is-stub="receiptIsStub"
-                @close="isReceiptModalOpen = false"
+                @close="closeReceiptModal"
             />
         </Teleport>
 

@@ -411,16 +411,7 @@ const handlePaymentPaid = (payload: {
     receiptIsStub.value = !!payload.fiscal_status && payload.fiscal_status === 'skipped'
         || !!(payload.fiscal_receipt_url && String(payload.fiscal_receipt_url).includes('/receipt/stub/'));
     isReceiptModalOpen.value = true;
-    try {
-        sessionStorage.setItem('reactor_receipt', JSON.stringify({
-            url: receiptModalUrl.value,
-            amount: receiptModalAmount.value,
-            paymentId: receiptPaymentId.value,
-            fiscalStatus: receiptFiscalStatus.value,
-            isStub: receiptIsStub.value,
-            at: Date.now(),
-        }))
-    } catch { /* ignore */ }
+    try { sessionStorage.removeItem('reactor_receipt') } catch { /* ignore */ }
     fetchDashboardData();
     router.reload({ only: ['auth', 'transactions'], preserveScroll: true });
 }
@@ -434,24 +425,18 @@ const openTxReceipt = (tx: any) => {
     isReceiptModalOpen.value = true
 }
 
-const restoreReceiptModal = () => {
-    try {
-        const raw = sessionStorage.getItem('reactor_receipt')
-        if (!raw) return
-        const data = JSON.parse(raw)
-        sessionStorage.removeItem('reactor_receipt')
-        if (!data || Date.now() - Number(data.at || 0) > 180000) return
-        receiptModalUrl.value = data.url || null
-        receiptModalAmount.value = data.amount ?? null
-        receiptPaymentId.value = data.paymentId || null
-        receiptFiscalStatus.value = data.fiscalStatus || null
-        receiptIsStub.value = !!data.isStub
-        isReceiptModalOpen.value = true
-    } catch { /* ignore */ }
+const closeReceiptModal = () => {
+    isReceiptModalOpen.value = false
+    receiptModalUrl.value = null
+    receiptModalAmount.value = null
+    receiptPaymentId.value = null
+    receiptFiscalStatus.value = null
+    receiptIsStub.value = false
+    try { sessionStorage.removeItem('reactor_receipt') } catch { /* ignore */ }
 }
 
 onMounted(() => {
-    restoreReceiptModal()
+    try { sessionStorage.removeItem('reactor_receipt') } catch { /* ignore */ }
     const b = getRawBalance();
     currentBalance.value = b;
     displayBalance.value = b;
@@ -898,7 +883,7 @@ onMounted(() => {
                 :payment-id="receiptPaymentId"
                 :fiscal-status="receiptFiscalStatus"
                 :is-stub="receiptIsStub"
-                @close="isReceiptModalOpen = false"
+                @close="closeReceiptModal"
             />
         </Teleport>
     </MainLayout>
