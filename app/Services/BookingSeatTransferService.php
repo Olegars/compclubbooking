@@ -350,7 +350,11 @@ class BookingSeatTransferService
             'transfer_pending_at' => $now,
         ];
         if ($charge > 0) {
-            $bookingPatch['price'] = round((float) $booking->price + $charge, 2);
+            // bookings.price — integer (₽); дробную доплату округляем.
+            $chargeRounded = (int) round($charge);
+            $baseMinor = (int) ($booking->price_minor ?: ((int) $booking->price * 100));
+            $bookingPatch['price'] = (int) $booking->price + $chargeRounded;
+            $bookingPatch['price_minor'] = $baseMinor + ($chargeRounded * 100);
         }
         $booking->update($bookingPatch);
 

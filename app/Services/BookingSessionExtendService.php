@@ -188,10 +188,14 @@ class BookingSessionExtendService
                     : $now);
             $durationHours = max(0.05, round($start->diffInSeconds($newEnds) / 3600, 2));
 
+            $costRounded = (int) round($cost);
+            $baseMinor = (int) ($booking->price_minor ?: ((int) $booking->price * 100));
             $booking->update([
                 'ends_at' => $newEnds,
                 'duration' => $durationHours,
-                'price' => round((float) $booking->price + $cost, 2),
+                // bookings.price — integer (₽)
+                'price' => (int) $booking->price + $costRounded,
+                'price_minor' => $baseMinor + ($costRounded * 100),
             ]);
 
             $this->statuses->syncFor((int) $pc->id);

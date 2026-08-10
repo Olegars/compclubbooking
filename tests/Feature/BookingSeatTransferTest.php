@@ -116,7 +116,7 @@ class BookingSeatTransferTest extends TestCase
         $this->assertLessThan($balanceBefore, (float) $this->user->availableBalance());
 
         $this->booking->refresh();
-        $this->assertGreaterThan(375.0, (float) $this->booking->price);
+        $this->assertGreaterThan(375, (int) $this->booking->price);
     }
 
     public function test_transfer_moves_booking_and_soft_kick_balance(): void
