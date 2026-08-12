@@ -43,7 +43,7 @@ class StoreOrderController extends StoreController
             ->with([
                 'client:id,name,phone',
                 'assignee:id,name',
-                'items.component:id,type,warranty_number,serials,status',
+                'items.component:id,name,type,purchase_price,warranty_number,serials,status',
                 'builtPc:id,store_order_id,serial_number,status,title,verified_at,verified_ok',
             ])
             ->latest();
@@ -151,6 +151,119 @@ class StoreOrderController extends StoreController
         });
 
         return back()->with('success', 'Заказ создан.');
+    }
+
+    public function update(Request $request, StoreOrder $storeOrder, StoreOrderBuiltPcService $builtPcs)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+        abort_unless($storeOrder->club_id === $this->locationId(), 404);
+        abort_if(in_array($storeOrder->status, ['cancelled', 'returned', 'issued'], true), 422, 'Заказ нельзя редактировать.');
+
+        $data = $request->validate([
+            'store_client_id' => 'nullable|integer',
+            'notes' => 'nullable|string|max:2000',
+            'assignee_id' => 'nullable|integer',
+            'items' => 'required|array|min:1',
+            'items.*.store_component_id' => 'required|integer',
+            'items.*.qty' => 'nullable|integer|min:1',
+        ]);
+
+        $clubId = $this->locationId();
+
+        if (! empty($data['store_client_id'])) {
+            StoreClient::query()->where('club_id', $clubId)->whereKey($data['store_client_id'])->firstOrFail();
+        }
+
+        $newIds = collect($data['items'])->pluck('store_component_id')->map(fn ($id) => (int) $id)->values();
+        abort_if($newIds->count() !== $newIds->unique()->count(), 422, 'Одна комплектующая указана дважды.');
+
+        DB::transaction(function () use ($data, $clubId, $storeOrder, $newIds, $builtPcs) {
+            $storeOrder->load('items');
+            $oldIds = $storeOrder->items->pluck('store_component_id')->filter()->map(fn ($id) => (int) $id)->values();
+
+            $toRemove = $oldIds->diff($newIds)->values();
+            $toAdd = $newIds->diff($oldIds)->values();
+            $toKeep = $newIds->intersect($oldIds)->values();
+
+            foreach ($storeOrder->items as $item) {
+                $cid = (int) ($item->store_component_id ?? 0);
+                if ($cid && $toRemove->contains($cid)) {
+                    $this->returnComponentToStock($item);
+                    $item->delete();
+                }
+            }
+
+            foreach ($toKeep as $cid) {
+                $component = StoreComponent::query()
+                    ->where('club_id', $clubId)
+                    ->whereKey($cid)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $item = StoreOrderItem::query()
+                    ->where('store_order_id', $storeOrder->id)
+                    ->where('store_component_id', $cid)
+                    ->first();
+                if ($item) {
+                    $item->update([
+                        'name' => $component->name,
+                        'price' => (float) $component->purchase_price,
+                        'qty' => 1,
+                        'serials' => $component->allSerials() ?: null,
+                    ]);
+                }
+            }
+
+            foreach ($toAdd as $cid) {
+                $component = StoreComponent::query()
+                    ->where('club_id', $clubId)
+                    ->whereKey($cid)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                abort_unless($component->status === 'in_stock', 422, "«{$component->name}» не на складе.");
+
+                StoreOrderItem::query()->create([
+                    'store_order_id' => $storeOrder->id,
+                    'store_component_id' => $component->id,
+                    'store_product_id' => null,
+                    'name' => $component->name,
+                    'qty' => 1,
+                    'price' => (float) $component->purchase_price,
+                    'serials' => $component->allSerials() ?: null,
+                ]);
+
+                $component->update(['status' => 'sold']);
+            }
+
+            $storeOrder->load('items');
+            $total = $storeOrder->items->sum(fn (StoreOrderItem $i) => (float) $i->price * (int) $i->qty);
+            $itemsChanged = $toRemove->isNotEmpty() || $toAdd->isNotEmpty();
+
+            $storeOrder->update([
+                'store_client_id' => $data['store_client_id'] ?? null,
+                'assignee_id' => $data['assignee_id'] ?? null,
+                'notes' => $data['notes'] ?? null,
+                'total' => $total,
+                'verified_at' => $itemsChanged ? null : $storeOrder->verified_at,
+                'verified_ok' => $itemsChanged ? false : $storeOrder->verified_ok,
+            ]);
+
+            if ($itemsChanged) {
+                $pc = $storeOrder->builtPc()->first();
+                if ($pc) {
+                    $pc->update([
+                        'verified_at' => null,
+                        'verified_ok' => false,
+                    ]);
+                }
+            }
+
+            if (in_array($storeOrder->status, ['assembling', 'ready'], true)) {
+                $builtPcs->ensureFromOrder($storeOrder->fresh(['items.component', 'client']), $this->admin()->id);
+            }
+        });
+
+        return back()->with('success', 'Заказ обновлён.');
     }
 
     public function destroyItem(StoreOrder $storeOrder, StoreOrderItem $item)

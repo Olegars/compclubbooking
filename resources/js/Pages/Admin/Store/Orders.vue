@@ -32,7 +32,6 @@ const statusLabel: Record<string, string> = {
     returned: 'Возврат',
 }
 
-/** Разрешённые переходы — как на бэке */
 const transitions: Record<string, string[]> = {
     new: ['assembling', 'cancelled'],
     assembling: ['ready', 'cancelled'],
@@ -44,7 +43,6 @@ const transitions: Record<string, string[]> = {
 
 const canGo = (order: any, status: string) => {
     if (!(transitions[order.status] || []).includes(status)) return false
-    // «Готов» только после успешной сверки
     if (status === 'ready' && !order.verified_ok) return false
     return true
 }
@@ -57,7 +55,11 @@ const verifiedLabel = (order: any) => {
     return 'Сверка с ошибками'
 }
 
-const showCreate = ref(false)
+const canEditOrder = (order: any) =>
+    props.canCreate && ['new', 'assembling', 'ready'].includes(order.status)
+
+const showForm = ref(false)
+const editingId = ref<number | null>(null)
 const submitting = ref(false)
 const form = useForm({
     store_client_id: null as number | null,
@@ -75,11 +77,34 @@ const selectedIds = computed(() =>
     new Set(form.items.map(l => l.store_component_id).filter(Boolean) as number[])
 )
 
+/** Склад + позиции текущего редактируемого заказа */
+const poolComponents = computed(() => {
+    const map = new Map<number, any>()
+    for (const c of props.components || []) map.set(c.id, c)
+    if (editingId.value) {
+        const order = props.orders.find(o => o.id === editingId.value)
+        for (const item of order?.items || []) {
+            const c = item.component
+            if (c?.id) map.set(c.id, c)
+            else if (item.store_component_id) {
+                map.set(item.store_component_id, {
+                    id: item.store_component_id,
+                    name: item.name,
+                    type: item.component?.type || null,
+                    purchase_price: item.price,
+                    warranty_number: null,
+                    serials: item.serials || [],
+                    status: 'sold',
+                })
+            }
+        }
+    }
+    return Array.from(map.values())
+})
+
 const componentsForLine = (line: OrderLine) => {
-    const list = props.components || []
-    return list.filter(c => {
+    return poolComponents.value.filter(c => {
         if (line.type && c.type !== line.type) return false
-        // уже выбранные в других строках скрываем
         if (c.id !== line.store_component_id && selectedIds.value.has(c.id)) return false
         return true
     })
@@ -94,26 +119,64 @@ const serialLabel = (c: any) => {
     return c.warranty_number || ''
 }
 
-const create = () => {
+const openCreate = () => {
+    editingId.value = null
+    form.reset()
+    form.store_client_id = null
+    form.assignee_id = null
+    form.notes = ''
+    form.items = [emptyLine()]
+    showForm.value = true
+}
+
+const openEdit = (order: any) => {
+    editingId.value = order.id
+    form.store_client_id = order.store_client_id
+    form.assignee_id = order.assignee_id
+    form.notes = order.notes || ''
+    form.items = (order.items || []).length
+        ? order.items.map((item: any) => ({
+            type: item.component?.type || null,
+            store_component_id: item.store_component_id,
+            qty: 1,
+        }))
+        : [emptyLine()]
+    showForm.value = true
+}
+
+const closeForm = () => {
+    showForm.value = false
+    editingId.value = null
+}
+
+const save = () => {
     const items = form.items
         .filter(l => l.store_component_id)
         .map(l => ({ store_component_id: l.store_component_id, qty: 1 }))
     if (!items.length) return
 
     submitting.value = true
-    router.post('/admin/store/orders', {
+    const payload = {
         store_client_id: form.store_client_id,
         assignee_id: form.assignee_id,
         notes: form.notes,
         items,
-    }, {
+    }
+
+    const opts = {
         onFinish: () => { submitting.value = false },
         onSuccess: () => {
-            showCreate.value = false
+            closeForm()
             form.reset()
             form.items = [emptyLine()]
         },
-    })
+    }
+
+    if (editingId.value) {
+        router.put(`/admin/store/orders/${editingId.value}`, payload, opts)
+    } else {
+        router.post('/admin/store/orders', payload, opts)
+    }
 }
 
 const setStatus = (orderId: number, status: string) => {
@@ -151,7 +214,7 @@ const filterStatus = computed({
                         <option value="">Все статусы</option>
                         <option v-for="s in statuses" :key="s" :value="s">{{ statusLabel[s] || s }}</option>
                     </select>
-                    <button v-if="canCreate" @click="showCreate = true"
+                    <button v-if="canCreate" @click="openCreate"
                             class="px-6 py-4 bg-amber-500 text-black font-black uppercase tracking-widest text-[10px] rounded-2xl">
                         + Заказ
                     </button>
@@ -182,12 +245,19 @@ const filterStatus = computed({
                                 Ожидает проверки check_build
                             </div>
                         </div>
-                        <div class="font-black text-amber-400">{{ money(o.total) }}</div>
+                        <div class="text-right space-y-2">
+                            <div class="font-black text-amber-400">{{ money(o.total) }}</div>
+                            <button v-if="canEditOrder(o)" type="button"
+                                    class="text-[10px] uppercase font-black text-amber-400/80 hover:text-amber-400"
+                                    @click="openEdit(o)">
+                                Edit
+                            </button>
+                        </div>
                     </div>
                     <div class="text-xs text-white/40 space-y-1">
                         <div v-for="item in o.items" :key="item.id" class="flex items-center gap-2">
                             <span class="flex-1">{{ item.name }} × {{ item.qty }} — {{ money(item.price) }}</span>
-                            <button v-if="canCreate && ['new','assembling','ready'].includes(o.status)"
+                            <button v-if="canEditOrder(o)"
                                     type="button"
                                     class="text-red-400/80 hover:text-red-400 text-[10px] uppercase font-black"
                                     title="Удалить из заказа → на склад"
@@ -240,9 +310,11 @@ const filterStatus = computed({
             </div>
         </div>
 
-        <div v-if="showCreate" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" @click.self="showCreate = false">
-            <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-2xl space-y-4" @submit.prevent="create">
-                <h3 class="font-black uppercase italic text-xl">Новый заказ</h3>
+        <div v-if="showForm" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" @click.self="closeForm">
+            <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-2xl space-y-4" @submit.prevent="save">
+                <h3 class="font-black uppercase italic text-xl">
+                    {{ editingId ? `Редактировать заказ #${editingId}` : 'Новый заказ' }}
+                </h3>
                 <select v-model="form.store_client_id" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm">
                     <option :value="null">Без клиента</option>
                     <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }} · {{ c.phone }}</option>
@@ -252,7 +324,9 @@ const filterStatus = computed({
                     <option v-for="a in assemblers" :key="a.id" :value="a.id">{{ a.name }}</option>
                 </select>
 
-                <div class="text-[10px] uppercase font-black text-white/30 tracking-widest">Со склада (только «на складе»)</div>
+                <div class="text-[10px] uppercase font-black text-white/30 tracking-widest">
+                    {{ editingId ? 'Комплектация (склад + текущие позиции)' : 'Со склада (только «на складе»)' }}
+                </div>
                 <div v-for="(line, i) in form.items" :key="i" class="grid grid-cols-[140px_1fr_40px] gap-2">
                     <select v-model="line.type" class="bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" @change="onTypeChange(line)">
                         <option :value="null">Тип</option>
@@ -266,13 +340,18 @@ const filterStatus = computed({
                     </select>
                     <button type="button" class="text-red-400" @click="removeLine(i)">×</button>
                 </div>
-                <p v-if="!(components || []).length" class="text-xs text-red-400/80">На складе нет позиций со статусом «на складе».</p>
+                <p v-if="!poolComponents.length" class="text-xs text-red-400/80">Нет доступных комплектующих.</p>
                 <button type="button" class="text-[10px] uppercase font-black text-amber-400" @click="addLine">+ позиция</button>
 
                 <textarea v-model="form.notes" placeholder="Заметки" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" rows="2" />
+                <p v-if="editingId" class="text-[10px] text-white/30">
+                    При изменении состава отметка check_build сбрасывается.
+                </p>
                 <div class="flex gap-3 justify-end">
-                    <button type="button" class="px-4 py-3 text-[10px] uppercase font-black text-white/40" @click="showCreate = false">Отмена</button>
-                    <button class="px-6 py-3 bg-amber-500 text-black text-[10px] uppercase font-black rounded-xl" :disabled="submitting">Создать</button>
+                    <button type="button" class="px-4 py-3 text-[10px] uppercase font-black text-white/40" @click="closeForm">Отмена</button>
+                    <button class="px-6 py-3 bg-amber-500 text-black text-[10px] uppercase font-black rounded-xl" :disabled="submitting">
+                        {{ editingId ? 'Сохранить' : 'Создать' }}
+                    </button>
                 </div>
             </form>
         </div>
