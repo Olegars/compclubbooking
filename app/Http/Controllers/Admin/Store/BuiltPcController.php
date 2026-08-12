@@ -111,6 +111,8 @@ class BuiltPcController extends StoreController
             || $this->admin()->role === 'owner',
             403
         );
+        abort_if($storeBuiltPc->store_order_id, 422, 'Этот ПК связан с заказом — меняйте комплектацию и статус в Заказах.');
+        abort_unless($storeBuiltPc->status === 'assembling', 422, 'Редактировать можно только сборку в статусе «Сборка».');
 
         $data = $this->validated($request, updating: true);
 
@@ -139,6 +141,7 @@ class BuiltPcController extends StoreController
     {
         abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
         abort_unless($storeBuiltPc->club_id === $this->locationId(), 404);
+        abort_if($storeBuiltPc->store_order_id, 422, 'ПК из заказа нельзя удалить здесь — отмените заказ.');
 
         DB::transaction(function () use ($storeBuiltPc) {
             foreach ($storeBuiltPc->componentLinks as $link) {

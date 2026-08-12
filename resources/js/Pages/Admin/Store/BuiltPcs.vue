@@ -113,6 +113,17 @@ const availableComponents = computed(() => {
     return Array.from(byId.values())
 })
 
+const canEditPc = (pc: any) => {
+    // ПК из заказа: состав/статус ведёт заказ — полный Edit не нужен
+    if (pc.store_order_id) return false
+    return props.canAssemble && pc.status === 'assembling'
+}
+
+const canDeletePc = (pc: any) => {
+    if (pc.store_order_id) return false
+    return props.canManage
+}
+
 const buildLabel = (pc: any) => {
     const links = pc.component_links || []
     if (!links.length) return 'Комплектация не указана'
@@ -173,14 +184,14 @@ const buildLabel = (pc: any) => {
                         <span>Выдал: {{ pc.issuer?.name || '—' }}</span>
                     </div>
                     <div class="flex flex-wrap gap-2 pt-1">
-                        <button v-if="canAssemble" @click="openEdit(pc)" class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400">Edit</button>
+                        <button v-if="canEditPc(pc)" @click="openEdit(pc)" class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400">Edit</button>
                         <a :href="`/admin/store/built-pcs/${pc.id}/print-barcode`" target="_blank"
                            class="px-3 py-2 rounded-xl border border-white/15 text-[10px] uppercase font-black text-white/60">Штрихкод</a>
                         <button type="button" @click="printBarcodePos(pc.id)"
                                 class="px-3 py-2 rounded-xl border border-amber-500/40 text-[10px] uppercase font-black text-amber-400">Штрихкод POS</button>
                         <a :href="`/admin/store/built-pcs/${pc.id}/print-talon`" target="_blank"
                            class="px-3 py-2 rounded-xl border border-white/15 text-[10px] uppercase font-black text-white/60">Талон</a>
-                        <button v-if="canManage" @click="remove(pc.id)" class="px-3 py-2 rounded-xl border border-red-500/30 text-[10px] uppercase font-black text-red-400">Del</button>
+                        <button v-if="canDeletePc(pc)" @click="remove(pc.id)" class="px-3 py-2 rounded-xl border border-red-500/30 text-[10px] uppercase font-black text-red-400">Del</button>
                     </div>
                 </div>
                 <div v-if="!pcs.length" class="text-white/30 text-sm py-10 text-center">Сборок пока нет</div>
