@@ -115,6 +115,9 @@ class StoreBuildVerifyController extends Controller
         if (count($result['swapped'])) {
             $bits[] = 'Заменены комплектующие в заказе: '.count($result['swapped']).'.';
         }
+        if (count($result['skipped'])) {
+            $bits[] = 'Не сверялись (нет в WMI): '.count($result['skipped']).' — корпус, БП, кулер и т.п.';
+        }
         if ($ok) {
             $bits[] = 'Заказ отмечен как проверенный — можно ставить «Готов».';
         }
@@ -133,6 +136,7 @@ class StoreBuildVerifyController extends Controller
                 'matched' => count($result['matched']),
                 'missing' => count($result['missing']),
                 'extra' => count($result['extra']),
+                'skipped' => count($result['skipped']),
                 'updated_names' => count($result['updated_names']),
                 'updated_serials' => count($result['updated_serials']),
                 'swapped' => count($result['swapped']),
@@ -141,6 +145,7 @@ class StoreBuildVerifyController extends Controller
             'matched' => $result['matched'],
             'missing' => $result['missing'],
             'extra' => $result['extra'],
+            'skipped' => $result['skipped'],
             'updated_names' => $result['updated_names'],
             'updated_serials' => $result['updated_serials'],
             'swapped' => $result['swapped'],

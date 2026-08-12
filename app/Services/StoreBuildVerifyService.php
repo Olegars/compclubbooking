@@ -10,11 +10,25 @@ use Illuminate\Support\Facades\DB;
 class StoreBuildVerifyService
 {
     /**
+     * Типы, которые check_build реально снимает с ПК (WMI).
+     * Корпус, БП, кулер и т.п. в сверку не входят.
+     */
+    public const VERIFIABLE_TYPES = [
+        'cpu',
+        'motherboard',
+        'ram',
+        'gpu',
+        'storage_ssd',
+        'storage_hdd',
+    ];
+
+    /**
      * @param  list<array{type:?string,name:string,serial:?string,vendor:string,extra:array}>  $reported
      * @return array{
      *     matched: list<array>,
      *     missing: list<array>,
      *     extra: list<array>,
+     *     skipped: list<array>,
      *     updated_names: list<array>,
      *     updated_serials: list<array>,
      *     swapped: list<array>,
@@ -35,7 +49,17 @@ class StoreBuildVerifyService
             ];
         }, $reported));
 
-        $expected = $this->buildExpected($pc);
+        $allExpected = $this->buildExpected($pc);
+        $skipped = [];
+        $expected = [];
+        foreach ($allExpected as $exp) {
+            $type = $exp['type'] ?? null;
+            if ($type && in_array($type, self::VERIFIABLE_TYPES, true)) {
+                $expected[] = $exp;
+            } else {
+                $skipped[] = $exp;
+            }
+        }
 
         $matched = [];
         $missing = [];
@@ -154,11 +178,17 @@ class StoreBuildVerifyService
 
             return $row;
         }, $missing);
+        $skipped = array_map(function (array $row) {
+            unset($row['_done'], $row['match_names']);
+
+            return $row;
+        }, $skipped);
 
         return [
             'matched' => $matched,
             'missing' => $missing,
             'extra' => $extra,
+            'skipped' => $skipped,
             'updated_names' => $updatedNames,
             'updated_serials' => $updatedSerials,
             'swapped' => $swapped,
