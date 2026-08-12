@@ -87,7 +87,7 @@ class StoreComponentSpecs
     {
         return [
             'cpu_brand' => ['Intel', 'AMD'],
-            'cpu_socket' => ['AM4', 'AM5', 'LGA1700', 'LGA1200', 'LGA1151', 'LGA1150', 'sTR5', 'TR4'],
+            'cpu_socket' => ['AM4', 'AM5', 'LGA1851', 'LGA1700', 'LGA1200', 'LGA1151', 'LGA1150', 'sTR5', 'TR4'],
             'cpu_series' => [
                 'Core i3', 'Core i5', 'Core i7', 'Core i9',
                 'Pentium', 'Celeron',
