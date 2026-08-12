@@ -2,146 +2,137 @@
 
 namespace App\Http\Controllers\Admin\Store;
 
-use App\Models\StoreProduct;
-use App\Models\StoreStockMovement;
+use App\Models\StoreComponent;
+use App\Models\StoreSupplier;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class WarehouseController extends StoreController
 {
-    public function index()
+    public function index(Request $request)
     {
         $admin = $this->admin();
-        $products = StoreProduct::query()
-            ->where('club_id', $this->locationId())
-            ->orderBy('name')
-            ->get();
+        $clubId = $this->locationId();
+        $type = $request->string('type')->toString();
 
-        $movements = StoreStockMovement::query()
-            ->where('club_id', $this->locationId())
-            ->with(['product:id,name,sku', 'admin:id,name'])
-            ->latest()
-            ->limit(40)
-            ->get();
+        $query = StoreComponent::query()
+            ->where('club_id', $clubId)
+            ->with(['supplier:id,name', 'receiver:id,name'])
+            ->latest();
+
+        if ($type && isset(StoreComponent::TYPES[$type])) {
+            $query->where('type', $type);
+        }
 
         return Inertia::render('Admin/Store/Warehouse', [
-            'products' => $products,
-            'movements' => $movements,
-            'categories' => StoreProduct::CATEGORIES,
-            'canManageCatalog' => $admin->canManageStoreCatalog(),
-            'canAdjustStock' => $admin->canManageStoreInventory() || $admin->role === 'assembler',
-            'canInventory' => in_array($admin->role, ['senior_manager', 'owner'], true),
+            'components' => $query->limit(300)->get(),
+            'suppliers' => StoreSupplier::query()
+                ->where('club_id', $clubId)
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'types' => StoreComponent::TYPES,
+            'statuses' => StoreComponent::STATUSES,
+            'filters' => ['type' => $type ?: null],
+            'canManage' => $admin->canManageStoreCatalog() || $admin->role === 'owner',
+            'canReceive' => $admin->canManageStoreInventory()
+                || $admin->canManageStoreCatalog()
+                || $admin->role === 'owner'
+                || $admin->role === 'assembler',
         ]);
     }
 
     public function store(Request $request)
     {
-        abort_unless($this->admin()->canManageStoreCatalog(), 403);
+        abort_unless(
+            $this->admin()->canManageStoreCatalog()
+            || $this->admin()->canManageStoreInventory()
+            || $this->admin()->role === 'owner',
+            403
+        );
 
-        $data = $request->validate([
-            'name' => 'required|string|max:255',
-            'sku' => 'nullable|string|max:64',
-            'category' => 'required|in:component,pc,peripheral,service',
-            'price' => 'required|numeric|min:0',
-            'cost' => 'nullable|numeric|min:0',
-            'stock' => 'nullable|integer|min:0',
-            'serial_tracked' => 'boolean',
-            'is_active' => 'boolean',
-        ]);
+        $data = $this->validated($request);
+        $clubId = $this->locationId();
 
-        $data['club_id'] = $this->locationId();
-        $data['stock'] = $data['stock'] ?? 0;
-        $data['serial_tracked'] = $request->boolean('serial_tracked');
-        $data['is_active'] = $request->boolean('is_active', true);
+        if (! empty($data['store_supplier_id'])) {
+            StoreSupplier::query()->where('club_id', $clubId)->whereKey($data['store_supplier_id'])->firstOrFail();
+        }
 
-        StoreProduct::query()->create($data);
-
-        return back()->with('success', 'Товар добавлен на склад магазина.');
-    }
-
-    public function update(Request $request, StoreProduct $storeProduct)
-    {
-        abort_unless($this->admin()->canManageStoreCatalog(), 403);
-        abort_unless($storeProduct->club_id === $this->locationId(), 404);
-
-        $data = $request->validate([
-            'name' => 'required|string|max:255',
-            'sku' => 'nullable|string|max:64',
-            'category' => 'required|in:component,pc,peripheral,service',
-            'price' => 'required|numeric|min:0',
-            'cost' => 'nullable|numeric|min:0',
-            'serial_tracked' => 'boolean',
-            'is_active' => 'boolean',
-        ]);
-
-        $storeProduct->update([
+        StoreComponent::query()->create([
             ...$data,
-            'serial_tracked' => $request->boolean('serial_tracked'),
-            'is_active' => $request->boolean('is_active', true),
+            'club_id' => $clubId,
+            'received_by' => $data['received_by'] ?? $this->admin()->id,
+            'status' => $data['status'] ?? 'in_stock',
+            'qty' => $data['qty'] ?? 1,
         ]);
 
-        return back()->with('success', 'Товар обновлён.');
+        return back()->with('success', 'Комплектующее добавлено на склад.');
     }
 
-    public function destroy(StoreProduct $storeProduct)
+    public function update(Request $request, StoreComponent $storeComponent)
     {
-        abort_unless($this->admin()->canManageStoreCatalog(), 403);
-        abort_unless($storeProduct->club_id === $this->locationId(), 404);
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+        abort_unless($storeComponent->club_id === $this->locationId(), 404);
 
-        $storeProduct->delete();
+        $data = $this->validated($request, updating: true);
 
-        return back()->with('success', 'Товар удалён.');
+        if (! empty($data['store_supplier_id'])) {
+            StoreSupplier::query()
+                ->where('club_id', $this->locationId())
+                ->whereKey($data['store_supplier_id'])
+                ->firstOrFail();
+        }
+
+        $storeComponent->update($data);
+
+        return back()->with('success', 'Комплектующее обновлено.');
     }
 
-    public function adjust(Request $request)
+    public function destroy(StoreComponent $storeComponent)
     {
-        $admin = $this->admin();
-        abort_unless($admin->canManageStoreInventory() || $admin->role === 'assembler', 403);
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+        abort_unless($storeComponent->club_id === $this->locationId(), 404);
+
+        $storeComponent->delete();
+
+        return back()->with('success', 'Комплектующее удалено.');
+    }
+
+    public function storeSupplier(Request $request)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
 
         $data = $request->validate([
-            'store_product_id' => 'required|integer',
-            'type' => 'required|in:receive,write_off,inventory',
-            'qty' => 'required|integer|min:1',
-            'reason' => 'nullable|string|max:500',
+            'name' => 'required|string|max:255',
+            'phone' => 'nullable|string|max:64',
+            'notes' => 'nullable|string|max:1000',
         ]);
 
-        if ($data['type'] === 'inventory') {
-            abort_unless(in_array($admin->role, ['senior_manager', 'owner'], true), 403);
-        }
+        StoreSupplier::query()->create([
+            ...$data,
+            'club_id' => $this->locationId(),
+            'is_active' => true,
+        ]);
 
-        if ($data['type'] === 'write_off' && $admin->role === 'assembler') {
-            abort(403, 'Сборщик не может списывать со склада.');
-        }
+        return back()->with('success', 'Поставщик добавлен.');
+    }
 
-        $product = StoreProduct::query()
-            ->where('club_id', $this->locationId())
-            ->whereKey($data['store_product_id'])
-            ->firstOrFail();
+    private function validated(Request $request, bool $updating = false): array
+    {
+        $typeKeys = implode(',', array_keys(StoreComponent::TYPES));
+        $statusKeys = implode(',', array_keys(StoreComponent::STATUSES));
 
-        DB::transaction(function () use ($product, $data, $admin) {
-            $delta = match ($data['type']) {
-                'receive' => $data['qty'],
-                'write_off' => -$data['qty'],
-                'inventory' => $data['qty'] - (int) $product->stock,
-            };
-
-            $newStock = (int) $product->stock + $delta;
-            abort_if($newStock < 0, 422, 'Недостаточно остатка.');
-
-            $product->update(['stock' => $newStock]);
-
-            StoreStockMovement::query()->create([
-                'club_id' => $product->club_id,
-                'store_product_id' => $product->id,
-                'admin_id' => $admin->id,
-                'type' => $data['type'],
-                'qty' => $delta,
-                'stock_after' => $newStock,
-                'reason' => $data['reason'] ?? null,
-            ]);
-        });
-
-        return back()->with('success', 'Остаток обновлён.');
+        return $request->validate([
+            'name' => 'required|string|max:255',
+            'type' => "required|in:{$typeKeys}",
+            'store_supplier_id' => 'nullable|integer',
+            'purchase_price' => 'required|numeric|min:0',
+            'warranty_number' => 'nullable|string|max:128',
+            'warranty_months' => 'nullable|integer|min:0|max:120',
+            'qty' => 'nullable|integer|min:1',
+            'status' => $updating ? "nullable|in:{$statusKeys}" : "nullable|in:{$statusKeys}",
+            'received_by' => 'nullable|integer',
+            'notes' => 'nullable|string|max:2000',
+        ]);
     }
 }

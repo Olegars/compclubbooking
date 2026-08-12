@@ -54,6 +54,7 @@ use App\Http\Controllers\Admin\GameRequestAdminController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\TransactionAdminController;
 use App\Http\Controllers\Admin\Store\WarehouseController as StoreWarehouseController;
+use App\Http\Controllers\Admin\Store\BuiltPcController as StoreBuiltPcController;
 use App\Http\Controllers\Admin\Store\StoreOrderController;
 use App\Http\Controllers\Admin\Store\WarrantyController as StoreWarrantyController;
 use App\Http\Controllers\Admin\Store\StoreClientController;
@@ -248,9 +249,14 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         ->group(function () {
             Route::get('/warehouse', [StoreWarehouseController::class, 'index'])->name('admin.store.warehouse');
             Route::post('/warehouse', [StoreWarehouseController::class, 'store'])->name('admin.store.warehouse.store');
-            Route::put('/warehouse/{storeProduct}', [StoreWarehouseController::class, 'update'])->name('admin.store.warehouse.update');
-            Route::delete('/warehouse/{storeProduct}', [StoreWarehouseController::class, 'destroy'])->name('admin.store.warehouse.destroy');
-            Route::post('/warehouse/adjust', [StoreWarehouseController::class, 'adjust'])->name('admin.store.warehouse.adjust');
+            Route::put('/warehouse/{storeComponent}', [StoreWarehouseController::class, 'update'])->name('admin.store.warehouse.update');
+            Route::delete('/warehouse/{storeComponent}', [StoreWarehouseController::class, 'destroy'])->name('admin.store.warehouse.destroy');
+            Route::post('/warehouse/suppliers', [StoreWarehouseController::class, 'storeSupplier'])->name('admin.store.warehouse.suppliers');
+
+            Route::get('/built-pcs', [StoreBuiltPcController::class, 'index'])->name('admin.store.built-pcs');
+            Route::post('/built-pcs', [StoreBuiltPcController::class, 'store'])->name('admin.store.built-pcs.store');
+            Route::put('/built-pcs/{storeBuiltPc}', [StoreBuiltPcController::class, 'update'])->name('admin.store.built-pcs.update');
+            Route::delete('/built-pcs/{storeBuiltPc}', [StoreBuiltPcController::class, 'destroy'])->name('admin.store.built-pcs.destroy');
 
             Route::get('/orders', [StoreOrderController::class, 'index'])->name('admin.store.orders');
             Route::post('/orders', [StoreOrderController::class, 'store'])->name('admin.store.orders.store');

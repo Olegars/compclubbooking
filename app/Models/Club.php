@@ -65,6 +65,21 @@ class Club extends Model
         return $this->hasMany(StoreProduct::class);
     }
 
+    public function storeComponents(): HasMany
+    {
+        return $this->hasMany(StoreComponent::class);
+    }
+
+    public function storeBuiltPcs(): HasMany
+    {
+        return $this->hasMany(StoreBuiltPc::class);
+    }
+
+    public function storeSuppliers(): HasMany
+    {
+        return $this->hasMany(StoreSupplier::class);
+    }
+
     public function storeOrders(): HasMany
     {
         return $this->hasMany(StoreOrder::class);

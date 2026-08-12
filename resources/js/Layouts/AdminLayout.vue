@@ -134,7 +134,12 @@ const switchLocation = (clubId: string | number) => {
                     <Link v-if="canAccessStore" href="/admin/store/warehouse"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/store/warehouse') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
-                        <span>🖥️</span> Склад ПК
+                        <span>🧩</span> Склад комплектующих
+                    </Link>
+                    <Link v-if="canAccessStore" href="/admin/store/built-pcs"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/store/built-pcs') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🖥️</span> Готовые ПК
                     </Link>
                     <Link v-if="canAccessStore" href="/admin/store/orders"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
