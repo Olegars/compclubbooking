@@ -117,6 +117,68 @@ class WarehouseController extends StoreController
         return back()->with('success', 'Поставщик добавлен.');
     }
 
+    /**
+     * HID-сканер: известный штрихкод → +qty, неизвестный → 404 (UI откроет форму прихода).
+     */
+    public function receiveScan(Request $request)
+    {
+        abort_unless(
+            $this->admin()->canManageStoreCatalog()
+            || $this->admin()->canManageStoreInventory()
+            || $this->admin()->role === 'owner'
+            || $this->admin()->role === 'assembler',
+            403
+        );
+
+        $data = $request->validate([
+            'code' => 'required|string|max:128',
+            'store_component_id' => 'nullable|integer',
+            'qty' => 'nullable|integer|min:1',
+        ]);
+
+        $clubId = $this->locationId();
+        $code = trim($data['code']);
+        $inc = (int) ($data['qty'] ?? 1);
+
+        $component = null;
+        if (! empty($data['store_component_id'])) {
+            $component = StoreComponent::query()
+                ->where('club_id', $clubId)
+                ->whereKey($data['store_component_id'])
+                ->firstOrFail();
+        } else {
+            $component = StoreComponent::query()
+                ->where('club_id', $clubId)
+                ->where('barcode', $code)
+                ->first();
+        }
+
+        if (! $component) {
+            return response()->json([
+                'message' => 'Штрихкод не найден на складе комплектующих',
+                'code' => $code,
+            ], 404);
+        }
+
+        $component->update([
+            'qty' => (int) $component->qty + $inc,
+            'received_by' => $this->admin()->id,
+            'status' => $component->status === 'written_off' ? 'in_stock' : $component->status,
+        ]);
+
+        if (! $component->barcode) {
+            $component->update(['barcode' => $code]);
+        }
+
+        $component->load(['supplier:id,name', 'receiver:id,name']);
+
+        return response()->json([
+            'status' => 'received',
+            'component' => $component->fresh(['supplier:id,name', 'receiver:id,name']),
+            'added' => $inc,
+        ]);
+    }
+
     private function validated(Request $request, bool $updating = false): array
     {
         $typeKeys = implode(',', array_keys(StoreComponent::TYPES));
@@ -124,6 +186,7 @@ class WarehouseController extends StoreController
 
         return $request->validate([
             'name' => 'required|string|max:255',
+            'barcode' => 'nullable|string|max:128',
             'type' => "required|in:{$typeKeys}",
             'store_supplier_id' => 'nullable|integer',
             'purchase_price' => 'required|numeric|min:0',
