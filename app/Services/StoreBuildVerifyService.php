@@ -611,7 +611,17 @@ class StoreBuildVerifyService
     {
         $serial = trim((string) $serial);
         $serial = rtrim($serial, ". \t\0");
-        if ($serial === '' || strcasecmp($serial, 'To Be Filled By O.E.M.') === 0 || strcasecmp($serial, 'None') === 0) {
+        if ($serial === ''
+            || strcasecmp($serial, 'To Be Filled By O.E.M.') === 0
+            || strcasecmp($serial, 'None') === 0
+            || strcasecmp($serial, 'Default string') === 0
+            || strcasecmp($serial, 'N/A') === 0
+            || strcasecmp($serial, 'Unknown') === 0) {
+            return null;
+        }
+
+        // Заглушки SPD/WMI: 00000000, 0, 0000...
+        if (preg_match('/^0+$/', $serial)) {
             return null;
         }
 
