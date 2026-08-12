@@ -12,7 +12,10 @@ class StoreBuildVerifyController extends Controller
 {
     public function __invoke(Request $request)
     {
-        $this->assertToken($request);
+        $tokenError = $this->assertToken($request);
+        if ($tokenError !== null) {
+            return $tokenError;
+        }
 
         $data = $request->validate([
             'built_pc_id' => 'nullable|integer',
@@ -286,11 +289,14 @@ class StoreBuildVerifyController extends Controller
         ]);
     }
 
-    private function assertToken(Request $request): void
+    private function assertToken(Request $request): ?\Illuminate\Http\JsonResponse
     {
         $expected = (string) config('store.build_verify_token');
         if ($expected === '') {
-            abort(503, 'STORE_BUILD_VERIFY_TOKEN не задан на сервере.');
+            return response()->json([
+                'ok' => false,
+                'message' => 'На сервере не задан STORE_BUILD_VERIFY_TOKEN.',
+            ], 200);
         }
 
         $given = $request->bearerToken()
@@ -298,8 +304,13 @@ class StoreBuildVerifyController extends Controller
             ?: $request->input('token');
 
         if (! is_string($given) || ! hash_equals($expected, $given)) {
-            abort(401, 'Неверный токен сверки сборки.');
+            return response()->json([
+                'ok' => false,
+                'message' => 'Неверный токен. Проверьте token в config.ini.',
+            ], 200);
         }
+
+        return null;
     }
 
     private function normalizeSerial(?string $serial): ?string
