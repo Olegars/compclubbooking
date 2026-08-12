@@ -22,7 +22,12 @@ class QuickFoxApiClient
 
     public function baseUrl(): string
     {
-        $domain = rtrim((string) config('store.quickfox.domain'), '/');
+        $domain = trim((string) config('store.quickfox.domain'));
+        $domain = rtrim($domain, '/');
+        // Часто вставляют полный endpoint — клиент сам добавляет /api/2
+        $domain = preg_replace('#/api/2$#i', '', $domain) ?? $domain;
+        $domain = rtrim($domain, '/');
+
         if ($domain === '') {
             throw new RuntimeException('STORE_QUICKFOX_DOMAIN не задан.');
         }
