@@ -4,13 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\StoreBuiltPc;
-use App\Models\StoreComponent;
+use App\Services\StoreBuildVerifyService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class StoreBuildVerifyController extends Controller
 {
-    public function __invoke(Request $request)
+    public function __invoke(Request $request, StoreBuildVerifyService $verify)
     {
         $tokenError = $this->assertToken($request);
         if ($tokenError !== null) {
@@ -51,218 +50,33 @@ class StoreBuildVerifyController extends Controller
             ], 200);
         }
 
-        $reported = collect($data['components'])->map(function ($row) {
-            return [
-                'type' => $this->normalizeType($row['type'] ?? null),
-                'name' => trim((string) ($row['name'] ?? '')),
-                'serial' => $this->normalizeSerial($row['serial'] ?? null),
-                'vendor' => trim((string) ($row['vendor'] ?? '')),
-                'extra' => $row['extra'] ?? [],
-            ];
-        })->values();
-
-        $expected = $pc->componentLinks->flatMap(function ($link) {
-            $component = $link->store_component_id
-                ? StoreComponent::query()->find($link->store_component_id)
-                : null;
-
-            $base = [
-                'link_id' => $link->id,
-                'component_id' => $link->store_component_id,
-                'type' => $link->type ?: ($component?->type),
-                'name' => $link->name ?: ($component?->name),
-            ];
-
-            $serials = $component
-                ? array_values(array_filter(array_map([$this, 'normalizeSerial'], $component->allSerials())))
-                : [];
-
-            if ($serials === []) {
-                return [[...$base, 'serial' => null]];
-            }
-
-            // Комплект ОЗУ 2x16 → две ожидаемые планки с разными S/N
-            return collect($serials)->map(fn ($serial) => [...$base, 'serial' => $serial])->all();
-        })->values();
-
-        // Если комплектация только в build_spec
-        if ($expected->isEmpty() && is_array($pc->build_spec)) {
-            $expected = collect($pc->build_spec)->flatMap(function ($row) {
-                $base = [
-                    'link_id' => null,
-                    'component_id' => $row['component_id'] ?? null,
-                    'type' => $row['type'] ?? null,
-                    'name' => $row['name'] ?? null,
-                ];
-                $serials = [];
-                if (! empty($row['serials']) && is_array($row['serials'])) {
-                    $serials = array_values(array_filter(array_map([$this, 'normalizeSerial'], $row['serials'])));
-                } elseif (! empty($row['warranty_number']) || ! empty($row['serial'])) {
-                    $one = $this->normalizeSerial($row['warranty_number'] ?? $row['serial'] ?? null);
-                    if ($one) {
-                        $serials = [$one];
-                    }
-                }
-
-                if ($serials === []) {
-                    return [[...$base, 'serial' => null]];
-                }
-
-                return collect($serials)->map(fn ($serial) => [...$base, 'serial' => $serial])->all();
-            })->values();
-        }
-
-        $matched = [];
-        $missing = [];
-        $extra = [];
-        $usedReported = [];
-
-        foreach ($expected as $exp) {
-            $hitIndex = null;
-            if ($exp['serial']) {
-                foreach ($reported as $i => $rep) {
-                    if (isset($usedReported[$i])) {
-                        continue;
-                    }
-                    if ($rep['serial'] && strcasecmp($rep['serial'], $exp['serial']) === 0) {
-                        $hitIndex = $i;
-                        break;
-                    }
-                }
-            }
-
-            // fallback: тип + похожее имя
-            if ($hitIndex === null && $exp['type']) {
-                foreach ($reported as $i => $rep) {
-                    if (isset($usedReported[$i])) {
-                        continue;
-                    }
-                    if ($rep['type'] === $exp['type'] && $rep['name'] !== '' && $exp['name']
-                        && (str_contains(mb_strtolower($rep['name']), mb_strtolower((string) $exp['name']))
-                            || str_contains(mb_strtolower((string) $exp['name']), mb_strtolower($rep['name'])))) {
-                        $hitIndex = $i;
-                        break;
-                    }
-                }
-            }
-
-            if ($hitIndex === null) {
-                $missing[] = $exp;
-                continue;
-            }
-
-            $usedReported[$hitIndex] = true;
-            $rep = $reported[$hitIndex];
-            $matched[] = [
-                'expected' => $exp,
-                'reported' => $rep,
-                'serial_match' => $exp['serial'] && $rep['serial'] && strcasecmp($exp['serial'], $rep['serial']) === 0,
-            ];
-        }
-
-        foreach ($reported as $i => $rep) {
-            if (! isset($usedReported[$i])) {
-                $extra[] = $rep;
-            }
-        }
-
-        $updateNames = array_key_exists('update_names', $data)
+        $applyFixes = array_key_exists('update_names', $data)
             ? (bool) $data['update_names']
             : (bool) config('store.build_verify_update_names', true);
 
-        $updated = [];
-        if ($updateNames) {
-            $updated = DB::transaction(function () use ($matched, $pc) {
-                $out = [];
-                foreach ($matched as $row) {
-                    $repName = $row['reported']['name'] ?? '';
-                    if ($repName === '') {
-                        continue;
-                    }
-                    $componentId = $row['expected']['component_id'] ?? null;
-                    if (! $componentId) {
-                        continue;
-                    }
-                    $component = StoreComponent::query()->find($componentId);
-                    if (! $component) {
-                        continue;
-                    }
+        $result = $verify->verify($pc, $data['components'], $applyFixes);
+        $pc->refresh();
 
-                    $old = $component->name;
-                    if ($old !== $repName) {
-                        $component->update(['name' => $repName]);
-                        $out[] = [
-                            'component_id' => $component->id,
-                            'old_name' => $old,
-                            'new_name' => $repName,
-                        ];
-                    }
+        $ok = count($result['missing']) === 0 && count($result['conflicts']) === 0;
 
-                    // обновить имя в связи сборки
-                    if (! empty($row['expected']['link_id'])) {
-                        $pc->componentLinks()
-                            ->whereKey($row['expected']['link_id'])
-                            ->update(['name' => $repName]);
-                    }
-                }
-
-                // зеркало build_spec (сохраняем массив parts, если был массив)
-                $originalSpec = $pc->build_spec;
-                if (is_array($originalSpec) && array_is_list($originalSpec)) {
-                    $spec = collect($originalSpec)->map(function ($item) use ($out) {
-                        foreach ($out as $u) {
-                            if (! empty($item['component_id']) && (int) $item['component_id'] === (int) $u['component_id']) {
-                                $item['name'] = $u['new_name'];
-                                $item['verified_name'] = $u['new_name'];
-                            }
-                        }
-
-                        return $item;
-                    })->values()->all();
-
-                    foreach ($matched as $row) {
-                        $spec[] = [
-                            'type' => $row['reported']['type'] ?? null,
-                            'name' => $row['reported']['name'] ?? null,
-                            'serial' => $row['reported']['serial'] ?? null,
-                            'vendor' => $row['reported']['vendor'] ?? null,
-                            'component_id' => $row['expected']['component_id'] ?? null,
-                            'source' => 'build_verify',
-                        ];
-                    }
-
-                    $pc->update([
-                        'build_spec' => $spec,
-                        'notes' => trim(($pc->notes ? $pc->notes."\n" : '').'Проверено check_build: '.now()->format('Y-m-d H:i')),
-                    ]);
-                } else {
-                    $detected = [];
-                    foreach ($matched as $row) {
-                        $detected[] = [
-                            'type' => $row['reported']['type'] ?? $row['expected']['type'] ?? null,
-                            'name' => $row['reported']['name'] ?? null,
-                            'serial' => $row['reported']['serial'] ?? null,
-                            'vendor' => $row['reported']['vendor'] ?? null,
-                            'component_id' => $row['expected']['component_id'] ?? null,
-                            'source' => 'build_verify',
-                        ];
-                    }
-
-                    $pc->update([
-                        'build_spec' => [
-                            'parts' => is_array($originalSpec) ? ($originalSpec['parts'] ?? $originalSpec) : [],
-                            'detected' => $detected,
-                            'verified_at' => now()->toIso8601String(),
-                        ],
-                        'notes' => trim(($pc->notes ? $pc->notes."\n" : '').'Проверено check_build: '.now()->format('Y-m-d H:i')),
-                    ]);
-                }
-
-                return $out;
-            });
+        $bits = [];
+        if ($ok) {
+            $bits[] = 'Сборка совпала с железом.';
+        } else {
+            $bits[] = 'Есть расхождения: не найдено '.count($result['missing'])
+                .', лишних '.count($result['extra'])
+                .(count($result['conflicts']) ? ', конфликтов S/N '.count($result['conflicts']) : '')
+                .'.';
         }
-
-        $ok = count($missing) === 0;
+        if (count($result['updated_names'])) {
+            $bits[] = 'Имена обновлены: '.count($result['updated_names']).'.';
+        }
+        if (count($result['updated_serials'])) {
+            $bits[] = 'Дописаны серийники: '.count($result['updated_serials']).'.';
+        }
+        if (count($result['swapped'])) {
+            $bits[] = 'Заменены комплектующие в заказе: '.count($result['swapped']).'.';
+        }
 
         return response()->json([
             'ok' => $ok,
@@ -274,18 +88,22 @@ class StoreBuildVerifyController extends Controller
             ],
             'hostname' => $data['hostname'] ?? null,
             'summary' => [
-                'matched' => count($matched),
-                'missing' => count($missing),
-                'extra' => count($extra),
-                'updated_names' => count($updated),
+                'matched' => count($result['matched']),
+                'missing' => count($result['missing']),
+                'extra' => count($result['extra']),
+                'updated_names' => count($result['updated_names']),
+                'updated_serials' => count($result['updated_serials']),
+                'swapped' => count($result['swapped']),
+                'conflicts' => count($result['conflicts']),
             ],
-            'matched' => $matched,
-            'missing' => $missing,
-            'extra' => $extra,
-            'updated_names' => $updated,
-            'message' => $ok
-                ? 'Сборка совпала с железом.'.(count($updated) ? ' Названия обновлены.' : '')
-                : 'Есть расхождения: не найдено '.count($missing).', лишних '.count($extra).'.',
+            'matched' => $result['matched'],
+            'missing' => $result['missing'],
+            'extra' => $result['extra'],
+            'updated_names' => $result['updated_names'],
+            'updated_serials' => $result['updated_serials'],
+            'swapped' => $result['swapped'],
+            'conflicts' => $result['conflicts'],
+            'message' => implode(' ', $bits),
         ]);
     }
 
@@ -311,33 +129,5 @@ class StoreBuildVerifyController extends Controller
         }
 
         return null;
-    }
-
-    private function normalizeSerial(?string $serial): ?string
-    {
-        $serial = trim((string) $serial);
-        if ($serial === '' || strcasecmp($serial, 'To Be Filled By O.E.M.') === 0 || strcasecmp($serial, 'None') === 0) {
-            return null;
-        }
-
-        return $serial;
-    }
-
-    private function normalizeType(?string $type): ?string
-    {
-        $type = strtolower(trim((string) $type));
-        if ($type === '') {
-            return null;
-        }
-
-        return match (true) {
-            str_contains($type, 'cpu') || str_contains($type, 'processor') => 'cpu',
-            str_contains($type, 'ram') || str_contains($type, 'memory') => 'ram',
-            str_contains($type, 'ssd') || str_contains($type, 'nvme') => 'storage_ssd',
-            str_contains($type, 'hdd') || str_contains($type, 'disk') => 'storage_hdd',
-            str_contains($type, 'gpu') || str_contains($type, 'video') || str_contains($type, 'display') => 'gpu',
-            str_contains($type, 'board') || str_contains($type, 'motherboard') => 'motherboard',
-            default => $type,
-        };
     }
 }
