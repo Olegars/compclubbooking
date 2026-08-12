@@ -45,7 +45,7 @@ class StoreBuildVerifyController extends Controller
             return response()->json([
                 'ok' => false,
                 'message' => 'Сборка не найдена. Укажите built_pc_id / order_id или serial_number ПК.',
-            ], 404);
+            ], 200);
         }
 
         $reported = collect($data['components'])->map(function ($row) {
