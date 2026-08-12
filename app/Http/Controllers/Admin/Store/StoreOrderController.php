@@ -133,7 +133,7 @@ class StoreOrderController extends StoreController
         abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
         abort_unless($storeOrder->club_id === $this->locationId(), 404);
         abort_unless($item->store_order_id === $storeOrder->id, 404);
-        abort_if(in_array($storeOrder->status, ['cancelled', 'returned'], true), 422, 'Заказ уже закрыт.');
+        abort_if(in_array($storeOrder->status, ['cancelled', 'returned', 'issued'], true), 422, 'Заказ уже закрыт или выдан.');
 
         DB::transaction(function () use ($storeOrder, $item) {
             $this->returnComponentToStock($item);
@@ -157,7 +157,11 @@ class StoreOrderController extends StoreController
         ]);
 
         $admin = $this->admin();
+        $prev = $storeOrder->status;
         $next = $data['status'];
+
+        $allowed = $this->allowedTransitions($prev);
+        abort_unless(in_array($next, $allowed, true), 422, 'Нельзя перевести заказ из «'.$prev.'» в «'.$next.'».');
 
         if (in_array($next, ['cancelled', 'returned'], true)) {
             abort_unless($admin->canCancelStoreOrders(), 403);
@@ -170,24 +174,40 @@ class StoreOrderController extends StoreController
             }
         }
 
-        $prev = $storeOrder->status;
-
         DB::transaction(function () use ($storeOrder, $next, $prev) {
             $storeOrder->status = $next;
             $storeOrder->save();
 
-            // Отмена / возврат — комплектующие обратно «на складе»
+            // Отмена (до выдачи) или возврат (после выдачи) — комплектующие на склад
             if (in_array($next, ['cancelled', 'returned'], true) && ! in_array($prev, ['cancelled', 'returned'], true)) {
                 $storeOrder->load('items');
                 foreach ($storeOrder->items as $item) {
                     $this->returnComponentToStock($item);
                 }
-                // Старый каталог StoreProduct (если ещё есть)
                 $this->restockProducts($storeOrder);
             }
         });
 
         return back()->with('success', 'Статус заказа обновлён.');
+    }
+
+    /**
+     * Цепочка: new → assembling → ready → issued.
+     * cancelled — тупик (склад уже вернули).
+     * returned — только после issued (клиент вернул после выдачи).
+     *
+     * @return list<string>
+     */
+    private function allowedTransitions(string $from): array
+    {
+        return match ($from) {
+            'new' => ['assembling', 'cancelled'],
+            'assembling' => ['ready', 'cancelled'],
+            'ready' => ['issued', 'cancelled'],
+            'issued' => ['returned'],
+            'cancelled', 'returned' => [],
+            default => [],
+        };
     }
 
     public function assign(Request $request, StoreOrder $storeOrder)

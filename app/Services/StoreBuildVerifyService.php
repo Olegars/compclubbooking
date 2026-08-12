@@ -65,7 +65,7 @@ class StoreBuildVerifyService
             }
         }
 
-        // 2) Остаток — по типу (+ похожее имя)
+        // 2) Остаток — по типу + умное сравнение имён (конструктор / original_name / specs)
         foreach ($expected as $ei => $exp) {
             if (! empty($exp['_done'])) {
                 continue;
@@ -83,18 +83,20 @@ class StoreBuildVerifyService
                     }
                 }
 
+                $bestRi = null;
+                $bestScore = 0;
                 foreach ($byType as $ri) {
-                    $rep = $reported[$ri];
-                    if ($rep['name'] !== '' && $exp['name']
-                        && (str_contains(mb_strtolower($rep['name']), mb_strtolower((string) $exp['name']))
-                            || str_contains(mb_strtolower((string) $exp['name']), mb_strtolower($rep['name'])))) {
-                        $hitIndex = $ri;
-                        break;
+                    $score = $this->bestNameScore($reported[$ri]['name'] ?? '', $exp['match_names'] ?? []);
+                    if ($score > $bestScore) {
+                        $bestScore = $score;
+                        $bestRi = $ri;
                     }
                 }
-                if ($hitIndex === null && count($byType) === 1) {
-                    $hitIndex = $byType[0];
-                } elseif ($hitIndex === null && $byType !== []) {
+
+                if ($bestRi !== null && $bestScore >= 1) {
+                    $hitIndex = $bestRi;
+                } elseif (count($byType) === 1) {
+                    // Единственная позиция этого типа — принимаем без имени
                     $hitIndex = $byType[0];
                 }
             }
@@ -140,12 +142,12 @@ class StoreBuildVerifyService
 
         // Убрать служебные поля из ответа
         $matched = array_map(function (array $row) {
-            unset($row['expected_index'], $row['expected']['_done']);
+            unset($row['expected_index'], $row['expected']['_done'], $row['expected']['match_names']);
 
             return $row;
         }, $matched);
         $missing = array_map(function (array $row) {
-            unset($row['_done']);
+            unset($row['_done'], $row['match_names']);
 
             return $row;
         }, $missing);
@@ -252,23 +254,23 @@ class StoreBuildVerifyService
                 }
             }
 
-            // Имена
+            // Оригинальное имя с ПК → original_name (конструкторское name не трогаем)
             $componentId = $row['expected']['component_id'] ?? $componentId;
             if ($repName !== '' && $componentId) {
                 $component = StoreComponent::query()->find($componentId);
-                if ($component && $component->name !== $repName) {
-                    $old = $component->name;
-                    $component->update(['name' => $repName]);
-                    $updatedNames[] = [
-                        'component_id' => $component->id,
-                        'old_name' => $old,
-                        'new_name' => $repName,
-                    ];
+                if ($component) {
+                    $oldOriginal = $component->original_name;
+                    if ($oldOriginal !== $repName) {
+                        $component->update(['original_name' => $repName]);
+                        $updatedNames[] = [
+                            'component_id' => $component->id,
+                            'old_name' => $oldOriginal,
+                            'new_name' => $repName,
+                            'field' => 'original_name',
+                        ];
+                    }
                 }
-                if ($linkId) {
-                    StoreBuiltPcComponent::query()->whereKey($linkId)->update(['name' => $repName]);
-                }
-                $row['expected']['name'] = $repName;
+                $row['expected']['original_name'] = $repName;
             }
         }
         unset($row);
@@ -321,7 +323,7 @@ class StoreBuildVerifyService
                 }
                 foreach ($updatedNames as $u) {
                     if ($cid && $cid === (int) $u['component_id']) {
-                        $item['name'] = $u['new_name'];
+                        $item['original_name'] = $u['new_name'];
                         $item['verified_name'] = $u['new_name'];
                     }
                 }
@@ -391,6 +393,8 @@ class StoreBuildVerifyService
                 'component_id' => $link->store_component_id,
                 'type' => $link->type ?: ($component?->type),
                 'name' => $link->name ?: ($component?->name),
+                'original_name' => $component?->original_name,
+                'match_names' => $this->matchNamesFor($component, $link->name),
             ];
 
             $serials = $component
@@ -413,11 +417,16 @@ class StoreBuildVerifyService
                 if (! is_array($row) || (($row['source'] ?? null) === 'build_verify')) {
                     return [];
                 }
+                $component = ! empty($row['component_id'])
+                    ? StoreComponent::query()->find($row['component_id'])
+                    : null;
                 $base = [
                     'link_id' => null,
                     'component_id' => $row['component_id'] ?? null,
                     'type' => $this->normalizeType($row['type'] ?? null),
                     'name' => $row['name'] ?? null,
+                    'original_name' => $row['original_name'] ?? $component?->original_name,
+                    'match_names' => $this->matchNamesFor($component, $row['name'] ?? null),
                 ];
                 $serials = [];
                 if (! empty($row['serials']) && is_array($row['serials'])) {
@@ -438,6 +447,126 @@ class StoreBuildVerifyService
         }
 
         return $expected;
+    }
+
+    /** Имена для сравнения с WMI: конструктор, оригинал, куски specs. */
+    private function matchNamesFor(?StoreComponent $component, ?string $linkName = null): array
+    {
+        $names = [];
+        foreach ([
+            $linkName,
+            $component?->name,
+            $component?->original_name,
+        ] as $n) {
+            $n = trim((string) $n);
+            if ($n !== '') {
+                $names[] = $n;
+            }
+        }
+
+        $specs = is_array($component?->specs) ? $component->specs : [];
+        foreach (['model', 'chip', 'series', 'chipset', 'title'] as $key) {
+            $v = trim((string) ($specs[$key] ?? ''));
+            if ($v !== '') {
+                $names[] = $v;
+                $brand = trim((string) ($specs['brand'] ?? ''));
+                if ($brand !== '') {
+                    $names[] = $brand.' '.$v;
+                }
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /** @param  list<string>  $candidates */
+    private function bestNameScore(?string $reported, array $candidates): int
+    {
+        $best = 0;
+        foreach ($candidates as $c) {
+            $best = max($best, $this->nameMatchScore($reported, $c));
+        }
+
+        return $best;
+    }
+
+    /**
+     * 0 — нет, 1 — слабое пересечение токенов, 2 — модель/цифры, 3 — подстрока/полное.
+     */
+    public function nameMatchScore(?string $a, ?string $b): int
+    {
+        $a = trim((string) $a);
+        $b = trim((string) $b);
+        if ($a === '' || $b === '') {
+            return 0;
+        }
+
+        $na = $this->normalizeName($a);
+        $nb = $this->normalizeName($b);
+        if ($na === '' || $nb === '') {
+            return 0;
+        }
+        if ($na === $nb || str_contains($na, $nb) || str_contains($nb, $na)) {
+            return 3;
+        }
+
+        $ta = $this->nameTokens($na);
+        $tb = $this->nameTokens($nb);
+        if ($ta === [] || $tb === []) {
+            return 0;
+        }
+
+        $overlap = 0;
+        $modelHit = false;
+        foreach ($ta as $t) {
+            foreach ($tb as $u) {
+                if ($t === $u || (mb_strlen($t) >= 3 && (str_contains($t, $u) || str_contains($u, $t)))) {
+                    $overlap++;
+                    if (preg_match('/\d/', $t) || preg_match('/\d/', $u)) {
+                        $modelHit = true;
+                    }
+                    break;
+                }
+            }
+        }
+
+        if ($modelHit) {
+            return 2;
+        }
+        if ($overlap >= 2) {
+            return 1;
+        }
+        if ($overlap >= 1 && min(count($ta), count($tb)) <= 2) {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private function normalizeName(string $s): string
+    {
+        $s = mb_strtolower($s);
+        $s = str_replace(['(r)', '(tm)', '®', '™'], ' ', $s);
+        $s = preg_replace('/[^a-z0-9а-яё]+/u', ' ', $s) ?? $s;
+
+        return trim(preg_replace('/\s+/u', ' ', $s) ?? $s);
+    }
+
+    /** @return list<string> */
+    private function nameTokens(string $normalized): array
+    {
+        $stop = ['th', 'nd', 'rd', 'gen', 'series', 'the', 'and', 'for', 'with'];
+        $parts = preg_split('/\s+/u', $normalized) ?: [];
+        $out = [];
+        foreach ($parts as $p) {
+            $p = trim($p);
+            if ($p === '' || mb_strlen($p) < 2 || in_array($p, $stop, true)) {
+                continue;
+            }
+            $out[] = $p;
+        }
+
+        return $out;
     }
 
     public function findComponentBySerial(int $clubId, string $serial): ?StoreComponent

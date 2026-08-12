@@ -34,7 +34,7 @@ class StoreComponent extends Model
     ];
 
     protected $fillable = [
-        'club_id', 'store_supplier_id', 'received_by', 'name', 'barcode', 'type', 'specs',
+        'club_id', 'store_supplier_id', 'received_by', 'name', 'original_name', 'barcode', 'type', 'specs',
         'purchase_price', 'warranty_number', 'serials', 'warranty_months', 'qty',
         'status', 'notes',
     ];

@@ -116,6 +116,7 @@ class WarehouseController extends StoreController
             'store_supplier_id' => $data['store_supplier_id'] ?? null,
             'received_by' => $data['received_by'] ?? $this->admin()->id,
             'name' => $name,
+            'original_name' => trim((string) ($data['original_name'] ?? '')) ?: null,
             'type' => $data['type'],
             'specs' => $specs,
             'purchase_price' => $data['purchase_price'],
@@ -155,6 +156,9 @@ class WarehouseController extends StoreController
         $storeComponent->update([
             'store_supplier_id' => $data['store_supplier_id'] ?? null,
             'name' => $name !== '' ? $name : $storeComponent->name,
+            'original_name' => array_key_exists('original_name', $data)
+                ? (trim((string) ($data['original_name'] ?? '')) ?: null)
+                : $storeComponent->original_name,
             'type' => $data['type'],
             'specs' => $specs,
             'purchase_price' => $data['purchase_price'],
@@ -205,6 +209,7 @@ class WarehouseController extends StoreController
 
         return $request->validate([
             'name' => 'nullable|string|max:255',
+            'original_name' => 'nullable|string|max:255',
             'type' => "required|in:{$typeKeys}",
             'specs' => 'nullable|array',
             'specs.*' => 'nullable|string|max:128',

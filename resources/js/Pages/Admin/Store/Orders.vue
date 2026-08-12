@@ -24,13 +24,27 @@ const props = defineProps<{
 
 const money = (v: any) => Number(v || 0).toLocaleString('ru-RU') + ' ₽'
 const statusLabel: Record<string, string> = {
-    new: 'Новый',
+    new: 'Создан',
     assembling: 'Сборка',
     ready: 'Готов',
     issued: 'Выдан',
     cancelled: 'Отменён',
     returned: 'Возврат',
 }
+
+/** Разрешённые переходы — как на бэке */
+const transitions: Record<string, string[]> = {
+    new: ['assembling', 'cancelled'],
+    assembling: ['ready', 'cancelled'],
+    ready: ['issued', 'cancelled'],
+    issued: ['returned'],
+    cancelled: [],
+    returned: [],
+}
+
+const canGo = (order: any, status: string) => (transitions[order.status] || []).includes(status)
+
+const pipeline = ['new', 'assembling', 'ready', 'issued'] as const
 
 const showCreate = ref(false)
 const submitting = ref(false)
@@ -119,7 +133,7 @@ const filterStatus = computed({
             <div class="flex flex-wrap justify-between items-end gap-4 border-b border-white/10 pb-6">
                 <div>
                     <h1 class="text-3xl font-black uppercase italic tracking-tighter">Store <span class="text-amber-400">Orders</span></h1>
-                    <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">Сборки и продажи ПК</p>
+                    <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">Создан → Сборка → Готов → Выдан</p>
                 </div>
                 <div class="flex gap-3 items-center">
                     <select v-model="filterStatus" class="bg-black border border-white/10 rounded-xl px-4 py-3 text-[10px] uppercase font-black">
@@ -149,7 +163,7 @@ const filterStatus = computed({
                     <div class="text-xs text-white/40 space-y-1">
                         <div v-for="item in o.items" :key="item.id" class="flex items-center gap-2">
                             <span class="flex-1">{{ item.name }} × {{ item.qty }} — {{ money(item.price) }}</span>
-                            <button v-if="canCreate && !['cancelled','returned'].includes(o.status)"
+                            <button v-if="canCreate && ['new','assembling','ready'].includes(o.status)"
                                     type="button"
                                     class="text-red-400/80 hover:text-red-400 text-[10px] uppercase font-black"
                                     title="Удалить из заказа → на склад"
@@ -157,16 +171,38 @@ const filterStatus = computed({
                         </div>
                     </div>
                     <div class="flex flex-wrap gap-2 items-center">
-                        <button v-for="s in ['assembling','ready','issued']" :key="s"
-                                @click="setStatus(o.id, s)"
-                                class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50 hover:text-amber-400">
-                            {{ statusLabel[s] }}
-                        </button>
-                        <button v-if="canCancel" @click="setStatus(o.id, 'cancelled')"
-                                class="px-3 py-2 rounded-xl border border-red-500/20 text-[10px] uppercase font-black text-red-400">Отмена</button>
-                        <button v-if="canCancel" @click="setStatus(o.id, 'returned')"
-                                class="px-3 py-2 rounded-xl border border-red-500/20 text-[10px] uppercase font-black text-red-400">Возврат</button>
-                        <select v-if="canAssign"
+                        <template v-if="!['cancelled','returned'].includes(o.status)">
+                            <button v-for="s in pipeline" :key="s"
+                                    type="button"
+                                    :disabled="!canGo(o, s) && o.status !== s"
+                                    @click="canGo(o, s) && setStatus(o.id, s)"
+                                    class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black transition-colors"
+                                    :class="o.status === s
+                                        ? 'border-amber-500/50 text-amber-400 bg-amber-500/10'
+                                        : canGo(o, s)
+                                            ? 'border-white/20 text-white/70 hover:text-amber-400 hover:border-amber-500/40'
+                                            : 'border-white/5 text-white/20 cursor-default'">
+                                {{ statusLabel[s] }}
+                            </button>
+                            <button v-if="canCancel && canGo(o, 'cancelled')"
+                                    type="button"
+                                    @click="setStatus(o.id, 'cancelled')"
+                                    class="px-3 py-2 rounded-xl border border-red-500/20 text-[10px] uppercase font-black text-red-400"
+                                    title="Комплектующие вернутся на склад. Дальше шаги недоступны.">
+                                Отмена
+                            </button>
+                            <button v-if="canCancel && canGo(o, 'returned')"
+                                    type="button"
+                                    @click="setStatus(o.id, 'returned')"
+                                    class="px-3 py-2 rounded-xl border border-red-500/20 text-[10px] uppercase font-black text-red-400"
+                                    title="Клиент вернул после выдачи — комплектующие на склад.">
+                                Возврат
+                            </button>
+                        </template>
+                        <div v-else class="text-[10px] uppercase font-black text-white/30 tracking-widest">
+                            {{ statusLabel[o.status] }} · склад восстановлен · шаги закрыты
+                        </div>
+                        <select v-if="canAssign && !['cancelled','returned','issued'].includes(o.status)"
                                 class="ml-auto bg-black border border-white/10 rounded-xl px-3 py-2 text-[10px] uppercase font-black"
                                 :value="o.assignee_id || ''"
                                 @change="setAssignee(o.id, ($event.target as HTMLSelectElement).value)">

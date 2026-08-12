@@ -69,7 +69,7 @@ class StoreBuildVerifyController extends Controller
                 .'.';
         }
         if (count($result['updated_names'])) {
-            $bits[] = 'Имена обновлены: '.count($result['updated_names']).'.';
+            $bits[] = 'Оригинальные названия записаны: '.count($result['updated_names']).'.';
         }
         if (count($result['updated_serials'])) {
             $bits[] = 'Дописаны серийники: '.count($result['updated_serials']).'.';

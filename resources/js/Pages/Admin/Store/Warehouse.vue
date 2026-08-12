@@ -37,6 +37,7 @@ const remoteSuggest = reactive<Record<string, string[]>>({})
 const form = useForm({
     id: null as number | null,
     name: '',
+    original_name: '',
     type: 'cpu',
     store_supplier_id: null as number | null,
     purchase_price: 0,
@@ -224,6 +225,7 @@ const openCreate = (serial = '') => {
     form.serials = [serial]
     form.warranty_number = serial
     form.name = ''
+    form.original_name = ''
     nameTouched.value = false
     resetSpecs()
     showForm.value = true
@@ -233,6 +235,7 @@ const openCreate = (serial = '') => {
 const openEdit = (c: any) => {
     form.id = c.id
     form.name = c.name
+    form.original_name = c.original_name || ''
     nameTouched.value = true
     form.type = c.type
     form.store_supplier_id = c.store_supplier_id
@@ -348,6 +351,7 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                         <tr>
                             <th class="px-4 py-3">Тип</th>
                             <th class="px-4 py-3">Наименование</th>
+                            <th class="px-4 py-3">Оригинал (с ПК)</th>
                             <th class="px-4 py-3">Серийный номер</th>
                             <th class="px-4 py-3">Поставщик</th>
                             <th class="px-4 py-3">Закупка</th>
@@ -362,6 +366,9 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                         <tr v-for="c in components" :key="c.id" class="border-b border-white/5 hover:bg-white/[0.02]">
                             <td class="px-4 py-3 text-amber-400/80">{{ types[c.type] || c.type }}</td>
                             <td class="px-4 py-3 font-black uppercase">{{ c.name }}</td>
+                            <td class="px-4 py-3 text-white/40 text-xs normal-case font-normal max-w-[220px]">
+                                {{ c.original_name || '—' }}
+                            </td>
                             <td class="px-4 py-3 text-cyan-400/80 font-mono">{{ serialsLabel(c) }}</td>
                             <td class="px-4 py-3 text-white/40">{{ c.supplier?.name || '—' }}</td>
                             <td class="px-4 py-3">{{ money(c.purchase_price) }}</td>
@@ -433,8 +440,13 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                 </div>
 
                 <div>
-                    <label :class="labelClass">Название (можно поправить вручную)</label>
+                    <label :class="labelClass">Название конструктора (можно поправить вручную)</label>
                     <input v-model="form.name" :placeholder="composedName || 'Соберётся из полей'" :class="fieldClass" @input="nameTouched = true" />
+                </div>
+
+                <div>
+                    <label :class="labelClass">Оригинальное название (с ПК / check_build)</label>
+                    <input v-model="form.original_name" placeholder="Заполнится при сверке сборки" :class="fieldClass" />
                 </div>
 
                 <div>
