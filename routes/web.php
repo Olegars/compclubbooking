@@ -411,6 +411,11 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     Route::post('/logout', [AdminLoginController::class, 'logout'])->name('admin.logout');
 });
 
+Route::prefix('api/store')->group(function () {
+    Route::post('/build-verify', \App\Http\Controllers\Api\StoreBuildVerifyController::class)
+        ->name('api.store.build-verify');
+});
+
 /*
 |--------------------------------------------------------------------------
 | API ДЛЯ QML-ШЕЛЛА (Терминалы клуба)
