@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Store;
 
 use App\Models\StoreComponent;
 use App\Models\StoreSupplier;
+use App\Support\StoreComponentSpecs;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -33,12 +34,55 @@ class WarehouseController extends StoreController
                 ->get(['id', 'name']),
             'types' => StoreComponent::TYPES,
             'statuses' => StoreComponent::STATUSES,
+            'specSchemas' => StoreComponentSpecs::schemas(),
+            'specDictionaries' => StoreComponentSpecs::dictionaries(),
             'filters' => ['type' => $type ?: null],
             'canManage' => $admin->canManageStoreCatalog() || $admin->role === 'owner',
             'canReceive' => $admin->canManageStoreInventory()
                 || $admin->canManageStoreCatalog()
                 || $admin->role === 'owner'
                 || $admin->role === 'assembler',
+        ]);
+    }
+
+    public function suggest(Request $request)
+    {
+        abort_unless(
+            $this->admin()->canAccessStore(),
+            403
+        );
+
+        $data = $request->validate([
+            'type' => 'required|string',
+            'field' => 'required|string',
+            'q' => 'required|string|min:3|max:64',
+        ]);
+
+        $schema = StoreComponentSpecs::schemas()[$data['type']] ?? [];
+        $fieldMeta = collect($schema)->firstWhere('key', $data['field']);
+        if (! $fieldMeta) {
+            return response()->json(['items' => []]);
+        }
+
+        $dictKey = $fieldMeta['suggest'];
+        $history = StoreComponent::query()
+            ->where('club_id', $this->locationId())
+            ->where('type', $data['type'])
+            ->whereNotNull('specs')
+            ->latest()
+            ->limit(200)
+            ->pluck('specs')
+            ->flatMap(function ($specs) use ($data) {
+                $val = is_array($specs) ? ($specs[$data['field']] ?? null) : null;
+
+                return $val ? [$val] : [];
+            })
+            ->unique()
+            ->values()
+            ->all();
+
+        return response()->json([
+            'items' => StoreComponentSpecs::suggest($dictKey, $data['q'], $history),
         ]);
     }
 
@@ -58,12 +102,26 @@ class WarehouseController extends StoreController
             StoreSupplier::query()->where('club_id', $clubId)->whereKey($data['store_supplier_id'])->firstOrFail();
         }
 
+        $specs = $data['specs'] ?? [];
+        $name = trim((string) ($data['name'] ?? ''));
+        if ($name === '') {
+            $name = StoreComponentSpecs::composeName($data['type'], $specs);
+        }
+        abort_if($name === '', 422, 'Заполните поля конструктора или название.');
+
         StoreComponent::query()->create([
-            ...$data,
             'club_id' => $clubId,
+            'store_supplier_id' => $data['store_supplier_id'] ?? null,
             'received_by' => $data['received_by'] ?? $this->admin()->id,
-            'status' => $data['status'] ?? 'in_stock',
+            'name' => $name,
+            'type' => $data['type'],
+            'specs' => $specs,
+            'purchase_price' => $data['purchase_price'],
+            'warranty_number' => $data['warranty_number'] ?? null,
+            'warranty_months' => $data['warranty_months'] ?? null,
             'qty' => $data['qty'] ?? 1,
+            'status' => $data['status'] ?? 'in_stock',
+            'notes' => $data['notes'] ?? null,
         ]);
 
         return back()->with('success', 'Комплектующее добавлено на склад.');
@@ -83,7 +141,24 @@ class WarehouseController extends StoreController
                 ->firstOrFail();
         }
 
-        $storeComponent->update($data);
+        $specs = $data['specs'] ?? [];
+        $name = trim((string) ($data['name'] ?? ''));
+        if ($name === '') {
+            $name = StoreComponentSpecs::composeName($data['type'], $specs);
+        }
+
+        $storeComponent->update([
+            'store_supplier_id' => $data['store_supplier_id'] ?? null,
+            'name' => $name !== '' ? $name : $storeComponent->name,
+            'type' => $data['type'],
+            'specs' => $specs,
+            'purchase_price' => $data['purchase_price'],
+            'warranty_number' => $data['warranty_number'] ?? null,
+            'warranty_months' => $data['warranty_months'] ?? null,
+            'qty' => $data['qty'] ?? $storeComponent->qty,
+            'status' => $data['status'] ?? $storeComponent->status,
+            'notes' => $data['notes'] ?? null,
+        ]);
 
         return back()->with('success', 'Комплектующее обновлено.');
     }
@@ -123,8 +198,10 @@ class WarehouseController extends StoreController
         $statusKeys = implode(',', array_keys(StoreComponent::STATUSES));
 
         return $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => 'nullable|string|max:255',
             'type' => "required|in:{$typeKeys}",
+            'specs' => 'nullable|array',
+            'specs.*' => 'nullable|string|max:128',
             'store_supplier_id' => 'nullable|integer',
             'purchase_price' => 'required|numeric|min:0',
             'warranty_number' => 'nullable|string|max:128',

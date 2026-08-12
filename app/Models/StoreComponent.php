@@ -33,13 +33,14 @@ class StoreComponent extends Model
     ];
 
     protected $fillable = [
-        'club_id', 'store_supplier_id', 'received_by', 'name', 'barcode', 'type',
+        'club_id', 'store_supplier_id', 'received_by', 'name', 'barcode', 'type', 'specs',
         'purchase_price', 'warranty_number', 'warranty_months', 'qty',
         'status', 'notes',
     ];
 
     protected $casts = [
         'purchase_price' => 'decimal:2',
+        'specs' => 'array',
     ];
 
     public function club(): BelongsTo
