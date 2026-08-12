@@ -20,7 +20,6 @@ const money = (v: any) => v == null ? '—' : Number(v).toLocaleString('ru-RU') 
 
 const showForm = ref(false)
 const form = useForm({
-    id: null as number | null,
     title: '',
     store_client_id: null as number | null,
     assembled_by: null as number | null,
@@ -42,38 +41,14 @@ const filterStatus = computed({
 
 const openCreate = () => {
     form.reset()
-    form.id = null
     form.status = 'assembling'
     form.sale_tax_mode = 'with_tax'
     form.component_ids = []
     showForm.value = true
 }
 
-const openEdit = (pc: any) => {
-    form.id = pc.id
-    form.title = pc.title || ''
-    form.store_client_id = pc.store_client_id
-    form.assembled_by = pc.assembled_by
-    form.accepted_by = pc.accepted_by
-    form.issued_by = pc.issued_by
-    form.serial_number = pc.serial_number || ''
-    form.sale_price = pc.sale_price == null ? null : Number(pc.sale_price)
-    form.sale_tax_mode = pc.sale_tax_mode || 'with_tax'
-    form.sold_at = pc.sold_at ? String(pc.sold_at).slice(0, 10) : ''
-    form.status = pc.status
-    form.notes = pc.notes || ''
-    form.component_ids = (pc.component_links || [])
-        .map((l: any) => l.store_component_id)
-        .filter(Boolean)
-    showForm.value = true
-}
-
 const save = () => {
-    if (form.id) {
-        form.put(`/admin/store/built-pcs/${form.id}`, { onSuccess: () => { showForm.value = false } })
-    } else {
-        form.post('/admin/store/built-pcs', { onSuccess: () => { showForm.value = false } })
-    }
+    form.post('/admin/store/built-pcs', { onSuccess: () => { showForm.value = false } })
 }
 
 const remove = (id: number) => {
@@ -94,7 +69,6 @@ const toggleComponent = (id: number) => {
 const availableComponents = computed(() => {
     const selected = new Set(form.component_ids)
     const fromStock = props.components || []
-    // При редактировании — уже стоящие в сборке (status=used) тоже должны быть в списке
     const linked = (props.pcs || [])
         .flatMap((pc: any) => pc.component_links || [])
         .filter((l: any) => l.store_component_id && selected.has(l.store_component_id))
@@ -112,12 +86,6 @@ const availableComponents = computed(() => {
     }
     return Array.from(byId.values())
 })
-
-const canEditPc = (pc: any) => {
-    // ПК из заказа: состав/статус ведёт заказ — полный Edit не нужен
-    if (pc.store_order_id) return false
-    return props.canAssemble && pc.status === 'assembling'
-}
 
 const canDeletePc = (pc: any) => {
     if (pc.store_order_id) return false
@@ -184,7 +152,6 @@ const buildLabel = (pc: any) => {
                         <span>Выдал: {{ pc.issuer?.name || '—' }}</span>
                     </div>
                     <div class="flex flex-wrap gap-2 pt-1">
-                        <button v-if="canEditPc(pc)" @click="openEdit(pc)" class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400">Edit</button>
                         <a :href="`/admin/store/built-pcs/${pc.id}/print-barcode`" target="_blank"
                            class="px-3 py-2 rounded-xl border border-white/15 text-[10px] uppercase font-black text-white/60">Штрихкод</a>
                         <button type="button" @click="printBarcodePos(pc.id)"
@@ -200,7 +167,7 @@ const buildLabel = (pc: any) => {
 
         <div v-if="showForm" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 overflow-y-auto" @click.self="showForm = false">
             <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-2xl space-y-3 my-8" @submit.prevent="save">
-                <h3 class="font-black uppercase italic text-xl mb-2">{{ form.id ? 'Редактировать ПК' : 'Новая сборка' }}</h3>
+                <h3 class="font-black uppercase italic text-xl mb-2">Новая сборка</h3>
                 <input v-model="form.title" placeholder="Название сборки" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
                 <input v-model="form.serial_number" placeholder="Серийный номер (пусто = авто 10 цифр)" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
 
