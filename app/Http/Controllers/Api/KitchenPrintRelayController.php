@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Pull-API для LAN-агента кухонного ESC/POS принтера (Ethernet :9100).
- * Также отдаёт задания магазина: штрихкод гарантии (id >= 1_000_000_000).
+ * Также отдаёт задания магазина: QR гарантии (id >= 1_000_000_000).
  */
 class KitchenPrintRelayController extends Controller
 {

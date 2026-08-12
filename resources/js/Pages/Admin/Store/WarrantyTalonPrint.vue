@@ -4,7 +4,8 @@ import { computed, onMounted } from 'vue'
 
 const props = defineProps<{
     warranty: any
-    barcodeSvg: string
+    qrPayload: string
+    qrImageUrl: string
     buildItems: Array<{ type?: string; type_label?: string; name?: string; warranty_number?: string | null }>
 }>()
 
@@ -109,7 +110,13 @@ onMounted(() => {
             </section>
 
             <footer class="foot">
-                <div class="barcode" v-html="barcodeSvg" />
+                <div class="qr-wrap">
+                    <img class="qr" :src="qrImageUrl" :alt="qrPayload" width="180" height="180" />
+                    <div class="qr-meta">
+                        <div>S/N {{ warranty.serial || '—' }}</div>
+                        <div>Гарантия до {{ fmt(warranty.ends_at) }}</div>
+                    </div>
+                </div>
                 <div class="signs">
                     <div class="sign">
                         <div class="line" />
@@ -188,7 +195,9 @@ th { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: #5
 .terms { margin-top: 22px; }
 .terms ol { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.55; color: #333; }
 .foot { margin-top: 28px; display: flex; justify-content: space-between; gap: 24px; align-items: flex-end; }
-.barcode :deep(svg) { max-width: 220px; height: auto; }
+.qr-wrap { display: flex; align-items: center; gap: 12px; }
+.qr { width: 100px; height: 100px; image-rendering: pixelated; }
+.qr-meta { font-size: 11px; font-weight: 700; line-height: 1.4; }
 .signs { display: flex; gap: 28px; flex: 1; justify-content: flex-end; }
 .sign { width: 160px; font-size: 11px; color: #555; text-align: center; }
 .sign .line { height: 1px; background: #111; margin-bottom: 8px; margin-top: 36px; }

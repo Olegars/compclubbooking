@@ -86,9 +86,9 @@ const filterStatus = computed({
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <a v-if="w.serial" :href="`/admin/store/warranty/${w.id}/print-barcode`" target="_blank"
-                           class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50">Штрихкод</a>
+                           class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50">QR</a>
                         <button v-if="w.serial" type="button" @click="printBarcodePos(w.id)"
-                                class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400">Штрихкод POS</button>
+                                class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400">QR POS</button>
                         <a :href="`/admin/store/warranty/${w.id}/print-talon`" target="_blank"
                            class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50">Талон</a>
                         <button v-if="canManage" @click="setStatus(w.id, 'claimed')"

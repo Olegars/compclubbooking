@@ -4,7 +4,9 @@ import { onMounted } from 'vue'
 
 const props = defineProps<{
     warranty: any
-    barcodeSvg: string
+    qrPayload: string
+    qrImageUrl: string
+    endsAtLabel?: string | null
 }>()
 
 onMounted(() => {
@@ -13,7 +15,7 @@ onMounted(() => {
 </script>
 
 <template>
-    <Head :title="`Штрихкод ${warranty.serial || ''}`" />
+    <Head :title="`QR ${warranty.serial || ''}`" />
     <div class="sheet">
         <div class="no-print actions">
             <button type="button" @click="window.print()">Печать на POS</button>
@@ -23,7 +25,9 @@ onMounted(() => {
         <div class="label">
             <div class="brand">REACTOR STORE</div>
             <div class="title">{{ warranty.product_name || warranty.built_pc?.title || 'Сборка ПК' }}</div>
-            <div class="barcode" v-html="barcodeSvg" />
+            <img class="qr" :src="qrImageUrl" :alt="qrPayload" width="240" height="240" />
+            <div class="sn">S/N {{ warranty.serial || '—' }}</div>
+            <div v-if="endsAtLabel" class="ends">Гарантия до {{ endsAtLabel }}</div>
             <div class="hint">Выберите POS / термопринтер в диалоге печати</div>
         </div>
     </div>
@@ -65,8 +69,9 @@ body {
 }
 .brand { font-size: 10px; font-weight: 900; letter-spacing: .25em; text-transform: uppercase; }
 .title { margin-top: 6px; font-size: 12px; font-weight: 800; text-transform: uppercase; }
-.barcode { margin-top: 10px; display: flex; justify-content: center; }
-.barcode :deep(svg) { max-width: 100%; height: auto; }
+.qr { margin-top: 10px; width: 48mm; height: 48mm; image-rendering: pixelated; }
+.sn { margin-top: 8px; font-size: 13px; font-weight: 800; letter-spacing: .04em; }
+.ends { margin-top: 4px; font-size: 11px; font-weight: 700; }
 .hint { margin-top: 8px; font-size: 9px; color: #666; }
 @media print {
     body { background: #fff; }

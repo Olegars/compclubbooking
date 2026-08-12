@@ -17,6 +17,8 @@ class StorePosPrint extends Model
 
     public const KIND_BARCODE = 'barcode';
 
+    public const KIND_QR = 'qr';
+
     /** Agent job id offset so store jobs never collide with kitchen order_kitchen_prints ids. */
     public const AGENT_ID_OFFSET = 1_000_000_000;
 

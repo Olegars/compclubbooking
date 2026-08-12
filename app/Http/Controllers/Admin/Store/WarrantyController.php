@@ -8,7 +8,7 @@ use App\Models\StoreOrder;
 use App\Models\StoreWarranty;
 use App\Services\StorePosPrintService;
 use App\Services\StoreWarrantyService;
-use App\Support\Code128Svg;
+use App\Support\WarrantyQr;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -133,7 +133,7 @@ class WarrantyController extends StoreController
         return back()->with('success', 'Гарантия обновлена.');
     }
 
-    /** Очередь на POS (ESC/POS штрихкод через kitchen-агент). */
+    /** Очередь на POS (ESC/POS QR через kitchen-агент). */
     public function printBarcodePos(StoreWarranty $storeWarranty, StorePosPrintService $prints)
     {
         abort_unless($storeWarranty->club_id === $this->locationId(), 404);
@@ -144,7 +144,7 @@ class WarrantyController extends StoreController
 
         $prints->enqueueBarcode($storeWarranty);
 
-        return back()->with('success', 'Штрихкод отправлен на POS-принтер (очередь агента).');
+        return back()->with('success', 'QR отправлен на POS-принтер (очередь агента).');
     }
 
     /** HTML-лента 80mm — выбрать POS в диалоге печати. */
@@ -152,10 +152,13 @@ class WarrantyController extends StoreController
     {
         abort_unless($storeWarranty->club_id === $this->locationId(), 404);
         $storeWarranty->load(['client:id,name', 'club:id,name', 'builtPc:id,title']);
+        $qrPayload = WarrantyQr::payload($storeWarranty);
 
         return Inertia::render('Admin/Store/WarrantyBarcodePrint', [
             'warranty' => $storeWarranty,
-            'barcodeSvg' => Code128Svg::svg((string) $storeWarranty->serial),
+            'qrPayload' => $qrPayload,
+            'qrImageUrl' => WarrantyQr::imageUrl($qrPayload, 240),
+            'endsAtLabel' => $storeWarranty->ends_at?->format('d.m.Y'),
         ]);
     }
 
@@ -172,10 +175,12 @@ class WarrantyController extends StoreController
         }
 
         $storeWarranty->load(['client', 'club', 'builtPc.assembler:id,name']);
+        $qrPayload = WarrantyQr::payload($storeWarranty);
 
         return Inertia::render('Admin/Store/WarrantyTalonPrint', [
             'warranty' => $storeWarranty,
-            'barcodeSvg' => Code128Svg::svg((string) $storeWarranty->serial),
+            'qrPayload' => $qrPayload,
+            'qrImageUrl' => WarrantyQr::imageUrl($qrPayload, 180),
             'buildItems' => is_array($storeWarranty->build_snapshot) ? $storeWarranty->build_snapshot : [],
         ]);
     }
@@ -195,7 +200,7 @@ class WarrantyController extends StoreController
         $w = $warranties->ensureForBuiltPc($storeBuiltPc);
         $prints->enqueueBarcode($w);
 
-        return back()->with('success', 'Штрихкод отправлен на POS-принтер.');
+        return back()->with('success', 'QR отправлен на POS-принтер.');
     }
 
     public function printBuiltPcTalon(StoreBuiltPc $storeBuiltPc, StoreWarrantyService $warranties)

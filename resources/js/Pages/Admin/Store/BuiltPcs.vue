@@ -153,9 +153,9 @@ const buildLabel = (pc: any) => {
                     </div>
                     <div class="flex flex-wrap gap-2 pt-1">
                         <a :href="`/admin/store/built-pcs/${pc.id}/print-barcode`" target="_blank"
-                           class="px-3 py-2 rounded-xl border border-white/15 text-[10px] uppercase font-black text-white/60">Штрихкод</a>
+                           class="px-3 py-2 rounded-xl border border-white/15 text-[10px] uppercase font-black text-white/60">QR</a>
                         <button type="button" @click="printBarcodePos(pc.id)"
-                                class="px-3 py-2 rounded-xl border border-amber-500/40 text-[10px] uppercase font-black text-amber-400">Штрихкод POS</button>
+                                class="px-3 py-2 rounded-xl border border-amber-500/40 text-[10px] uppercase font-black text-amber-400">QR POS</button>
                         <a :href="`/admin/store/built-pcs/${pc.id}/print-talon`" target="_blank"
                            class="px-3 py-2 rounded-xl border border-white/15 text-[10px] uppercase font-black text-white/60">Талон</a>
                         <button v-if="canDeletePc(pc)" @click="remove(pc.id)" class="px-3 py-2 rounded-xl border border-red-500/30 text-[10px] uppercase font-black text-red-400">Del</button>

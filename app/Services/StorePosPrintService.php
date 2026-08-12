@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\StorePosPrint;
 use App\Models\StoreWarranty;
+use App\Support\WarrantyQr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -19,28 +20,30 @@ class StorePosPrintService
     {
         $serial = (string) $warranty->serial;
         $title = $warranty->product_name ?: ('ПК #'.($warranty->store_built_pc_id ?: $warranty->id));
+        $ends = $warranty->ends_at?->format('d.m.Y') ?? '—';
 
         $lines = [
-            'ГАРАНТИЯ / S/N',
+            'ГАРАНТИЯ / QR',
             $title,
             'S/N '.$serial,
+            'До '.$ends,
             now()->format('d.m.Y H:i'),
         ];
 
         return StorePosPrint::query()->create([
             'club_id' => $warranty->club_id,
             'store_warranty_id' => $warranty->id,
-            'kind' => StorePosPrint::KIND_BARCODE,
-            'serial' => $serial,
+            'kind' => StorePosPrint::KIND_QR,
+            'serial' => mb_substr($serial, 0, 32),
             'payload_text' => implode("\n", $lines),
             'status' => StorePosPrint::STATUS_PENDING,
         ]);
     }
 
     /**
-     * ESC/POS: centered text + Code128 barcode of serial + cut.
+     * ESC/POS: centered text + QR (serial + warranty end) + cut.
      */
-    public function buildBarcodeEscPos(string $serial, string $text): string
+    public function buildQrEscPos(string $qrData, string $text): string
     {
         $esc = "\x1B";
         $gs = "\x1D";
@@ -60,18 +63,43 @@ class StorePosPrintService
         }
 
         $out .= "\n";
-
-        // GS h n — barcode height
-        $out .= $gs.'h'.chr(60);
-        // GS w n — module width 2–6
-        $out .= $gs.'w'.chr(2);
-        // GS H n — HRI below
-        $out .= $gs.'H'.chr(2);
-        // GS k 73 n {data} — Code128, data as "{B" + digits
-        $payload = '{B'.$serial;
-        $out .= $gs.'k'.chr(73).chr(strlen($payload)).$payload;
+        $out .= $this->appendNativeQr($qrData, 6);
         $out .= "\n\n\n";
         $out .= $gs.'V'."\x00";
+
+        return $out;
+    }
+
+    /** @deprecated Use buildQrEscPos */
+    public function buildBarcodeEscPos(string $serial, string $text): string
+    {
+        return $this->buildQrEscPos(
+            WarrantyQr::fromSerialAndEnds($serial, null),
+            $text
+        );
+    }
+
+    /**
+     * Epson-compatible QR: GS ( k model / size / ECC / store / print.
+     */
+    private function appendNativeQr(string $data, int $moduleSize = 6): string
+    {
+        $gs = "\x1D";
+        $moduleSize = max(3, min(16, $moduleSize));
+        $out = '';
+
+        // Function 165: QR model 2
+        $out .= $gs."(k\x04\x00\x31\x41\x32\x00";
+        // Function 167: module size
+        $out .= $gs.'(k'."\x03\x00\x31\x43".chr($moduleSize);
+        // Function 169: error correction M
+        $out .= $gs."(k\x03\x00\x31\x45\x31";
+        // Function 180: store symbol data
+        $store = "\x31\x50\x30".$data;
+        $len = strlen($store);
+        $out .= $gs.'(k'.chr($len & 0xFF).chr(($len >> 8) & 0xFF).$store;
+        // Function 181: print
+        $out .= $gs."(k\x03\x00\x31\x51\x30";
 
         return $out;
     }
@@ -115,7 +143,14 @@ class StorePosPrintService
                 $job->attempts = (int) $job->attempts + 1;
                 $job->save();
 
-                $raw = $this->buildBarcodeEscPos((string) $job->serial, (string) $job->payload_text);
+                $warranty = $job->store_warranty_id
+                    ? StoreWarranty::query()->find($job->store_warranty_id)
+                    : null;
+                $qrData = $warranty
+                    ? WarrantyQr::payload($warranty)
+                    : WarrantyQr::fromSerialAndEnds((string) $job->serial, null);
+
+                $raw = $this->buildQrEscPos($qrData, (string) $job->payload_text);
                 $out[] = [
                     'id' => StorePosPrint::toAgentId((int) $job->id),
                     'order_id' => 0,
