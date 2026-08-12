@@ -109,6 +109,8 @@ class WarehouseController extends StoreController
         }
         abort_if($name === '', 422, 'Заполните поля конструктора или название.');
 
+        [$warrantyNumber, $serials] = $this->normalizeSerials($data);
+
         StoreComponent::query()->create([
             'club_id' => $clubId,
             'store_supplier_id' => $data['store_supplier_id'] ?? null,
@@ -117,7 +119,8 @@ class WarehouseController extends StoreController
             'type' => $data['type'],
             'specs' => $specs,
             'purchase_price' => $data['purchase_price'],
-            'warranty_number' => $data['warranty_number'] ?? null,
+            'warranty_number' => $warrantyNumber,
+            'serials' => $serials,
             'warranty_months' => $data['warranty_months'] ?? null,
             'qty' => $data['qty'] ?? 1,
             'status' => $data['status'] ?? 'in_stock',
@@ -147,13 +150,16 @@ class WarehouseController extends StoreController
             $name = StoreComponentSpecs::composeName($data['type'], $specs);
         }
 
+        [$warrantyNumber, $serials] = $this->normalizeSerials($data);
+
         $storeComponent->update([
             'store_supplier_id' => $data['store_supplier_id'] ?? null,
             'name' => $name !== '' ? $name : $storeComponent->name,
             'type' => $data['type'],
             'specs' => $specs,
             'purchase_price' => $data['purchase_price'],
-            'warranty_number' => $data['warranty_number'] ?? null,
+            'warranty_number' => $warrantyNumber,
+            'serials' => $serials,
             'warranty_months' => $data['warranty_months'] ?? null,
             'qty' => $data['qty'] ?? $storeComponent->qty,
             'status' => $data['status'] ?? $storeComponent->status,
@@ -205,11 +211,35 @@ class WarehouseController extends StoreController
             'store_supplier_id' => 'nullable|integer',
             'purchase_price' => 'required|numeric|min:0',
             'warranty_number' => 'nullable|string|max:128',
+            'serials' => 'nullable|array',
+            'serials.*' => 'nullable|string|max:128',
             'warranty_months' => 'nullable|integer|min:0|max:120',
             'qty' => 'nullable|integer|min:1',
             'status' => $updating ? "nullable|in:{$statusKeys}" : "nullable|in:{$statusKeys}",
             'received_by' => 'nullable|integer',
             'notes' => 'nullable|string|max:2000',
         ]);
+    }
+
+    /**
+     * @return array{0:?string,1:list<string>}
+     */
+    private function normalizeSerials(array $data): array
+    {
+        $serials = collect($data['serials'] ?? [])
+            ->map(fn ($s) => trim((string) $s))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($serials === [] && ! empty($data['warranty_number'])) {
+            $single = trim((string) $data['warranty_number']);
+            if ($single !== '') {
+                $serials = [$single];
+            }
+        }
+
+        return [$serials[0] ?? null, $serials];
     }
 }

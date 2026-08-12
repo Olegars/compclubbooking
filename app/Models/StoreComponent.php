@@ -34,14 +34,40 @@ class StoreComponent extends Model
 
     protected $fillable = [
         'club_id', 'store_supplier_id', 'received_by', 'name', 'barcode', 'type', 'specs',
-        'purchase_price', 'warranty_number', 'warranty_months', 'qty',
+        'purchase_price', 'warranty_number', 'serials', 'warranty_months', 'qty',
         'status', 'notes',
     ];
 
     protected $casts = [
         'purchase_price' => 'decimal:2',
         'specs' => 'array',
+        'serials' => 'array',
     ];
+
+    /** Все серийники комплекта (или один из warranty_number). */
+    public function allSerials(): array
+    {
+        $fromJson = collect(is_array($this->serials) ? $this->serials : [])
+            ->map(fn ($s) => trim((string) $s))
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($fromJson !== []) {
+            return $fromJson;
+        }
+
+        $single = trim((string) ($this->warranty_number ?: $this->barcode ?: ''));
+
+        return $single !== '' ? [$single] : [];
+    }
+
+    public function serialsLabel(): string
+    {
+        $list = $this->allSerials();
+
+        return $list === [] ? '' : implode(' · ', $list);
+    }
 
     public function club(): BelongsTo
     {

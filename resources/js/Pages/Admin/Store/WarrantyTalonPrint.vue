@@ -83,7 +83,7 @@ onMounted(() => {
                         <tr>
                             <th>Тип</th>
                             <th>Наименование</th>
-                            <th>S/N комплектующего</th>
+                            <th>S/N (все планки)</th>
                         </tr>
                     </thead>
                     <tbody>

@@ -197,6 +197,7 @@ class BuiltPcController extends StoreController
                 'type' => $c->type,
                 'name' => $c->name,
                 'warranty_number' => $c->warranty_number,
+                'serials' => $c->allSerials(),
             ])->values()->all(),
         ]);
     }

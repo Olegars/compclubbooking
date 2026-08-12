@@ -100,7 +100,7 @@ class StoreWarrantyService
     }
 
     /**
-     * @return list<array{type:string,type_label:string,name:string,warranty_number:?string}>
+     * @return list<array{type:string,type_label:string,name:string,warranty_number:?string,serials:list<string>}>
      */
     public function buildSnapshot(StoreBuiltPc $pc): array
     {
@@ -109,13 +109,15 @@ class StoreWarrantyService
         if ($pc->componentLinks->isNotEmpty()) {
             return $pc->componentLinks->map(function ($link) {
                 $type = (string) ($link->type ?: 'other');
-                $wn = $link->component?->warranty_number;
+                $serials = $link->component?->allSerials() ?? [];
+                $label = $serials !== [] ? implode(' · ', $serials) : null;
 
                 return [
                     'type' => $type,
                     'type_label' => StoreComponent::TYPES[$type] ?? $type,
                     'name' => (string) $link->name,
-                    'warranty_number' => $wn ? (string) $wn : null,
+                    'warranty_number' => $label,
+                    'serials' => $serials,
                 ];
             })->values()->all();
         }
@@ -124,12 +126,19 @@ class StoreWarrantyService
 
         return collect($spec)->map(function ($row) {
             $type = (string) ($row['type'] ?? 'other');
+            $serials = [];
+            if (! empty($row['serials']) && is_array($row['serials'])) {
+                $serials = array_values(array_filter(array_map('strval', $row['serials'])));
+            } elseif (! empty($row['warranty_number'])) {
+                $serials = [(string) $row['warranty_number']];
+            }
 
             return [
                 'type' => $type,
                 'type_label' => StoreComponent::TYPES[$type] ?? $type,
                 'name' => (string) ($row['name'] ?? ''),
-                'warranty_number' => isset($row['warranty_number']) ? (string) $row['warranty_number'] : null,
+                'warranty_number' => $serials !== [] ? implode(' · ', $serials) : null,
+                'serials' => $serials,
             ];
         })->filter(fn ($r) => $r['name'] !== '')->values()->all();
     }

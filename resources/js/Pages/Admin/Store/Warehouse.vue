@@ -40,6 +40,7 @@ const form = useForm({
     store_supplier_id: null as number | null,
     purchase_price: 0,
     warranty_number: '',
+    serials: [''] as string[],
     warranty_months: 36 as number | null,
     qty: 1,
     status: 'in_stock',
@@ -60,6 +61,23 @@ const filterType = computed({
 
 const activeFields = computed(() => props.specSchemas[form.type] || [])
 
+const ramModuleCount = computed(() => {
+    if (form.type !== 'ram') return 1
+    const raw = String(specs.modules || '1').replace(/\D+/g, '')
+    const n = parseInt(raw || '1', 10)
+    return Math.min(8, Math.max(1, Number.isFinite(n) ? n : 1))
+})
+
+const serialSlotCount = computed(() => (form.type === 'ram' ? ramModuleCount.value : 1))
+
+const syncSerialSlots = (count: number, preset: string[] = []) => {
+    const next = Array.from({ length: count }, (_, i) => preset[i] || form.serials[i] || '')
+    form.serials = next
+    form.warranty_number = next.find((s) => s.trim()) || ''
+}
+
+watch(serialSlotCount, (n) => syncSerialSlots(n), { immediate: false })
+
 const composedName = computed(() => {
     const s = (k: string) => (specs[k] || '').trim()
     if (form.type === 'cpu') {
@@ -67,7 +85,10 @@ const composedName = computed(() => {
         return [s('brand'), seriesModel, s('socket') ? `(${s('socket')})` : ''].filter(Boolean).join(' ')
     }
     if (form.type === 'ram') {
-        return [s('brand'), s('ddr'), s('capacity'), s('speed'), s('form')].filter(Boolean).join(' ')
+        const cap = s('capacity')
+        const modules = ramModuleCount.value
+        const capLabel = cap ? (modules > 1 ? `${modules}x${cap}` : cap) : ''
+        return [s('brand'), s('ddr'), capLabel, s('speed'), s('form')].filter(Boolean).join(' ')
     }
     if (form.type === 'motherboard') {
         return [s('brand'), s('chipset'), s('model'), s('socket') ? `(${s('socket')})` : ''].filter(Boolean).join(' ')
@@ -112,12 +133,16 @@ const resetSpecs = (preset: Record<string, string> = {}) => {
     for (const f of activeFields.value) {
         specs[f.key] = preset[f.key] || ''
     }
+    if (form.type === 'ram' && !specs.modules) {
+        specs.modules = '1'
+    }
 }
 
 watch(() => form.type, () => {
     nameTouched.value = false
     resetSpecs()
     form.name = ''
+    syncSerialSlots(serialSlotCount.value, form.serials)
 })
 
 const suggestionsFor = (field: SpecField) => {
@@ -152,10 +177,14 @@ const processReceiveScan = async (code: string) => {
     if (!showForm.value) {
         openCreate(serial)
     } else {
-        form.warranty_number = serial
+        const idx = form.serials.findIndex((s) => !String(s || '').trim())
+        if (idx >= 0) form.serials[idx] = serial
+        else if (form.serials.length === 1) form.serials[0] = serial
+        else form.serials[form.serials.length - 1] = serial
+        form.warranty_number = form.serials.find((s) => String(s || '').trim()) || serial
     }
 
-    info('Серийный номер подставлен')
+    info(serialSlotCount.value > 1 ? 'Серийник планки подставлен' : 'Серийный номер подставлен')
     requestAnimationFrame(() => serialInput.value?.focus())
 }
 
@@ -178,6 +207,7 @@ const openCreate = (serial = '') => {
     form.qty = 1
     form.status = 'in_stock'
     form.purchase_price = 0
+    form.serials = [serial]
     form.warranty_number = serial
     form.name = ''
     nameTouched.value = false
@@ -193,18 +223,29 @@ const openEdit = (c: any) => {
     form.type = c.type
     form.store_supplier_id = c.store_supplier_id
     form.purchase_price = Number(c.purchase_price)
-    form.warranty_number = c.warranty_number || c.barcode || ''
+    const list = Array.isArray(c.serials) && c.serials.length
+        ? c.serials.map((s: any) => String(s || ''))
+        : [c.warranty_number || c.barcode || '']
+    form.serials = list.length ? list : ['']
+    form.warranty_number = form.serials.find((s) => s.trim()) || ''
     form.warranty_months = c.warranty_months
     form.qty = Number(c.qty) || 1
     form.status = c.status
     form.notes = c.notes || ''
     resetSpecs(c.specs || {})
+    if (form.type === 'ram' && !specs.modules) specs.modules = String(Math.max(1, form.serials.length))
+    syncSerialSlots(serialSlotCount.value, form.serials)
     showForm.value = true
 }
 
 const save = () => {
     form.specs = { ...specs }
     if (!form.name) form.name = composedName.value
+    form.serials = form.serials.map((s) => String(s || '').trim()).filter(Boolean)
+    if (form.serials.length === 0 && form.warranty_number) {
+        form.serials = [String(form.warranty_number).trim()]
+    }
+    form.warranty_number = form.serials[0] || ''
     if (form.id) {
         form.put(`/admin/store/warehouse/${form.id}`, { onSuccess: () => { showForm.value = false } })
     } else {
@@ -223,8 +264,21 @@ const saveSupplier = () => {
     })
 }
 
-const onSerialInput = (event: Event) => {
-    form.warranty_number = normalizeScanLayout((event.target as HTMLInputElement).value)
+const setSerialRef = (el: unknown, idx: number) => {
+    if (idx === 0) serialInput.value = (el as HTMLInputElement | null)
+}
+
+const onSerialInput = (index: number, event: Event) => {
+    const value = normalizeScanLayout((event.target as HTMLInputElement).value)
+    form.serials[index] = value
+    form.warranty_number = form.serials.find((s) => String(s || '').trim()) || ''
+}
+
+const serialsLabel = (c: any) => {
+    if (Array.isArray(c.serials) && c.serials.length) {
+        return c.serials.filter(Boolean).join(' · ')
+    }
+    return c.warranty_number || '—'
 }
 
 const fieldClass = 'w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-amber-500/50'
@@ -294,7 +348,7 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                         <tr v-for="c in components" :key="c.id" class="border-b border-white/5 hover:bg-white/[0.02]">
                             <td class="px-4 py-3 text-amber-400/80">{{ types[c.type] || c.type }}</td>
                             <td class="px-4 py-3 font-black uppercase">{{ c.name }}</td>
-                            <td class="px-4 py-3 text-cyan-400/80 font-mono">{{ c.warranty_number || '—' }}</td>
+                            <td class="px-4 py-3 text-cyan-400/80 font-mono">{{ serialsLabel(c) }}</td>
                             <td class="px-4 py-3 text-white/40">{{ c.supplier?.name || '—' }}</td>
                             <td class="px-4 py-3">{{ money(c.purchase_price) }}</td>
                             <td class="px-4 py-3 text-white/40">{{ c.warranty_months ? c.warranty_months + ' мес.' : '—' }}</td>
@@ -316,16 +370,23 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
             <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-xl space-y-4 my-8" @submit.prevent="save">
                 <h3 class="font-black uppercase italic text-xl">{{ form.id ? 'Редактировать' : 'Приход комплектующего' }}</h3>
 
-                <div>
-                    <label :class="labelClass">Серийный номер</label>
+                <div class="space-y-2">
+                    <label :class="labelClass">
+                        {{ serialSlotCount > 1 ? `Серийные номера планок (${serialSlotCount})` : 'Серийный номер' }}
+                    </label>
                     <input
-                        ref="serialInput"
-                        v-model="form.warranty_number"
+                        v-for="(_, idx) in form.serials"
+                        :key="'sn-' + idx"
+                        :ref="(el) => setSerialRef(el, idx)"
+                        v-model="form.serials[idx]"
                         data-scan-capture
-                        placeholder="Сканер подставит сюда"
+                        :placeholder="serialSlotCount > 1 ? `Планка ${idx + 1}` : 'Сканер подставит сюда'"
                         :class="fieldClass + ' text-cyan-400 border-cyan-500/40'"
-                        @input="onSerialInput"
+                        @input="(e) => onSerialInput(idx, e)"
                     />
+                    <p v-if="form.type === 'ram'" class="text-[10px] text-white/30 uppercase tracking-widest">
+                        Комплект 2×16 = одна позиция, два серийника. Сканер заполняет пустые поля по очереди.
+                    </p>
                 </div>
 
                 <div>

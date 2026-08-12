@@ -23,7 +23,8 @@ class StoreComponentSpecs
             'ram' => [
                 ['key' => 'brand', 'label' => 'Бренд', 'suggest' => 'ram_brand'],
                 ['key' => 'ddr', 'label' => 'Тип памяти', 'suggest' => 'ram_ddr'],
-                ['key' => 'capacity', 'label' => 'Объём', 'suggest' => 'ram_capacity'],
+                ['key' => 'modules', 'label' => 'Комплект (модулей)', 'suggest' => 'ram_modules'],
+                ['key' => 'capacity', 'label' => 'Объём модуля', 'suggest' => 'ram_capacity'],
                 ['key' => 'speed', 'label' => 'Частота, МГц', 'suggest' => 'ram_speed'],
                 ['key' => 'form', 'label' => 'Форм-фактор', 'suggest' => 'ram_form'],
             ],
@@ -109,6 +110,7 @@ class StoreComponentSpecs
 
             'ram_brand' => ['ADATA', 'Kingston', 'Samsung', 'Crucial', 'Corsair', 'G.Skill', 'Patriot', 'Goodram', 'Apacer'],
             'ram_ddr' => ['DDR4', 'DDR5'],
+            'ram_modules' => ['1', '2', '4'],
             'ram_capacity' => ['4GB', '8GB', '16GB', '32GB', '48GB', '64GB'],
             'ram_speed' => ['2400', '2666', '3000', '3200', '3600', '4000', '4800', '5200', '5600', '6000', '6400'],
             'ram_form' => ['DIMM', 'SO-DIMM'],
@@ -172,7 +174,11 @@ class StoreComponentSpecs
                 $s('socket') !== '' ? '('.$s('socket').')' : '',
             ]))),
             'ram' => trim(implode(' ', array_filter([
-                $s('brand'), $s('ddr'), $s('capacity'), $s('speed'), $s('form'),
+                $s('brand'),
+                $s('ddr'),
+                self::ramCapacityLabel($specs),
+                $s('speed'),
+                $s('form'),
             ]))),
             'motherboard' => trim(implode(' ', array_filter([
                 $s('brand'), $s('chipset'), $s('model'), $s('socket') !== '' ? '('.$s('socket').')' : '',
@@ -205,6 +211,29 @@ class StoreComponentSpecs
             'other' => $s('title'),
             default => '',
         };
+    }
+
+    /** 2x16GB / 16GB */
+    public static function ramCapacityLabel(array $specs): string
+    {
+        $capacity = trim((string) ($specs['capacity'] ?? ''));
+        if ($capacity === '') {
+            return '';
+        }
+
+        $modules = (int) preg_replace('/\D+/', '', (string) ($specs['modules'] ?? '1'));
+        if ($modules < 1) {
+            $modules = 1;
+        }
+
+        return $modules > 1 ? $modules.'x'.$capacity : $capacity;
+    }
+
+    public static function ramModuleCount(array $specs): int
+    {
+        $modules = (int) preg_replace('/\D+/', '', (string) ($specs['modules'] ?? '1'));
+
+        return max(1, min(8, $modules ?: 1));
     }
 
     /** Подсказки: словарь + значения из истории specs. */

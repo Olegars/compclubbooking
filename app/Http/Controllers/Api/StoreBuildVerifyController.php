@@ -58,30 +58,54 @@ class StoreBuildVerifyController extends Controller
             ];
         })->values();
 
-        $expected = $pc->componentLinks->map(function ($link) {
+        $expected = $pc->componentLinks->flatMap(function ($link) {
             $component = $link->store_component_id
                 ? StoreComponent::query()->find($link->store_component_id)
                 : null;
 
-            return [
+            $base = [
                 'link_id' => $link->id,
                 'component_id' => $link->store_component_id,
                 'type' => $link->type ?: ($component?->type),
                 'name' => $link->name ?: ($component?->name),
-                'serial' => $this->normalizeSerial($component?->warranty_number ?: $component?->barcode),
             ];
+
+            $serials = $component
+                ? array_values(array_filter(array_map([$this, 'normalizeSerial'], $component->allSerials())))
+                : [];
+
+            if ($serials === []) {
+                return [[...$base, 'serial' => null]];
+            }
+
+            // Комплект ОЗУ 2x16 → две ожидаемые планки с разными S/N
+            return collect($serials)->map(fn ($serial) => [...$base, 'serial' => $serial])->all();
         })->values();
 
         // Если комплектация только в build_spec
         if ($expected->isEmpty() && is_array($pc->build_spec)) {
-            $expected = collect($pc->build_spec)->map(function ($row, $i) {
-                return [
+            $expected = collect($pc->build_spec)->flatMap(function ($row) {
+                $base = [
                     'link_id' => null,
                     'component_id' => $row['component_id'] ?? null,
                     'type' => $row['type'] ?? null,
                     'name' => $row['name'] ?? null,
-                    'serial' => $this->normalizeSerial($row['warranty_number'] ?? $row['serial'] ?? null),
                 ];
+                $serials = [];
+                if (! empty($row['serials']) && is_array($row['serials'])) {
+                    $serials = array_values(array_filter(array_map([$this, 'normalizeSerial'], $row['serials'])));
+                } elseif (! empty($row['warranty_number']) || ! empty($row['serial'])) {
+                    $one = $this->normalizeSerial($row['warranty_number'] ?? $row['serial'] ?? null);
+                    if ($one) {
+                        $serials = [$one];
+                    }
+                }
+
+                if ($serials === []) {
+                    return [[...$base, 'serial' => null]];
+                }
+
+                return collect($serials)->map(fn ($serial) => [...$base, 'serial' => $serial])->all();
             })->values();
         }
 
