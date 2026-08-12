@@ -442,7 +442,7 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                             :suggestions="suggestionsFor(field)"
                             :input-class="fieldClass"
                             :label-class="labelClass"
-                            :min-chars="['socket', 'modules', 'ddr'].includes(field.key) ? 1 : 3"
+                            :min-chars="['socket', 'modules', 'ddr', 'brand'].includes(field.key) ? 1 : 3"
                             @update:model-value="(v) => onSpecUpdate(field.key, v)"
                             @search="(q) => onSuggestSearch(field, q)"
                         />

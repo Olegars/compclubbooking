@@ -23,7 +23,7 @@ class StoreBuiltPc extends Model
     ];
 
     protected $fillable = [
-        'club_id', 'store_client_id', 'assembled_by', 'accepted_by', 'issued_by',
+        'club_id', 'store_order_id', 'store_client_id', 'assembled_by', 'accepted_by', 'issued_by',
         'title', 'build_spec', 'serial_number', 'sale_price', 'sale_tax_mode',
         'sold_at', 'status', 'notes',
     ];
@@ -37,6 +37,11 @@ class StoreBuiltPc extends Model
     public function club(): BelongsTo
     {
         return $this->belongsTo(Club::class);
+    }
+
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(StoreOrder::class, 'store_order_id');
     }
 
     public function client(): BelongsTo

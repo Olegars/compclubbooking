@@ -4,13 +4,18 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\StoreBuiltPc;
+use App\Models\StoreOrder;
 use App\Services\StoreBuildVerifyService;
+use App\Services\StoreOrderBuiltPcService;
 use Illuminate\Http\Request;
 
 class StoreBuildVerifyController extends Controller
 {
-    public function __invoke(Request $request, StoreBuildVerifyService $verify)
-    {
+    public function __invoke(
+        Request $request,
+        StoreBuildVerifyService $verify,
+        StoreOrderBuiltPcService $orderBuiltPcs
+    ) {
         $tokenError = $this->assertToken($request);
         if ($tokenError !== null) {
             return $tokenError;
@@ -18,7 +23,7 @@ class StoreBuildVerifyController extends Controller
 
         $data = $request->validate([
             'built_pc_id' => 'nullable|integer',
-            'order_id' => 'nullable|integer', // alias
+            'order_id' => 'nullable|integer', // alias / номер заказа
             'serial_number' => 'nullable|string|max:128',
             'hostname' => 'nullable|string|max:128',
             'components' => 'required|array|min:1',
@@ -35,6 +40,24 @@ class StoreBuildVerifyController extends Controller
 
         if ($pcId) {
             $pc = StoreBuiltPc::query()->with(['componentLinks', 'components'])->find($pcId);
+
+            // ID заказа → связанный готовый ПК (или создать из заказа)
+            if (! $pc) {
+                $pc = StoreBuiltPc::query()
+                    ->with(['componentLinks', 'components'])
+                    ->where('store_order_id', $pcId)
+                    ->first();
+            }
+
+            if (! $pc) {
+                $order = StoreOrder::query()
+                    ->with(['items.component', 'client'])
+                    ->find($pcId);
+                if ($order && in_array($order->status, ['assembling', 'ready', 'issued'], true)) {
+                    $pc = $orderBuiltPcs->ensureFromOrder($order);
+                    $pc->load(['componentLinks', 'components']);
+                }
+            }
         } elseif (! empty($data['serial_number'])) {
             $pc = StoreBuiltPc::query()
                 ->with(['componentLinks', 'components'])
@@ -46,7 +69,7 @@ class StoreBuildVerifyController extends Controller
         if (! $pc) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Сборка не найдена. Укажите built_pc_id / order_id или serial_number ПК.',
+                'message' => 'Сборка не найдена. Укажите ID готового ПК, номер заказа (на этапе Сборка/Готов/Выдан) или серийник ПК.',
             ], 200);
         }
 
@@ -82,6 +105,7 @@ class StoreBuildVerifyController extends Controller
             'ok' => $ok,
             'built_pc' => [
                 'id' => $pc->id,
+                'store_order_id' => $pc->store_order_id,
                 'title' => $pc->title,
                 'status' => $pc->status,
                 'serial_number' => $pc->serial_number,

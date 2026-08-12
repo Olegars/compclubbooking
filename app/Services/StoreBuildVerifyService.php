@@ -98,6 +98,9 @@ class StoreBuildVerifyService
                 } elseif (count($byType) === 1) {
                     // Единственная позиция этого типа — принимаем без имени
                     $hitIndex = $byType[0];
+                } elseif (($exp['type'] ?? null) === 'ram' && $byType !== []) {
+                    // Комплект 2×: планки часто без S/N и с одинаковым WMI-именем
+                    $hitIndex = $byType[0];
                 }
             }
 
@@ -239,18 +242,8 @@ class StoreBuildVerifyService
                         $row['serial_match'] = false;
                     }
                 } elseif (! $expSerial && $componentId) {
-                    // В базе пусто — дозапись
-                    $component = StoreComponent::query()->find($componentId);
-                    if ($component && $component->allSerials() === []) {
-                        $component->update(['warranty_number' => $repSerial]);
-                        $updatedSerials[] = [
-                            'component_id' => $component->id,
-                            'serial' => $repSerial,
-                            'name' => $component->name,
-                        ];
-                        $row['expected']['serial'] = $repSerial;
-                        $row['serial_match'] = true;
-                    }
+                    // дозапись серийников — пакетом ниже (важно для комплекта 2×)
+                    $row['_fill_serial'] = true;
                 }
             }
 
@@ -274,6 +267,48 @@ class StoreBuildVerifyService
             }
         }
         unset($row);
+
+        // Дозапись S/N в комплекты: все планки одного component_id → serials[]
+        $fillByComponent = [];
+        foreach ($matched as $row) {
+            if (empty($row['_fill_serial'])) {
+                continue;
+            }
+            $cid = $row['expected']['component_id'] ?? null;
+            $ser = $row['reported']['serial'] ?? null;
+            if ($cid && $ser) {
+                $fillByComponent[(int) $cid][] = $ser;
+            }
+        }
+        foreach ($fillByComponent as $cid => $sers) {
+            $component = StoreComponent::query()->find($cid);
+            if (! $component || $component->allSerials() !== []) {
+                continue;
+            }
+            $sers = array_values(array_unique($sers));
+            $component->update([
+                'serials' => $sers,
+                'warranty_number' => $sers[0],
+            ]);
+            $updatedSerials[] = [
+                'component_id' => $component->id,
+                'serial' => implode(' · ', $sers),
+                'name' => $component->name,
+            ];
+            foreach ($matched as &$m) {
+                if ((int) ($m['expected']['component_id'] ?? 0) === (int) $cid
+                    && ! empty($m['reported']['serial'])) {
+                    $m['expected']['serial'] = $m['reported']['serial'];
+                    $m['serial_match'] = true;
+                }
+                unset($m['_fill_serial']);
+            }
+            unset($m);
+        }
+        foreach ($matched as &$m) {
+            unset($m['_fill_serial']);
+        }
+        unset($m);
 
         $this->syncBuildSpec($pc, $matched, $updatedNames, $swapped, $updatedSerials);
 
@@ -401,11 +436,14 @@ class StoreBuildVerifyService
                 ? array_values(array_filter(array_map([$this, 'normalizeSerial'], $component->allSerials())))
                 : [];
 
-            if ($serials === []) {
-                return [[...$base, 'serial' => null]];
+            if ($serials !== []) {
+                return collect($serials)->map(fn ($serial) => [...$base, 'serial' => $serial])->all();
             }
 
-            return collect($serials)->map(fn ($serial) => [...$base, 'serial' => $serial])->all();
+            // Нет S/N в базе — всё равно ждём N планок по specs.modules (комплект 2×16 и т.п.)
+            $slots = $this->expectedSlotCount($component, $base['type'] ?? null);
+
+            return array_fill(0, $slots, [...$base, 'serial' => null]);
         })->values()->all();
 
         if ($expected === [] && is_array($pc->build_spec)) {
@@ -438,15 +476,34 @@ class StoreBuildVerifyService
                     }
                 }
 
-                if ($serials === []) {
-                    return [[...$base, 'serial' => null]];
+                if ($serials !== []) {
+                    return collect($serials)->map(fn ($serial) => [...$base, 'serial' => $serial])->all();
                 }
 
-                return collect($serials)->map(fn ($serial) => [...$base, 'serial' => $serial])->all();
+                $slots = $this->expectedSlotCount($component, $base['type'] ?? null);
+                if (! empty($row['modules'])) {
+                    $slots = max($slots, (int) preg_replace('/\D+/', '', (string) $row['modules']) ?: 1);
+                }
+
+                return array_fill(0, max(1, $slots), [...$base, 'serial' => null]);
             })->values()->all();
         }
 
         return $expected;
+    }
+
+    /** Сколько физических единиц ждать (для RAM — specs.modules). */
+    private function expectedSlotCount(?StoreComponent $component, ?string $type): int
+    {
+        if ($component && ($type === 'ram' || $component->type === 'ram')) {
+            $n = \App\Support\StoreComponentSpecs::ramModuleCount($component->specs ?? []);
+
+            return max(1, $n);
+        }
+
+        $qty = (int) ($component?->qty ?? 1);
+
+        return max(1, $qty);
     }
 
     /** Имена для сравнения с WMI: конструктор, оригинал, куски specs. */

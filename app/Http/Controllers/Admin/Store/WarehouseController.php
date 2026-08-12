@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Store;
 
 use App\Models\StoreComponent;
+use App\Models\StoreSpecDictionary;
 use App\Models\StoreSupplier;
 use App\Support\StoreComponentSpecs;
 use Illuminate\Http\Request;
@@ -35,7 +36,7 @@ class WarehouseController extends StoreController
             'types' => StoreComponent::TYPES,
             'statuses' => StoreComponent::STATUSES,
             'specSchemas' => StoreComponentSpecs::schemas(),
-            'specDictionaries' => StoreComponentSpecs::dictionaries(),
+            'specDictionaries' => StoreSpecDictionary::mergedDictionaries($clubId),
             'filters' => ['type' => $type ?: null],
             'canManage' => $admin->canManageStoreCatalog() || $admin->role === 'owner',
             'canReceive' => $admin->canManageStoreInventory()
@@ -55,7 +56,7 @@ class WarehouseController extends StoreController
         $data = $request->validate([
             'type' => 'required|string',
             'field' => 'required|string',
-            'q' => 'required|string|min:3|max:64',
+            'q' => 'required|string|min:1|max:64',
         ]);
 
         $schema = StoreComponentSpecs::schemas()[$data['type']] ?? [];
@@ -65,8 +66,9 @@ class WarehouseController extends StoreController
         }
 
         $dictKey = $fieldMeta['suggest'];
+        $clubId = $this->locationId();
         $history = StoreComponent::query()
-            ->where('club_id', $this->locationId())
+            ->where('club_id', $clubId)
             ->where('type', $data['type'])
             ->whereNotNull('specs')
             ->latest()
@@ -77,6 +79,7 @@ class WarehouseController extends StoreController
 
                 return $val ? [$val] : [];
             })
+            ->merge(StoreSpecDictionary::valuesFor($clubId, $dictKey))
             ->unique()
             ->values()
             ->all();
@@ -128,6 +131,8 @@ class WarehouseController extends StoreController
             'notes' => $data['notes'] ?? null,
         ]);
 
+        StoreSpecDictionary::rememberFromSpecs($clubId, $data['type'], $specs);
+
         return back()->with('success', 'Комплектующее добавлено на склад.');
     }
 
@@ -169,6 +174,8 @@ class WarehouseController extends StoreController
             'status' => $data['status'] ?? $storeComponent->status,
             'notes' => $data['notes'] ?? null,
         ]);
+
+        StoreSpecDictionary::rememberFromSpecs($this->locationId(), $data['type'], $specs);
 
         return back()->with('success', 'Комплектующее обновлено.');
     }

@@ -9,18 +9,43 @@ use App\Models\StoreOrder;
 use App\Models\StoreOrderItem;
 use App\Models\StoreProduct;
 use App\Models\StoreStockMovement;
+use App\Services\StoreOrderBuiltPcService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class StoreOrderController extends StoreController
 {
-    public function index(Request $request)
+    public function index(Request $request, StoreOrderBuiltPcService $builtPcs)
     {
         $status = $request->string('status')->toString();
+        $clubId = $this->locationId();
+
+        // Досоздать карточки «Готовый ПК» для заказов, которые уже в работе/выданы
+        StoreOrder::query()
+            ->where('club_id', $clubId)
+            ->whereIn('status', ['assembling', 'ready', 'issued'])
+            ->whereDoesntHave('builtPc')
+            ->with(['items.component', 'client'])
+            ->latest()
+            ->limit(30)
+            ->get()
+            ->each(function (StoreOrder $order) use ($builtPcs) {
+                try {
+                    $builtPcs->ensureFromOrder($order);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            });
+
         $query = StoreOrder::query()
-            ->where('club_id', $this->locationId())
-            ->with(['client:id,name,phone', 'assignee:id,name', 'items.component:id,type,warranty_number,serials,status'])
+            ->where('club_id', $clubId)
+            ->with([
+                'client:id,name,phone',
+                'assignee:id,name',
+                'items.component:id,type,warranty_number,serials,status',
+                'builtPc:id,store_order_id,serial_number,status,title',
+            ])
             ->latest();
 
         if ($status && in_array($status, StoreOrder::STATUSES, true)) {
@@ -148,7 +173,7 @@ class StoreOrderController extends StoreController
         return back()->with('success', 'Позиция удалена, комплектующая возвращена на склад.');
     }
 
-    public function updateStatus(Request $request, StoreOrder $storeOrder)
+    public function updateStatus(Request $request, StoreOrder $storeOrder, StoreOrderBuiltPcService $builtPcs)
     {
         abort_unless($storeOrder->club_id === $this->locationId(), 404);
 
@@ -174,17 +199,21 @@ class StoreOrderController extends StoreController
             }
         }
 
-        DB::transaction(function () use ($storeOrder, $next, $prev) {
+        DB::transaction(function () use ($storeOrder, $next, $prev, $builtPcs, $admin) {
             $storeOrder->status = $next;
             $storeOrder->save();
 
-            // Отмена (до выдачи) или возврат (после выдачи) — комплектующие на склад
+            if (in_array($next, ['assembling', 'ready', 'issued'], true)) {
+                $builtPcs->ensureFromOrder($storeOrder->fresh(['items.component', 'client']), $admin->id);
+            }
+
             if (in_array($next, ['cancelled', 'returned'], true) && ! in_array($prev, ['cancelled', 'returned'], true)) {
                 $storeOrder->load('items');
                 foreach ($storeOrder->items as $item) {
                     $this->returnComponentToStock($item);
                 }
                 $this->restockProducts($storeOrder);
+                $builtPcs->cancelFromOrder($storeOrder);
             }
         });
 

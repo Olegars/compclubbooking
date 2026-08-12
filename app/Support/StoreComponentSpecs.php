@@ -265,7 +265,11 @@ class StoreComponentSpecs
     public static function suggest(string $dictKey, string $query, array $history = [], int $limit = 12): array
     {
         $query = trim($query);
-        if (mb_strlen($query) < 3) {
+        if ($query === '') {
+            return [];
+        }
+        // Короткие запросы (бренд WD, AM5…) — от 1 символа; иначе от 2
+        if (mb_strlen($query) < 1) {
             return [];
         }
 

@@ -157,6 +157,11 @@ const filterStatus = computed({
                                 <span v-if="o.client?.phone"> · {{ o.client.phone }}</span>
                                 <span v-if="o.assignee"> · сборщик {{ o.assignee.name }}</span>
                             </div>
+                            <div v-if="o.built_pc" class="text-[10px] text-cyan-400/80 mt-1 tracking-wide normal-case">
+                                Готовый ПК #{{ o.built_pc.id }}
+                                <span v-if="o.built_pc.serial_number"> · S/N {{ o.built_pc.serial_number }}</span>
+                                <span class="text-white/30"> · check_build: {{ o.id }} или {{ o.built_pc.id }}</span>
+                            </div>
                         </div>
                         <div class="font-black text-amber-400">{{ money(o.total) }}</div>
                     </div>

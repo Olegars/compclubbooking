@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class StoreOrder extends Model
 {
@@ -36,6 +37,11 @@ class StoreOrder extends Model
     public function items(): HasMany
     {
         return $this->hasMany(StoreOrderItem::class);
+    }
+
+    public function builtPc(): HasOne
+    {
+        return $this->hasOne(StoreBuiltPc::class, 'store_order_id');
     }
 
     public function warranties(): HasMany
