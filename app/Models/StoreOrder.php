@@ -13,10 +13,13 @@ class StoreOrder extends Model
 
     protected $fillable = [
         'club_id', 'store_client_id', 'assignee_id', 'status', 'total', 'notes',
+        'verified_at', 'verified_ok',
     ];
 
     protected $casts = [
         'total' => 'decimal:2',
+        'verified_at' => 'datetime',
+        'verified_ok' => 'boolean',
     ];
 
     public function club(): BelongsTo

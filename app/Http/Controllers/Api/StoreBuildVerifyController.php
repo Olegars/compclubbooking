@@ -82,6 +82,19 @@ class StoreBuildVerifyController extends Controller
 
         $ok = count($result['missing']) === 0 && count($result['conflicts']) === 0;
 
+        // Пометка «проверено check_build»
+        $pc->update([
+            'verified_at' => now(),
+            'verified_ok' => $ok,
+            'verified_hostname' => $data['hostname'] ?? null,
+        ]);
+        if ($pc->store_order_id) {
+            StoreOrder::query()->whereKey($pc->store_order_id)->update([
+                'verified_at' => now(),
+                'verified_ok' => $ok,
+            ]);
+        }
+
         $bits = [];
         if ($ok) {
             $bits[] = 'Сборка совпала с железом.';
@@ -96,9 +109,14 @@ class StoreBuildVerifyController extends Controller
         }
         if (count($result['updated_serials'])) {
             $bits[] = 'Дописаны серийники: '.count($result['updated_serials']).'.';
+        } elseif ($ok) {
+            $bits[] = 'Серийники с ПК не дописывались (уже были в базе или железо не отдало S/N).';
         }
         if (count($result['swapped'])) {
             $bits[] = 'Заменены комплектующие в заказе: '.count($result['swapped']).'.';
+        }
+        if ($ok) {
+            $bits[] = 'Заказ отмечен как проверенный — можно ставить «Готов».';
         }
 
         return response()->json([

@@ -241,8 +241,8 @@ class StoreBuildVerifyService
                         ];
                         $row['serial_match'] = false;
                     }
-                } elseif (! $expSerial && $componentId) {
-                    // дозапись серийников — пакетом ниже (важно для комплекта 2×)
+                } elseif ($componentId) {
+                    // дозапись, если в компоненте ещё нет реальных S/N
                     $row['_fill_serial'] = true;
                 }
             }
@@ -282,10 +282,27 @@ class StoreBuildVerifyService
         }
         foreach ($fillByComponent as $cid => $sers) {
             $component = StoreComponent::query()->find($cid);
-            if (! $component || $component->allSerials() !== []) {
+            if (! $component) {
                 continue;
             }
-            $sers = array_values(array_unique($sers));
+
+            // Уже есть реальные S/N (не 00000000 / пустые) — не перезаписываем
+            $existing = array_values(array_filter(array_map(
+                [$this, 'normalizeSerial'],
+                $component->allSerials()
+            )));
+            if ($existing !== []) {
+                continue;
+            }
+
+            $sers = array_values(array_unique(array_filter(array_map(
+                [$this, 'normalizeSerial'],
+                $sers
+            ))));
+            if ($sers === []) {
+                continue;
+            }
+
             $component->update([
                 'serials' => $sers,
                 'warranty_number' => $sers[0],

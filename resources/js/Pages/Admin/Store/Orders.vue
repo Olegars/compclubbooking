@@ -42,9 +42,20 @@ const transitions: Record<string, string[]> = {
     returned: [],
 }
 
-const canGo = (order: any, status: string) => (transitions[order.status] || []).includes(status)
+const canGo = (order: any, status: string) => {
+    if (!(transitions[order.status] || []).includes(status)) return false
+    // «Готов» только после успешной сверки
+    if (status === 'ready' && !order.verified_ok) return false
+    return true
+}
 
 const pipeline = ['new', 'assembling', 'ready', 'issued'] as const
+
+const verifiedLabel = (order: any) => {
+    if (!order.verified_at) return null
+    if (order.verified_ok) return 'Проверено check_build'
+    return 'Сверка с ошибками'
+}
 
 const showCreate = ref(false)
 const submitting = ref(false)
@@ -162,6 +173,14 @@ const filterStatus = computed({
                                 <span v-if="o.built_pc.serial_number"> · S/N {{ o.built_pc.serial_number }}</span>
                                 <span class="text-white/30"> · check_build: {{ o.id }} или {{ o.built_pc.id }}</span>
                             </div>
+                            <div v-if="verifiedLabel(o)" class="text-[10px] mt-1 uppercase tracking-widest font-black"
+                                 :class="o.verified_ok ? 'text-emerald-400/90' : 'text-orange-400/90'">
+                                {{ verifiedLabel(o) }}
+                                <span v-if="o.verified_at" class="text-white/30 font-normal normal-case"> · {{ String(o.verified_at).slice(0, 16).replace('T', ' ') }}</span>
+                            </div>
+                            <div v-else-if="o.status === 'assembling'" class="text-[10px] text-white/25 mt-1 uppercase tracking-widest">
+                                Ожидает проверки check_build
+                            </div>
                         </div>
                         <div class="font-black text-amber-400">{{ money(o.total) }}</div>
                     </div>
@@ -180,6 +199,7 @@ const filterStatus = computed({
                             <button v-for="s in pipeline" :key="s"
                                     type="button"
                                     :disabled="!canGo(o, s) && o.status !== s"
+                                    :title="s === 'ready' && o.status === 'assembling' && !o.verified_ok ? 'Сначала check_build' : undefined"
                                     @click="canGo(o, s) && setStatus(o.id, s)"
                                     class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black transition-colors"
                                     :class="o.status === s

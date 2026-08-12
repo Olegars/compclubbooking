@@ -25,13 +25,15 @@ class StoreBuiltPc extends Model
     protected $fillable = [
         'club_id', 'store_order_id', 'store_client_id', 'assembled_by', 'accepted_by', 'issued_by',
         'title', 'build_spec', 'serial_number', 'sale_price', 'sale_tax_mode',
-        'sold_at', 'status', 'notes',
+        'sold_at', 'status', 'notes', 'verified_at', 'verified_ok', 'verified_hostname',
     ];
 
     protected $casts = [
         'build_spec' => 'array',
         'sale_price' => 'decimal:2',
         'sold_at' => 'datetime',
+        'verified_at' => 'datetime',
+        'verified_ok' => 'boolean',
     ];
 
     public function club(): BelongsTo

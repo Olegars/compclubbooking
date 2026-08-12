@@ -44,7 +44,7 @@ class StoreOrderController extends StoreController
                 'client:id,name,phone',
                 'assignee:id,name',
                 'items.component:id,type,warranty_number,serials,status',
-                'builtPc:id,store_order_id,serial_number,status,title',
+                'builtPc:id,store_order_id,serial_number,status,title,verified_at,verified_ok',
             ])
             ->latest();
 
@@ -167,7 +167,15 @@ class StoreOrderController extends StoreController
             $storeOrder->load('items');
             $storeOrder->update([
                 'total' => $storeOrder->items->sum(fn (StoreOrderItem $i) => (float) $i->price * (int) $i->qty),
+                'verified_at' => null,
+                'verified_ok' => false,
             ]);
+            if ($storeOrder->builtPc) {
+                $storeOrder->builtPc->update([
+                    'verified_at' => null,
+                    'verified_ok' => false,
+                ]);
+            }
         });
 
         return back()->with('success', 'Позиция удалена, комплектующая возвращена на склад.');
@@ -190,6 +198,16 @@ class StoreOrderController extends StoreController
 
         if (in_array($next, ['cancelled', 'returned'], true)) {
             abort_unless($admin->canCancelStoreOrders(), 403);
+        }
+
+        // «Готов» только после успешной сверки check_build
+        if ($next === 'ready') {
+            $storeOrder->refresh();
+            abort_unless(
+                $storeOrder->verified_ok && $storeOrder->verified_at,
+                422,
+                'Сначала проверьте сборку утилитой check_build. Пока нет отметки «проверено» — статус «Готов» недоступен.'
+            );
         }
 
         if ($admin->role === 'assembler') {
