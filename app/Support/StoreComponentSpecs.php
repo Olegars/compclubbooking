@@ -89,19 +89,28 @@ class StoreComponentSpecs
             'cpu_brand' => ['Intel', 'AMD'],
             'cpu_socket' => ['AM4', 'AM5', 'LGA1851', 'LGA1700', 'LGA1200', 'LGA1151', 'LGA1150', 'sTR5', 'TR4'],
             'cpu_series' => [
-                'Core i3', 'Core i5', 'Core i7', 'Core i9', 'Core Ultra',
+                'Core i3', 'Core i5', 'Core i7', 'Core i9',
+                'Core Ultra', 'Core Ultra 5', 'Core Ultra 7', 'Core Ultra 9',
                 'Pentium', 'Celeron',
                 'Ryzen 3', 'Ryzen 5', 'Ryzen 7', 'Ryzen 9',
                 'Ryzen Threadripper',
             ],
             'cpu_model' => [
-                // Intel 12/13/14 gen common
+                // Intel 12/13/14 gen
                 '12100', '12100F', '12400', '12400F', '12600', '12600K', '12600KF',
                 '12700', '12700F', '12700K', '12700KF', '12900', '12900K', '12900KF',
                 '13100', '13100F', '13400', '13400F', '13500', '13600', '13600K', '13600KF',
                 '13700', '13700F', '13700K', '13700KF', '13900', '13900K', '13900KF',
                 '14100', '14100F', '14400', '14400F', '14500', '14600', '14600K', '14600KF',
                 '14700', '14700F', '14700K', '14700KF', '14900', '14900K', '14900KF',
+                // Intel Core Ultra (Meteor Lake / Arrow Lake) — Series 1
+                '125H', '135H', '155H', '165H',
+                '125U', '135U', '155U',
+                '225H', '235H', '245H', '255H', '265H', '285H',
+                // Desktop Arrow Lake (LGA1851) — Series 2
+                '225', '235', '245', '245K', '245KF',
+                '265', '265K', '265KF',
+                '285', '285K', '285T',
                 // AMD AM4 / AM5
                 '5600', '5600X', '5600G', '5700X', '5700G', '5800X', '5800X3D', '5900X', '5950X',
                 '7500F', '7600', '7600X', '7700', '7700X', '7800X3D', '7900', '7900X', '7950X', '7950X3D',
@@ -171,13 +180,24 @@ class StoreComponentSpecs
         $s = fn (string $key) => trim((string) ($specs[$key] ?? ''));
 
         return match ($type) {
-            'cpu' => trim(implode(' ', array_filter([
-                $s('brand'),
-                $s('series') !== '' && $s('model') !== ''
-                    ? $s('series').'-'.$s('model')
-                    : trim($s('series').' '.$s('model')),
-                $s('socket') !== '' ? '('.$s('socket').')' : '',
-            ]))),
+            'cpu' => (function () use ($s) {
+                $series = $s('series');
+                $model = $s('model');
+                $mid = '';
+                if ($series !== '' && $model !== '') {
+                    $mid = str_contains(mb_strtolower($series), 'ultra')
+                        ? $series.' '.$model
+                        : $series.'-'.$model;
+                } else {
+                    $mid = trim($series.' '.$model);
+                }
+
+                return trim(implode(' ', array_filter([
+                    $s('brand'),
+                    $mid,
+                    $s('socket') !== '' ? '('.$s('socket').')' : '',
+                ])));
+            })(),
             'ram' => trim(implode(' ', array_filter([
                 $s('brand'),
                 $s('ddr'),

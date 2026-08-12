@@ -83,7 +83,14 @@ watch(serialSlotCount, (n) => syncSerialSlots(n), { immediate: false })
 const composedName = computed(() => {
     const s = (k: string) => (specs[k] || '').trim()
     if (form.type === 'cpu') {
-        const seriesModel = s('series') && s('model') ? `${s('series')}-${s('model')}` : `${s('series')} ${s('model')}`.trim()
+        let seriesModel = ''
+        if (s('series') && s('model')) {
+            seriesModel = s('series').toLowerCase().includes('ultra')
+                ? `${s('series')} ${s('model')}`
+                : `${s('series')}-${s('model')}`
+        } else {
+            seriesModel = `${s('series')} ${s('model')}`.trim()
+        }
         return [s('brand'), seriesModel, s('socket') ? `(${s('socket')})` : ''].filter(Boolean).join(' ')
     }
     if (form.type === 'ram') {
@@ -158,6 +165,13 @@ const applySpecInfer = (changedKey: string) => {
 const onSpecUpdate = (key: string, value: string) => {
     specs[key] = value
     applySpecInfer(key)
+    // Любое изменение конструктора → пересобрать название
+    nameTouched.value = false
+    form.name = composedName.value
+}
+
+const onNameInput = () => {
+    nameTouched.value = true
 }
 
 const suggestionsFor = (field: SpecField) => {
@@ -441,7 +455,7 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
 
                 <div>
                     <label :class="labelClass">Название конструктора (можно поправить вручную)</label>
-                    <input v-model="form.name" :placeholder="composedName || 'Соберётся из полей'" :class="fieldClass" @input="nameTouched = true" />
+                    <input v-model="form.name" :placeholder="composedName || 'Соберётся из полей'" :class="fieldClass" @input="onNameInput" />
                 </div>
 
                 <div>
