@@ -58,6 +58,7 @@ use App\Http\Controllers\Admin\Store\BuiltPcController as StoreBuiltPcController
 use App\Http\Controllers\Admin\Store\StoreOrderController;
 use App\Http\Controllers\Admin\Store\WarrantyController as StoreWarrantyController;
 use App\Http\Controllers\Admin\Store\StoreClientController;
+use App\Http\Controllers\Admin\Store\EstimateController as StoreEstimateController;
 use App\Http\Controllers\Admin\Store\LocationController as StoreLocationController;
 use App\Http\Controllers\GameRequestController;
 
@@ -268,6 +269,21 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::post('/orders/{storeOrder}/status', [StoreOrderController::class, 'updateStatus'])->name('admin.store.orders.status');
             Route::post('/orders/{storeOrder}/assign', [StoreOrderController::class, 'assign'])->name('admin.store.orders.assign');
             Route::delete('/orders/{storeOrder}/items/{item}', [StoreOrderController::class, 'destroyItem'])->name('admin.store.orders.items.destroy');
+
+            Route::get('/estimates', [StoreEstimateController::class, 'index'])->name('admin.store.estimates');
+            Route::post('/estimates', [StoreEstimateController::class, 'store'])->name('admin.store.estimates.store');
+            Route::post('/estimates/sync-catalog', [StoreEstimateController::class, 'syncCatalog'])->name('admin.store.estimates.sync-catalog');
+            Route::get('/estimates/catalog-search', [StoreEstimateController::class, 'searchCatalog'])->name('admin.store.estimates.catalog-search');
+            Route::get('/estimates/categories', [StoreEstimateController::class, 'categories'])->name('admin.store.estimates.categories');
+            Route::put('/estimates/{storeEstimate}', [StoreEstimateController::class, 'update'])->name('admin.store.estimates.update');
+            Route::delete('/estimates/{storeEstimate}', [StoreEstimateController::class, 'destroy'])->name('admin.store.estimates.destroy');
+            Route::post('/estimates/{storeEstimate}/status', [StoreEstimateController::class, 'updateStatus'])->name('admin.store.estimates.status');
+            Route::post('/estimates/{storeEstimate}/check-supplier', [StoreEstimateController::class, 'checkSupplier'])->name('admin.store.estimates.check-supplier');
+            Route::post('/estimates/{storeEstimate}/order-missing', [StoreEstimateController::class, 'orderMissing'])->name('admin.store.estimates.order-missing');
+            Route::post('/estimates/{storeEstimate}/convert', [StoreEstimateController::class, 'convert'])->name('admin.store.estimates.convert');
+            Route::post('/estimate-items/{storeEstimateItem}/link-stock', [StoreEstimateController::class, 'linkStock'])->name('admin.store.estimate-items.link-stock');
+            Route::post('/estimate-items/{storeEstimateItem}/unlink-stock', [StoreEstimateController::class, 'unlinkStock'])->name('admin.store.estimate-items.unlink-stock');
+            Route::post('/purchases/{storePurchase}/receive', [StoreEstimateController::class, 'receivePurchase'])->name('admin.store.purchases.receive');
 
             Route::get('/warranty', [StoreWarrantyController::class, 'index'])->name('admin.store.warranty');
             Route::post('/warranty', [StoreWarrantyController::class, 'store'])->name('admin.store.warranty.store');

@@ -23,4 +23,23 @@ return [
     | Срок гарантийного ремонта (дней)
     */
     'repair_days' => (int) env('STORE_REPAIR_DAYS', 45),
+
+    /*
+    |--------------------------------------------------------------------------
+    | API поставщика (QuickFox)
+    |--------------------------------------------------------------------------
+    | domain — хост без /api/2 (например b2b.example.ru)
+    | category_ids — опционально, через запятую: синк только этих веток + дочерних
+    */
+    'quickfox' => [
+        'domain' => env('STORE_QUICKFOX_DOMAIN', ''),
+        'login' => env('STORE_QUICKFOX_LOGIN', ''),
+        'password' => env('STORE_QUICKFOX_PASSWORD', ''),
+        'catalog_tree_path' => env('STORE_QUICKFOX_CATALOG_TREE', '/download/catalog/json/catalog_tree_9.json'),
+        'products_path' => env('STORE_QUICKFOX_PRODUCTS', '/download/catalog/json/products_9.json'),
+        'category_ids' => array_values(array_filter(array_map(
+            'intval',
+            array_map('trim', explode(',', (string) env('STORE_QUICKFOX_CATEGORY_IDS', '')))
+        ))),
+    ],
 ];
