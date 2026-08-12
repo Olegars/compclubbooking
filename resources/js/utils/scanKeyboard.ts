@@ -87,3 +87,8 @@ export function normalizeScanLayout(raw: string): string {
     }
     return out
 }
+
+/** true, если в строке есть кириллица (скан «уехал» в русскую раскладку). */
+export function looksLikeRuLayoutScan(raw: string): boolean {
+    return /[а-яёА-ЯЁ]/.test(raw || '')
+}

@@ -523,7 +523,7 @@ const receiveTargetName = computed(() => {
                             </div>
                             <div>
                                 <label class="text-[10px] text-white/30 uppercase font-black mb-2 block italic">GTIN / EAN</label>
-                                <input v-model="form.barcode" type="text" placeholder="01… / EAN-13" class="w-full bg-black border border-cyan-500/50 rounded-2xl px-5 py-4 text-cyan-500 font-bold focus:border-cyan-500 outline-none" />
+                                <input v-model="form.barcode" data-scan-capture type="text" placeholder="01… / EAN-13" class="w-full bg-black border border-cyan-500/50 rounded-2xl px-5 py-4 text-cyan-500 font-bold focus:border-cyan-500 outline-none" />
                             </div>
                         </div>
 

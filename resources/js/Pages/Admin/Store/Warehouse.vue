@@ -5,6 +5,7 @@ import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { useAdminBarcodeScanner } from '@/Composables/useAdminBarcodeScanner'
 import { useToast } from '@/Composables/useToast'
+import { normalizeScanLayout } from '@/utils/scanKeyboard'
 
 const props = defineProps<{
     components: any[]
@@ -157,6 +158,11 @@ const selectReceiveTarget = (id: number) => {
     if (receiveTargetId.value) setReceiveMode(true)
 }
 
+const onScanFieldInput = (field: 'barcode' | 'warranty_number', event: Event) => {
+    const value = normalizeScanLayout((event.target as HTMLInputElement).value)
+    form[field] = value
+}
+
 const fieldClass = 'w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-amber-500/50'
 const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 font-black mb-1.5'
 </script>
@@ -272,7 +278,13 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
 
                 <div>
                     <label :class="labelClass">Штрихкод (EAN / GTIN)</label>
-                    <input v-model="form.barcode" placeholder="Сканер подставит сам" :class="fieldClass + ' text-cyan-400 border-cyan-500/30'" />
+                    <input
+                        v-model="form.barcode"
+                        data-scan-capture
+                        placeholder="Сканер · раскладка не важна"
+                        :class="fieldClass + ' text-cyan-400 border-cyan-500/30'"
+                        @input="onScanFieldInput('barcode', $event)"
+                    />
                 </div>
 
                 <div>
@@ -297,7 +309,13 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label :class="labelClass">Гарантийный номер</label>
-                        <input v-model="form.warranty_number" placeholder="S/N или № гарантии" :class="fieldClass" />
+                        <input
+                            v-model="form.warranty_number"
+                            data-scan-capture
+                            placeholder="S/N или № гарантии"
+                            :class="fieldClass"
+                            @input="onScanFieldInput('warranty_number', $event)"
+                        />
                     </div>
                     <div>
                         <label :class="labelClass">Срок гарантии, мес.</label>

@@ -6,7 +6,7 @@ import { charFromScanKey, normalizeScanLayout } from '@/utils/scanKeyboard'
 /** Режим приёмки на склад (включается только на странице Склад). */
 const receiveMode = ref(false)
 
-/** Обработчик приёмки — регистрирует Inventory.vue */
+/** Обработчик приёмки — регистрирует Inventory.vue / Store Warehouse */
 let receiveHandler = null
 
 /** Подписчики на успешное списание в заказ (Orders.vue обновляет прогресс). */
@@ -17,11 +17,19 @@ let lastKeyTime = Date.now()
 let scanBusy = false
 let listenerAttached = false
 
+/** Интервал между символами HID-скана обычно < 30–50 ms. */
+const SCAN_GAP_MS = 80
+const RAPID_MS = 45
+
 const isTypingTarget = (target) =>
     target instanceof HTMLInputElement
     || target instanceof HTMLTextAreaElement
     || target instanceof HTMLSelectElement
     || (target instanceof HTMLElement && target.isContentEditable)
+
+/** Поля штрихкода/S/N: data-scan-capture — всегда читаем физические клавиши. */
+const isScanCaptureField = (target) =>
+    target instanceof HTMLElement && target.dataset?.scanCapture !== undefined
 
 const dispatchFulfill = (payload) => {
     fulfillListeners.forEach((fn) => {
@@ -30,27 +38,85 @@ const dispatchFulfill = (payload) => {
 }
 
 const handleKeyDown = async (e) => {
-    if (isTypingTarget(e.target)) return
     if (scanBusy) return
 
+    const typing = isTypingTarget(e.target)
+    const scanField = isScanCaptureField(e.target)
     const now = Date.now()
-    if (now - lastKeyTime > 80) barcodeBuffer = ''
+    const gap = now - lastKeyTime
     lastKeyTime = now
 
-    if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+    const continuingBurst = barcodeBuffer.length > 0 && gap <= SCAN_GAP_MS
+    const rapidKey = gap <= RAPID_MS
+
+    // Поле data-scan-capture: быстрый HID — по e.code; медленный ручной ввод — через @input + normalize
+    if (scanField) {
+        if (!continuingBurst && gap > RAPID_MS) {
+            barcodeBuffer = ''
+            return
+        }
+        if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+            e.preventDefault()
+            e.stopPropagation()
+            const code = normalizeScanLayout(barcodeBuffer)
+            barcodeBuffer = ''
+            if (code.length >= 3) await processScan(code)
+            return
+        }
+        const chScan = charFromScanKey(e)
+        if (chScan) {
+            e.preventDefault()
+            e.stopPropagation()
+            barcodeBuffer += chScan
+            try {
+                if (e.target instanceof HTMLInputElement) {
+                    e.target.value = barcodeBuffer
+                    e.target.dispatchEvent(new Event('input', { bubbles: true }))
+                }
+            } catch (_) { /* ignore */ }
+        }
+        return
+    }
+
+    // Ручной ввод в обычные поля (имя, заметки…) — не трогаем.
+    // Исключения: продолжение HID-пачки, старт быстрого скана в режиме приёмки.
+    if (typing && !continuingBurst) {
+        if (!receiveMode.value || !rapidKey) {
+            barcodeBuffer = ''
+            return
+        }
+        // receiveMode + очень быстрый ввод = скан попал в обычный input
         e.preventDefault()
+        e.stopPropagation()
+        try { e.target.blur?.() } catch (_) { /* ignore */ }
+        barcodeBuffer = ''
+        if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') return
+        const ch0 = charFromScanKey(e)
+        if (ch0) barcodeBuffer += ch0
+        return
+    }
+
+    if (gap > SCAN_GAP_MS) {
+        barcodeBuffer = ''
+    }
+
+    if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+        if (typing && !barcodeBuffer) return
+
+        e.preventDefault()
+        if (barcodeBuffer) e.stopPropagation()
         const code = normalizeScanLayout(barcodeBuffer)
         barcodeBuffer = ''
-        if (code.length <= 5) return
+        if (code.length < 5) return
         await processScan(code)
         return
     }
 
     const ch = charFromScanKey(e)
-    if (ch) {
-        e.preventDefault()
-        barcodeBuffer += ch
-    }
+    if (!ch) return
+
+    e.preventDefault()
+    barcodeBuffer += ch
 }
 
 const processScan = async (code) => {
@@ -72,7 +138,6 @@ const processScan = async (code) => {
         }
         dispatchFulfill(data)
     } catch (e) {
-        // Ошибки приёмки показывает Inventory; здесь — только списание в заказ
         if (receiveMode.value) return
         error(e?.response?.data?.message || 'Скан не принят')
     } finally {
@@ -89,6 +154,7 @@ export function useAdminBarcodeScanner() {
     const disableReceiveMode = () => {
         receiveMode.value = false
         receiveHandler = null
+        barcodeBuffer = ''
     }
 
     const onFulfillScan = (fn) => {
@@ -100,12 +166,13 @@ export function useAdminBarcodeScanner() {
     const attachGlobalListener = () => {
         onMounted(() => {
             if (listenerAttached) return
-            window.addEventListener('keydown', handleKeyDown)
+            // capture: true — до того, как символ попадёт в input по раскладке ОС
+            window.addEventListener('keydown', handleKeyDown, true)
             listenerAttached = true
         })
         onUnmounted(() => {
             if (!listenerAttached) return
-            window.removeEventListener('keydown', handleKeyDown)
+            window.removeEventListener('keydown', handleKeyDown, true)
             listenerAttached = false
         })
     }
@@ -116,5 +183,6 @@ export function useAdminBarcodeScanner() {
         disableReceiveMode,
         onFulfillScan,
         attachGlobalListener,
+        normalizeScanLayout,
     }
 }
