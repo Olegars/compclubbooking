@@ -58,6 +58,13 @@ const verifiedLabel = (order: any) => {
 const canEditOrder = (order: any) =>
     props.canCreate && order.status === 'new'
 
+/** Развёрнутые заказы (по умолчанию свёрнуты) */
+const expanded = ref<Record<number, boolean>>({})
+const isOpen = (id: number) => !!expanded.value[id]
+const toggle = (id: number) => {
+    expanded.value = { ...expanded.value, [id]: !expanded.value[id] }
+}
+
 const showForm = ref(false)
 const editingId = ref<number | null>(null)
 const submitting = ref(false)
@@ -221,89 +228,100 @@ const filterStatus = computed({
                 </div>
             </div>
 
-            <div class="space-y-4">
-                <div v-for="o in orders" :key="o.id" class="border border-white/5 bg-[#080808] rounded-2xl p-6 space-y-4">
-                    <div class="flex flex-wrap justify-between gap-3">
-                        <div>
-                            <div class="font-black uppercase">#{{ o.id }} · {{ statusLabel[o.status] || o.status }}</div>
-                            <div class="text-[10px] text-white/30 uppercase tracking-widest mt-1">
+            <div class="space-y-3">
+                <div v-for="o in orders" :key="o.id" class="border border-white/5 bg-[#080808] rounded-2xl overflow-hidden">
+                    <button type="button"
+                            class="w-full text-left p-5 flex flex-wrap justify-between gap-3 hover:bg-white/[0.02] transition-colors"
+                            @click="toggle(o.id)">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="text-white/30 text-sm font-black w-4 shrink-0">{{ isOpen(o.id) ? '▾' : '▸' }}</span>
+                                <span class="font-black uppercase">#{{ o.id }} · {{ statusLabel[o.status] || o.status }}</span>
+                                <span class="text-[10px] text-white/25 uppercase tracking-widest">{{ (o.items || []).length }} поз.</span>
+                            </div>
+                            <div class="text-[10px] text-white/30 uppercase tracking-widest mt-1 pl-6">
                                 {{ o.client?.name || 'Без клиента' }}
                                 <span v-if="o.client?.phone"> · {{ o.client.phone }}</span>
                                 <span v-if="o.assignee"> · сборщик {{ o.assignee.name }}</span>
                             </div>
-                            <div v-if="o.built_pc" class="text-[10px] text-cyan-400/80 mt-1 tracking-wide normal-case">
-                                Готовый ПК #{{ o.built_pc.id }}
-                                <span v-if="o.built_pc.serial_number"> · S/N {{ o.built_pc.serial_number }}</span>
-                                <span class="text-white/30"> · check_build: {{ o.id }} или {{ o.built_pc.id }}</span>
-                            </div>
-                            <div v-if="verifiedLabel(o)" class="text-[10px] mt-1 uppercase tracking-widest font-black"
+                            <div v-if="verifiedLabel(o)" class="text-[10px] mt-1 pl-6 uppercase tracking-widest font-black"
                                  :class="o.verified_ok ? 'text-emerald-400/90' : 'text-orange-400/90'">
                                 {{ verifiedLabel(o) }}
-                                <span v-if="o.verified_at" class="text-white/30 font-normal normal-case"> · {{ String(o.verified_at).slice(0, 16).replace('T', ' ') }}</span>
                             </div>
-                            <div v-else-if="o.status === 'assembling'" class="text-[10px] text-white/25 mt-1 uppercase tracking-widest">
-                                Ожидает проверки check_build
+                            <div v-else-if="o.status === 'assembling'" class="text-[10px] text-white/25 mt-1 pl-6 uppercase tracking-widest">
+                                Ожидает check_build
                             </div>
                         </div>
-                        <div class="text-right space-y-2">
-                            <div class="font-black text-amber-400">{{ money(o.total) }}</div>
+                        <div class="font-black text-amber-400 shrink-0 self-start">{{ money(o.total) }}</div>
+                    </button>
+
+                    <div v-show="isOpen(o.id)" class="px-5 pb-5 space-y-4 border-t border-white/5 pt-4">
+                        <div v-if="o.built_pc" class="text-[10px] text-cyan-400/80 tracking-wide normal-case">
+                            Готовый ПК #{{ o.built_pc.id }}
+                            <span v-if="o.built_pc.serial_number"> · S/N {{ o.built_pc.serial_number }}</span>
+                            <span class="text-white/30"> · check_build: {{ o.id }} или {{ o.built_pc.id }}</span>
+                        </div>
+                        <div v-if="verifiedLabel(o) && o.verified_at" class="text-[10px] text-white/30">
+                            {{ String(o.verified_at).slice(0, 16).replace('T', ' ') }}
+                        </div>
+
+                        <div class="text-xs text-white/40 space-y-1">
+                            <div v-for="item in o.items" :key="item.id" class="flex items-center gap-2">
+                                <span class="flex-1">{{ item.name }} × {{ item.qty }} — {{ money(item.price) }}</span>
+                                <button v-if="canEditOrder(o)"
+                                        type="button"
+                                        class="text-red-400/80 hover:text-red-400 text-[10px] uppercase font-black"
+                                        title="Удалить из заказа → на склад"
+                                        @click.stop="removeItem(o.id, item.id)">×</button>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap gap-2 items-center">
+                            <template v-if="!['cancelled','returned'].includes(o.status)">
+                                <button v-for="s in pipeline" :key="s"
+                                        type="button"
+                                        :disabled="!canGo(o, s) && o.status !== s"
+                                        :title="s === 'ready' && o.status === 'assembling' && !o.verified_ok ? 'Сначала check_build' : undefined"
+                                        @click="canGo(o, s) && setStatus(o.id, s)"
+                                        class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black transition-colors"
+                                        :class="o.status === s
+                                            ? 'border-amber-500/50 text-amber-400 bg-amber-500/10'
+                                            : canGo(o, s)
+                                                ? 'border-white/20 text-white/70 hover:text-amber-400 hover:border-amber-500/40'
+                                                : 'border-white/5 text-white/20 cursor-default'">
+                                    {{ statusLabel[s] }}
+                                </button>
+                                <button v-if="canCancel && canGo(o, 'cancelled')"
+                                        type="button"
+                                        @click="setStatus(o.id, 'cancelled')"
+                                        class="px-3 py-2 rounded-xl border border-red-500/20 text-[10px] uppercase font-black text-red-400"
+                                        title="Комплектующие вернутся на склад. Дальше шаги недоступны.">
+                                    Отмена
+                                </button>
+                                <button v-if="canCancel && canGo(o, 'returned')"
+                                        type="button"
+                                        @click="setStatus(o.id, 'returned')"
+                                        class="px-3 py-2 rounded-xl border border-red-500/20 text-[10px] uppercase font-black text-red-400"
+                                        title="Клиент вернул после выдачи — комплектующие на склад.">
+                                    Возврат
+                                </button>
+                            </template>
+                            <div v-else class="text-[10px] uppercase font-black text-white/30 tracking-widest">
+                                {{ statusLabel[o.status] }} · склад восстановлен · шаги закрыты
+                            </div>
                             <button v-if="canEditOrder(o)" type="button"
-                                    class="text-[10px] uppercase font-black text-amber-400/80 hover:text-amber-400"
+                                    class="px-3 py-2 text-[10px] uppercase font-black text-amber-400/80 hover:text-amber-400"
                                     @click="openEdit(o)">
                                 Edit
                             </button>
+                            <select v-if="canAssign && !['cancelled','returned','issued'].includes(o.status)"
+                                    class="ml-auto bg-black border border-white/10 rounded-xl px-3 py-2 text-[10px] uppercase font-black"
+                                    :value="o.assignee_id || ''"
+                                    @change="setAssignee(o.id, ($event.target as HTMLSelectElement).value)">
+                                <option value="">Сборщик</option>
+                                <option v-for="a in assemblers" :key="a.id" :value="a.id">{{ a.name }}</option>
+                            </select>
                         </div>
-                    </div>
-                    <div class="text-xs text-white/40 space-y-1">
-                        <div v-for="item in o.items" :key="item.id" class="flex items-center gap-2">
-                            <span class="flex-1">{{ item.name }} × {{ item.qty }} — {{ money(item.price) }}</span>
-                            <button v-if="canEditOrder(o)"
-                                    type="button"
-                                    class="text-red-400/80 hover:text-red-400 text-[10px] uppercase font-black"
-                                    title="Удалить из заказа → на склад"
-                                    @click="removeItem(o.id, item.id)">×</button>
-                        </div>
-                    </div>
-                    <div class="flex flex-wrap gap-2 items-center">
-                        <template v-if="!['cancelled','returned'].includes(o.status)">
-                            <button v-for="s in pipeline" :key="s"
-                                    type="button"
-                                    :disabled="!canGo(o, s) && o.status !== s"
-                                    :title="s === 'ready' && o.status === 'assembling' && !o.verified_ok ? 'Сначала check_build' : undefined"
-                                    @click="canGo(o, s) && setStatus(o.id, s)"
-                                    class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black transition-colors"
-                                    :class="o.status === s
-                                        ? 'border-amber-500/50 text-amber-400 bg-amber-500/10'
-                                        : canGo(o, s)
-                                            ? 'border-white/20 text-white/70 hover:text-amber-400 hover:border-amber-500/40'
-                                            : 'border-white/5 text-white/20 cursor-default'">
-                                {{ statusLabel[s] }}
-                            </button>
-                            <button v-if="canCancel && canGo(o, 'cancelled')"
-                                    type="button"
-                                    @click="setStatus(o.id, 'cancelled')"
-                                    class="px-3 py-2 rounded-xl border border-red-500/20 text-[10px] uppercase font-black text-red-400"
-                                    title="Комплектующие вернутся на склад. Дальше шаги недоступны.">
-                                Отмена
-                            </button>
-                            <button v-if="canCancel && canGo(o, 'returned')"
-                                    type="button"
-                                    @click="setStatus(o.id, 'returned')"
-                                    class="px-3 py-2 rounded-xl border border-red-500/20 text-[10px] uppercase font-black text-red-400"
-                                    title="Клиент вернул после выдачи — комплектующие на склад.">
-                                Возврат
-                            </button>
-                        </template>
-                        <div v-else class="text-[10px] uppercase font-black text-white/30 tracking-widest">
-                            {{ statusLabel[o.status] }} · склад восстановлен · шаги закрыты
-                        </div>
-                        <select v-if="canAssign && !['cancelled','returned','issued'].includes(o.status)"
-                                class="ml-auto bg-black border border-white/10 rounded-xl px-3 py-2 text-[10px] uppercase font-black"
-                                :value="o.assignee_id || ''"
-                                @change="setAssignee(o.id, ($event.target as HTMLSelectElement).value)">
-                            <option value="">Сборщик</option>
-                            <option v-for="a in assemblers" :key="a.id" :value="a.id">{{ a.name }}</option>
-                        </select>
                     </div>
                 </div>
                 <div v-if="!orders.length" class="text-white/30 text-sm py-10 text-center">Заказов нет</div>
