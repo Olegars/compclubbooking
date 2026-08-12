@@ -11,12 +11,16 @@ class StoreWarranty extends Model
 
     protected $fillable = [
         'club_id', 'store_client_id', 'store_order_id', 'store_order_item_id',
-        'serial', 'product_name', 'started_at', 'ends_at', 'status', 'claim_notes',
+        'store_built_pc_id', 'serial', 'product_name', 'started_at', 'ends_at',
+        'warranty_months', 'repair_days', 'build_snapshot', 'status', 'claim_notes',
     ];
 
     protected $casts = [
         'started_at' => 'date',
         'ends_at' => 'date',
+        'build_snapshot' => 'array',
+        'warranty_months' => 'integer',
+        'repair_days' => 'integer',
     ];
 
     public function club(): BelongsTo
@@ -37,5 +41,10 @@ class StoreWarranty extends Model
     public function orderItem(): BelongsTo
     {
         return $this->belongsTo(StoreOrderItem::class, 'store_order_item_id');
+    }
+
+    public function builtPc(): BelongsTo
+    {
+        return $this->belongsTo(StoreBuiltPc::class, 'store_built_pc_id');
     }
 }

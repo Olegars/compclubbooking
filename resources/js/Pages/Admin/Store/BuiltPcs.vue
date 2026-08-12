@@ -81,6 +81,10 @@ const remove = (id: number) => {
     router.delete(`/admin/store/built-pcs/${id}`)
 }
 
+const printBarcodePos = (id: number) => {
+    router.post(`/admin/store/built-pcs/${id}/print-barcode-pos`, {}, { preserveScroll: true })
+}
+
 const toggleComponent = (id: number) => {
     const idx = form.component_ids.indexOf(id)
     if (idx >= 0) form.component_ids.splice(idx, 1)
@@ -168,8 +172,14 @@ const buildLabel = (pc: any) => {
                         <span>Принял заказ: {{ pc.acceptor?.name || '—' }}</span>
                         <span>Выдал: {{ pc.issuer?.name || '—' }}</span>
                     </div>
-                    <div class="flex gap-2 pt-1">
+                    <div class="flex flex-wrap gap-2 pt-1">
                         <button v-if="canAssemble" @click="openEdit(pc)" class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400">Edit</button>
+                        <a :href="`/admin/store/built-pcs/${pc.id}/print-barcode`" target="_blank"
+                           class="px-3 py-2 rounded-xl border border-white/15 text-[10px] uppercase font-black text-white/60">Штрихкод</a>
+                        <button type="button" @click="printBarcodePos(pc.id)"
+                                class="px-3 py-2 rounded-xl border border-amber-500/40 text-[10px] uppercase font-black text-amber-400">Штрихкод POS</button>
+                        <a :href="`/admin/store/built-pcs/${pc.id}/print-talon`" target="_blank"
+                           class="px-3 py-2 rounded-xl border border-white/15 text-[10px] uppercase font-black text-white/60">Талон</a>
                         <button v-if="canManage" @click="remove(pc.id)" class="px-3 py-2 rounded-xl border border-red-500/30 text-[10px] uppercase font-black text-red-400">Del</button>
                     </div>
                 </div>
@@ -181,7 +191,7 @@ const buildLabel = (pc: any) => {
             <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-2xl space-y-3 my-8" @submit.prevent="save">
                 <h3 class="font-black uppercase italic text-xl mb-2">{{ form.id ? 'Редактировать ПК' : 'Новая сборка' }}</h3>
                 <input v-model="form.title" placeholder="Название сборки" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
-                <input v-model="form.serial_number" placeholder="Серийный номер" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
+                <input v-model="form.serial_number" placeholder="Серийный номер (пусто = авто 10 цифр)" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
 
                 <div class="grid md:grid-cols-2 gap-3">
                     <select v-model="form.store_client_id" class="bg-black border border-white/10 rounded-xl px-4 py-3 text-sm">

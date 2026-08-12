@@ -258,6 +258,9 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::post('/built-pcs', [StoreBuiltPcController::class, 'store'])->name('admin.store.built-pcs.store');
             Route::put('/built-pcs/{storeBuiltPc}', [StoreBuiltPcController::class, 'update'])->name('admin.store.built-pcs.update');
             Route::delete('/built-pcs/{storeBuiltPc}', [StoreBuiltPcController::class, 'destroy'])->name('admin.store.built-pcs.destroy');
+            Route::get('/built-pcs/{storeBuiltPc}/print-barcode', [StoreWarrantyController::class, 'printBuiltPcBarcode'])->name('admin.store.built-pcs.print-barcode');
+            Route::post('/built-pcs/{storeBuiltPc}/print-barcode-pos', [StoreWarrantyController::class, 'printBuiltPcBarcodePos'])->name('admin.store.built-pcs.print-barcode-pos');
+            Route::get('/built-pcs/{storeBuiltPc}/print-talon', [StoreWarrantyController::class, 'printBuiltPcTalon'])->name('admin.store.built-pcs.print-talon');
 
             Route::get('/orders', [StoreOrderController::class, 'index'])->name('admin.store.orders');
             Route::post('/orders', [StoreOrderController::class, 'store'])->name('admin.store.orders.store');
@@ -267,6 +270,9 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::get('/warranty', [StoreWarrantyController::class, 'index'])->name('admin.store.warranty');
             Route::post('/warranty', [StoreWarrantyController::class, 'store'])->name('admin.store.warranty.store');
             Route::post('/warranty/{storeWarranty}', [StoreWarrantyController::class, 'update'])->name('admin.store.warranty.update');
+            Route::get('/warranty/{storeWarranty}/print-barcode', [StoreWarrantyController::class, 'printBarcode'])->name('admin.store.warranty.print-barcode');
+            Route::post('/warranty/{storeWarranty}/print-barcode-pos', [StoreWarrantyController::class, 'printBarcodePos'])->name('admin.store.warranty.print-barcode-pos');
+            Route::get('/warranty/{storeWarranty}/print-talon', [StoreWarrantyController::class, 'printTalon'])->name('admin.store.warranty.print-talon');
 
             Route::get('/clients', [StoreClientController::class, 'index'])->name('admin.store.clients');
             Route::post('/clients', [StoreClientController::class, 'store'])->name('admin.store.clients.store');

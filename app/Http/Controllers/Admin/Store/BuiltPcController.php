@@ -7,6 +7,7 @@ use App\Models\StoreBuiltPc;
 use App\Models\StoreBuiltPcComponent;
 use App\Models\StoreClient;
 use App\Models\StoreComponent;
+use App\Services\StoreWarrantyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -27,6 +28,7 @@ class BuiltPcController extends StoreController
                 'acceptor:id,name',
                 'issuer:id,name',
                 'componentLinks',
+                'warranty:id,store_built_pc_id,serial,status,ends_at',
             ])
             ->latest();
 
@@ -60,7 +62,7 @@ class BuiltPcController extends StoreController
         ]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request, StoreWarrantyService $warranties)
     {
         abort_unless(
             $this->admin()->canManageStoreCatalog()
@@ -72,7 +74,7 @@ class BuiltPcController extends StoreController
         $data = $this->validated($request);
         $clubId = $this->locationId();
 
-        DB::transaction(function () use ($data, $clubId) {
+        DB::transaction(function () use ($data, $clubId, $warranties) {
             $serial = isset($data['serial_number']) && $data['serial_number'] !== ''
                 ? $data['serial_number']
                 : null;
@@ -94,12 +96,13 @@ class BuiltPcController extends StoreController
             ]);
 
             $this->syncComponents($pc, $data['component_ids'] ?? []);
+            $warranties->ensureForBuiltPc($pc->fresh());
         });
 
-        return back()->with('success', 'Сборка ПК создана.');
+        return back()->with('success', 'Сборка ПК создана, гарантия и серийный номер назначены.');
     }
 
-    public function update(Request $request, StoreBuiltPc $storeBuiltPc)
+    public function update(Request $request, StoreBuiltPc $storeBuiltPc, StoreWarrantyService $warranties)
     {
         abort_unless($storeBuiltPc->club_id === $this->locationId(), 404);
         abort_unless(
@@ -111,7 +114,7 @@ class BuiltPcController extends StoreController
 
         $data = $this->validated($request, updating: true);
 
-        DB::transaction(function () use ($storeBuiltPc, $data) {
+        DB::transaction(function () use ($storeBuiltPc, $data, $warranties) {
             if (($data['status'] ?? null) === 'sold' && empty($data['sold_at']) && ! $storeBuiltPc->sold_at) {
                 $data['sold_at'] = now();
             }
@@ -125,6 +128,8 @@ class BuiltPcController extends StoreController
             if (array_key_exists('component_ids', $data)) {
                 $this->syncComponents($storeBuiltPc, $data['component_ids'] ?? []);
             }
+
+            $warranties->ensureForBuiltPc($storeBuiltPc->fresh());
         });
 
         return back()->with('success', 'Сборка обновлена.');
@@ -157,7 +162,6 @@ class BuiltPcController extends StoreController
 
         $previousIds = $pc->componentLinks()->pluck('store_component_id')->filter()->all();
 
-        // вернуть старые в склад
         if ($previousIds) {
             StoreComponent::query()
                 ->where('club_id', $clubId)
@@ -187,7 +191,6 @@ class BuiltPcController extends StoreController
             $component->update(['status' => 'used']);
         }
 
-        // зеркало в build_spec
         $pc->update([
             'build_spec' => $components->map(fn (StoreComponent $c) => [
                 'component_id' => $c->id,

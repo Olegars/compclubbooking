@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class StoreBuiltPc extends Model
 {
@@ -61,6 +62,11 @@ class StoreBuiltPc extends Model
     public function componentLinks(): HasMany
     {
         return $this->hasMany(StoreBuiltPcComponent::class);
+    }
+
+    public function warranty(): HasOne
+    {
+        return $this->hasOne(StoreWarranty::class, 'store_built_pc_id');
     }
 
     public function components(): BelongsToMany

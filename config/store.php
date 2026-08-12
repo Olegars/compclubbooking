@@ -13,4 +13,14 @@ return [
     | Разрешить обновлять имена комплектующих по данным с ПК
     */
     'build_verify_update_names' => env('STORE_BUILD_VERIFY_UPDATE_NAMES', true),
+
+    /*
+    | Срок гарантии на готовую сборку (месяцев)
+    */
+    'warranty_months' => (int) env('STORE_WARRANTY_MONTHS', 12),
+
+    /*
+    | Срок гарантийного ремонта (дней)
+    */
+    'repair_days' => (int) env('STORE_REPAIR_DAYS', 45),
 ];

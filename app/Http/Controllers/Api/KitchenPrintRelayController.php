@@ -4,18 +4,20 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\KitchenOrderPrintService;
+use App\Services\StorePosPrintService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Pull-API для LAN-агента кухонного ESC/POS принтера (Ethernet :9100).
+ * Также отдаёт задания магазина: штрихкод гарантии (id >= 1_000_000_000).
  */
 class KitchenPrintRelayController extends Controller
 {
     /**
      * GET /api/kitchen/print-targets?token=…
      */
-    public function targets(Request $request, KitchenOrderPrintService $prints)
+    public function targets(Request $request, KitchenOrderPrintService $prints, StorePosPrintService $storePrints)
     {
         if (! $this->tokenOk($request)) {
             return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
@@ -30,10 +32,15 @@ class KitchenPrintRelayController extends Controller
             ]);
         }
 
-        $prints->releaseStaleClaims((int) config('kitchen_print.stale_claim_minutes', 2));
+        $stale = (int) config('kitchen_print.stale_claim_minutes', 2);
+        $prints->releaseStaleClaims($stale);
+        $storePrints->releaseStaleClaims($stale);
 
         $limit = (int) $request->query('limit', config('kitchen_print.claim_limit', 10));
-        $jobs = $prints->claimPending($limit);
+        $kitchen = $prints->claimPending($limit);
+        $remain = max(0, $limit - count($kitchen));
+        $store = $remain > 0 ? $storePrints->claimPending($remain) : [];
+        $jobs = array_values(array_merge($kitchen, $store));
 
         return response()->json([
             'status' => 'success',
@@ -51,7 +58,7 @@ class KitchenPrintRelayController extends Controller
      * POST /api/kitchen/print-applied
      * { token, printed_ids?: [], failed?: [{ id, error }] }
      */
-    public function applied(Request $request, KitchenOrderPrintService $prints)
+    public function applied(Request $request, KitchenOrderPrintService $prints, StorePosPrintService $storePrints)
     {
         if (! $this->tokenOk($request)) {
             return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
@@ -65,8 +72,11 @@ class KitchenPrintRelayController extends Controller
             'failed.*.error' => 'nullable|string|max:500',
         ]);
 
-        $printed = $prints->markPrinted($request->input('printed_ids', []) ?: []);
-        $failed = $prints->markFailed($request->input('failed', []) ?: []);
+        $ids = $request->input('printed_ids', []) ?: [];
+        $failedRows = $request->input('failed', []) ?: [];
+
+        $printed = $prints->markPrinted($ids) + $storePrints->markPrinted($ids);
+        $failed = $prints->markFailed($failedRows) + $storePrints->markFailed($failedRows);
 
         return response()->json([
             'status' => 'success',

@@ -11,6 +11,7 @@ const props = defineProps<{
     filters: { status?: string | null }
     canManage: boolean
     canClose: boolean
+    posPrintEnabled?: boolean
 }>()
 
 const statusLabel: Record<string, string> = {
@@ -36,6 +37,10 @@ const create = () => {
 
 const setStatus = (id: number, status: string) => {
     router.post(`/admin/store/warranty/${id}`, { status }, { preserveScroll: true })
+}
+
+const printBarcodePos = (id: number) => {
+    router.post(`/admin/store/warranty/${id}/print-barcode-pos`, {}, { preserveScroll: true })
 }
 
 const filterStatus = computed({
@@ -73,12 +78,19 @@ const filterStatus = computed({
                             {{ statusLabel[w.status] || w.status }}
                             <span v-if="w.serial"> · S/N {{ w.serial }}</span>
                             <span v-if="w.client"> · {{ w.client.name }}</span>
-                            <span v-if="w.order"> · заказ #{{ w.order.id }}</span>
+                            <span v-if="w.built_pc"> · сборка #{{ w.built_pc.id }}</span>
+                            <span v-else-if="w.order"> · заказ #{{ w.order.id }}</span>
                         </div>
                         <div v-if="w.ends_at" class="text-[10px] text-white/20 mt-2">До {{ w.ends_at }}</div>
                         <div v-if="w.claim_notes" class="text-xs text-white/40 mt-2">{{ w.claim_notes }}</div>
                     </div>
                     <div class="flex flex-wrap gap-2">
+                        <a v-if="w.serial" :href="`/admin/store/warranty/${w.id}/print-barcode`" target="_blank"
+                           class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50">Штрихкод</a>
+                        <button v-if="w.serial" type="button" @click="printBarcodePos(w.id)"
+                                class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400">Штрихкод POS</button>
+                        <a :href="`/admin/store/warranty/${w.id}/print-talon`" target="_blank"
+                           class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50">Талон</a>
                         <button v-if="canManage" @click="setStatus(w.id, 'claimed')"
                                 class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50">Обращение</button>
                         <button v-if="canClose" @click="setStatus(w.id, 'closed')"
@@ -94,14 +106,15 @@ const filterStatus = computed({
         <div v-if="showCreate" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" @click.self="showCreate = false">
             <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-lg space-y-4" @submit.prevent="create">
                 <h3 class="font-black uppercase italic text-xl">Новая гарантия</h3>
+                <p class="text-[10px] text-white/30 uppercase tracking-widest">Для сборок ПК гарантия создаётся автоматически. Здесь — ручной кейс.</p>
                 <input v-model="form.product_name" placeholder="Товар" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
-                <input v-model="form.serial" placeholder="Серийный номер" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
+                <input v-model="form.serial" placeholder="Серийный номер (пусто = авто 10 цифр)" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
                 <select v-model="form.store_client_id" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm">
                     <option :value="null">Клиент</option>
                     <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
                 </select>
                 <select v-model="form.store_order_id" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm">
-                    <option :value="null">Заказ</option>
+                    <option :value="null">Заказ (каталог)</option>
                     <option v-for="o in orders" :key="o.id" :value="o.id">#{{ o.id }} · {{ o.status }}</option>
                 </select>
                 <div class="grid grid-cols-2 gap-3">
