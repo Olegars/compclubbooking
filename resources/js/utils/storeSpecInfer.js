@@ -19,9 +19,11 @@ const SOCKET_CPU_BRAND = {
     TR4: 'AMD',
 }
 
-const SERIES_BRAND = [
-    { re: /^(core\s*i[3579]|pentium|celeron|core\s*ultra)/i, brand: 'Intel' },
-    { re: /^ryzen/i, brand: 'AMD' },
+const SERIES_INFER = [
+    { re: /^core\s*ultra/i, brand: 'Intel', socket: 'LGA1851' },
+    { re: /^(core\s*i[3579]|pentium|celeron)/i, brand: 'Intel', socket: null },
+    { re: /^ryzen\s*threadripper/i, brand: 'AMD', socket: null },
+    { re: /^ryzen/i, brand: 'AMD', socket: null },
 ]
 
 const CHIPSET_SOCKET = [
@@ -32,18 +34,18 @@ const CHIPSET_SOCKET = [
 ]
 
 function socketBrand(socket) {
-    const key = upper(socket).replace(/^LGA/, 'LGA')
-    // normalize LGA 1700 → LGA1700
     const compact = upper(socket).replace(/LGA\s*/, 'LGA')
-    return SOCKET_CPU_BRAND[compact] || SOCKET_CPU_BRAND[key] || null
+    return SOCKET_CPU_BRAND[compact] || null
 }
 
-function seriesBrand(series) {
+function seriesInfer(series) {
     const s = norm(series)
-    for (const row of SERIES_BRAND) {
-        if (row.re.test(s)) return row.brand
+    for (const row of SERIES_INFER) {
+        if (row.re.test(s)) {
+            return { brand: row.brand, socket: row.socket }
+        }
     }
-    return null
+    return { brand: null, socket: null }
 }
 
 function chipsetSocket(chipset) {
@@ -144,8 +146,9 @@ export function inferSpecFills(type, changedKey, specs) {
             if (brand) out.brand = brand
         }
         if (changedKey === 'series') {
-            const brand = seriesBrand(value)
-            if (brand) out.brand = brand
+            const info = seriesInfer(value)
+            if (info.brand) out.brand = info.brand
+            if (info.socket) out.socket = info.socket
         }
         if (changedKey === 'model') {
             const info = inferCpuModel(value)
