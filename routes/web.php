@@ -252,7 +252,6 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::put('/warehouse/{storeComponent}', [StoreWarehouseController::class, 'update'])->name('admin.store.warehouse.update');
             Route::delete('/warehouse/{storeComponent}', [StoreWarehouseController::class, 'destroy'])->name('admin.store.warehouse.destroy');
             Route::post('/warehouse/suppliers', [StoreWarehouseController::class, 'storeSupplier'])->name('admin.store.warehouse.suppliers');
-            Route::post('/warehouse/receive-scan', [StoreWarehouseController::class, 'receiveScan'])->name('admin.store.warehouse.receive-scan');
 
             Route::get('/built-pcs', [StoreBuiltPcController::class, 'index'])->name('admin.store.built-pcs');
             Route::post('/built-pcs', [StoreBuiltPcController::class, 'store'])->name('admin.store.built-pcs.store');
