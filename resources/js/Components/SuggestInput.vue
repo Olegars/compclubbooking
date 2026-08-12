@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps<{
     modelValue: string
@@ -19,6 +19,9 @@ const emit = defineEmits<{
 const minChars = computed(() => props.minChars ?? 3)
 const open = ref(false)
 const active = ref(-1)
+const focused = ref(false)
+const suppressOpen = ref(false)
+const inputEl = ref<HTMLInputElement | null>(null)
 
 const filtered = computed(() => {
     const q = (props.modelValue || '').trim().toLowerCase()
@@ -29,17 +32,38 @@ const filtered = computed(() => {
 
 watch(() => props.modelValue, (v) => {
     emit('search', v || '')
-    open.value = (v || '').trim().length >= minChars.value
     active.value = -1
+    // Не открывать при автозаполнении / выборе из списка
+    if (suppressOpen.value || !focused.value) {
+        open.value = false
+        return
+    }
+    open.value = (v || '').trim().length >= minChars.value
 })
 
 const pick = (value: string) => {
+    suppressOpen.value = true
     emit('update:modelValue', value)
     open.value = false
+    nextTick(() => {
+        suppressOpen.value = false
+        // Уводим фокус, чтобы соседние автозаполненные поля не открыли списки
+        inputEl.value?.blur()
+    })
+}
+
+const onFocus = () => {
+    focused.value = true
+    open.value = (props.modelValue || '').trim().length >= minChars.value
 }
 
 const onBlur = () => {
+    focused.value = false
     window.setTimeout(() => { open.value = false }, 150)
+}
+
+const onInput = (e: Event) => {
+    emit('update:modelValue', (e.target as HTMLInputElement).value)
 }
 
 const onKeydown = (e: KeyboardEvent) => {
@@ -63,13 +87,14 @@ const onKeydown = (e: KeyboardEvent) => {
     <div class="relative">
         <label v-if="label" :class="labelClass">{{ label }}</label>
         <input
+            ref="inputEl"
             :value="modelValue"
             type="text"
             autocomplete="off"
             :placeholder="placeholder || `от ${minChars} букв — подсказки`"
             :class="inputClass"
-            @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
-            @focus="open = (modelValue || '').trim().length >= minChars"
+            @input="onInput"
+            @focus="onFocus"
             @blur="onBlur"
             @keydown="onKeydown"
         />
