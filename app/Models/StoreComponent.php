@@ -29,6 +29,7 @@ class StoreComponent extends Model
         'in_stock' => 'На складе',
         'reserved' => 'Резерв',
         'used' => 'В сборке / использовано',
+        'sold' => 'Продано',
         'written_off' => 'Списано',
     ];
 

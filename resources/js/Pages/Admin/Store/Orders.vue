@@ -3,10 +3,17 @@ import { computed, ref } from 'vue'
 import { Head, router, useForm } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
+type OrderLine = {
+    type: string | null
+    store_component_id: number | null
+    qty: number
+}
+
 const props = defineProps<{
     orders: any[]
     clients: any[]
-    products: any[]
+    components: any[]
+    componentTypes: Record<string, string>
     assemblers: any[]
     statuses: string[]
     filters: { status?: string | null }
@@ -26,18 +33,62 @@ const statusLabel: Record<string, string> = {
 }
 
 const showCreate = ref(false)
+const submitting = ref(false)
 const form = useForm({
     store_client_id: null as number | null,
     assignee_id: null as number | null,
     notes: '',
-    items: [{ store_product_id: null as number | null, qty: 1 }] as { store_product_id: number | null, qty: number }[],
+    items: [{ type: null, store_component_id: null, qty: 1 }] as OrderLine[],
 })
 
-const addLine = () => form.items.push({ store_product_id: null, qty: 1 })
+const emptyLine = (): OrderLine => ({ type: null, store_component_id: null, qty: 1 })
+
+const addLine = () => form.items.push(emptyLine())
 const removeLine = (i: number) => { if (form.items.length > 1) form.items.splice(i, 1) }
 
+const selectedIds = computed(() =>
+    new Set(form.items.map(l => l.store_component_id).filter(Boolean) as number[])
+)
+
+const componentsForLine = (line: OrderLine) => {
+    const list = props.components || []
+    return list.filter(c => {
+        if (line.type && c.type !== line.type) return false
+        // уже выбранные в других строках скрываем
+        if (c.id !== line.store_component_id && selectedIds.value.has(c.id)) return false
+        return true
+    })
+}
+
+const onTypeChange = (line: OrderLine) => {
+    line.store_component_id = null
+}
+
+const serialLabel = (c: any) => {
+    if (Array.isArray(c.serials) && c.serials.length) return c.serials.join(' · ')
+    return c.warranty_number || ''
+}
+
 const create = () => {
-    form.post('/admin/store/orders', { onSuccess: () => { showCreate.value = false; form.reset(); form.items = [{ store_product_id: null, qty: 1 }] } })
+    const items = form.items
+        .filter(l => l.store_component_id)
+        .map(l => ({ store_component_id: l.store_component_id, qty: 1 }))
+    if (!items.length) return
+
+    submitting.value = true
+    router.post('/admin/store/orders', {
+        store_client_id: form.store_client_id,
+        assignee_id: form.assignee_id,
+        notes: form.notes,
+        items,
+    }, {
+        onFinish: () => { submitting.value = false },
+        onSuccess: () => {
+            showCreate.value = false
+            form.reset()
+            form.items = [emptyLine()]
+        },
+    })
 }
 
 const setStatus = (orderId: number, status: string) => {
@@ -48,6 +99,11 @@ const setAssignee = (orderId: number, assigneeId: string) => {
     router.post(`/admin/store/orders/${orderId}/assign`, {
         assignee_id: assigneeId ? Number(assigneeId) : null,
     }, { preserveScroll: true })
+}
+
+const removeItem = (orderId: number, itemId: number) => {
+    if (!confirm('Удалить позицию из заказа? Комплектующая вернётся на склад.')) return
+    router.delete(`/admin/store/orders/${orderId}/items/${itemId}`, { preserveScroll: true })
 }
 
 const filterStatus = computed({
@@ -91,7 +147,14 @@ const filterStatus = computed({
                         <div class="font-black text-amber-400">{{ money(o.total) }}</div>
                     </div>
                     <div class="text-xs text-white/40 space-y-1">
-                        <div v-for="item in o.items" :key="item.id">{{ item.name }} × {{ item.qty }} — {{ money(item.price) }}</div>
+                        <div v-for="item in o.items" :key="item.id" class="flex items-center gap-2">
+                            <span class="flex-1">{{ item.name }} × {{ item.qty }} — {{ money(item.price) }}</span>
+                            <button v-if="canCreate && !['cancelled','returned'].includes(o.status)"
+                                    type="button"
+                                    class="text-red-400/80 hover:text-red-400 text-[10px] uppercase font-black"
+                                    title="Удалить из заказа → на склад"
+                                    @click="removeItem(o.id, item.id)">×</button>
+                        </div>
                     </div>
                     <div class="flex flex-wrap gap-2 items-center">
                         <button v-for="s in ['assembling','ready','issued']" :key="s"
@@ -117,7 +180,7 @@ const filterStatus = computed({
         </div>
 
         <div v-if="showCreate" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" @click.self="showCreate = false">
-            <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-xl space-y-4" @submit.prevent="create">
+            <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-2xl space-y-4" @submit.prevent="create">
                 <h3 class="font-black uppercase italic text-xl">Новый заказ</h3>
                 <select v-model="form.store_client_id" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm">
                     <option :value="null">Без клиента</option>
@@ -127,19 +190,28 @@ const filterStatus = computed({
                     <option :value="null">Сборщик не назначен</option>
                     <option v-for="a in assemblers" :key="a.id" :value="a.id">{{ a.name }}</option>
                 </select>
-                <div v-for="(line, i) in form.items" :key="i" class="grid grid-cols-[1fr_80px_40px] gap-2">
-                    <select v-model="line.store_product_id" class="bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" required>
-                        <option :value="null" disabled>Товар</option>
-                        <option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }} ({{ p.stock }})</option>
+
+                <div class="text-[10px] uppercase font-black text-white/30 tracking-widest">Со склада (только «на складе»)</div>
+                <div v-for="(line, i) in form.items" :key="i" class="grid grid-cols-[140px_1fr_40px] gap-2">
+                    <select v-model="line.type" class="bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" @change="onTypeChange(line)">
+                        <option :value="null">Тип</option>
+                        <option v-for="(label, key) in componentTypes" :key="key" :value="key">{{ label }}</option>
                     </select>
-                    <input v-model.number="line.qty" type="number" min="1" class="bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" />
+                    <select v-model="line.store_component_id" class="bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" required>
+                        <option :value="null" disabled>Комплектующая</option>
+                        <option v-for="c in componentsForLine(line)" :key="c.id" :value="c.id">
+                            {{ c.name }}{{ serialLabel(c) ? ' · S/N ' + serialLabel(c) : '' }} · {{ money(c.purchase_price) }}
+                        </option>
+                    </select>
                     <button type="button" class="text-red-400" @click="removeLine(i)">×</button>
                 </div>
+                <p v-if="!(components || []).length" class="text-xs text-red-400/80">На складе нет позиций со статусом «на складе».</p>
                 <button type="button" class="text-[10px] uppercase font-black text-amber-400" @click="addLine">+ позиция</button>
+
                 <textarea v-model="form.notes" placeholder="Заметки" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" rows="2" />
                 <div class="flex gap-3 justify-end">
                     <button type="button" class="px-4 py-3 text-[10px] uppercase font-black text-white/40" @click="showCreate = false">Отмена</button>
-                    <button class="px-6 py-3 bg-amber-500 text-black text-[10px] uppercase font-black rounded-xl" :disabled="form.processing">Создать</button>
+                    <button class="px-6 py-3 bg-amber-500 text-black text-[10px] uppercase font-black rounded-xl" :disabled="submitting">Создать</button>
                 </div>
             </form>
         </div>

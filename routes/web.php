@@ -266,6 +266,7 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::post('/orders', [StoreOrderController::class, 'store'])->name('admin.store.orders.store');
             Route::post('/orders/{storeOrder}/status', [StoreOrderController::class, 'updateStatus'])->name('admin.store.orders.status');
             Route::post('/orders/{storeOrder}/assign', [StoreOrderController::class, 'assign'])->name('admin.store.orders.assign');
+            Route::delete('/orders/{storeOrder}/items/{item}', [StoreOrderController::class, 'destroyItem'])->name('admin.store.orders.items.destroy');
 
             Route::get('/warranty', [StoreWarrantyController::class, 'index'])->name('admin.store.warranty');
             Route::post('/warranty', [StoreWarrantyController::class, 'store'])->name('admin.store.warranty.store');

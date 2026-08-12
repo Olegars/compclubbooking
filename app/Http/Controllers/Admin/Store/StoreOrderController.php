@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Store;
 
 use App\Models\Admin;
 use App\Models\StoreClient;
+use App\Models\StoreComponent;
 use App\Models\StoreOrder;
 use App\Models\StoreOrderItem;
 use App\Models\StoreProduct;
@@ -19,7 +20,7 @@ class StoreOrderController extends StoreController
         $status = $request->string('status')->toString();
         $query = StoreOrder::query()
             ->where('club_id', $this->locationId())
-            ->with(['client:id,name,phone', 'assignee:id,name', 'items'])
+            ->with(['client:id,name,phone', 'assignee:id,name', 'items.component:id,type,warranty_number,serials,status'])
             ->latest();
 
         if ($status && in_array($status, StoreOrder::STATUSES, true)) {
@@ -34,14 +35,18 @@ class StoreOrderController extends StoreController
             ->orderBy('name')
             ->get(['id', 'name', 'role']);
 
+        $components = StoreComponent::query()
+            ->where('club_id', $this->locationId())
+            ->where('status', 'in_stock')
+            ->orderBy('type')
+            ->orderBy('name')
+            ->get(['id', 'name', 'type', 'purchase_price', 'warranty_number', 'serials', 'qty', 'status']);
+
         return Inertia::render('Admin/Store/Orders', [
             'orders' => $query->limit(100)->get(),
             'clients' => StoreClient::query()->where('club_id', $this->locationId())->orderBy('name')->get(['id', 'name', 'phone']),
-            'products' => StoreProduct::query()
-                ->where('club_id', $this->locationId())
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->get(['id', 'name', 'sku', 'price', 'stock', 'serial_tracked']),
+            'components' => $components,
+            'componentTypes' => StoreComponent::TYPES,
             'assemblers' => $assemblers,
             'statuses' => StoreOrder::STATUSES,
             'filters' => ['status' => $status ?: null],
@@ -60,9 +65,8 @@ class StoreOrderController extends StoreController
             'notes' => 'nullable|string|max:2000',
             'assignee_id' => 'nullable|integer',
             'items' => 'required|array|min:1',
-            'items.*.store_product_id' => 'required|integer',
-            'items.*.qty' => 'required|integer|min:1',
-            'items.*.serials' => 'nullable|array',
+            'items.*.store_component_id' => 'required|integer',
+            'items.*.qty' => 'nullable|integer|min:1',
         ]);
 
         $clubId = $this->locationId();
@@ -71,22 +75,27 @@ class StoreOrderController extends StoreController
             StoreClient::query()->where('club_id', $clubId)->whereKey($data['store_client_id'])->firstOrFail();
         }
 
+        // Одна комплектующая — не больше одного раза в заказе
+        $ids = collect($data['items'])->pluck('store_component_id')->map(fn ($id) => (int) $id);
+        abort_if($ids->count() !== $ids->unique()->count(), 422, 'Одна комплектующая указана дважды.');
+
         DB::transaction(function () use ($data, $clubId) {
             $total = 0;
             $lines = [];
 
             foreach ($data['items'] as $item) {
-                $product = StoreProduct::query()
+                $component = StoreComponent::query()
                     ->where('club_id', $clubId)
-                    ->whereKey($item['store_product_id'])
+                    ->whereKey($item['store_component_id'])
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                abort_if($product->stock < $item['qty'], 422, "Недостаточно «{$product->name}» на складе.");
+                abort_unless($component->status === 'in_stock', 422, "«{$component->name}» не на складе.");
 
-                $lineTotal = (float) $product->price * $item['qty'];
-                $total += $lineTotal;
-                $lines[] = compact('product', 'item', 'lineTotal');
+                $qty = 1; // уникальные позиции со склада
+                $price = (float) $component->purchase_price;
+                $total += $price * $qty;
+                $lines[] = compact('component', 'qty', 'price');
             }
 
             $order = StoreOrder::query()->create([
@@ -99,35 +108,44 @@ class StoreOrderController extends StoreController
             ]);
 
             foreach ($lines as $line) {
-                /** @var StoreProduct $product */
-                $product = $line['product'];
-                $item = $line['item'];
+                /** @var StoreComponent $component */
+                $component = $line['component'];
 
                 StoreOrderItem::query()->create([
                     'store_order_id' => $order->id,
-                    'store_product_id' => $product->id,
-                    'name' => $product->name,
-                    'qty' => $item['qty'],
-                    'price' => $product->price,
-                    'serials' => $item['serials'] ?? null,
+                    'store_component_id' => $component->id,
+                    'store_product_id' => null,
+                    'name' => $component->name,
+                    'qty' => $line['qty'],
+                    'price' => $line['price'],
+                    'serials' => $component->allSerials() ?: null,
                 ]);
 
-                $newStock = (int) $product->stock - (int) $item['qty'];
-                $product->update(['stock' => $newStock]);
-
-                StoreStockMovement::query()->create([
-                    'club_id' => $clubId,
-                    'store_product_id' => $product->id,
-                    'admin_id' => $this->admin()->id,
-                    'type' => 'sale',
-                    'qty' => -(int) $item['qty'],
-                    'stock_after' => $newStock,
-                    'reason' => 'Заказ #'.$order->id,
-                ]);
+                $component->update(['status' => 'sold']);
             }
         });
 
         return back()->with('success', 'Заказ создан.');
+    }
+
+    public function destroyItem(StoreOrder $storeOrder, StoreOrderItem $item)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+        abort_unless($storeOrder->club_id === $this->locationId(), 404);
+        abort_unless($item->store_order_id === $storeOrder->id, 404);
+        abort_if(in_array($storeOrder->status, ['cancelled', 'returned'], true), 422, 'Заказ уже закрыт.');
+
+        DB::transaction(function () use ($storeOrder, $item) {
+            $this->returnComponentToStock($item);
+            $item->delete();
+
+            $storeOrder->load('items');
+            $storeOrder->update([
+                'total' => $storeOrder->items->sum(fn (StoreOrderItem $i) => (float) $i->price * (int) $i->qty),
+            ]);
+        });
+
+        return back()->with('success', 'Позиция удалена, комплектующая возвращена на склад.');
     }
 
     public function updateStatus(Request $request, StoreOrder $storeOrder)
@@ -145,7 +163,6 @@ class StoreOrderController extends StoreController
             abort_unless($admin->canCancelStoreOrders(), 403);
         }
 
-        // Сборщик двигает только сборку
         if ($admin->role === 'assembler') {
             abort_unless(in_array($next, ['assembling', 'ready'], true), 403);
             if (! $storeOrder->assignee_id) {
@@ -154,12 +171,21 @@ class StoreOrderController extends StoreController
         }
 
         $prev = $storeOrder->status;
-        $storeOrder->status = $next;
-        $storeOrder->save();
 
-        if ($next === 'returned' && $prev !== 'returned') {
-            DB::transaction(fn () => $this->restockOrder($storeOrder));
-        }
+        DB::transaction(function () use ($storeOrder, $next, $prev) {
+            $storeOrder->status = $next;
+            $storeOrder->save();
+
+            // Отмена / возврат — комплектующие обратно «на складе»
+            if (in_array($next, ['cancelled', 'returned'], true) && ! in_array($prev, ['cancelled', 'returned'], true)) {
+                $storeOrder->load('items');
+                foreach ($storeOrder->items as $item) {
+                    $this->returnComponentToStock($item);
+                }
+                // Старый каталог StoreProduct (если ещё есть)
+                $this->restockProducts($storeOrder);
+            }
+        });
 
         return back()->with('success', 'Статус заказа обновлён.');
     }
@@ -182,9 +208,24 @@ class StoreOrderController extends StoreController
         return back()->with('success', 'Сборщик назначен.');
     }
 
-    private function restockOrder(StoreOrder $order): void
+    private function returnComponentToStock(StoreOrderItem $item): void
     {
-        $order->load('items');
+        if (! $item->store_component_id) {
+            return;
+        }
+
+        $component = StoreComponent::query()->whereKey($item->store_component_id)->lockForUpdate()->first();
+        if (! $component) {
+            return;
+        }
+
+        if (in_array($component->status, ['sold', 'reserved', 'used'], true)) {
+            $component->update(['status' => 'in_stock']);
+        }
+    }
+
+    private function restockProducts(StoreOrder $order): void
+    {
         foreach ($order->items as $item) {
             if (! $item->store_product_id) {
                 continue;
