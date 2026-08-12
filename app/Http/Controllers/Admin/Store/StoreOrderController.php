@@ -157,7 +157,7 @@ class StoreOrderController extends StoreController
     {
         abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
         abort_unless($storeOrder->club_id === $this->locationId(), 404);
-        abort_if(in_array($storeOrder->status, ['cancelled', 'returned', 'issued'], true), 422, 'Заказ нельзя редактировать.');
+        abort_if($storeOrder->status !== 'new', 422, 'Редактировать можно только заказ со статусом «Создан».');
 
         $data = $request->validate([
             'store_client_id' => 'nullable|integer',
@@ -271,7 +271,7 @@ class StoreOrderController extends StoreController
         abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
         abort_unless($storeOrder->club_id === $this->locationId(), 404);
         abort_unless($item->store_order_id === $storeOrder->id, 404);
-        abort_if(in_array($storeOrder->status, ['cancelled', 'returned', 'issued'], true), 422, 'Заказ уже закрыт или выдан.');
+        abort_if($storeOrder->status !== 'new', 422, 'Удалять позиции можно только у заказа со статусом «Создан».');
 
         DB::transaction(function () use ($storeOrder, $item) {
             $this->returnComponentToStock($item);

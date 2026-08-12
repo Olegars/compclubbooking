@@ -56,7 +56,7 @@ const verifiedLabel = (order: any) => {
 }
 
 const canEditOrder = (order: any) =>
-    props.canCreate && ['new', 'assembling', 'ready'].includes(order.status)
+    props.canCreate && order.status === 'new'
 
 const showForm = ref(false)
 const editingId = ref<number | null>(null)
