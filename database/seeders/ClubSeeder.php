@@ -4,11 +4,11 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str; // Добавь этот импорт
+use Illuminate\Support\Str;
 
 class ClubSeeder extends Seeder
 {
-    public function run()
+    public function run(): void
     {
         $name = 'REACTOR PROTOCOL';
 
@@ -16,13 +16,14 @@ class ClubSeeder extends Seeder
             ['id' => 1],
             [
                 'name' => $name,
-                'slug' => Str::slug($name), // Теперь slug будет 'reactor-protocol'
+                'slug' => Str::slug($name),
+                'type' => 'both',
                 'address' => 'Sector 7, Moscow',
                 'map_config' => json_encode([
                     'viewbox' => '-10 -10 120 200',
                     'walls' => [],
                     'zoneRects' => [],
-                    'labels' => []
+                    'labels' => [],
                 ]),
                 'created_at' => now(),
                 'updated_at' => now(),

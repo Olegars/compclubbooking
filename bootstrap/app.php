@@ -32,7 +32,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // 2. Куда редиректить УЖЕ АВТОРИЗОВАННЫХ (чтобы не видели форму входа)
         $middleware->redirectUsersTo(function (Request $request) {
             if (Auth::guard('admin')->check()) {
-                return route('admin.dashboard');
+                $admin = Auth::guard('admin')->user();
+
+                return route($admin?->homeRoute() ?: 'admin.dashboard');
             }
             return route('dashboard');
         });
@@ -41,6 +43,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => \App\Http\Middleware\AdminMiddleware::class,
             'role'  => \App\Http\Middleware\CheckRole::class,
+            'store' => \App\Http\Middleware\EnsureStoreAccess::class,
         ]);
         $middleware->validateCsrfTokens(except: [
             'api/shell/*',

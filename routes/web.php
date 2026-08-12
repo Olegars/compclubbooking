@@ -53,6 +53,11 @@ use App\Http\Controllers\Admin\SupplierController;
 use App\Http\Controllers\Admin\GameRequestAdminController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\TransactionAdminController;
+use App\Http\Controllers\Admin\Store\WarehouseController as StoreWarehouseController;
+use App\Http\Controllers\Admin\Store\StoreOrderController;
+use App\Http\Controllers\Admin\Store\WarrantyController as StoreWarrantyController;
+use App\Http\Controllers\Admin\Store\StoreClientController;
+use App\Http\Controllers\Admin\Store\LocationController as StoreLocationController;
 use App\Http\Controllers\GameRequestController;
 
 /*
@@ -184,52 +189,83 @@ Route::middleware('guest:admin')->prefix('admin')->group(function () {
 
 Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 
-    // ГЛАВНОЕ (все роли: admin / supervisor / owner)
-    Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
-    Route::post('/give-bonus', [AdminController::class, 'giveBonus']);
-    Route::post('/topup', [AdminController::class, 'topUpBalance']);
-    Route::get('/search-user', [AdminController::class, 'searchUser']);
-    Route::get('/orders', [AdminController::class, 'orders'])->name('admin.orders');
-    Route::post('/orders/{id}/status', [AdminController::class, 'updateOrderStatus']);
-    Route::get('/transactions', [TransactionAdminController::class, 'index'])->name('admin.transactions');
-    Route::get('/transactions/{transaction}/print-copy', [TransactionAdminController::class, 'printCopy'])
-        ->name('admin.transactions.print-copy');
-    Route::get('/shifts/transfer', [ShiftController::class, 'transferPage'])->name('admin.shift.transfer');
-    Route::post('/api/shifts/complete', [ShiftController::class, 'completeTransfer']);
-    Route::get('/shifts/history', [ShiftController::class, 'history'])->name('admin.shift.history');
-
-    // СКЛАД — обычный админ принимает товар (остаток), каталог — supervisor+
-    Route::get('/inventory', [AdminController::class, 'inventory'])->name('admin.inventory');
-    Route::prefix('api/inventory')->group(function () {
-        Route::get('/products', [AdminController::class, 'listInventoryProducts']);
-        Route::post('/receive-scan', [AdminController::class, 'receiveScan']);
-        Route::post('/update-stock', [AdminController::class, 'updateStock']);
-        Route::get('/find-barcode', [AdminController::class, 'findByBarcode']);
-        // Списание / угощение с причиной — любой админ в смене
-        Route::post('/write-off', [AdminController::class, 'writeOffUnit']);
-        Route::post('/adjust', [AdminController::class, 'adjustStock']);
-    });
-
-    Route::post('/orders/fulfill-scan', [AdminController::class, 'autoFulfillScan']);
-    Route::post('/orders/{id}/fulfill-scan', [AdminController::class, 'fulfillOrderScan']);
-
-    // Инциденты: просмотр всем, закрытие — supervisor+
-    Route::get('/incidents', [AdminController::class, 'incidents'])->name('admin.incidents');
+    // Справка — всем ролям
     Route::get('/docs', [SystemDocsController::class, 'index'])->name('admin.docs');
 
-    // API АДМИНКИ (операционный контур)
-    Route::prefix('api')->group(function () {
-        Route::get('/pc-statuses', [AdminController::class, 'getPcStatuses']);
-        Route::get('/check-orders', [AdminController::class, 'checkNewOrders']);
+    // Переключение локации (owner без привязки)
+    Route::post('/store/location/switch', [StoreLocationController::class, 'switch'])
+        ->middleware('role:owner')
+        ->name('admin.store.location.switch');
 
-        // --- SOS И HID-СИГНАЛЫ С ТЕРМИНАЛОВ ---
-        Route::get('/sos-alerts', [AdminController::class, 'sosAlerts']);
-        Route::post('/sos-alerts/{id}/ack', [AdminController::class, 'ackSosAlert']);
-        Route::post('/input-alerts/{id}/ack', [AdminController::class, 'ackInputAlert']);
+    // =====================================================================
+    // КЛУБ — admin / supervisor / owner (магазинные роли сюда не пускаем)
+    // =====================================================================
+    Route::middleware(['role:admin,supervisor,owner'])->group(function () {
+        Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
+        Route::post('/give-bonus', [AdminController::class, 'giveBonus']);
+        Route::post('/topup', [AdminController::class, 'topUpBalance']);
+        Route::get('/search-user', [AdminController::class, 'searchUser']);
+        Route::get('/orders', [AdminController::class, 'orders'])->name('admin.orders');
+        Route::post('/orders/{id}/status', [AdminController::class, 'updateOrderStatus']);
+        Route::get('/transactions', [TransactionAdminController::class, 'index'])->name('admin.transactions');
+        Route::get('/transactions/{transaction}/print-copy', [TransactionAdminController::class, 'printCopy'])
+            ->name('admin.transactions.print-copy');
+        Route::get('/shifts/transfer', [ShiftController::class, 'transferPage'])->name('admin.shift.transfer');
+        Route::post('/api/shifts/complete', [ShiftController::class, 'completeTransfer']);
+        Route::get('/shifts/history', [ShiftController::class, 'history'])->name('admin.shift.history');
 
-        Route::get('/active-calls', [ChatController::class, 'getActiveCalls']);
-        Route::post('/calls/{id}/resolve', [ChatController::class, 'resolveCall']);
+        Route::get('/inventory', [AdminController::class, 'inventory'])->name('admin.inventory');
+        Route::prefix('api/inventory')->group(function () {
+            Route::get('/products', [AdminController::class, 'listInventoryProducts']);
+            Route::post('/receive-scan', [AdminController::class, 'receiveScan']);
+            Route::post('/update-stock', [AdminController::class, 'updateStock']);
+            Route::get('/find-barcode', [AdminController::class, 'findByBarcode']);
+            Route::post('/write-off', [AdminController::class, 'writeOffUnit']);
+            Route::post('/adjust', [AdminController::class, 'adjustStock']);
+        });
+
+        Route::post('/orders/fulfill-scan', [AdminController::class, 'autoFulfillScan']);
+        Route::post('/orders/{id}/fulfill-scan', [AdminController::class, 'fulfillOrderScan']);
+
+        Route::get('/incidents', [AdminController::class, 'incidents'])->name('admin.incidents');
+
+        Route::prefix('api')->group(function () {
+            Route::get('/pc-statuses', [AdminController::class, 'getPcStatuses']);
+            Route::get('/check-orders', [AdminController::class, 'checkNewOrders']);
+            Route::get('/sos-alerts', [AdminController::class, 'sosAlerts']);
+            Route::post('/sos-alerts/{id}/ack', [AdminController::class, 'ackSosAlert']);
+            Route::post('/input-alerts/{id}/ack', [AdminController::class, 'ackInputAlert']);
+            Route::get('/active-calls', [ChatController::class, 'getActiveCalls']);
+            Route::post('/calls/{id}/resolve', [ChatController::class, 'resolveCall']);
+        });
     });
+
+    // =====================================================================
+    // МАГАЗИН ПРИ КЛУБЕ — store roles + owner (и локация с type store/both)
+    // =====================================================================
+    Route::middleware(['role:store_manager,assembler,senior_manager,owner', 'store'])
+        ->prefix('store')
+        ->group(function () {
+            Route::get('/warehouse', [StoreWarehouseController::class, 'index'])->name('admin.store.warehouse');
+            Route::post('/warehouse', [StoreWarehouseController::class, 'store'])->name('admin.store.warehouse.store');
+            Route::put('/warehouse/{storeProduct}', [StoreWarehouseController::class, 'update'])->name('admin.store.warehouse.update');
+            Route::delete('/warehouse/{storeProduct}', [StoreWarehouseController::class, 'destroy'])->name('admin.store.warehouse.destroy');
+            Route::post('/warehouse/adjust', [StoreWarehouseController::class, 'adjust'])->name('admin.store.warehouse.adjust');
+
+            Route::get('/orders', [StoreOrderController::class, 'index'])->name('admin.store.orders');
+            Route::post('/orders', [StoreOrderController::class, 'store'])->name('admin.store.orders.store');
+            Route::post('/orders/{storeOrder}/status', [StoreOrderController::class, 'updateStatus'])->name('admin.store.orders.status');
+            Route::post('/orders/{storeOrder}/assign', [StoreOrderController::class, 'assign'])->name('admin.store.orders.assign');
+
+            Route::get('/warranty', [StoreWarrantyController::class, 'index'])->name('admin.store.warranty');
+            Route::post('/warranty', [StoreWarrantyController::class, 'store'])->name('admin.store.warranty.store');
+            Route::post('/warranty/{storeWarranty}', [StoreWarrantyController::class, 'update'])->name('admin.store.warranty.update');
+
+            Route::get('/clients', [StoreClientController::class, 'index'])->name('admin.store.clients');
+            Route::post('/clients', [StoreClientController::class, 'store'])->name('admin.store.clients.store');
+            Route::put('/clients/{storeClient}', [StoreClientController::class, 'update'])->name('admin.store.clients.update');
+            Route::delete('/clients/{storeClient}', [StoreClientController::class, 'destroy'])->name('admin.store.clients.destroy');
+        });
 
     // УРОВЕНЬ: SUPERVISOR+
     Route::middleware(['role:supervisor,owner'])->group(function () {
@@ -359,6 +395,10 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     Route::middleware(['role:owner'])->group(function () {
         Route::get('/taxes', [TaxController::class, 'index'])->name('admin.taxes.index');
         Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
+
+        Route::get('/store/locations', [StoreLocationController::class, 'index'])->name('admin.store.locations');
+        Route::post('/store/locations', [StoreLocationController::class, 'store'])->name('admin.store.locations.store');
+        Route::put('/store/locations/{location}', [StoreLocationController::class, 'update'])->name('admin.store.locations.update');
     });
 
     Route::post('/logout', [AdminLoginController::class, 'logout'])->name('admin.logout');

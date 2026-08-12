@@ -6,10 +6,19 @@ const props = defineProps<{
     staff: any[]
 }>()
 
-// Хелпер для денег
 const formatMoney = (val: number | string | null) => {
     if (!val) return '—'
     return Number(val).toLocaleString('ru-RU') + ' ₽'
+}
+
+const roleClass = (role: string) => {
+    if (role === 'owner') return 'bg-purple-500/10 text-purple-500 border-purple-500/30'
+    if (role === 'supervisor') return 'bg-blue-500/10 text-blue-500 border-blue-500/30'
+    if (role === 'admin') return 'bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30'
+    if (role === 'senior_manager') return 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+    if (role === 'store_manager') return 'bg-orange-500/10 text-orange-400 border-orange-500/30'
+    if (role === 'assembler') return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
+    return 'bg-white/5 text-white/50 border-white/10'
 }
 </script>
 
@@ -23,8 +32,6 @@ const formatMoney = (val: number | string | null) => {
                     <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">Staff <span class="text-purple-500">Directory</span></h1>
                     <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">Управление персоналом и ставками</p>
                 </div>
-                <!-- Бэкенда для создания сотрудников пока нет (StaffController умеет только index),
-                     поэтому кнопка явно заблокирована, а не молча ничего не делает -->
                 <button disabled
                         title="Найм через панель пока недоступен — сотрудники добавляются через сидер / БД"
                         class="px-6 py-4 bg-white/5 border border-white/10 text-white/20 font-black uppercase tracking-widest text-[10px] rounded-2xl cursor-not-allowed">
@@ -37,11 +44,7 @@ const formatMoney = (val: number | string | null) => {
                      class="bg-[#050505] border border-white/5 rounded-[0.875rem] p-8 relative group hover:border-purple-500/30 transition-all shadow-xl">
 
                     <div class="absolute top-6 right-6 text-[9px] uppercase font-black tracking-widest px-3 py-1 rounded-full border"
-                         :class="{
-                             'bg-purple-500/10 text-purple-500 border-purple-500/30': person.role === 'owner',
-                             'bg-blue-500/10 text-blue-500 border-blue-500/30': person.role === 'supervisor',
-                             'bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30': person.role === 'admin'
-                         }">
+                         :class="roleClass(person.role)">
                         {{ person.role }}
                     </div>
 
@@ -56,6 +59,10 @@ const formatMoney = (val: number | string | null) => {
                     </div>
 
                     <div class="space-y-4 pt-6 border-t border-white/5">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">Локация</span>
+                            <span class="text-white font-bold text-[11px]">{{ person.club_name || (person.role === 'owner' ? 'Все' : '—') }}</span>
+                        </div>
                         <div class="flex justify-between items-center text-xs">
                             <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">Оформление</span>
                             <span class="text-white font-bold text-[11px]">{{ person.is_official_employee ? 'ТК РФ' : 'ИП / Неофициально' }}</span>

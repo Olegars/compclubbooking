@@ -12,12 +12,14 @@ class StaffController extends Controller
     public function index()
     {
         // Достаем весь персонал из базы
-        $staff = Admin::all()->map(function ($employee) {
+        $staff = Admin::query()->with('club:id,name')->orderBy('name')->get()->map(function ($employee) {
             return [
                 'id' => $employee->id,
                 'name' => $employee->name,
                 'email' => $employee->email,
                 'role' => $employee->role,
+                'club_id' => $employee->club_id,
+                'club_name' => $employee->club?->name,
                 'is_official_employee' => $employee->is_official_employee,
                 'base_rate' => $employee->base_rate,
                 'pay_type' => $employee->pay_type,

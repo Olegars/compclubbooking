@@ -7,19 +7,28 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Club extends Model
 {
-    // 1. Добавляем новые поля в разрешенные для заполнения
     protected $fillable = [
         'name',
         'slug',
+        'type',
         'address',
-        'map_config', // Наш JSON
-        'viewbox'     // Наша рамка
+        'map_config',
+        'viewbox',
     ];
 
-    // 2. ДОБАВЛЯЕМ СЮДА: Автоматическое приведение типов
     protected $casts = [
-        'map_config' => 'array', // Laravel сам сделает json_decode при чтении
+        'map_config' => 'array',
     ];
+
+    public function hasStore(): bool
+    {
+        return in_array($this->type, ['store', 'both'], true);
+    }
+
+    public function hasClub(): bool
+    {
+        return in_array($this->type, ['club', 'both'], true);
+    }
 
     public function computers(): HasMany
     {
@@ -44,5 +53,30 @@ class Club extends Model
     public function bookingGroups(): HasMany
     {
         return $this->hasMany(BookingGroup::class);
+    }
+
+    public function storeClients(): HasMany
+    {
+        return $this->hasMany(StoreClient::class);
+    }
+
+    public function storeProducts(): HasMany
+    {
+        return $this->hasMany(StoreProduct::class);
+    }
+
+    public function storeOrders(): HasMany
+    {
+        return $this->hasMany(StoreOrder::class);
+    }
+
+    public function storeWarranties(): HasMany
+    {
+        return $this->hasMany(StoreWarranty::class);
+    }
+
+    public function admins(): HasMany
+    {
+        return $this->hasMany(Admin::class);
     }
 }

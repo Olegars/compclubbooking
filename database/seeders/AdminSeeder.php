@@ -2,51 +2,115 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
 use App\Models\Admin;
+use App\Models\Club;
+use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class AdminSeeder extends Seeder
 {
-    public function run()
+    public function run(): void
     {
-        // 1. Линейный админ (Базовый доступ: посадка, касса, маркет)
-        Admin::updateOrCreate(
-            ['email' => 'admin@reactor.club'],
-            [
-                'name' => 'Operator_01',
-                'password' => Hash::make('123'),
-                'role' => 'admin', // <-- Поменяли с operator на admin
-                'is_official_employee' => true,
-                'base_rate' => 2000.00, // 2000 руб за смену
-                'pay_type' => 'shift'
-            ]
-        );
+        $club = Club::query()->first();
+        if (! $club) {
+            $club = Club::query()->create([
+                'name' => 'REACTOR PROTOCOL',
+                'slug' => 'reactor-protocol',
+                'type' => 'both',
+                'address' => 'Sector 7, Moscow',
+            ]);
+        } else {
+            $club->update(['type' => 'both']);
+        }
 
-        // 2. Старший админ / Супервизор (Доступ к складу инвентаризации и верификации отзывов)
-        Admin::updateOrCreate(
-            ['email' => 'super@reactor.club'],
+        $password = Hash::make('123');
+
+        $accounts = [
             [
-                'name' => 'Shift Lead',
-                'password' => Hash::make('123'),
+                'email' => 'admin@0451.space',
+                'legacy_emails' => ['admin@reactor.club'],
+                'name' => 'администратор',
+                'role' => 'admin',
+                'club_id' => $club->id,
+                'is_official_employee' => true,
+                'base_rate' => 2000.00,
+                'pay_type' => 'shift',
+            ],
+            [
+                'email' => 'super@0451.space',
+                'legacy_emails' => ['super@reactor.club'],
+                'name' => 'управляющий',
                 'role' => 'supervisor',
+                'club_id' => $club->id,
                 'is_official_employee' => true,
-                'base_rate' => 3000.00, // Ставка повыше
-                'pay_type' => 'shift'
-            ]
-        );
-
-        // 3. БОСС / Владелец (МАКСИМАЛЬНЫЙ ДОСТУП - GOD MODE)
-        Admin::updateOrCreate(
-            ['email' => 'boss@reactor.club'],
+                'base_rate' => 3000.00,
+                'pay_type' => 'shift',
+            ],
             [
-                'name' => 'REACTOR FOUNDER',
-                'password' => Hash::make('123'),
-                'role' => 'owner', // <-- ИМЕННО ЭТА РОЛЬ ОТКРЫВАЕТ НАЛОГИ И ЗАРПЛАТЫ
-                'is_official_employee' => false, // Владелец - ИП, он не получает зарплату по ТК РФ
+                'email' => 'boss@0451.space',
+                'legacy_emails' => ['boss@reactor.club'],
+                'name' => 'владелец',
+                'role' => 'owner',
+                'club_id' => null,
+                'is_official_employee' => false,
                 'base_rate' => null,
-                'pay_type' => null
-            ]
-        );
+                'pay_type' => null,
+            ],
+            [
+                'email' => 'store@0451.space',
+                'legacy_emails' => ['store@reactor.club'],
+                'name' => 'менеджер магазина',
+                'role' => 'store_manager',
+                'club_id' => $club->id,
+                'is_official_employee' => true,
+                'base_rate' => 2500.00,
+                'pay_type' => 'shift',
+            ],
+            [
+                'email' => 'build@0451.space',
+                'legacy_emails' => ['build@reactor.club'],
+                'name' => 'сборщик',
+                'role' => 'assembler',
+                'club_id' => $club->id,
+                'is_official_employee' => true,
+                'base_rate' => 2200.00,
+                'pay_type' => 'shift',
+            ],
+            [
+                'email' => 'senior-store@0451.space',
+                'legacy_emails' => ['senior-store@reactor.club'],
+                'name' => 'старший менеджер',
+                'role' => 'senior_manager',
+                'club_id' => $club->id,
+                'is_official_employee' => true,
+                'base_rate' => 3500.00,
+                'pay_type' => 'monthly',
+            ],
+        ];
+
+        foreach ($accounts as $account) {
+            $emails = array_values(array_unique(array_merge(
+                [$account['email']],
+                $account['legacy_emails']
+            )));
+            unset($account['legacy_emails']);
+
+            // Сначала по новому/старому email, иначе — единственная запись с этой ролью
+            $admin = Admin::query()->whereIn('email', $emails)->first()
+                ?? Admin::query()->where('role', $account['role'])->first();
+
+            $payload = array_merge($account, ['password' => $password]);
+
+            if ($admin) {
+                $admin->fill($payload)->save();
+            } else {
+                Admin::query()->create($payload);
+            }
+        }
+
+        if (! $club->slug) {
+            $club->update(['slug' => Str::slug($club->name)]);
+        }
     }
 }

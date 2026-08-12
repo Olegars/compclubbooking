@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Support\AdminAlerts;
+use App\Support\AdminLocation;
 use App\Support\AdminShift;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -23,6 +24,9 @@ class HandleInertiaRequests extends Middleware
         $admin = Auth::guard('admin')->user();
 
         $balance = $user ? $user->availableBalance() : 0.0;
+        $location = $admin ? AdminLocation::resolve($admin) : null;
+        $canAccessClub = $admin ? $admin->canAccessClub() : false;
+        $canAccessStore = $admin && $admin->canAccessStore() && $location && $location->hasStore();
 
         return array_merge(parent::share($request), [
             'flash' => [
@@ -35,19 +39,32 @@ class HandleInertiaRequests extends Middleware
                     'balance' => $balance,
                 ]) : null,
             ],
-            // ПЕРСОНАЛ
-            // Отдаём только то, что рисует шапка: ставки и тип оплаты на клиенте не нужны.
             'admin_user' => $admin ? [
                 'id' => $admin->id,
                 'name' => $admin->name,
                 'email' => $admin->email,
                 'role' => $admin->role,
+                'club_id' => $admin->club_id,
             ] : null,
-            // Счётчики для бейджей сайдбара админки (SOS / очередь заказов / инциденты).
-            // Замыкание: Inertia считает их только когда проп реально уходит на клиент,
-            // поэтому опрос /admin/api/* не тянет лишние запросы в базу.
+            'can_access_club' => $canAccessClub,
+            'can_access_store' => $canAccessStore,
+            'admin_location' => $location ? [
+                'id' => $location->id,
+                'name' => $location->name,
+                'slug' => $location->slug,
+                'type' => $location->type,
+                'has_store' => $location->hasStore(),
+                'has_club' => $location->hasClub(),
+            ] : null,
+            'admin_locations' => $admin && $admin->role === 'owner' && ! $admin->club_id
+                ? fn () => collect(AdminLocation::listForOwner($admin))->map(fn ($c) => [
+                    'id' => $c->id,
+                    'name' => $c->name,
+                    'slug' => $c->slug,
+                    'type' => $c->type,
+                ])->values()->all()
+                : [],
             'admin_alerts' => $admin ? fn () => AdminAlerts::counts() : null,
-            // Текущая смена для индикатора в шапке (по тому же принципу ленивого замыкания).
             'admin_shift' => $admin ? fn () => AdminShift::current($admin->id) : null,
         ]);
     }

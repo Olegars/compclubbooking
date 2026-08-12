@@ -29,7 +29,10 @@ class AdminLoginController extends Controller
         if (Auth::guard('admin')->attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
 
-            return redirect()->intended(route('admin.dashboard'));
+            $admin = Auth::guard('admin')->user();
+            $home = $admin?->homeRoute() ?: 'admin.dashboard';
+
+            return redirect()->intended(route($home));
         }
 
         throw ValidationException::withMessages([

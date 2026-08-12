@@ -1,40 +1,38 @@
 <script setup lang="ts">
-import { Link, usePage } from '@inertiajs/vue3'
-import { computed, watch } from 'vue'
+import { Link, router, usePage } from '@inertiajs/vue3'
+import { computed, watch, ref } from 'vue'
 import Toast from '@/Components/Toast.vue'
 import { useAdminAlerts } from '@/Composables/useAdminAlerts'
 import { useAdminBarcodeScanner } from '@/Composables/useAdminBarcodeScanner'
 
-// HID-сканер на любой странице админки: по умолчанию списание КМ в заказ
 useAdminBarcodeScanner().attachGlobalListener()
 
-// Определяем текущий маршрут для автоматической подсветки активного пункта меню
 const page = usePage()
 const currentUrl = computed(() => page.url)
 
-// Только путь, без query-строки и хвостового слэша
 const currentPath = computed(() => {
     const path = currentUrl.value.split('?')[0].split('#')[0]
     return path.length > 1 ? path.replace(/\/+$/, '') : path
 })
 
-// Точное совпадение либо вложенный маршрут — иначе /admin/orders светился бы на /admin/orders-archive
 const isActive = (url: string) => currentPath.value === url || currentPath.value.startsWith(url + '/')
 
 const { counts, setCounts } = useAdminAlerts()
 
 watch(() => page.props.admin_alerts, (next) => setCounts(next), { immediate: true, deep: true })
 
-// Данные оператора для шапки (шарятся из HandleInertiaRequests)
 const admin = computed(() => page.props.admin_user as any)
 const adminName = computed(() => admin.value?.name || admin.value?.email || 'Оператор')
 const adminRole = computed(() => admin.value?.role || null)
 const isOwner = computed(() => adminRole.value === 'owner')
 const isSupervisorPlus = computed(() => adminRole.value === 'supervisor' || adminRole.value === 'owner')
+const canAccessClub = computed(() => Boolean(page.props.can_access_club))
+const canAccessStore = computed(() => Boolean(page.props.can_access_store))
+const location = computed(() => page.props.admin_location as any)
+const locations = computed(() => (page.props.admin_locations as any[]) || [])
+const switching = ref(false)
 
-// admin_shift приходит только при открытой смене (status != closed)
 const shift = computed(() => page.props.admin_shift as any)
-// Зелёным горит только своя смена — чужую подсвечивать как «активна у тебя» нельзя
 const shiftIsActive = computed(() => Boolean(shift.value?.is_mine))
 
 const shiftLabel = computed(() => {
@@ -52,14 +50,20 @@ const shiftLabel = computed(() => {
 
     return parts.join(' · ')
 })
+
+const switchLocation = (clubId: string | number) => {
+    if (!clubId || switching.value) return
+    switching.value = true
+    router.post('/admin/store/location/switch', { club_id: Number(clubId) }, {
+        preserveScroll: true,
+        onFinish: () => { switching.value = false },
+    })
+}
 </script>
 
 <template>
     <div class="min-h-screen bg-[#050505] flex font-mono text-white selection:bg-cyan-500 selection:text-black">
 
-        <!-- ========================================== -->
-        <!-- ЛЕВАЯ ПАНЕЛЬ НАВИГАЦИИ (SIDEBAR) -->
-        <!-- ========================================== -->
         <aside class="w-[320px] bg-[#020202] border-r border-white/5 flex flex-col shrink-0 min-h-screen select-none">
 
             <div class="p-8 border-b border-white/5">
@@ -70,14 +74,18 @@ const shiftLabel = computed(() => {
                     </span>
                 </div>
                 <div class="text-[10px] text-white/20 uppercase font-black tracking-[0.25em] italic mt-2">
-                    Terminal Node // v2.6
+                    Terminal Node // v2.7
+                </div>
+                <div v-if="location" class="mt-4 text-[10px] uppercase tracking-widest text-cyan-400/80 font-black">
+                    {{ location.name }}
+                    <span class="text-white/30">· {{ location.type }}</span>
                 </div>
             </div>
 
             <div class="flex-1 overflow-y-auto py-8 px-6 space-y-8 custom-scrollbar">
 
-                <!-- СЕКЦИЯ: ОПЕРАЦИИ (все роли) -->
-                <div class="space-y-2">
+                <!-- СЕКЦИЯ: ОПЕРАЦИИ КЛУБА -->
+                <div v-if="canAccessClub" class="space-y-2">
                     <div class="text-[10px] text-white/30 font-black uppercase tracking-[0.3em] italic pl-4 mb-3">Операции</div>
                     <Link href="/admin/dashboard"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
@@ -120,8 +128,38 @@ const shiftLabel = computed(() => {
                     </Link>
                 </div>
 
+                <!-- СЕКЦИЯ: МАГАЗИН ПРИ КЛУБЕ -->
+                <div v-if="canAccessStore || isOwner" class="space-y-2">
+                    <div class="text-[10px] text-white/30 font-black uppercase tracking-[0.3em] italic pl-4 mb-3">Магазин</div>
+                    <Link v-if="canAccessStore" href="/admin/store/warehouse"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/store/warehouse') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🖥️</span> Склад ПК
+                    </Link>
+                    <Link v-if="canAccessStore" href="/admin/store/orders"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/store/orders') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🛠️</span> Заказы
+                    </Link>
+                    <Link v-if="canAccessStore" href="/admin/store/warranty"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/store/warranty') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🛡️</span> Гарантия
+                    </Link>
+                    <Link v-if="canAccessStore" href="/admin/store/clients"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/store/clients') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>👤</span> Клиенты
+                    </Link>
+                    <Link v-if="isOwner" href="/admin/store/locations"
+                          class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
+                          :class="isActive('/admin/store/locations') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
+                        <span>📍</span> Локации
+                    </Link>
+                </div>
+
                 <!-- СЕКЦИЯ: КИБЕРСПОРТ (supervisor+) -->
-                <div v-if="isSupervisorPlus" class="space-y-2">
+                <div v-if="canAccessClub && isSupervisorPlus" class="space-y-2">
                     <div class="text-[10px] text-white/30 font-black uppercase tracking-[0.3em] italic pl-4 mb-3">Киберспорт</div>
                     <Link href="/admin/tournaments"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
@@ -156,7 +194,7 @@ const shiftLabel = computed(() => {
                 </div>
 
                 <!-- СЕКЦИЯ: ЭКОНОМИКА (supervisor+ / owner) -->
-                <div v-if="isSupervisorPlus" class="space-y-2">
+                <div v-if="canAccessClub && isSupervisorPlus" class="space-y-2">
                     <div class="text-[10px] text-white/30 font-black uppercase tracking-[0.3em] italic pl-4 mb-3">Экономика</div>
                     <Link href="/admin/tariffs"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
@@ -188,15 +226,14 @@ const shiftLabel = computed(() => {
                 </div>
 
                 <!-- СЕКЦИЯ: КОНФИГУРАЦИЯ (supervisor+) -->
-                <div v-if="isSupervisorPlus" class="space-y-2">
+                <div v-if="canAccessClub && isSupervisorPlus" class="space-y-2">
                     <div class="text-[10px] text-white/30 font-black uppercase tracking-[0.3em] italic pl-4 mb-3">Конфигурация</div>
                     <Link href="/admin/zones"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/zones') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>📍</span> Топология залов
                     </Link>
-                    <Link v-if="isSupervisorPlus"
-                          href="/admin/fans"
+                    <Link href="/admin/fans"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
                           :class="isActive('/admin/fans') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-white/[0.02]'">
                         <span>🌀</span> Вентиляторы
@@ -234,7 +271,7 @@ const shiftLabel = computed(() => {
                 </div>
 
                 <!-- СЕКЦИЯ: БЕЗОПАСНОСТЬ -->
-                <div class="space-y-2">
+                <div v-if="canAccessClub" class="space-y-2">
                     <div class="text-[10px] text-white/30 font-black uppercase tracking-[0.3em] italic pl-4 mb-3">Безопасность</div>
                     <Link href="/admin/incidents"
                           class="flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all text-xs font-black uppercase tracking-wider"
@@ -261,14 +298,22 @@ const shiftLabel = computed(() => {
             </div>
         </aside>
 
-        <!-- ========================================== -->
-        <!-- ОСНОВНОЙ КОНТЕНТ СТРАНИЦЫ -->
-        <!-- ========================================== -->
         <div class="flex-1 flex flex-col min-h-screen overflow-hidden">
 
             <header class="h-24 border-b border-white/5 flex items-center justify-between px-10 select-none bg-[#020202]/50 backdrop-blur-md shrink-0">
-                <div class="flex items-center gap-2 text-[10px] uppercase font-black italic tracking-widest text-white/40">
-                    Node: <span class="text-cyan-400">{{ currentUrl }}</span>
+                <div class="flex items-center gap-4 text-[10px] uppercase font-black italic tracking-widest text-white/40">
+                    <span>Node: <span class="text-cyan-400">{{ currentUrl }}</span></span>
+                    <select
+                        v-if="isOwner && locations.length > 1"
+                        class="bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wider text-cyan-300 outline-none"
+                        :value="location?.id || ''"
+                        :disabled="switching"
+                        @change="switchLocation(($event.target as HTMLSelectElement).value)"
+                    >
+                        <option v-for="loc in locations" :key="loc.id" :value="loc.id">
+                            {{ loc.name }} ({{ loc.type }})
+                        </option>
+                    </select>
                 </div>
 
                 <div class="flex items-center gap-6">
