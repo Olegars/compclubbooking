@@ -7,6 +7,7 @@ import SuggestInput from '@/Components/SuggestInput.vue'
 import { useAdminBarcodeScanner } from '@/Composables/useAdminBarcodeScanner'
 import { useToast } from '@/Composables/useToast'
 import { normalizeScanLayout } from '@/utils/scanKeyboard'
+import { inferSpecFills } from '@/utils/storeSpecInfer'
 
 type SpecField = { key: string, label: string, suggest: string }
 
@@ -144,6 +145,19 @@ watch(() => form.type, () => {
     form.name = ''
     syncSerialSlots(serialSlotCount.value, form.serials)
 })
+
+const applySpecInfer = (changedKey: string) => {
+    if (!['cpu', 'motherboard'].includes(form.type)) return
+    const fills = inferSpecFills(form.type, changedKey, { ...specs })
+    for (const [k, v] of Object.entries(fills)) {
+        if (v && specs[k] !== v) specs[k] = v
+    }
+}
+
+const onSpecUpdate = (key: string, value: string) => {
+    specs[key] = value
+    applySpecInfer(key)
+}
 
 const suggestionsFor = (field: SpecField) => {
     const dict = props.specDictionaries[field.suggest] || []
@@ -402,11 +416,13 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                         <SuggestInput
                             v-for="field in activeFields"
                             :key="form.type + '-' + field.key"
-                            v-model="specs[field.key]"
+                            :model-value="specs[field.key] || ''"
                             :label="field.label"
                             :suggestions="suggestionsFor(field)"
                             :input-class="fieldClass"
                             :label-class="labelClass"
+                            :min-chars="['socket', 'modules', 'ddr'].includes(field.key) ? 1 : 3"
+                            @update:model-value="(v) => onSpecUpdate(field.key, v)"
                             @search="(q) => onSuggestSearch(field, q)"
                         />
                     </div>

@@ -89,7 +89,7 @@ class StoreComponentSpecs
             'cpu_brand' => ['Intel', 'AMD'],
             'cpu_socket' => ['AM4', 'AM5', 'LGA1851', 'LGA1700', 'LGA1200', 'LGA1151', 'LGA1150', 'sTR5', 'TR4'],
             'cpu_series' => [
-                'Core i3', 'Core i5', 'Core i7', 'Core i9',
+                'Core i3', 'Core i5', 'Core i7', 'Core i9', 'Core Ultra',
                 'Pentium', 'Celeron',
                 'Ryzen 3', 'Ryzen 5', 'Ryzen 7', 'Ryzen 9',
                 'Ryzen Threadripper',
@@ -116,7 +116,12 @@ class StoreComponentSpecs
             'ram_form' => ['DIMM', 'SO-DIMM'],
 
             'mb_brand' => ['ASUS', 'MSI', 'Gigabyte', 'ASRock', 'Biostar'],
-            'mb_chipset' => ['B450', 'B550', 'X570', 'A520', 'B650', 'B650E', 'X670', 'X670E', 'B760', 'Z790', 'H610', 'B660', 'Z690'],
+            'mb_chipset' => [
+                'B450', 'B550', 'X570', 'A520',
+                'B650', 'B650E', 'X670', 'X670E', 'A620', 'X870', 'B850',
+                'B760', 'Z790', 'H610', 'B660', 'Z690',
+                'B860', 'Z890', 'H810',
+            ],
             'mb_model' => [],
 
             'gpu_brand' => ['ASUS', 'MSI', 'Gigabyte', 'Palit', 'NVIDIA', 'AMD', 'Sapphire', 'PowerColor'],
