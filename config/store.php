@@ -41,5 +41,10 @@ return [
             'intval',
             array_map('trim', explode(',', (string) env('STORE_QUICKFOX_CATEGORY_IDS', '')))
         ))),
+        /*
+        | Ключевые слова названий категорий ITP для фильтра поиска по типу сметы.
+        | Можно переопределить позже через конфиг/env при необходимости.
+        */
+        'type_category_keywords' => null,
     ],
 ];

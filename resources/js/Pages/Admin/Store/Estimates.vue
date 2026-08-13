@@ -200,6 +200,7 @@ const filterStatus = computed({
 // --- поиск в каталоге поставщика ---
 const searchQ = ref('')
 const searchResults = ref<any[]>([])
+const searchMeta = ref<{ type?: string | null, type_filter_empty?: boolean, count?: number }>({})
 const searchLineIndex = ref<number | null>(null)
 const searchTimer = ref<any>(null)
 
@@ -207,25 +208,37 @@ watch(searchQ, (q) => {
     clearTimeout(searchTimer.value)
     if (!q || q.trim().length < 2) {
         searchResults.value = []
+        searchMeta.value = {}
         return
     }
     searchTimer.value = setTimeout(async () => {
         try {
-            const res = await fetch(`/admin/store/estimates/catalog-search?q=${encodeURIComponent(q.trim())}`, {
+            const line = searchLineIndex.value !== null ? form.items[searchLineIndex.value] : null
+            const type = line?.type || ''
+            const params = new URLSearchParams({ q: q.trim() })
+            if (type) params.set('type', type)
+            const res = await fetch(`/admin/store/estimates/catalog-search?${params}`, {
                 headers: { Accept: 'application/json' },
                 credentials: 'same-origin',
             })
             const json = await res.json()
             searchResults.value = json.products || []
+            searchMeta.value = json.meta || {}
         } catch {
             searchResults.value = []
+            searchMeta.value = {}
         }
     }, 300)
 })
 
 const openSearchFor = (index: number) => {
     searchLineIndex.value = index
-    searchQ.value = form.items[index]?.part || form.items[index]?.name || ''
+    const line = form.items[index]
+    // Не подставлять плейсхолдер — только реальное part/name
+    const seed = (line?.part || line?.name || '').trim()
+    searchQ.value = seed
+    searchResults.value = []
+    searchMeta.value = {}
 }
 
 const pickProduct = (p: any) => {
@@ -457,10 +470,18 @@ const stockOptionsFor = (item: any) => {
 
                 <div v-if="searchLineIndex !== null" class="border border-cyan-500/20 rounded-2xl p-4 space-y-2 bg-black/40">
                     <div class="flex justify-between items-center">
-                        <div class="text-[10px] uppercase font-black text-cyan-400 tracking-widest">Поиск каталога</div>
+                        <div class="text-[10px] uppercase font-black text-cyan-400 tracking-widest">
+                            Поиск каталога
+                            <span v-if="form.items[searchLineIndex]?.type" class="text-white/40">
+                                · {{ componentTypes[form.items[searchLineIndex].type] || form.items[searchLineIndex].type }}
+                            </span>
+                        </div>
                         <button type="button" class="text-white/40 text-xs" @click="searchLineIndex = null">закрыть</button>
                     </div>
-                    <input v-model="searchQ" placeholder="13400F / Ryzen / артикул…"
+                    <p v-if="!form.items[searchLineIndex]?.type" class="text-[10px] text-orange-400/80 uppercase tracking-widest">
+                        Выберите тип позиции — поиск сузится по категориям ITP
+                    </p>
+                    <input v-model="searchQ" placeholder="13400F / Ryzen / точный sku…"
                            class="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" />
                     <div class="max-h-48 overflow-y-auto space-y-1">
                         <button v-for="p in searchResults" :key="p.sku" type="button"
@@ -468,9 +489,13 @@ const stockOptionsFor = (item: any) => {
                                 @click="pickProduct(p)">
                             <span class="text-white/80">{{ p.name }}</span>
                             <span class="text-white/30"> · {{ p.part || '—' }} · sku {{ p.sku }}</span>
+                            <span v-if="p.category_name" class="text-cyan-400/50"> · {{ p.category_name }}</span>
                             <span v-if="p.rrp != null" class="text-amber-400/70"> · RRP {{ money(p.rrp) }}</span>
                         </button>
-                        <div v-if="searchQ.length >= 2 && !searchResults.length" class="text-white/30 text-xs py-2">Ничего не найдено</div>
+                        <div v-if="searchQ.length >= 2 && !searchResults.length" class="text-white/30 text-xs py-2">
+                            Ничего не найдено
+                            <span v-if="searchMeta.type_filter_empty"> (категории для типа не сматчились — попробуйте другой запрос)</span>
+                        </div>
                     </div>
                 </div>
 

@@ -11,6 +11,7 @@ use App\Models\StoreSupplierCatalogCategory;
 use App\Models\StoreSupplierCatalogProduct;
 use App\Services\QuickFoxApiClient;
 use App\Services\StoreEstimateProcurementService;
+use App\Services\StoreSupplierCatalogSearchService;
 use App\Services\StoreSupplierCatalogSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -175,29 +176,29 @@ class EstimateController extends StoreController
         return back()->with('success', 'Смета удалена');
     }
 
-    public function searchCatalog(Request $request)
+    public function searchCatalog(Request $request, StoreSupplierCatalogSearchService $search)
     {
         $q = trim($request->string('q')->toString());
         abort_if(mb_strlen($q) < 2, 422, 'Минимум 2 символа');
 
+        $type = $request->string('type')->toString() ?: null;
         $categoryId = $request->integer('category_id') ?: null;
 
-        $query = StoreSupplierCatalogProduct::query()
-            ->when($categoryId, function ($builder) use ($categoryId) {
-                $ids = $this->categorySubtreeIds($categoryId);
-                $builder->whereIn('category_external_id', $ids);
-            })
-            ->where(function ($builder) use ($q) {
-                $builder->where('name', 'like', '%'.$q.'%')
-                    ->orWhere('part', 'like', '%'.$q.'%')
-                    ->orWhere('sku', 'like', '%'.$q.'%')
-                    ->orWhere('vendor', 'like', '%'.$q.'%');
-            })
-            ->orderBy('name')
-            ->limit(40);
+        $products = $search->search($q, $type, $categoryId, 40);
+
+        $typeFilterEmpty = false;
+        if ($type && ! $categoryId) {
+            $ids = $search->categoryIdsForType($type);
+            $typeFilterEmpty = is_array($ids) && $ids === [];
+        }
 
         return response()->json([
-            'products' => $query->get(['sku', 'name', 'part', 'vendor', 'rrp', 'category_external_id']),
+            'products' => $products,
+            'meta' => [
+                'type' => $type,
+                'type_filter_empty' => $typeFilterEmpty,
+                'count' => count($products),
+            ],
         ]);
     }
 

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\StoreSupplierCatalogCategory;
 use App\Models\StoreSupplierCatalogProduct;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class StoreSupplierCatalogSyncService
@@ -98,10 +99,19 @@ class StoreSupplierCatalogSyncService
             }
         });
 
+        $this->clearSearchCache();
+
         return [
             'categories' => count($categoryRows),
             'products' => count($productRows),
         ];
+    }
+
+    public function clearSearchCache(): void
+    {
+        foreach (array_keys((new StoreSupplierCatalogSearchService)->typeKeywords()) as $type) {
+            Cache::forget('store.quickfox.cat_ids.'.$type);
+        }
     }
 
     /**
