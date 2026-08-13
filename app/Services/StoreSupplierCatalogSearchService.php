@@ -147,6 +147,15 @@ class StoreSupplierCatalogSearchService
         }
         $isNumericSku = count($tokens) === 1 && (bool) preg_match('/^\d{4,}$/', $tokens[0]);
 
+        $caseFilters = [];
+        if ($type === 'case') {
+            [$caseFilters, $tokens] = $this->splitCaseFilterTokens($tokens);
+            // Только чипы корпуса (цвет/стекло/ATX) без текста — ок
+            if ($tokens === [] && $caseFilters === []) {
+                return [];
+            }
+        }
+
         $builder = StoreSupplierCatalogProduct::query()
             ->when($inStockOnly, fn ($query) => $query->whereNotNull('price'))
             ->when($categoryIds !== null && $categoryIds !== [], function ($query) use ($categoryIds) {
@@ -172,13 +181,8 @@ class StoreSupplierCatalogSearchService
                 continue;
             }
 
-            if ($this->isSideGlassToken($token)) {
-                $this->applySideGlassFilter($builder);
-                continue;
-            }
-
-            if ($this->isFrontSideGlassToken($token)) {
-                $this->applyFrontSideGlassFilter($builder);
+            if ($this->isCaseColorToken($token)) {
+                $this->applyCaseColorFilter($builder, $token);
                 continue;
             }
 
@@ -215,13 +219,69 @@ class StoreSupplierCatalogSearchService
             $this->applyFanCpu120Filters($builder);
         }
 
+        // Корпуса: цвет / стекло / форм-фактор через DeepSeek (кэш в БД)
+        if ($type === 'case' && $caseFilters !== []) {
+            $pre = clone $builder;
+            if (! empty($caseFilters['color'])) {
+                if ($caseFilters['color'] === 'white') {
+                    $pre->where(function ($q) {
+                        $q->where('name', 'ilike', '%бел%')
+                            ->orWhere('name', 'ilike', '%white%')
+                            ->orWhere('case_color', 'white');
+                    });
+                } else {
+                    $pre->where(function ($q) {
+                        $q->where('name', 'ilike', '%черн%')
+                            ->orWhere('name', 'ilike', '%чёрн%')
+                            ->orWhere('name', 'ilike', '%black%')
+                            ->orWhere('case_color', 'black');
+                    });
+                }
+            }
+            if (! empty($caseFilters['glass'])) {
+                $pre->where(function ($q) {
+                    $q->where('name', 'ilike', '%стекл%')
+                        ->orWhere('name', 'ilike', '%окн%')
+                        ->orWhere('name', 'ilike', '%glass%')
+                        ->orWhere('name', 'ilike', '%панорам%')
+                        ->orWhere('name', 'ilike', '%tempered%')
+                        ->orWhere('name', 'ilike', '%перед%')
+                        ->orWhereNotNull('case_glass');
+                });
+            }
+            if (! empty($caseFilters['form']) && $caseFilters['form'] === 'atx') {
+                $pre->where(function ($q) {
+                    $q->where('name', 'ilike', '%atx%')
+                        ->orWhere('case_form', 'atx');
+                });
+            }
+
+            $candidateSkus = $pre->limit(400)->pluck('sku')->all();
+            if ($candidateSkus === []) {
+                return [];
+            }
+            app(StoreCaseCatalogEnrichmentService::class)->ensureClassified(
+                array_map('intval', $candidateSkus)
+            );
+            $builder->whereIn('sku', $candidateSkus);
+            if (! empty($caseFilters['color'])) {
+                $builder->where('case_color', $caseFilters['color']);
+            }
+            if (! empty($caseFilters['glass'])) {
+                $builder->where('case_glass', $caseFilters['glass']);
+            }
+            if (! empty($caseFilters['form'])) {
+                $builder->where('case_form', $caseFilters['form']);
+            }
+        }
+
         $rows = $builder
             ->limit(min(400, max($limit * 10, 100)))
             ->get(['sku', 'name', 'part', 'vendor', 'rrp', 'price', 'stock_qty', 'category_external_id', 'has_image', 'image_path']);
 
         $catNames = $this->categoryNames($rows->pluck('category_external_id')->filter()->unique()->all());
 
-        $scored = $rows->map(function (StoreSupplierCatalogProduct $p) use ($qLower, $catNames, $rule, $tokens, $categoryIds, $type) {
+        $scored = $rows->map(function (StoreSupplierCatalogProduct $p) use ($qLower, $catNames, $rule, $tokens, $categoryIds, $type, $caseFilters) {
             $requireNameInclude = $categoryIds === null || $categoryIds === [];
             if (is_array($rule) && ! $this->passesNameTypeRule((string) $p->name, $rule, $requireNameInclude)) {
                 return null;
@@ -229,21 +289,21 @@ class StoreSupplierCatalogSearchService
             if ($type === 'fan' && ! $this->passesFanCpu120((string) $p->name)) {
                 return null;
             }
-            if ($this->queryHasAtxToken($tokens) && ! $this->isStandaloneAtxName((string) $p->name.' '.(string) $p->part)) {
-                return null;
-            }
-            $hay = mb_strtolower((string) $p->name.' '.(string) $p->part);
-            if ($this->queryHasSideGlassToken($tokens) && ! $this->isSideGlassName($hay)) {
-                return null;
-            }
-            if ($this->queryHasFrontSideGlassToken($tokens) && ! $this->isFrontSideGlassName($hay)) {
-                return null;
-            }
-            // score по самому «сильному» токену + бонус за покрытие всех
+
             $score = 0;
-            foreach ($tokens as $token) {
-                foreach ($this->expandSearchToken($token) as $alias) {
-                    $score = max($score, $this->score($alias, $p));
+            if ($tokens === [] && $caseFilters !== []) {
+                $score = 20;
+            } else {
+                foreach ($tokens as $token) {
+                    foreach ($this->expandSearchToken($token) as $alias) {
+                        $score = max($score, $this->score($alias, $p));
+                    }
+                    if ($this->isAtxFormFactorToken($token) && $this->isStandaloneAtxName((string) $p->name.' '.(string) $p->part)) {
+                        $score = max($score, 40);
+                    }
+                    if ($this->isCaseColorToken($token)) {
+                        $score = max($score, 35);
+                    }
                 }
             }
             if ($score <= 0) {
@@ -541,7 +601,7 @@ class StoreSupplierCatalogSearchService
             '700w' => ['700w', '700 w', '700вт', '700 вт', '700watt'],
             '800w' => ['800w', '800 w', '800вт', '800 вт', '800watt'],
             '1000w' => ['1000w', '1000 w', '1000вт', '1000 вт', '1000watt', '1kw'],
-            // Корпуса (цвета; стекло — отдельные спец-токены боковое/frontglass)
+            // Корпуса (цвета оставлены для не-case поиска; для case — splitCaseFilterTokens)
             'белый' => ['белый', 'белая', 'белое', 'white'],
             'черный' => ['черный', 'чёрный', 'черная', 'чёрная', 'черное', 'чёрное', 'black'],
         ];
@@ -656,6 +716,76 @@ class StoreSupplierCatalogSearchService
         }
 
         return [];
+    }
+
+    /**
+     * Чипы корпусов → фильтры по кэшу DeepSeek / эвристике.
+     *
+     * @param  list<string>  $tokens
+     * @return array{0: array{color?:string,glass?:string,form?:string}, 1: list<string>}
+     */
+    private function splitCaseFilterTokens(array $tokens): array
+    {
+        $filters = [];
+        $rest = [];
+        foreach ($tokens as $token) {
+            $t = mb_strtolower(trim($token));
+            if (in_array($t, ['белый', 'белая', 'белое', 'white'], true)) {
+                $filters['color'] = 'white';
+                continue;
+            }
+            if (in_array($t, ['черный', 'чёрный', 'черная', 'чёрная', 'черное', 'чёрное', 'black'], true)) {
+                $filters['color'] = 'black';
+                continue;
+            }
+            if ($this->isSideGlassToken($token)) {
+                $filters['glass'] = 'side';
+                continue;
+            }
+            if ($this->isFrontSideGlassToken($token)) {
+                $filters['glass'] = 'front_side';
+                continue;
+            }
+            if ($this->isAtxFormFactorToken($token)) {
+                $filters['form'] = 'atx';
+                continue;
+            }
+            $rest[] = $token;
+        }
+
+        return [$filters, $rest];
+    }
+
+    private function isCaseColorToken(string $token): bool
+    {
+        $t = mb_strtolower(trim($token));
+
+        return in_array($t, [
+            'белый', 'белая', 'белое', 'white',
+            'черный', 'чёрный', 'черная', 'чёрная', 'черное', 'чёрное', 'black',
+        ], true);
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\StoreSupplierCatalogProduct>  $builder
+     */
+    private function applyCaseColorFilter($builder, string $token): void
+    {
+        $t = mb_strtolower(trim($token));
+        $patterns = in_array($t, ['белый', 'белая', 'белое', 'white'], true)
+            ? [
+                '(^|[^a-zа-яё0-9])(белый|белая|белое|white)([^a-zа-яё0-9]|$)',
+            ]
+            : [
+                '(^|[^a-zа-яё0-9])(черный|чёрный|черная|чёрная|черное|чёрное|black)([^a-zа-яё0-9]|$)',
+            ];
+
+        $builder->where(function ($query) use ($patterns) {
+            foreach ($patterns as $pattern) {
+                $query->orWhereRaw('name ~* ?', [$pattern])
+                    ->orWhereRaw('part ~* ?', [$pattern]);
+            }
+        });
     }
 
     private function isAtxFormFactorToken(string $token): bool

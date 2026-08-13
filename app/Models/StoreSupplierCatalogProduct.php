@@ -12,6 +12,7 @@ class StoreSupplierCatalogProduct extends Model
         'rrp', 'price', 'stock_qty', 'price_synced_at',
         'warranty', 'multiplicity', 'barcodes',
         'has_image', 'image_path', 'image_synced_at',
+        'case_color', 'case_glass', 'case_form', 'case_attrs_at',
         'synced_at',
     ];
 
@@ -22,6 +23,7 @@ class StoreSupplierCatalogProduct extends Model
         'synced_at' => 'datetime',
         'price_synced_at' => 'datetime',
         'image_synced_at' => 'datetime',
+        'case_attrs_at' => 'datetime',
     ];
 
     public function category(): BelongsTo
