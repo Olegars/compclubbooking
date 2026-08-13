@@ -333,6 +333,7 @@ const toggleChip = (token: string) => {
         ['256gb', '500gb', '1000gb', '2000gb', '4000gb'],
         ['2tb', '4tb', '6tb', '8tb'],
         ['500вт', '600вт', '700вт', '800вт', '1000вт', '500w', '600w', '700w', '800w', '1000w'],
+        ['120мм', '120mm'],
     ]
     const tokenLower = lower
     let next = [...parts]
@@ -350,14 +351,29 @@ const toggleChip = (token: string) => {
     searchQ.value = next.join(' ')
 }
 
+/** Вентиляторы: принудительно поставить 120мм и переискать */
+const applyFan120 = () => {
+    searchQ.value = '120мм'
+    clearTimeout(searchTimer.value)
+    runCatalogSearch()
+}
+
 const openSearchFor = (index: number) => {
     searchLineIndex.value = index
     const line = form.items[index]
     // Не подставлять плейсхолдер — только реальное part/name
-    const seed = (line?.part || line?.name || '').trim()
+    let seed = (line?.part || line?.name || '').trim()
+    // Вентиляторы: сразу 120мм, иначе поиск пустой и «кнопка» ничего не делает
+    if (String(line?.type || '').toLowerCase() === 'fan' && seed === '') {
+        seed = '120мм'
+    }
     searchQ.value = seed
     searchResults.value = []
     searchMeta.value = {}
+    if (seed.length >= 2) {
+        clearTimeout(searchTimer.value)
+        runCatalogSearch()
+    }
 }
 
 const pickProduct = (p: any) => {
@@ -724,9 +740,14 @@ const stockOptionsFor = (item: any) => {
                         </button>
                     </div>
                     <div v-else-if="lineTypeAt(searchLineIndex) === 'fan'" class="flex flex-wrap gap-2 pt-1">
-                        <span class="px-3 py-2 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] uppercase font-black tracking-widest">
-                            только 120мм · CPU
-                        </span>
+                        <button type="button"
+                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
+                                :class="chipActive('120мм') || chipActive('120mm')
+                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
+                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
+                                @click="applyFan120">
+                            120мм · CPU
+                        </button>
                     </div>
                     <div v-else-if="quickChips.length" class="flex flex-wrap gap-2 pt-1">
                         <button v-for="chip in quickChips" :key="chip.id" type="button"

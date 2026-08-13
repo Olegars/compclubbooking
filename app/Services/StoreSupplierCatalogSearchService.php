@@ -483,6 +483,8 @@ class StoreSupplierCatalogSearchService
             '4tb' => ['4tb', '4 tb', '4тб', '4 тб', '4.0tb', '4000gb', '4000 gb', '4000гб'],
             '6tb' => ['6tb', '6 tb', '6тб', '6 тб', '6.0tb', '6000gb', '6000 gb', '6000гб'],
             '8tb' => ['8tb', '8 tb', '8тб', '8 тб', '8.0tb', '8000gb', '8000 gb', '8000гб'],
+            // Вентиляторы
+            '120mm' => ['120mm', '120 mm', '120мм', '120 мм'],
             // БП
             '500w' => ['500w', '500 w', '500вт', '500 вт', '500watt'],
             '600w' => ['600w', '600 w', '600вт', '600 вт', '600watt'],
@@ -538,12 +540,13 @@ class StoreSupplierCatalogSearchService
             ];
         }
 
-        // TB / ТБ / GB / ГБ
-        if (preg_match('/^(\d{1,4})(tb|тб|gb|гб)$/ui', $t, $m)) {
+        // TB / ТБ / GB / ГБ / мм
+        if (preg_match('/^(\d{1,4})(tb|тб|gb|гб|мм|mm)$/ui', $t, $m)) {
             $n = $m[1];
             $unit = mb_strtolower($m[2]);
             $units = match (true) {
                 in_array($unit, ['tb', 'тб'], true) => 'tb|тб',
+                in_array($unit, ['мм', 'mm'], true) => 'мм|mm',
                 default => 'gb|гб',
             };
 
@@ -565,6 +568,14 @@ class StoreSupplierCatalogSearchService
                 $n = substr($key, 0, -2);
 
                 return ['(^|[^0-9])'.$n.'\\s*(tb|тб)($|[^0-9a-zа-яё])'];
+            }
+            if (str_ends_with($key, 'mm')) {
+                $n = substr($key, 0, -2);
+
+                return [
+                    '(^|[^0-9])'.$n.'\\s*(мм|mm)($|[^0-9a-zа-яё])',
+                    '(^|[^0-9])'.$n.'mm($|[^0-9a-zа-яё])',
+                ];
             }
             if (str_ends_with($key, 'gb')) {
                 $n = substr($key, 0, -2);
@@ -607,6 +618,7 @@ class StoreSupplierCatalogSearchService
             '700w' => '700w', '700вт' => '700w',
             '800w' => '800w', '800вт' => '800w',
             '1000w' => '1000w', '1000вт' => '1000w',
+            '120мм' => '120mm', '120mm' => '120mm',
         ];
 
         return $map[$compact] ?? null;
