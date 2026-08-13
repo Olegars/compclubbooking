@@ -393,6 +393,14 @@ const quickChips = computed(() => {
             return [
                 { id: '120mm', label: '120мм CPU', token: '120мм' },
             ]
+        case 'case':
+            return [
+                { id: 'white', label: 'белый', token: 'белый' },
+                { id: 'black', label: 'черный', token: 'черный' },
+                { id: 'side-glass', label: 'стекло с боку', token: 'боковое' },
+                { id: 'front-side-glass', label: 'стекло спереди и сбоку', token: 'панорам' },
+                { id: 'atx', label: 'ATX', token: 'ATX' },
+            ]
         default:
             return []
     }
@@ -416,6 +424,8 @@ const toggleChip = (token: string) => {
         ['2tb', '4tb', '6tb', '8tb'],
         ['500вт', '600вт', '700вт', '800вт', '1000вт', '500w', '600w', '700w', '800w', '1000w'],
         ['120мм', '120mm'],
+        ['белый', 'черный', 'белый', 'чёрный'],
+        ['боковое', 'панорам'],
     ]
     const tokenLower = lower
     let next = [...parts]
