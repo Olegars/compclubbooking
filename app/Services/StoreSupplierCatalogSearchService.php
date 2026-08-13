@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Cache;
 
 class StoreSupplierCatalogSearchService
 {
-    private const CACHE_PREFIX = 'store.quickfox.cat_ids.v4.';
+    private const CACHE_PREFIX = 'store.quickfox.cat_ids.v5.';
 
     /**
      * Правила типа: категории ITP + жёсткий фильтр по названию товара.
@@ -79,12 +79,20 @@ class StoreSupplierCatalogSearchService
             ],
             'cooler' => [
                 'cat' => ['кулер', 'охлажден', 'cooler', 'термопаст'],
-                'name_exclude' => ['корпус', 'блок питания', 'материнск'],
-                'name_include' => ['кулер', 'охлажд', 'cooler', 'термопаст', 'водян'],
+                'cat_exclude' => ['корпус', 'бытов'],
+                'name_exclude' => ['корпус', 'блок питания', 'материнск', 'видеокарт', 'бытов', 'gpu'],
+                'name_include' => ['кулер', 'охлажд', 'cooler', 'термопаст', 'водян', 'процессор', 'cpu'],
             ],
             'fan' => [
-                'cat' => ['вентилятор'],
-                'name_include' => ['вентилятор', 'fan'],
+                // Только вентиляторы под охлаждение CPU, диаметр 120 мм (см. forcedFilters)
+                'cat' => ['вентилятор', 'кулер'],
+                'cat_exclude' => ['бытов', 'видеокарт', 'корпус системн'],
+                'name_exclude' => [
+                    'видеокарт', 'gpu', 'бытов', 'микроволн', 'аэрогрил',
+                    '140мм', '140 mm', '140mm', '200мм', '200 mm', '200mm',
+                    '80мм', '80 mm', '80mm', '92мм', '92 mm', '92mm',
+                ],
+                'name_include' => ['вентилятор', 'fan', 'cooler', 'кулер'],
             ],
             'network' => [
                 'cat' => ['сетев', 'wifi', 'wi-fi', 'адаптер беспровод'],
@@ -175,15 +183,23 @@ class StoreSupplierCatalogSearchService
             $this->applyNameTypeFilters($builder, $rule, $requireNameInclude);
         }
 
+        // Вентиляторы: только 120 мм + намёк на CPU/cooler
+        if ($type === 'fan') {
+            $this->applyFanCpu120Filters($builder);
+        }
+
         $rows = $builder
             ->limit(min(400, max($limit * 10, 100)))
             ->get(['sku', 'name', 'part', 'vendor', 'rrp', 'price', 'stock_qty', 'category_external_id']);
 
         $catNames = $this->categoryNames($rows->pluck('category_external_id')->filter()->unique()->all());
 
-        $scored = $rows->map(function (StoreSupplierCatalogProduct $p) use ($qLower, $catNames, $rule, $tokens, $categoryIds) {
+        $scored = $rows->map(function (StoreSupplierCatalogProduct $p) use ($qLower, $catNames, $rule, $tokens, $categoryIds, $type) {
             $requireNameInclude = $categoryIds === null || $categoryIds === [];
             if (is_array($rule) && ! $this->passesNameTypeRule((string) $p->name, $rule, $requireNameInclude)) {
+                return null;
+            }
+            if ($type === 'fan' && ! $this->passesFanCpu120((string) $p->name)) {
                 return null;
             }
             // score по самому «сильному» токену + бонус за покрытие всех
@@ -227,6 +243,38 @@ class StoreSupplierCatalogSearchService
         })->values()->take($limit)->all();
 
         return array_values($scored);
+    }
+
+    private function applyFanCpu120Filters($query): void
+    {
+        // Диаметр ровно 120 мм (не 1120 / не 1200)
+        $query->where(function ($q) {
+            foreach ([
+                '(^|[^0-9])120\\s*(мм|mm)($|[^0-9a-zа-яё])',
+                '(^|[^0-9])120mm($|[^0-9a-zа-яё])',
+                'ø\\s*120',
+                '⌀\\s*120',
+            ] as $pattern) {
+                $q->orWhereRaw('name ~* ?', [$pattern]);
+            }
+        });
+
+        // Отсечь заведомо не-CPU
+        foreach (['видеокарт', 'gpu', 'для корпуса', 'case fan', 'корпусной'] as $ex) {
+            $query->where('name', 'not ilike', '%'.$this->escapeLike($ex).'%');
+        }
+    }
+
+    private function passesFanCpu120(string $name): bool
+    {
+        $n = mb_strtolower($name);
+        foreach (['видеокарт', 'gpu', 'для корпуса', 'case fan', 'корпусной'] as $ex) {
+            if (str_contains($n, $ex)) {
+                return false;
+            }
+        }
+
+        return (bool) preg_match('/(^|[^0-9])120\s*(мм|mm)|(^|[^0-9])120mm|ø\s*120|⌀\s*120/ui', $n);
     }
 
     /**

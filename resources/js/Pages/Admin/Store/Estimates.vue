@@ -306,6 +306,10 @@ const quickChips = computed(() => {
                 { id: '800w', label: '800Вт', token: '800Вт' },
                 { id: '1000w', label: '1000Вт', token: '1000Вт' },
             ]
+        case 'fan':
+            return [
+                { id: '120mm', label: '120мм CPU', token: '120мм' },
+            ]
         default:
             return []
     }
@@ -718,6 +722,11 @@ const stockOptionsFor = (item: any) => {
                                 @click="toggleChip(chip.token)">
                             {{ chip.label }}
                         </button>
+                    </div>
+                    <div v-else-if="lineTypeAt(searchLineIndex) === 'fan'" class="flex flex-wrap gap-2 pt-1">
+                        <span class="px-3 py-2 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] uppercase font-black tracking-widest">
+                            только 120мм · CPU
+                        </span>
                     </div>
                     <div v-else-if="quickChips.length" class="flex flex-wrap gap-2 pt-1">
                         <button v-for="chip in quickChips" :key="chip.id" type="button"
