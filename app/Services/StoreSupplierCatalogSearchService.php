@@ -230,10 +230,22 @@ class StoreSupplierCatalogSearchService
                 'score' => $score,
             ];
         })->filter()->sort(function (array $a, array $b) {
+            // Сначала с ценой (в наличии), затем дешевле → дороже, потом релевантность
             $aStock = $a['in_stock'] ? 1 : 0;
             $bStock = $b['in_stock'] ? 1 : 0;
             if ($aStock !== $bStock) {
                 return $bStock <=> $aStock;
+            }
+            $aPrice = $a['price'] ?? null;
+            $bPrice = $b['price'] ?? null;
+            if ($aPrice !== null && $bPrice !== null && (float) $aPrice !== (float) $bPrice) {
+                return (float) $aPrice <=> (float) $bPrice;
+            }
+            if ($aPrice !== null && $bPrice === null) {
+                return -1;
+            }
+            if ($aPrice === null && $bPrice !== null) {
+                return 1;
             }
             if ($a['score'] !== $b['score']) {
                 return $b['score'] <=> $a['score'];
