@@ -126,22 +126,31 @@ class StoreSupplierCatalogSearchService
         }
 
         $qLower = mb_strtolower($q);
-        $like = '%'.$this->escapeLike($q).'%';
-        $isNumericSku = (bool) preg_match('/^\d{4,}$/', $q);
+        $tokens = preg_split('/\s+/u', $qLower, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $tokens = array_values(array_filter($tokens, fn ($t) => mb_strlen($t) >= 2));
+        if ($tokens === []) {
+            return [];
+        }
+        $isNumericSku = count($tokens) === 1 && (bool) preg_match('/^\d{4,}$/', $tokens[0]);
 
         $builder = StoreSupplierCatalogProduct::query()
             ->when($inStockOnly, fn ($query) => $query->whereNotNull('price'))
             ->when($categoryIds !== null && $categoryIds !== [], function ($query) use ($categoryIds) {
                 $query->whereIn('category_external_id', $categoryIds);
-            })
-            ->where(function ($query) use ($like, $q, $isNumericSku) {
+            });
+
+        // Все слова запроса должны встретиться (DDR5 32GB → и тип, и объём)
+        foreach ($tokens as $token) {
+            $like = '%'.$this->escapeLike($token).'%';
+            $builder->where(function ($query) use ($like, $token, $isNumericSku) {
                 $query->where('name', 'ilike', $like)
                     ->orWhere('part', 'ilike', $like)
                     ->orWhere('vendor', 'ilike', $like);
                 if ($isNumericSku) {
-                    $query->orWhere('sku', (int) $q);
+                    $query->orWhere('sku', (int) $token);
                 }
             });
+        }
 
         // Жёсткий фильтр по типу — даже если категории ITP не сматчились
         if (is_array($rule)) {
@@ -154,13 +163,20 @@ class StoreSupplierCatalogSearchService
 
         $catNames = $this->categoryNames($rows->pluck('category_external_id')->filter()->unique()->all());
 
-        $scored = $rows->map(function (StoreSupplierCatalogProduct $p) use ($qLower, $catNames, $rule) {
+        $scored = $rows->map(function (StoreSupplierCatalogProduct $p) use ($qLower, $catNames, $rule, $tokens) {
             if (is_array($rule) && ! $this->passesNameTypeRule((string) $p->name, $rule)) {
                 return null;
             }
-            $score = $this->score($qLower, $p);
+            // score по самому «сильному» токену + бонус за покрытие всех
+            $score = 0;
+            foreach ($tokens as $token) {
+                $score = max($score, $this->score($token, $p));
+            }
             if ($score <= 0) {
                 return null;
+            }
+            if (count($tokens) > 1) {
+                $score += min(10, count($tokens) * 2);
             }
 
             return [

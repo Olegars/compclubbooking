@@ -247,6 +247,68 @@ watch(searchQ, () => {
 
 watch(includeOos, () => { runCatalogSearch() })
 
+const searchType = computed(() =>
+    searchLineIndex.value !== null ? (form.items[searchLineIndex.value]?.type || null) : null
+)
+
+/** Быстрые фильтры по типу позиции */
+const quickChips = computed(() => {
+    switch (searchType.value) {
+        case 'ram':
+            return [
+                { id: 'ddr5', label: 'DDR5', token: 'DDR5' },
+                { id: 'ddr4', label: 'DDR4', token: 'DDR4' },
+                { id: '16gb', label: '16GB', token: '16GB' },
+                { id: '32gb', label: '32GB', token: '32GB' },
+                { id: '64gb', label: '64GB', token: '64GB' },
+            ]
+        case 'cpu':
+            return [
+                { id: 'lga1700', label: 'LGA1700', token: '1700' },
+                { id: 'am5', label: 'AM5', token: 'AM5' },
+                { id: 'am4', label: 'AM4', token: 'AM4' },
+            ]
+        case 'gpu':
+            return [
+                { id: 'rtx40', label: 'RTX 40', token: 'RTX 40' },
+                { id: 'rtx30', label: 'RTX 30', token: 'RTX 30' },
+            ]
+        default:
+            return []
+    }
+})
+
+const chipActive = (token: string) => {
+    const parts = searchQ.value.toLowerCase().split(/\s+/).filter(Boolean)
+    return parts.includes(token.toLowerCase())
+}
+
+const toggleChip = (token: string) => {
+    const raw = searchQ.value.trim()
+    const parts = raw === '' ? [] : raw.split(/\s+/).filter(Boolean)
+    const lower = token.toLowerCase()
+    // взаимоисключающие группы
+    const exclusiveGroups = [
+        ['ddr4', 'ddr5'],
+        ['16gb', '32gb', '64gb'],
+        ['am4', 'am5', '1700'],
+    ]
+    const tokenLower = lower
+    let next = [...parts]
+    const isOn = next.some(p => p.toLowerCase() === tokenLower)
+    if (isOn) {
+        next = next.filter(p => p.toLowerCase() !== tokenLower)
+    } else {
+        for (const group of exclusiveGroups) {
+            if (group.includes(tokenLower)) {
+                next = next.filter(p => !group.includes(p.toLowerCase()))
+            }
+        }
+        next.push(token)
+    }
+    searchQ.value = next.join(' ')
+}
+
 const openSearchFor = (index: number) => {
     searchLineIndex.value = index
     const line = form.items[index]
@@ -511,6 +573,16 @@ const stockOptionsFor = (item: any) => {
                     </p>
                     <input v-model="searchQ" placeholder="13400F / Ryzen / точный sku…"
                            class="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" />
+                    <div v-if="quickChips.length" class="flex flex-wrap gap-2">
+                        <button v-for="chip in quickChips" :key="chip.id" type="button"
+                                class="px-3 py-1.5 rounded-lg border text-[10px] uppercase font-black tracking-widest transition-colors"
+                                :class="chipActive(chip.token)
+                                    ? 'border-amber-500/50 bg-amber-500/15 text-amber-400'
+                                    : 'border-white/10 text-white/50 hover:text-white/80 hover:border-white/25'"
+                                @click="toggleChip(chip.token)">
+                            {{ chip.label }}
+                        </button>
+                    </div>
                     <label class="flex items-center gap-2 text-[10px] uppercase font-black text-white/40 tracking-widest cursor-pointer">
                         <input v-model="includeOos" type="checkbox" class="accent-amber-500" />
                         Показывать нет в наличии
