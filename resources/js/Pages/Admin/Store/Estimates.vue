@@ -81,12 +81,23 @@ const emptyLine = (): EstimateLine => ({
 const addLine = () => form.items.push(emptyLine())
 const removeLine = (i: number) => {
     const line = form.items[i]
-    if (line && ['ordered', 'received', 'from_stock'].includes(line.status)) return
+    if (line && lineLocked(line)) return
     if (form.items.length > 1) form.items.splice(i, 1)
 }
 
+/** Уже сохранённые позиции со склада / заказа — нельзя менять в форме */
 const lineLocked = (line: EstimateLine) =>
-    ['ordered', 'received', 'from_stock'].includes(line.status)
+    !!line.id && ['ordered', 'received', 'from_stock'].includes(line.status)
+
+const lineFilled = (line: EstimateLine) =>
+    !!(line.name?.trim() || line.supplier_sku || line.store_component_id)
+
+const clearLine = (i: number) => {
+    const line = form.items[i]
+    if (!line || lineLocked(line)) return
+    const id = line.id ?? null
+    Object.assign(line, emptyLine(), { id })
+}
 
 const openCreate = () => {
     editingId.value = null
@@ -95,6 +106,7 @@ const openCreate = () => {
     form.title = ''
     form.notes = ''
     form.items = [emptyLine()]
+    closePicker()
     showForm.value = true
 }
 
@@ -121,10 +133,12 @@ const openEdit = (est: any) => {
             image_url: item.supplier_image_url || null,
         }))
         : [emptyLine()]
+    closePicker()
     showForm.value = true
 }
 
 const closeForm = () => {
+    closePicker()
     showForm.value = false
     editingId.value = null
 }
@@ -196,15 +210,57 @@ const filterStatus = computed({
     set: (v: string) => router.get('/admin/store/estimates', v ? { status: v } : {}, { preserveState: true }),
 })
 
-// --- поиск в каталоге поставщика ---
+// --- picker (каталог / склад) ---
+const pickerMode = ref<'catalog' | 'stock' | null>(null)
+const pickerLineIndex = ref<number | null>(null)
+const pickerType = ref<string | null>(null)
 const searchQ = ref('')
 const searchResults = ref<any[]>([])
 const searchMeta = ref<{ type?: string | null, type_filter_empty?: boolean, count?: number }>({})
-const searchLineIndex = ref<number | null>(null)
 const searchTimer = ref<any>(null)
 const includeOos = ref(false)
 
+const closePicker = () => {
+    pickerMode.value = null
+    pickerLineIndex.value = null
+    pickerType.value = null
+    searchQ.value = ''
+    searchResults.value = []
+    searchMeta.value = {}
+    includeOos.value = false
+    clearTimeout(searchTimer.value)
+}
+
+const openPicker = (mode: 'catalog' | 'stock', index: number) => {
+    const line = form.items[index]
+    if (!line || lineLocked(line)) return
+    pickerMode.value = mode
+    pickerLineIndex.value = index
+    pickerType.value = line.type || null
+    searchResults.value = []
+    searchMeta.value = {}
+    includeOos.value = false
+    // Вентиляторы: сразу 120мм
+    if (String(pickerType.value || '').toLowerCase() === 'fan') {
+        searchQ.value = '120мм'
+    } else {
+        searchQ.value = ''
+    }
+    if (mode === 'catalog' && searchQ.value.trim().length >= 2) {
+        clearTimeout(searchTimer.value)
+        runCatalogSearch()
+    }
+}
+
+const setPickerType = (type: string | null) => {
+    pickerType.value = type
+    if (String(type || '').toLowerCase() === 'fan') {
+        searchQ.value = '120мм'
+    }
+}
+
 const runCatalogSearch = async () => {
+    if (pickerMode.value !== 'catalog') return
     const q = searchQ.value
     if (!q || q.trim().length < 2) {
         searchResults.value = []
@@ -212,8 +268,7 @@ const runCatalogSearch = async () => {
         return
     }
     try {
-        const line = searchLineIndex.value !== null ? form.items[searchLineIndex.value] : null
-        const type = line?.type || ''
+        const type = pickerType.value || ''
         const params = new URLSearchParams({ q: q.trim() })
         if (type) params.set('type', type)
         if (includeOos.value) params.set('include_oos', '1')
@@ -231,20 +286,45 @@ const runCatalogSearch = async () => {
 }
 
 watch(searchQ, () => {
+    if (pickerMode.value !== 'catalog') return
     clearTimeout(searchTimer.value)
     searchTimer.value = setTimeout(runCatalogSearch, 300)
 })
 
-watch(includeOos, () => { runCatalogSearch() })
+watch(includeOos, () => {
+    if (pickerMode.value === 'catalog') runCatalogSearch()
+})
 
-const lineTypeAt = (index: number | null) => {
-    if (index === null) return ''
-    return String(form.items[index]?.type || '').toLowerCase()
-}
+watch(pickerType, () => {
+    if (pickerMode.value === 'catalog') {
+        clearTimeout(searchTimer.value)
+        searchTimer.value = setTimeout(runCatalogSearch, 150)
+    }
+})
 
-/** Быстрые фильтры по типу позиции */
+const stockResults = computed(() => {
+    if (pickerMode.value !== 'stock') return [] as any[]
+    const q = searchQ.value.trim().toLowerCase()
+    const type = pickerType.value
+    const usedIds = new Set(
+        form.items
+            .map((l, idx) => (idx !== pickerLineIndex.value ? l.store_component_id : null))
+            .filter((id): id is number => id != null && id > 0),
+    )
+    return (props.components || []).filter((c: any) => {
+        if (usedIds.has(c.id)) return false
+        if (type && c.type !== type) return false
+        if (q.length >= 1) {
+            const hay = `${c.name || ''} ${c.warranty_number || ''} ${c.id}`.toLowerCase()
+            if (!hay.includes(q)) return false
+        }
+        return true
+    })
+})
+
+/** Быстрые фильтры по типу в пикере */
 const quickChips = computed(() => {
-    switch (lineTypeAt(searchLineIndex.value)) {
+    switch (String(pickerType.value || '').toLowerCase()) {
         case 'ram':
             return [
                 { id: 'ddr5', label: 'DDR5', token: 'DDR5' },
@@ -314,7 +394,6 @@ const toggleChip = (token: string) => {
     const raw = searchQ.value.trim()
     const parts = raw === '' ? [] : raw.split(/\s+/).filter(Boolean)
     const lower = token.toLowerCase()
-    // взаимоисключающие группы
     const exclusiveGroups = [
         ['ddr4', 'ddr5'],
         ['16gb', '32gb', '64gb'],
@@ -341,49 +420,42 @@ const toggleChip = (token: string) => {
     searchQ.value = next.join(' ')
 }
 
-/** Вентиляторы: принудительно поставить 120мм и переискать */
-const applyFan120 = () => {
-    searchQ.value = '120мм'
-    clearTimeout(searchTimer.value)
-    runCatalogSearch()
-}
-
-const openSearchFor = (index: number) => {
-    searchLineIndex.value = index
-    const line = form.items[index]
-    // Не подставлять плейсхолдер — только реальное part/name
-    let seed = (line?.part || line?.name || '').trim()
-    // Вентиляторы: сразу 120мм, иначе поиск пустой и «кнопка» ничего не делает
-    if (String(line?.type || '').toLowerCase() === 'fan' && seed === '') {
-        seed = '120мм'
-    }
-    searchQ.value = seed
-    searchResults.value = []
-    searchMeta.value = {}
-    if (seed.length >= 2) {
-        clearTimeout(searchTimer.value)
-        runCatalogSearch()
-    }
-}
-
 const pickProduct = (p: any) => {
-    if (searchLineIndex.value === null) return
-    const line = form.items[searchLineIndex.value]
+    if (pickerLineIndex.value === null) return
+    const line = form.items[pickerLineIndex.value]
     if (!line || lineLocked(line)) return
+    if (pickerType.value) line.type = pickerType.value
     line.name = p.name
     line.part = p.part || ''
     line.supplier_sku = p.sku
     line.supplier_part = p.part || ''
     line.supplier_name = p.name
     line.supplier_price = p.price != null ? Number(p.price) : null
-    if (line.sale_price == null && p.price != null) {
-        line.sale_price = Number(p.price)
-    }
+    line.sale_price = p.price != null ? Number(p.price) : null
     line.status = 'to_order'
+    line.store_component_id = null
     line.image_url = p.image_url || null
-    searchLineIndex.value = null
-    searchResults.value = []
-    searchQ.value = ''
+    closePicker()
+}
+
+const pickStock = (c: any) => {
+    if (pickerLineIndex.value === null) return
+    const line = form.items[pickerLineIndex.value]
+    if (!line || lineLocked(line)) return
+    line.type = c.type || pickerType.value
+    line.name = c.name
+    line.part = ''
+    line.supplier_sku = null
+    line.supplier_part = ''
+    line.supplier_name = ''
+    line.supplier_price = c.purchase_price != null ? Number(c.purchase_price) : null
+    line.sale_price = c.sale_price != null
+        ? Number(c.sale_price)
+        : (c.purchase_price != null ? Number(c.purchase_price) : null)
+    line.status = 'from_stock'
+    line.store_component_id = c.id
+    line.image_url = c.image_url || null
+    closePicker()
 }
 
 const lightbox = ref<{ url: string, title: string } | null>(null)
@@ -401,11 +473,19 @@ const openLightbox = (url: string | null | undefined, title = '') => {
     lightbox.value = { url: imageSized(url, 'large'), title }
 }
 const closeLightbox = () => { lightbox.value = null }
-const onLightboxKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape' && lightbox.value) closeLightbox()
+
+const onEscKey = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return
+    if (lightbox.value) {
+        closeLightbox()
+        return
+    }
+    if (pickerMode.value) {
+        closePicker()
+    }
 }
-onMounted(() => window.addEventListener('keydown', onLightboxKey))
-onUnmounted(() => window.removeEventListener('keydown', onLightboxKey))
+onMounted(() => window.addEventListener('keydown', onEscKey))
+onUnmounted(() => window.removeEventListener('keydown', onEscKey))
 
 const canEditEstimate = (est: any) =>
     props.canManage && ['draft', 'agreed', 'procuring', 'ready'].includes(est.status)
@@ -578,6 +658,7 @@ const stockOptionsFor = (item: any) => {
             </div>
         </div>
 
+        <!-- форма создания / редактирования -->
         <div v-if="showForm" class="fixed inset-0 bg-black/70 flex items-start justify-center z-50 p-4 overflow-y-auto" @click.self="closeForm">
             <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-3xl space-y-4 my-8" @submit.prevent="save">
                 <h3 class="font-black uppercase italic text-xl">
@@ -591,229 +672,81 @@ const stockOptionsFor = (item: any) => {
                 </select>
 
                 <div class="text-[10px] uppercase font-black text-white/30 tracking-widest">Комплектация</div>
-                <div v-for="(line, i) in form.items" :key="i" class="space-y-2 border border-white/5 rounded-2xl p-3">
-                    <div class="flex gap-3 items-start">
+                <div v-for="(line, i) in form.items" :key="i" class="border border-white/5 rounded-2xl p-3 space-y-3">
+                    <!-- пустая строка -->
+                    <div v-if="!lineFilled(line)" class="flex flex-wrap items-center gap-2">
+                        <button type="button"
+                                class="flex-1 min-w-[120px] px-4 py-3 rounded-xl border border-cyan-500/30 text-[10px] uppercase font-black tracking-widest text-cyan-400 hover:bg-cyan-500/10 disabled:opacity-40"
+                                :disabled="lineLocked(line) || !catalogStats.products"
+                                @click="openPicker('catalog', i)">
+                            Каталог
+                        </button>
+                        <button type="button"
+                                class="flex-1 min-w-[120px] px-4 py-3 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black tracking-widest text-amber-400 hover:bg-amber-500/10 disabled:opacity-40"
+                                :disabled="lineLocked(line)"
+                                @click="openPicker('stock', i)">
+                            Склад
+                        </button>
+                        <button type="button" class="text-red-400 text-xl leading-none px-2 disabled:opacity-40"
+                                :disabled="lineLocked(line) || form.items.length <= 1"
+                                @click="removeLine(i)">×</button>
+                    </div>
+
+                    <!-- заполненная строка (только просмотр) -->
+                    <div v-else class="flex gap-3 items-start">
                         <button v-if="line.image_url" type="button"
                                 class="w-14 h-14 shrink-0 rounded-xl bg-black/60 border border-white/10 overflow-hidden hover:border-amber-500/40"
                                 title="Увеличить"
                                 @click="openLightbox(line.image_url, line.name)">
                             <img :src="line.image_url" :alt="line.name" class="w-full h-full object-contain" loading="lazy" />
                         </button>
+                        <div v-else class="w-14 h-14 shrink-0 rounded-xl bg-black/40 border border-white/5" />
                         <div class="min-w-0 flex-1 space-y-2">
-                    <div class="grid grid-cols-[120px_1fr_40px] gap-2">
-                        <select v-model="line.type" class="bg-black border border-white/10 rounded-xl px-2 py-2 text-sm" :disabled="lineLocked(line)">
-                            <option :value="null">Тип</option>
-                            <option v-for="(label, key) in componentTypes" :key="key" :value="key">{{ label }}</option>
-                        </select>
-                        <input v-model="line.name" required placeholder="Название" :disabled="lineLocked(line)"
-                               class="bg-black border border-white/10 rounded-xl px-3 py-2 text-sm disabled:opacity-50" />
-                        <button type="button" class="text-red-400" :disabled="lineLocked(line)" @click="removeLine(i)">×</button>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-                        <input v-model="line.part" placeholder="Part / 13400F" :disabled="lineLocked(line)"
-                               class="bg-black border border-white/10 rounded-xl px-3 py-2 text-sm disabled:opacity-50" />
-                        <input v-model.number="line.supplier_price" type="number" step="0.01" min="0" placeholder="Закупка (API)"
-                               class="bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" :disabled="lineLocked(line)" />
-                        <input v-model.number="line.sale_price" type="number" step="0.01" min="0" placeholder="Цена продажи"
-                               class="bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" :disabled="lineLocked(line)" />
-                    </div>
-                    <div class="flex gap-2">
-                        <button type="button" class="flex-1 text-[10px] uppercase font-black text-cyan-400 border border-cyan-500/20 rounded-xl py-2"
-                                :disabled="lineLocked(line) || !catalogStats.products"
-                                @click="openSearchFor(i)">
-                            Из каталога API
-                        </button>
-                    </div>
-                    <div v-if="line.supplier_sku" class="text-[10px] text-white/30 uppercase tracking-widest">
-                        SKU {{ line.supplier_sku }}
-                        <span v-if="line.supplier_price != null"> · {{ money(line.supplier_price) }}</span>
-                        · {{ itemStatusLabels[line.status] || line.status }}
-                    </div>
+                            <div class="text-white/90 font-black uppercase tracking-wide text-[12px]">
+                                {{ line.name }}
+                            </div>
+                            <div class="text-[10px] text-white/35 uppercase tracking-widest">
+                                <span v-if="line.type">{{ componentTypes[line.type] || line.type }}</span>
+                                <span v-if="line.supplier_sku"> · SKU {{ line.supplier_sku }}</span>
+                                <span v-else-if="line.store_component_id"> · Склад #{{ line.store_component_id }}</span>
+                                <span v-if="line.part"> · {{ line.part }}</span>
+                            </div>
+                            <div class="text-[10px] text-white/40 uppercase tracking-widest">
+                                <span v-if="line.supplier_price != null">закуп {{ money(line.supplier_price) }}</span>
+                                <span v-if="line.sale_price != null"> · продажа {{ money(line.sale_price) }}</span>
+                                <span> · {{ itemStatusLabels[line.status] || line.status }}</span>
+                            </div>
+                            <div v-if="!lineLocked(line)" class="flex flex-wrap gap-2 pt-1">
+                                <button type="button"
+                                        class="px-3 py-1.5 rounded-lg border border-cyan-500/25 text-[9px] uppercase font-black tracking-widest text-cyan-400/90 hover:bg-cyan-500/10 disabled:opacity-40"
+                                        :disabled="!catalogStats.products"
+                                        @click="openPicker('catalog', i)">
+                                    Каталог
+                                </button>
+                                <button type="button"
+                                        class="px-3 py-1.5 rounded-lg border border-amber-500/25 text-[9px] uppercase font-black tracking-widest text-amber-400/90 hover:bg-amber-500/10"
+                                        @click="openPicker('stock', i)">
+                                    Склад
+                                </button>
+                                <button type="button"
+                                        class="px-3 py-1.5 rounded-lg border border-white/10 text-[9px] uppercase font-black tracking-widest text-white/50 hover:text-white/80"
+                                        @click="clearLine(i)">
+                                    Очистить
+                                </button>
+                                <button type="button"
+                                        class="px-3 py-1.5 rounded-lg border border-red-500/20 text-[9px] uppercase font-black tracking-widest text-red-400/80"
+                                        :disabled="form.items.length <= 1"
+                                        @click="removeLine(i)">
+                                    Удалить
+                                </button>
+                            </div>
+                            <div v-else class="text-[9px] uppercase tracking-widest text-white/25 pt-1">
+                                Позиция зафиксирована
+                            </div>
                         </div>
                     </div>
                 </div>
                 <button type="button" class="text-[10px] uppercase font-black text-amber-400" @click="addLine">+ позиция</button>
-
-                <div v-if="searchLineIndex !== null" class="border border-cyan-500/20 rounded-2xl p-4 space-y-2 bg-black/40">
-                    <div class="flex justify-between items-center">
-                        <div class="text-[10px] uppercase font-black text-cyan-400 tracking-widest">
-                            Поиск каталога
-                            <span v-if="form.items[searchLineIndex]?.type" class="text-white/40">
-                                · {{ componentTypes[form.items[searchLineIndex].type] || form.items[searchLineIndex].type }}
-                            </span>
-                        </div>
-                        <button type="button" class="text-white/40 text-xs" @click="searchLineIndex = null">закрыть</button>
-                    </div>
-                    <p v-if="!form.items[searchLineIndex]?.type" class="text-[10px] text-orange-400/80 uppercase tracking-widest">
-                        Выберите тип позиции — поиск сузится по категориям ITP
-                    </p>
-                    <input v-model="searchQ" placeholder="13400F / Ryzen / DDR5 32GB…"
-                           class="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" />
-
-                    <!-- Быстрые фильтры: завязаны на тип строки (как в заголовке поиска) -->
-                    <div v-if="lineTypeAt(searchLineIndex) === 'ram'" class="flex flex-wrap gap-2 pt-1">
-                        <button v-for="chip in [
-                            { label: 'DDR5', token: 'DDR5' },
-                            { label: 'DDR4', token: 'DDR4' },
-                            { label: '16GB', token: '16GB' },
-                            { label: '32GB', token: '32GB' },
-                            { label: '64GB', token: '64GB' },
-                        ]" :key="chip.token" type="button"
-                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
-                                :class="chipActive(chip.token)
-                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
-                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
-                                @click="toggleChip(chip.token)">
-                            {{ chip.label }}
-                        </button>
-                    </div>
-                    <div v-else-if="lineTypeAt(searchLineIndex) === 'cpu'" class="flex flex-wrap gap-2 pt-1">
-                        <button v-for="chip in [
-                            { label: 'LGA1700', token: '1700' },
-                            { label: 'AM5', token: 'AM5' },
-                            { label: 'AM4', token: 'AM4' },
-                        ]" :key="chip.token" type="button"
-                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
-                                :class="chipActive(chip.token)
-                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
-                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
-                                @click="toggleChip(chip.token)">
-                            {{ chip.label }}
-                        </button>
-                    </div>
-                    <div v-else-if="lineTypeAt(searchLineIndex) === 'motherboard'" class="flex flex-wrap gap-2 pt-1">
-                        <button v-for="chip in [
-                            { label: 'AM4', token: 'AM4' },
-                            { label: 'AM5', token: 'AM5' },
-                            { label: '1700', token: '1700' },
-                            { label: '1851', token: '1851' },
-                        ]" :key="chip.token" type="button"
-                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
-                                :class="chipActive(chip.token)
-                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
-                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
-                                @click="toggleChip(chip.token)">
-                            {{ chip.label }}
-                        </button>
-                    </div>
-                    <div v-else-if="lineTypeAt(searchLineIndex) === 'gpu'" class="flex flex-wrap gap-2 pt-1">
-                        <button v-for="chip in [
-                            { label: '5050', token: '5050' },
-                            { label: '5060', token: '5060' },
-                            { label: '5070', token: '5070' },
-                            { label: '5080', token: '5080' },
-                        ]" :key="chip.token" type="button"
-                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
-                                :class="chipActive(chip.token)
-                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
-                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
-                                @click="toggleChip(chip.token)">
-                            {{ chip.label }}
-                        </button>
-                    </div>
-                    <div v-else-if="lineTypeAt(searchLineIndex) === 'storage_ssd'" class="flex flex-wrap gap-2 pt-1">
-                        <button v-for="chip in [
-                            { label: '256GB', token: '256GB' },
-                            { label: '500GB', token: '500GB' },
-                            { label: '1000GB', token: '1000GB' },
-                            { label: '2000GB', token: '2000GB' },
-                            { label: '4000GB', token: '4000GB' },
-                        ]" :key="chip.token" type="button"
-                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
-                                :class="chipActive(chip.token)
-                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
-                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
-                                @click="toggleChip(chip.token)">
-                            {{ chip.label }}
-                        </button>
-                    </div>
-                    <div v-else-if="lineTypeAt(searchLineIndex) === 'storage_hdd'" class="flex flex-wrap gap-2 pt-1">
-                        <button v-for="chip in [
-                            { label: '2TB', token: '2TB' },
-                            { label: '4TB', token: '4TB' },
-                            { label: '6TB', token: '6TB' },
-                            { label: '8TB', token: '8TB' },
-                        ]" :key="chip.token" type="button"
-                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
-                                :class="chipActive(chip.token)
-                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
-                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
-                                @click="toggleChip(chip.token)">
-                            {{ chip.label }}
-                        </button>
-                    </div>
-                    <div v-else-if="lineTypeAt(searchLineIndex) === 'psu'" class="flex flex-wrap gap-2 pt-1">
-                        <button v-for="chip in [
-                            { label: '500Вт', token: '500Вт' },
-                            { label: '600Вт', token: '600Вт' },
-                            { label: '700Вт', token: '700Вт' },
-                            { label: '800Вт', token: '800Вт' },
-                            { label: '1000Вт', token: '1000Вт' },
-                        ]" :key="chip.token" type="button"
-                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
-                                :class="chipActive(chip.token)
-                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
-                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
-                                @click="toggleChip(chip.token)">
-                            {{ chip.label }}
-                        </button>
-                    </div>
-                    <div v-else-if="lineTypeAt(searchLineIndex) === 'fan'" class="flex flex-wrap gap-2 pt-1">
-                        <button type="button"
-                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
-                                :class="chipActive('120мм') || chipActive('120mm')
-                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
-                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
-                                @click="applyFan120">
-                            120мм · CPU
-                        </button>
-                    </div>
-                    <div v-else-if="quickChips.length" class="flex flex-wrap gap-2 pt-1">
-                        <button v-for="chip in quickChips" :key="chip.id" type="button"
-                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
-                                :class="chipActive(chip.token)
-                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
-                                    : 'border-white/20 text-white/70'"
-                                @click="toggleChip(chip.token)">
-                            {{ chip.label }}
-                        </button>
-                    </div>
-
-                    <label class="flex items-center gap-2 text-[10px] uppercase font-black text-white/40 tracking-widest cursor-pointer">
-                        <input v-model="includeOos" type="checkbox" class="accent-amber-500" />
-                        Показывать нет в наличии
-                    </label>
-                    <div class="max-h-64 overflow-y-auto space-y-1">
-                        <button v-for="p in searchResults" :key="p.sku" type="button"
-                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/5 text-xs"
-                                @click="pickProduct(p)">
-                            <div class="flex gap-3 items-start">
-                                <div class="w-12 h-12 shrink-0 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center"
-                                     :class="p.image_url ? 'cursor-zoom-in hover:border-amber-500/40' : ''"
-                                     @click.stop="openLightbox(p.image_url, p.name)">
-                                    <img v-if="p.image_url" :src="p.image_url" :alt="p.name" class="w-full h-full object-contain" loading="lazy" />
-                                    <span v-else class="text-[9px] text-white/20 uppercase">нет</span>
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <div class="flex justify-between gap-3">
-                                        <span class="text-white/80 min-w-0">{{ p.name }}</span>
-                                        <span v-if="p.price != null" class="shrink-0 font-black text-amber-400">{{ money(p.price) }}</span>
-                                        <span v-else class="shrink-0 text-white/25">нет в наличии</span>
-                                    </div>
-                                    <div class="text-white/30 mt-0.5">
-                                        {{ p.part || '—' }} · sku {{ p.sku }}
-                                        <span v-if="p.stock_qty != null"> · ост. {{ p.stock_qty }}</span>
-                                        <span v-if="p.category_name" class="text-cyan-400/50"> · {{ p.category_name }}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </button>
-                        <div v-if="searchQ.length >= 2 && !searchResults.length" class="text-white/30 text-xs py-2">
-                            Ничего не найдено
-                            <span v-if="searchMeta.type_filter_empty"> (категории для типа не сматчились — попробуйте другой запрос)</span>
-                        </div>
-                    </div>
-                </div>
 
                 <textarea v-model="form.notes" placeholder="Заметки" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" rows="2" />
                 <div class="flex gap-3 justify-end">
@@ -823,6 +756,119 @@ const stockOptionsFor = (item: any) => {
                     </button>
                 </div>
             </form>
+        </div>
+
+        <!-- fullscreen picker -->
+        <div v-if="pickerMode" class="fixed inset-0 z-[60] bg-[#050505] flex flex-col font-mono">
+            <div class="shrink-0 border-b border-white/10 px-4 py-4 space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="text-[11px] uppercase font-black tracking-widest"
+                         :class="pickerMode === 'catalog' ? 'text-cyan-400' : 'text-amber-400'">
+                        {{ pickerMode === 'catalog' ? 'Каталог поставщика' : 'Склад' }}
+                    </div>
+                    <button type="button" class="text-white/40 hover:text-white text-2xl leading-none px-2" @click="closePicker">×</button>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                    <button type="button"
+                            class="px-3 py-1.5 rounded-xl border text-[9px] uppercase font-black tracking-widest"
+                            :class="pickerType === null
+                                ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
+                                : 'border-white/15 text-white/50 hover:border-white/30'"
+                            @click="setPickerType(null)">
+                        Все типы
+                    </button>
+                    <button v-for="(label, key) in componentTypes" :key="key" type="button"
+                            class="px-3 py-1.5 rounded-xl border text-[9px] uppercase font-black tracking-widest"
+                            :class="pickerType === key
+                                ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
+                                : 'border-white/15 text-white/50 hover:border-white/30'"
+                            @click="setPickerType(String(key))">
+                        {{ label }}
+                    </button>
+                </div>
+
+                <input v-model="searchQ"
+                       :placeholder="pickerMode === 'catalog' ? '13400F / Ryzen / DDR5 32GB…' : 'Название / № склада…'"
+                       class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm"
+                       autofocus />
+
+                <div v-if="pickerMode === 'catalog' && quickChips.length" class="flex flex-wrap gap-2">
+                    <button v-for="chip in quickChips" :key="chip.id" type="button"
+                            class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
+                            :class="chipActive(chip.token)
+                                ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
+                                : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
+                            @click="toggleChip(chip.token)">
+                        {{ chip.label }}
+                    </button>
+                </div>
+
+                <label v-if="pickerMode === 'catalog'"
+                       class="flex items-center gap-2 text-[10px] uppercase font-black text-white/40 tracking-widest cursor-pointer">
+                    <input v-model="includeOos" type="checkbox" class="accent-amber-500" />
+                    Показывать нет в наличии
+                </label>
+            </div>
+
+            <div class="flex-1 overflow-y-auto px-4 py-3 space-y-1">
+                <!-- результаты каталога -->
+                <template v-if="pickerMode === 'catalog'">
+                    <button v-for="p in searchResults" :key="p.sku" type="button"
+                            class="w-full text-left px-3 py-3 rounded-xl hover:bg-white/5 text-xs border border-transparent hover:border-white/5"
+                            @click="pickProduct(p)">
+                        <div class="flex gap-3 items-start">
+                            <div class="w-14 h-14 shrink-0 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center"
+                                 :class="p.image_url ? 'cursor-zoom-in hover:border-amber-500/40' : ''"
+                                 @click.stop="openLightbox(p.image_url, p.name)">
+                                <img v-if="p.image_url" :src="p.image_url" :alt="p.name" class="w-full h-full object-contain" loading="lazy" />
+                                <span v-else class="text-[9px] text-white/20 uppercase">нет</span>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <div class="flex justify-between gap-3">
+                                    <span class="text-white/85 min-w-0">{{ p.name }}</span>
+                                    <span v-if="p.price != null" class="shrink-0 font-black text-amber-400">{{ money(p.price) }}</span>
+                                    <span v-else class="shrink-0 text-white/25">нет в наличии</span>
+                                </div>
+                                <div class="text-white/30 mt-0.5 uppercase tracking-widest text-[10px]">
+                                    {{ p.part || '—' }} · sku {{ p.sku }}
+                                    <span v-if="p.stock_qty != null"> · ост. {{ p.stock_qty }}</span>
+                                    <span v-if="p.category_name" class="text-cyan-400/50"> · {{ p.category_name }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </button>
+                    <div v-if="searchQ.trim().length < 2" class="text-white/30 text-xs py-8 text-center uppercase tracking-widest">
+                        Введите минимум 2 символа
+                    </div>
+                    <div v-else-if="!searchResults.length" class="text-white/30 text-xs py-8 text-center">
+                        Ничего не найдено
+                        <span v-if="searchMeta.type_filter_empty"> (категории для типа не сматчились — попробуйте другой запрос)</span>
+                    </div>
+                </template>
+
+                <!-- результаты склада -->
+                <template v-else>
+                    <button v-for="c in stockResults" :key="c.id" type="button"
+                            class="w-full text-left px-3 py-3 rounded-xl hover:bg-white/5 text-xs border border-transparent hover:border-white/5"
+                            @click="pickStock(c)">
+                        <div class="flex justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="text-white/85">{{ c.name }}</div>
+                                <div class="text-white/30 mt-0.5 uppercase tracking-widest text-[10px]">
+                                    #{{ c.id }}
+                                    <span v-if="c.type"> · {{ componentTypes[c.type] || c.type }}</span>
+                                    <span v-if="c.warranty_number"> · {{ c.warranty_number }}</span>
+                                </div>
+                            </div>
+                            <span v-if="c.purchase_price != null" class="shrink-0 font-black text-amber-400">{{ money(c.purchase_price) }}</span>
+                        </div>
+                    </button>
+                    <div v-if="!stockResults.length" class="text-white/30 text-xs py-8 text-center uppercase tracking-widest">
+                        На складе ничего не найдено
+                    </div>
+                </template>
+            </div>
         </div>
 
         <div v-if="lightbox" class="fixed inset-0 z-[80] bg-black/85 flex items-center justify-center p-4"

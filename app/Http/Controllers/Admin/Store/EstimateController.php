@@ -490,6 +490,7 @@ class EstimateController extends StoreController
      */
     private function syncItems(StoreEstimate $estimate, array $items, array $keepIds = []): void
     {
+        $procurement = app(StoreEstimateProcurementService::class);
         $sort = 0;
         foreach ($items as $row) {
             if (! empty($row['id']) && in_array((int) $row['id'], $keepIds, true)) {
@@ -498,16 +499,10 @@ class EstimateController extends StoreController
             }
 
             $sku = ! empty($row['supplier_sku']) ? (int) $row['supplier_sku'] : null;
-            $status = $row['status'] ?? ($sku ? 'to_order' : 'planned');
-            if (! in_array($status, StoreEstimateItem::STATUSES, true)) {
-                $status = $sku ? 'to_order' : 'planned';
-            }
-            // При сохранении формы не даём выставить ordered/received вручную
-            if (in_array($status, ['ordered', 'received', 'from_stock'], true) && empty($row['id'])) {
-                $status = $sku ? 'to_order' : 'planned';
-            }
+            $componentId = ! empty($row['store_component_id']) ? (int) $row['store_component_id'] : null;
+            $status = $sku ? 'to_order' : 'planned';
 
-            StoreEstimateItem::query()->create([
+            $item = StoreEstimateItem::query()->create([
                 'store_estimate_id' => $estimate->id,
                 'type' => $row['type'] ?? null,
                 'name' => $row['name'],
@@ -518,11 +513,21 @@ class EstimateController extends StoreController
                 'supplier_price' => $row['supplier_price'] ?? null,
                 'sale_price' => $row['sale_price'] ?? null,
                 'qty' => max(1, (int) ($row['qty'] ?? 1)),
-                'status' => in_array($status, ['planned', 'to_order'], true) ? $status : ($sku ? 'to_order' : 'planned'),
+                'status' => $status,
                 'store_component_id' => null,
                 'sort_order' => $sort++,
                 'notes' => $row['notes'] ?? null,
             ]);
+
+            if ($componentId > 0) {
+                $component = StoreComponent::query()
+                    ->where('club_id', $estimate->club_id)
+                    ->whereKey($componentId)
+                    ->first();
+                if ($component) {
+                    $procurement->linkFromStock($item, $component);
+                }
+            }
         }
     }
 
