@@ -11,6 +11,7 @@ use App\Models\StoreSupplierCatalogCategory;
 use App\Models\StoreSupplierCatalogProduct;
 use App\Services\QuickFoxApiClient;
 use App\Services\StoreEstimateProcurementService;
+use App\Services\StoreSupplierCatalogImageService;
 use App\Services\StoreSupplierCatalogSearchService;
 use App\Services\StoreSupplierCatalogSyncService;
 use Illuminate\Http\Request;
@@ -178,8 +179,11 @@ class EstimateController extends StoreController
         return back()->with('success', 'Смета удалена');
     }
 
-    public function searchCatalog(Request $request, StoreSupplierCatalogSearchService $search)
-    {
+    public function searchCatalog(
+        Request $request,
+        StoreSupplierCatalogSearchService $search,
+        StoreSupplierCatalogImageService $images
+    ) {
         $q = trim($request->string('q')->toString());
         abort_if(mb_strlen($q) < 2, 422, 'Минимум 2 символа');
 
@@ -188,6 +192,7 @@ class EstimateController extends StoreController
         $inStockOnly = ! $request->boolean('include_oos');
 
         $products = $search->search($q, $type, $categoryId, 40, $inStockOnly);
+        $products = $images->attachToSearchResults($products);
 
         $typeFilterEmpty = false;
         if ($type && ! $categoryId) {
@@ -202,6 +207,37 @@ class EstimateController extends StoreController
                 'type_filter_empty' => $typeFilterEmpty,
                 'count' => count($products),
             ],
+        ]);
+    }
+
+    /**
+     * Прокси картинки поставщика (нужна session QuickFox).
+     */
+    public function catalogImage(int $sku, QuickFoxApiClient $api, StoreSupplierCatalogImageService $images)
+    {
+        abort_unless($sku > 0, 404);
+
+        $product = StoreSupplierCatalogProduct::query()->where('sku', $sku)->first();
+        abort_unless($product, 404);
+
+        if (blank($product->image_path) && $product->has_image) {
+            $images->attachToSearchResults([
+                ['sku' => $sku, 'has_image' => true],
+            ]);
+            $product->refresh();
+        }
+
+        abort_unless(filled($product->image_path), 404);
+
+        try {
+            $file = $api->downloadProductImage((string) $product->image_path, 'medium');
+        } catch (\Throwable $e) {
+            abort(502, 'Не удалось загрузить изображение');
+        }
+
+        return response($file['body'], 200, [
+            'Content-Type' => $file['content_type'],
+            'Cache-Control' => 'private, max-age=86400',
         ]);
     }
 

@@ -190,7 +190,7 @@ class StoreSupplierCatalogSearchService
 
         $rows = $builder
             ->limit(min(400, max($limit * 10, 100)))
-            ->get(['sku', 'name', 'part', 'vendor', 'rrp', 'price', 'stock_qty', 'category_external_id']);
+            ->get(['sku', 'name', 'part', 'vendor', 'rrp', 'price', 'stock_qty', 'category_external_id', 'has_image', 'image_path']);
 
         $catNames = $this->categoryNames($rows->pluck('category_external_id')->filter()->unique()->all());
 
@@ -227,6 +227,7 @@ class StoreSupplierCatalogSearchService
                 'in_stock' => $p->price !== null,
                 'category_external_id' => $p->category_external_id ? (int) $p->category_external_id : null,
                 'category_name' => $catNames[(int) $p->category_external_id] ?? null,
+                'has_image' => (bool) $p->has_image,
                 'score' => $score,
             ];
         })->filter()->sort(function (array $a, array $b) {

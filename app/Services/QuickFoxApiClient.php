@@ -232,6 +232,111 @@ class QuickFoxApiClient
     }
 
     /**
+     * Картинки товаров (до 100 sku). Лимит API: 2/с.
+     *
+     * @param  list<int>  $skus
+     * @return array<int, string> sku => относительный image path (лучший priority)
+     */
+    public function getProductImagePaths(array $skus): array
+    {
+        $skus = array_values(array_unique(array_map('intval', $skus)));
+        $skus = array_values(array_filter($skus, fn ($s) => $s > 0));
+        if ($skus === []) {
+            return [];
+        }
+        if (count($skus) > 100) {
+            $skus = array_slice($skus, 0, 100);
+        }
+
+        $filter = count($skus) === 1
+            ? [['operator' => '=', 'property' => 'sku', 'value' => $skus[0]]]
+            : [['operator' => 'IN', 'property' => 'sku', 'value' => $skus]];
+
+        $json = $this->api([
+            'filter' => $filter,
+            'request' => [
+                'method' => 'read_new',
+                'model' => 'products_clients_images',
+                'module' => 'platform',
+            ],
+        ]);
+
+        $rows = $json['data']['product_images'] ?? [];
+        if (! is_array($rows)) {
+            return [];
+        }
+
+        /** @var array<int, array{path: string, priority: int}> $best */
+        $best = [];
+        foreach ($rows as $row) {
+            if (! is_array($row) || empty($row['sku']) || empty($row['url'])) {
+                continue;
+            }
+            if (! empty($row['deleted'])) {
+                continue;
+            }
+            $sku = (int) $row['sku'];
+            $path = ltrim((string) $row['url'], '/');
+            $priority = (int) ($row['priority'] ?? 0);
+            if (! isset($best[$sku]) || $priority > $best[$sku]['priority']) {
+                $best[$sku] = ['path' => $path, 'priority' => $priority];
+            }
+        }
+
+        $out = [];
+        foreach ($best as $sku => $info) {
+            $out[$sku] = $info['path'];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Абсолютный URL картинки на стороне поставщика (нужна session-cookie).
+     */
+    public function productImageAbsoluteUrl(string $relativePath, string $size = 'medium'): string
+    {
+        $path = ltrim($relativePath, '/');
+        $size = in_array($size, ['medium', 'large', 'original'], true) ? $size : 'medium';
+
+        return $this->baseUrl().'/'.$path.'?size='.$size;
+    }
+
+    /**
+     * Скачать байты картинки с сессией поставщика.
+     *
+     * @return array{body: string, content_type: string}
+     */
+    public function downloadProductImage(string $relativePath, string $size = 'medium'): array
+    {
+        $url = $this->productImageAbsoluteUrl($relativePath, $size);
+        $session = $this->login();
+
+        $response = Http::timeout(60)
+            ->withHeaders(['Cookie' => 'session='.$session])
+            ->get($url);
+
+        if ($response->status() === 404 || $response->status() === 401 || $response->status() === 403) {
+            $this->clearSession();
+            $session = $this->login(force: true);
+            $response = Http::timeout(60)
+                ->withHeaders(['Cookie' => 'session='.$session])
+                ->get($url);
+        }
+
+        if (! $response->successful()) {
+            throw new RuntimeException('QuickFox image HTTP '.$response->status());
+        }
+
+        $contentType = $response->header('Content-Type') ?: 'image/jpeg';
+
+        return [
+            'body' => $response->body(),
+            'content_type' => $contentType,
+        ];
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     public function downloadCatalogTree(): array

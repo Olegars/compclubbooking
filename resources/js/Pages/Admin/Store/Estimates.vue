@@ -770,19 +770,27 @@ const stockOptionsFor = (item: any) => {
                         <input v-model="includeOos" type="checkbox" class="accent-amber-500" />
                         Показывать нет в наличии
                     </label>
-                    <div class="max-h-48 overflow-y-auto space-y-1">
+                    <div class="max-h-64 overflow-y-auto space-y-1">
                         <button v-for="p in searchResults" :key="p.sku" type="button"
                                 class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/5 text-xs"
                                 @click="pickProduct(p)">
-                            <div class="flex justify-between gap-3">
-                                <span class="text-white/80 min-w-0">{{ p.name }}</span>
-                                <span v-if="p.price != null" class="shrink-0 font-black text-amber-400">{{ money(p.price) }}</span>
-                                <span v-else class="shrink-0 text-white/25">нет в наличии</span>
-                            </div>
-                            <div class="text-white/30 mt-0.5">
-                                {{ p.part || '—' }} · sku {{ p.sku }}
-                                <span v-if="p.stock_qty != null"> · ост. {{ p.stock_qty }}</span>
-                                <span v-if="p.category_name" class="text-cyan-400/50"> · {{ p.category_name }}</span>
+                            <div class="flex gap-3 items-start">
+                                <div class="w-12 h-12 shrink-0 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center">
+                                    <img v-if="p.image_url" :src="p.image_url" :alt="p.name" class="w-full h-full object-contain" loading="lazy" />
+                                    <span v-else class="text-[9px] text-white/20 uppercase">нет</span>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex justify-between gap-3">
+                                        <span class="text-white/80 min-w-0">{{ p.name }}</span>
+                                        <span v-if="p.price != null" class="shrink-0 font-black text-amber-400">{{ money(p.price) }}</span>
+                                        <span v-else class="shrink-0 text-white/25">нет в наличии</span>
+                                    </div>
+                                    <div class="text-white/30 mt-0.5">
+                                        {{ p.part || '—' }} · sku {{ p.sku }}
+                                        <span v-if="p.stock_qty != null"> · ост. {{ p.stock_qty }}</span>
+                                        <span v-if="p.category_name" class="text-cyan-400/50"> · {{ p.category_name }}</span>
+                                    </div>
+                                </div>
                             </div>
                         </button>
                         <div v-if="searchQ.length >= 2 && !searchResults.length" class="text-white/30 text-xs py-2">
