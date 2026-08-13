@@ -269,6 +269,13 @@ const quickChips = computed(() => {
                 { id: 'am5', label: 'AM5', token: 'AM5' },
                 { id: 'am4', label: 'AM4', token: 'AM4' },
             ]
+        case 'motherboard':
+            return [
+                { id: 'am4', label: 'AM4', token: 'AM4' },
+                { id: 'am5', label: 'AM5', token: 'AM5' },
+                { id: '1700', label: '1700', token: '1700' },
+                { id: '1851', label: '1851', token: '1851' },
+            ]
         case 'gpu':
             return [
                 { id: '5050', label: '5050', token: '5050' },
@@ -294,7 +301,7 @@ const toggleChip = (token: string) => {
     const exclusiveGroups = [
         ['ddr4', 'ddr5'],
         ['16gb', '32gb', '64gb'],
-        ['am4', 'am5', '1700'],
+        ['am4', 'am5', '1700', '1851'],
         ['5050', '5060', '5070', '5080'],
     ]
     const tokenLower = lower
@@ -600,6 +607,21 @@ const stockOptionsFor = (item: any) => {
                             { label: 'LGA1700', token: '1700' },
                             { label: 'AM5', token: 'AM5' },
                             { label: 'AM4', token: 'AM4' },
+                        ]" :key="chip.token" type="button"
+                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
+                                :class="chipActive(chip.token)
+                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
+                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
+                                @click="toggleChip(chip.token)">
+                            {{ chip.label }}
+                        </button>
+                    </div>
+                    <div v-else-if="lineTypeAt(searchLineIndex) === 'motherboard'" class="flex flex-wrap gap-2 pt-1">
+                        <button v-for="chip in [
+                            { label: 'AM4', token: 'AM4' },
+                            { label: 'AM5', token: 'AM5' },
+                            { label: '1700', token: '1700' },
+                            { label: '1851', token: '1851' },
                         ]" :key="chip.token" type="button"
                                 class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
                                 :class="chipActive(chip.token)
