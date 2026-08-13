@@ -53,7 +53,6 @@ const toggle = (id: number) => { expanded.value = { ...expanded.value, [id]: !ex
 const showForm = ref(false)
 const editingId = ref<number | null>(null)
 const submitting = ref(false)
-const catalogBusy = ref(false)
 
 const form = useForm({
     store_client_id: null as number | null,
@@ -157,24 +156,6 @@ const save = () => {
 
 const setStatus = (id: number, status: string) => {
     router.post(`/admin/store/estimates/${id}/status`, { status }, { preserveScroll: true })
-}
-
-const syncCatalog = () => {
-    if (!confirm('Скачать каталог + цены поставщика? Может занять несколько минут.')) return
-    catalogBusy.value = true
-    router.post('/admin/store/estimates/sync-catalog', {}, {
-        preserveScroll: true,
-        onFinish: () => { catalogBusy.value = false },
-    })
-}
-
-const syncPrices = () => {
-    if (!confirm('Обновить только цены/остатки (1 запрос API, лимит 10/час)?')) return
-    catalogBusy.value = true
-    router.post('/admin/store/estimates/sync-prices', {}, {
-        preserveScroll: true,
-        onFinish: () => { catalogBusy.value = false },
-    })
 }
 
 const checkSupplier = (id: number) => {
@@ -456,16 +437,6 @@ const stockOptionsFor = (item: any) => {
                         <option value="">Все статусы</option>
                         <option v-for="s in statuses" :key="s" :value="s">{{ statusLabels[s] || s }}</option>
                     </select>
-                    <button v-if="canManage && quickfoxConfigured" type="button" :disabled="catalogBusy"
-                            class="px-4 py-3 border border-white/15 text-white/70 font-black uppercase tracking-widest text-[10px] rounded-2xl disabled:opacity-40"
-                            @click="syncCatalog">
-                        {{ catalogBusy ? 'Синк…' : 'Синк каталога' }}
-                    </button>
-                    <button v-if="canManage && quickfoxConfigured" type="button" :disabled="catalogBusy"
-                            class="px-4 py-3 border border-cyan-500/30 text-cyan-400 font-black uppercase tracking-widest text-[10px] rounded-2xl disabled:opacity-40"
-                            @click="syncPrices">
-                        Цены
-                    </button>
                     <button v-if="canManage" type="button" @click="openCreate"
                             class="px-6 py-4 bg-amber-500 text-black font-black uppercase tracking-widest text-[10px] rounded-2xl">
                         + Смета
