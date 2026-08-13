@@ -11,7 +11,7 @@ class StoreSupplierCatalogProduct extends Model
         'sku', 'category_external_id', 'name', 'part', 'vendor',
         'rrp', 'price', 'stock_qty', 'price_synced_at',
         'warranty', 'multiplicity', 'barcodes',
-        'has_image', 'image_path', 'image_synced_at',
+        'has_image', 'image_path', 'image_paths', 'image_synced_at',
         'case_color', 'case_glass', 'case_form', 'case_attrs_at',
         'synced_at',
     ];
@@ -20,6 +20,7 @@ class StoreSupplierCatalogProduct extends Model
         'rrp' => 'decimal:2',
         'price' => 'decimal:2',
         'has_image' => 'boolean',
+        'image_paths' => 'array',
         'synced_at' => 'datetime',
         'price_synced_at' => 'datetime',
         'image_synced_at' => 'datetime',

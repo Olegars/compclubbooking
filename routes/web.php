@@ -275,6 +275,7 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::post('/estimates/sync-catalog', [StoreEstimateController::class, 'syncCatalog'])->name('admin.store.estimates.sync-catalog');
             Route::post('/estimates/sync-prices', [StoreEstimateController::class, 'syncPrices'])->name('admin.store.estimates.sync-prices');
             Route::get('/estimates/catalog-search', [StoreEstimateController::class, 'searchCatalog'])->name('admin.store.estimates.catalog-search');
+            Route::get('/estimates/catalog-images/{sku}', [StoreEstimateController::class, 'catalogImages'])->name('admin.store.estimates.catalog-images')->whereNumber('sku');
             Route::get('/estimates/catalog-image/{sku}', [StoreEstimateController::class, 'catalogImage'])->name('admin.store.estimates.catalog-image')->whereNumber('sku');
             Route::post('/estimates/catalog-prices', [StoreEstimateController::class, 'catalogPrices'])->name('admin.store.estimates.catalog-prices');
             Route::get('/estimates/categories', [StoreEstimateController::class, 'categories'])->name('admin.store.estimates.categories');

@@ -481,7 +481,36 @@ const pickStock = (c: any) => {
     closePicker()
 }
 
-const lightbox = ref<{ url: string, title: string } | null>(null)
+type LightboxItem = { sku: number | null, title: string, fallbackUrl: string | null }
+type LightboxState = {
+    urls: string[]
+    index: number
+    title: string
+    loading: boolean
+    queue: LightboxItem[]
+    queueIndex: number
+}
+const lightbox = ref<LightboxState | null>(null)
+const lightboxUrl = computed(() => {
+    const lb = lightbox.value
+    if (!lb || !lb.urls.length) return null
+    return lb.urls[Math.min(lb.index, lb.urls.length - 1)] || null
+})
+const lightboxCanPrev = computed(() => {
+    const lb = lightbox.value
+    if (!lb) return false
+    return lb.index > 0 || lb.queueIndex > 0
+})
+const lightboxCanNext = computed(() => {
+    const lb = lightbox.value
+    if (!lb) return false
+    return lb.index < lb.urls.length - 1 || lb.queueIndex < lb.queue.length - 1
+})
+const lightboxCounter = computed(() => {
+    const lb = lightbox.value
+    if (!lb || lb.urls.length <= 1) return ''
+    return `${lb.index + 1} / ${lb.urls.length}`
+})
 const imageSized = (url: string, size: 'medium' | 'large' | 'original' = 'large') => {
     try {
         const u = new URL(url, window.location.origin)
@@ -491,24 +520,105 @@ const imageSized = (url: string, size: 'medium' | 'large' | 'original' = 'large'
         return url
     }
 }
-const openLightbox = (url: string | null | undefined, title = '') => {
-    if (!url) return
-    lightbox.value = { url: imageSized(url, 'large'), title }
+const fetchSkuImages = async (sku: number, fallbackUrl: string | null): Promise<string[]> => {
+    try {
+        const res = await fetch(`/admin/store/estimates/catalog-images/${sku}`, {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        })
+        if (!res.ok) throw new Error('fail')
+        const data = await res.json()
+        const images = Array.isArray(data.images) ? data.images : []
+        if (images.length) return images.map((u: string) => imageSized(u, 'large'))
+    } catch { /* fallback below */ }
+    return fallbackUrl ? [imageSized(fallbackUrl, 'large')] : []
+}
+const applyLightboxItem = async (item: LightboxItem, queue: LightboxItem[], queueIndex: number) => {
+    lightbox.value = {
+        urls: item.fallbackUrl ? [imageSized(item.fallbackUrl, 'large')] : [],
+        index: 0,
+        title: item.title,
+        loading: !!item.sku,
+        queue,
+        queueIndex,
+    }
+    if (!item.sku) return
+    const urls = await fetchSkuImages(item.sku, item.fallbackUrl)
+    if (!lightbox.value || lightbox.value.queueIndex !== queueIndex) return
+    lightbox.value.urls = urls.length ? urls : (item.fallbackUrl ? [imageSized(item.fallbackUrl, 'large')] : [])
+    lightbox.value.index = 0
+    lightbox.value.loading = false
+    lightbox.value.title = item.title
+}
+const openLightbox = (
+    url: string | null | undefined,
+    title = '',
+    sku: number | null = null,
+    queue: LightboxItem[] | null = null,
+) => {
+    if (!url && !sku) return
+    const item: LightboxItem = { sku, title, fallbackUrl: url || null }
+    const q = queue && queue.length ? queue : [item]
+    let qi = q.findIndex((x) => (sku && x.sku === sku) || (!!url && x.fallbackUrl === url))
+    if (qi < 0) qi = 0
+    void applyLightboxItem(q[qi], q, qi)
+}
+const openCatalogLightbox = (p: { sku: number, name: string, image_url?: string | null }, fromList: any[] = []) => {
+    const queue: LightboxItem[] = (fromList.length ? fromList : [p])
+        .filter((x: any) => x?.image_url || x?.sku)
+        .map((x: any) => ({
+            sku: x.sku != null ? Number(x.sku) : null,
+            title: String(x.name || ''),
+            fallbackUrl: x.image_url || null,
+        }))
+        .filter((x) => x.fallbackUrl || x.sku)
+    openLightbox(p.image_url, p.name, p.sku != null ? Number(p.sku) : null, queue)
 }
 const closeLightbox = () => { lightbox.value = null }
+const lightboxPrev = () => {
+    const lb = lightbox.value
+    if (!lb || lb.loading) return
+    if (lb.index > 0) {
+        lb.index -= 1
+        return
+    }
+    if (lb.queueIndex > 0) {
+        void applyLightboxItem(lb.queue[lb.queueIndex - 1], lb.queue, lb.queueIndex - 1)
+    }
+}
+const lightboxNext = () => {
+    const lb = lightbox.value
+    if (!lb || lb.loading) return
+    if (lb.index < lb.urls.length - 1) {
+        lb.index += 1
+        return
+    }
+    if (lb.queueIndex < lb.queue.length - 1) {
+        void applyLightboxItem(lb.queue[lb.queueIndex + 1], lb.queue, lb.queueIndex + 1)
+    }
+}
 
-const onEscKey = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape') return
-    if (lightbox.value) {
+const onLightboxKey = (e: KeyboardEvent) => {
+    if (!lightbox.value) {
+        if (e.key === 'Escape' && pickerMode.value) closePicker()
+        return
+    }
+    if (e.key === 'Escape') {
         closeLightbox()
         return
     }
-    if (pickerMode.value) {
-        closePicker()
+    if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        lightboxPrev()
+        return
+    }
+    if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        lightboxNext()
     }
 }
-onMounted(() => window.addEventListener('keydown', onEscKey))
-onUnmounted(() => window.removeEventListener('keydown', onEscKey))
+onMounted(() => window.addEventListener('keydown', onLightboxKey))
+onUnmounted(() => window.removeEventListener('keydown', onLightboxKey))
 
 const canEditEstimate = (est: any) =>
     props.canManage && ['draft', 'agreed', 'procuring', 'ready'].includes(est.status)
@@ -591,7 +701,7 @@ const stockOptionsFor = (item: any) => {
                                 <button v-if="item.supplier_image_url" type="button"
                                         class="w-14 h-14 shrink-0 rounded-xl bg-black/60 border border-white/10 overflow-hidden hover:border-amber-500/40"
                                         title="Увеличить"
-                                        @click="openLightbox(item.supplier_image_url, item.name)">
+                                        @click="openLightbox(item.supplier_image_url, item.name, item.supplier_sku ? Number(item.supplier_sku) : null)">
                                     <img :src="item.supplier_image_url" :alt="item.name" class="w-full h-full object-contain" loading="lazy" />
                                 </button>
                                 <div v-else class="w-14 h-14 shrink-0 rounded-xl bg-black/40 border border-white/5 hidden md:block" />
@@ -726,7 +836,7 @@ const stockOptionsFor = (item: any) => {
                         <button v-if="line.image_url" type="button"
                                 class="w-14 h-14 shrink-0 rounded-xl bg-black/60 border border-white/10 overflow-hidden hover:border-amber-500/40"
                                 title="Увеличить"
-                                @click="openLightbox(line.image_url, line.name)">
+                                @click="openLightbox(line.image_url, line.name, line.supplier_sku ? Number(line.supplier_sku) : null)">
                             <img :src="line.image_url" :alt="line.name" class="w-full h-full object-contain" loading="lazy" />
                         </button>
                         <div v-else class="w-14 h-14 shrink-0 rounded-xl bg-black/40 border border-white/5" />
@@ -849,7 +959,7 @@ const stockOptionsFor = (item: any) => {
                         <div class="flex gap-3 items-start">
                             <div class="w-14 h-14 shrink-0 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center"
                                  :class="p.image_url ? 'cursor-zoom-in hover:border-amber-500/40' : ''"
-                                 @click.stop="openLightbox(p.image_url, p.name)">
+                                 @click.stop="openCatalogLightbox(p, searchResults)">
                                 <img v-if="p.image_url" :src="p.image_url" :alt="p.name" class="w-full h-full object-contain" loading="lazy" />
                                 <span v-else class="text-[9px] text-white/20 uppercase">нет</span>
                             </div>
@@ -902,11 +1012,29 @@ const stockOptionsFor = (item: any) => {
 
         <div v-if="lightbox" class="fixed inset-0 z-[80] bg-black/85 flex items-center justify-center p-4"
              @click.self="closeLightbox">
-            <button type="button" class="absolute top-4 right-4 text-white/50 hover:text-white text-2xl leading-none px-3 py-1"
+            <button type="button" class="absolute top-4 right-4 text-white/50 hover:text-white text-2xl leading-none px-3 py-1 z-10"
                     @click="closeLightbox">×</button>
+            <button v-if="lightboxCanPrev" type="button"
+                    class="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-10 w-11 h-11 rounded-full border border-white/20 bg-black/50 text-white text-2xl leading-none hover:bg-black/80 hover:border-white/40"
+                    @click.stop="lightboxPrev" aria-label="Предыдущее">‹</button>
+            <button v-if="lightboxCanNext" type="button"
+                    class="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-10 w-11 h-11 rounded-full border border-white/20 bg-black/50 text-white text-2xl leading-none hover:bg-black/80 hover:border-white/40"
+                    @click.stop="lightboxNext" aria-label="Следующее">›</button>
             <div class="max-w-4xl w-full max-h-[90vh] flex flex-col items-center gap-3" @click.stop>
-                <img :src="lightbox.url" :alt="lightbox.title" class="max-w-full max-h-[80vh] object-contain rounded-2xl border border-white/10 bg-black" />
-                <div v-if="lightbox.title" class="text-xs text-white/50 text-center uppercase tracking-widest">{{ lightbox.title }}</div>
+                <div class="relative w-full flex items-center justify-center min-h-[40vh]">
+                    <img v-if="lightboxUrl" :src="lightboxUrl" :alt="lightbox.title"
+                         class="max-w-full max-h-[80vh] object-contain rounded-2xl border border-white/10 bg-black" />
+                    <div v-if="lightbox.loading" class="absolute inset-0 flex items-center justify-center text-white/40 text-xs uppercase tracking-widest">
+                        Загрузка…
+                    </div>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                    <div v-if="lightbox.title" class="text-xs text-white/50 text-center uppercase tracking-widest">{{ lightbox.title }}</div>
+                    <div v-if="lightboxCounter" class="text-[10px] text-white/35 tracking-widest">{{ lightboxCounter }}</div>
+                    <div v-if="lightbox.queue.length > 1" class="text-[10px] text-white/25 tracking-widest">
+                        товар {{ lightbox.queueIndex + 1 }} / {{ lightbox.queue.length }} · ← →
+                    </div>
+                </div>
             </div>
         </div>
     </AdminLayout>

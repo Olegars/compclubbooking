@@ -222,7 +222,25 @@ class EstimateController extends StoreController
     }
 
     /**
+     * Список proxy-URL всех картинок sku (для галереи в лайтбоксе).
+     */
+    public function catalogImages(int $sku, StoreSupplierCatalogImageService $images)
+    {
+        abort_unless($sku > 0, 404);
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+
+        $urls = $images->proxyUrlsForSku($sku);
+
+        return response()->json([
+            'sku' => $sku,
+            'images' => $urls,
+            'count' => count($urls),
+        ]);
+    }
+
+    /**
      * Прокси картинки поставщика (нужна session QuickFox).
+     * ?i=0 — индекс в image_paths (по умолчанию 0).
      */
     public function catalogImage(Request $request, int $sku, QuickFoxApiClient $api, StoreSupplierCatalogImageService $images)
     {
@@ -233,20 +251,12 @@ class EstimateController extends StoreController
             $size = 'medium';
         }
 
-        $product = StoreSupplierCatalogProduct::query()->where('sku', $sku)->first();
-        abort_unless($product, 404);
-
-        if (blank($product->image_path) && $product->has_image) {
-            $images->attachToSearchResults([
-                ['sku' => $sku, 'has_image' => true],
-            ]);
-            $product->refresh();
-        }
-
-        abort_unless(filled($product->image_path), 404);
+        $index = max(0, (int) $request->input('i', 0));
+        $paths = $images->pathsForSku($sku);
+        abort_unless($paths !== [] && isset($paths[$index]), 404);
 
         try {
-            $file = $api->downloadProductImage((string) $product->image_path, $size);
+            $file = $api->downloadProductImage((string) $paths[$index], $size);
         } catch (\Throwable $e) {
             abort(502, 'Не удалось загрузить изображение');
         }

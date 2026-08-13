@@ -232,12 +232,12 @@ class QuickFoxApiClient
     }
 
     /**
-     * Картинки товаров (до 100 sku). Лимит API: 2/с.
+     * Все картинки товаров (до 100 sku), по убыванию priority. Лимит API: 2/с.
      *
      * @param  list<int>  $skus
-     * @return array<int, string> sku => относительный image path (лучший priority)
+     * @return array<int, list<string>> sku => относительные image path
      */
-    public function getProductImagePaths(array $skus): array
+    public function getProductImagePathLists(array $skus): array
     {
         $skus = array_values(array_unique(array_map('intval', $skus)));
         $skus = array_values(array_filter($skus, fn ($s) => $s > 0));
@@ -266,8 +266,8 @@ class QuickFoxApiClient
             return [];
         }
 
-        /** @var array<int, array{path: string, priority: int}> $best */
-        $best = [];
+        /** @var array<int, list<array{path: string, priority: int}>> $bySku */
+        $bySku = [];
         foreach ($rows as $row) {
             if (! is_array($row) || empty($row['sku']) || empty($row['url'])) {
                 continue;
@@ -278,14 +278,40 @@ class QuickFoxApiClient
             $sku = (int) $row['sku'];
             $path = ltrim((string) $row['url'], '/');
             $priority = (int) ($row['priority'] ?? 0);
-            if (! isset($best[$sku]) || $priority > $best[$sku]['priority']) {
-                $best[$sku] = ['path' => $path, 'priority' => $priority];
-            }
+            $bySku[$sku][] = ['path' => $path, 'priority' => $priority];
         }
 
         $out = [];
-        foreach ($best as $sku => $info) {
-            $out[$sku] = $info['path'];
+        foreach ($bySku as $sku => $items) {
+            usort($items, fn ($a, $b) => $b['priority'] <=> $a['priority']);
+            $paths = [];
+            foreach ($items as $item) {
+                if (! in_array($item['path'], $paths, true)) {
+                    $paths[] = $item['path'];
+                }
+            }
+            if ($paths !== []) {
+                $out[$sku] = $paths;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Лучшая картинка по sku (первый path из списка).
+     *
+     * @param  list<int>  $skus
+     * @return array<int, string> sku => относительный image path
+     */
+    public function getProductImagePaths(array $skus): array
+    {
+        $lists = $this->getProductImagePathLists($skus);
+        $out = [];
+        foreach ($lists as $sku => $paths) {
+            if ($paths !== []) {
+                $out[$sku] = $paths[0];
+            }
         }
 
         return $out;

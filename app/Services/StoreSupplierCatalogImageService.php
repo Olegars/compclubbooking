@@ -33,6 +33,77 @@ class StoreSupplierCatalogImageService
     }
 
     /**
+     * Все пути картинок sku (из БД или с API).
+     *
+     * @return list<string>
+     */
+    public function pathsForSku(int $sku, bool $forceRefresh = false): array
+    {
+        if ($sku <= 0) {
+            return [];
+        }
+
+        $product = StoreSupplierCatalogProduct::query()->where('sku', $sku)->first();
+        if (! $product) {
+            return [];
+        }
+
+        $existing = is_array($product->image_paths) ? array_values(array_filter($product->image_paths)) : [];
+        if (! $forceRefresh && $existing !== []) {
+            return $existing;
+        }
+
+        if (! $forceRefresh && filled($product->image_path) && $product->image_synced_at !== null && $existing === []) {
+            // Старая запись только с одной картинкой — один раз дотянем полный список.
+        }
+
+        if (! $this->api->isConfigured()) {
+            return filled($product->image_path) ? [(string) $product->image_path] : $existing;
+        }
+
+        try {
+            $lists = $this->api->getProductImagePathLists([$sku]);
+            $paths = $lists[$sku] ?? [];
+            if ($paths === [] && filled($product->image_path)) {
+                $paths = [(string) $product->image_path];
+            }
+            $now = now();
+            $product->update([
+                'image_path' => $paths[0] ?? null,
+                'image_paths' => $paths !== [] ? $paths : null,
+                'has_image' => $paths !== [],
+                'image_synced_at' => $now,
+            ]);
+
+            return $paths;
+        } catch (\Throwable $e) {
+            Log::warning('QuickFox images list: '.$e->getMessage());
+
+            return filled($product->image_path) ? [(string) $product->image_path] : $existing;
+        }
+    }
+
+    /**
+     * Proxy-URL всех картинок sku.
+     *
+     * @return list<string>
+     */
+    public function proxyUrlsForSku(int $sku): array
+    {
+        $paths = $this->pathsForSku($sku);
+        if ($paths === []) {
+            return [];
+        }
+
+        $urls = [];
+        foreach (array_keys($paths) as $i) {
+            $urls[] = route('admin.store.estimates.catalog-image', ['sku' => $sku, 'i' => $i]);
+        }
+
+        return $urls;
+    }
+
+    /**
      * Подтянуть пути картинок в БД (если ещё нет) и вернуть proxy-URL для выдачи в UI.
      *
      * @param  list<array<string, mixed>>  $products
@@ -54,7 +125,7 @@ class StoreSupplierCatalogImageService
 
         $rows = StoreSupplierCatalogProduct::query()
             ->whereIn('sku', $skus)
-            ->get(['sku', 'has_image', 'image_path', 'image_synced_at'])
+            ->get(['sku', 'has_image', 'image_path', 'image_paths', 'image_synced_at'])
             ->keyBy('sku');
 
         $needFetch = [];
@@ -63,27 +134,31 @@ class StoreSupplierCatalogImageService
             if (! $row) {
                 continue;
             }
-            if (blank($row->image_path) && ($row->image_synced_at === null || $row->has_image)) {
+            $hasPaths = is_array($row->image_paths) && $row->image_paths !== [];
+            if ((! $hasPaths && blank($row->image_path)) && ($row->image_synced_at === null || $row->has_image)) {
                 $needFetch[] = $sku;
             }
         }
 
         if ($needFetch !== []) {
             try {
-                $paths = $this->api->getProductImagePaths($needFetch);
+                $lists = $this->api->getProductImagePathLists($needFetch);
                 $now = now();
                 foreach ($needFetch as $sku) {
-                    $path = $paths[$sku] ?? null;
+                    $paths = $lists[$sku] ?? [];
+                    $path = $paths[0] ?? null;
                     StoreSupplierCatalogProduct::query()
                         ->where('sku', $sku)
                         ->update([
                             'image_path' => $path,
+                            'image_paths' => $paths !== [] ? $paths : null,
                             'has_image' => $path !== null,
                             'image_synced_at' => $now,
                             'updated_at' => $now,
                         ]);
                     if ($rows->has($sku)) {
                         $rows[$sku]->image_path = $path;
+                        $rows[$sku]->image_paths = $paths !== [] ? $paths : null;
                         $rows[$sku]->has_image = $path !== null;
                         $rows[$sku]->image_synced_at = $now;
                     }
