@@ -4,37 +4,102 @@ namespace App\Services;
 
 use App\Models\StoreSupplierCatalogCategory;
 use App\Models\StoreSupplierCatalogProduct;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
 class StoreSupplierCatalogSearchService
 {
+    private const CACHE_PREFIX = 'store.quickfox.cat_ids.v3.';
+
     /**
-     * Ключевые слова названий категорий ITP → наш тип комплектующего.
+     * Правила типа: категории ITP + жёсткий фильтр по названию товара.
      *
-     * @return array<string, list<string>>
+     * @return array<string, array{cat: list<string>, cat_exclude?: list<string>, name_exclude?: list<string>, name_include?: list<string>}>
      */
-    public function typeKeywords(): array
+    public function typeRules(): array
     {
         $custom = config('store.quickfox.type_category_keywords');
-        if (is_array($custom) && $custom !== []) {
-            return $custom;
+        if (is_array($custom) && $custom !== [] && isset($custom['cpu']) && is_array($custom['cpu']) && array_is_list($custom['cpu'])) {
+            // Старый формат: type => [keywords...] — только категории
+            $rules = [];
+            foreach ($custom as $type => $keywords) {
+                $rules[$type] = ['cat' => array_values($keywords)];
+            }
+
+            return $rules;
         }
 
         return [
-            'cpu' => ['процессор', 'cpu', 'processor'],
-            'motherboard' => ['материнск', 'motherboard', 'системная плата'],
-            'ram' => ['оперативн', 'память ddr', 'модуль памяти', 'dimm', 'so-dimm', 'озу'],
-            'gpu' => ['видеокарт', 'видеоадаптер', 'graphics', 'gpu'],
-            'storage_ssd' => ['ssd', 'nvme', 'твердотельн', 'накопител'],
-            'storage_hdd' => ['hdd', 'жестк', 'жёстк', 'винчестер'],
-            'psu' => ['блок питания', 'power supply', 'psu'],
-            'case' => ['корпус', 'case chassis'],
-            'cooler' => ['кулер', 'охлажден', 'cooler', 'термопаст'],
-            'fan' => ['вентилятор', 'fan'],
-            'network' => ['сетев', 'wifi', 'wi-fi', 'адаптер беспровод'],
-            'os' => ['операционн', 'windows', 'лицензи'],
+            'cpu' => [
+                'cat' => ['процессор', 'cpu', 'processor'],
+                'name_exclude' => ['материнск', 'видеокарт', 'оперативн', 'память ddr', 'блок питания'],
+                'name_include' => ['процессор', 'cpu', 'core i', 'ryzen', 'intel', 'amd'],
+            ],
+            'motherboard' => [
+                'cat' => ['материнск', 'motherboard', 'системная плата'],
+                'name_exclude' => ['процессор', 'видеокарт', 'оперативн память', 'блок питания'],
+                'name_include' => ['материнск', 'motherboard', 'плата'],
+            ],
+            'ram' => [
+                'cat' => ['оперативн', 'озу', 'dimm', 'so-dimm', 'модул памяти', 'модули памяти', 'модуль памяти'],
+                'cat_exclude' => ['материнск', 'видеокарт', 'накопител', 'ssd', 'hdd', 'процессор'],
+                'name_exclude' => ['материнск', 'motherboard', 'системная плата', 'видеокарт', 'ssd', 'nvme', 'процессор', 'блок питания'],
+                'name_include' => ['ddr', 'dimm', 'so-dimm', 'оперативн', 'озу', 'kingston', 'corsair', 'crucial', 'adata', 'g.skill', 'patriot', 'netac'],
+            ],
+            'gpu' => [
+                'cat' => ['видеокарт', 'видеоадаптер', 'graphics', 'gpu'],
+                'name_exclude' => ['материнск', 'процессор', 'оперативн'],
+                'name_include' => ['видеокарт', 'geforce', 'radeon', 'rtx', 'gtx', 'rx '],
+            ],
+            'storage_ssd' => [
+                'cat' => ['ssd', 'nvme', 'твердотельн'],
+                'cat_exclude' => ['hdd', 'жестк', 'жёстк'],
+                'name_exclude' => ['hdd', 'жестк', 'жёстк', 'материнск', 'видеокарт'],
+                'name_include' => ['ssd', 'nvme', 'm.2', 'твердотельн'],
+            ],
+            'storage_hdd' => [
+                'cat' => ['hdd', 'жестк', 'жёстк', 'винчестер'],
+                'name_exclude' => ['ssd', 'nvme', 'материнск'],
+                'name_include' => ['hdd', 'жестк', 'жёстк', 'винчестер'],
+            ],
+            'psu' => [
+                'cat' => ['блок питания', 'power supply', 'psu'],
+                'name_exclude' => ['материнск', 'видеокарт', 'процессор'],
+                'name_include' => ['блок питания', 'psu', 'watt', 'вт'],
+            ],
+            'case' => [
+                'cat' => ['корпус'],
+                'cat_exclude' => ['блок питания'],
+                'name_include' => ['корпус'],
+            ],
+            'cooler' => [
+                'cat' => ['кулер', 'охлажден', 'cooler', 'термопаст'],
+                'name_exclude' => ['корпус', 'блок питания', 'материнск'],
+                'name_include' => ['кулер', 'охлажд', 'cooler', 'термопаст', 'водян'],
+            ],
+            'fan' => [
+                'cat' => ['вентилятор'],
+                'name_include' => ['вентилятор', 'fan'],
+            ],
+            'network' => [
+                'cat' => ['сетев', 'wifi', 'wi-fi', 'адаптер беспровод'],
+                'name_include' => ['сетев', 'wifi', 'wi-fi', 'ethernet'],
+            ],
+            'os' => [
+                'cat' => ['операционн', 'windows', 'лицензи'],
+                'name_include' => ['windows', 'лицензи', 'ос '],
+            ],
         ];
+    }
+
+    /** @deprecated use typeRules() */
+    public function typeKeywords(): array
+    {
+        $out = [];
+        foreach ($this->typeRules() as $type => $rule) {
+            $out[$type] = $rule['cat'] ?? [];
+        }
+
+        return $out;
     }
 
     /**
@@ -47,14 +112,16 @@ class StoreSupplierCatalogSearchService
             return [];
         }
 
+        $type = $type ? strtolower(trim($type)) : null;
+        $rule = $type ? ($this->typeRules()[$type] ?? null) : null;
+
         $categoryIds = null;
         if ($categoryId) {
             $categoryIds = $this->categorySubtreeIds($categoryId);
         } elseif ($type) {
             $categoryIds = $this->categoryIdsForType($type);
-            // Ключевые слова не совпали с деревом ITP — ищем по всему каталогу, но без sku-подстроки
             if ($categoryIds === []) {
-                $categoryIds = null;
+                $categoryIds = null; // режем по name_include/exclude ниже
             }
         }
 
@@ -71,21 +138,26 @@ class StoreSupplierCatalogSearchService
                 $query->where('name', 'ilike', $like)
                     ->orWhere('part', 'ilike', $like)
                     ->orWhere('vendor', 'ilike', $like);
-
-                // SKU — только точное совпадение (иначе 13400 → 11340006 клещи)
                 if ($isNumericSku) {
                     $query->orWhere('sku', (int) $q);
                 }
             });
 
-        // Берём с запасом, ранжируем в PHP
+        // Жёсткий фильтр по типу — даже если категории ITP не сматчились
+        if (is_array($rule)) {
+            $this->applyNameTypeFilters($builder, $rule);
+        }
+
         $rows = $builder
-            ->limit(min(300, max($limit * 8, 80)))
+            ->limit(min(400, max($limit * 10, 100)))
             ->get(['sku', 'name', 'part', 'vendor', 'rrp', 'price', 'stock_qty', 'category_external_id']);
 
         $catNames = $this->categoryNames($rows->pluck('category_external_id')->filter()->unique()->all());
 
-        $scored = $rows->map(function (StoreSupplierCatalogProduct $p) use ($qLower, $catNames) {
+        $scored = $rows->map(function (StoreSupplierCatalogProduct $p) use ($qLower, $catNames, $rule) {
+            if (is_array($rule) && ! $this->passesNameTypeRule((string) $p->name, $rule)) {
+                return null;
+            }
             $score = $this->score($qLower, $p);
             if ($score <= 0) {
                 return null;
@@ -105,7 +177,6 @@ class StoreSupplierCatalogSearchService
                 'score' => $score,
             ];
         })->filter()->sort(function (array $a, array $b) {
-            // Сначала с ценой (в наличии), потом по релевантности
             $aStock = $a['in_stock'] ? 1 : 0;
             $bStock = $b['in_stock'] ? 1 : 0;
             if ($aStock !== $bStock) {
@@ -122,21 +193,75 @@ class StoreSupplierCatalogSearchService
     }
 
     /**
-     * @return list<int>|null null = без фильтра; [] = тип задан, категорий не нашли
+     * @param  array{cat: list<string>, cat_exclude?: list<string>, name_exclude?: list<string>, name_include?: list<string>}  $rule
+     */
+    private function applyNameTypeFilters($query, array $rule): void
+    {
+        foreach ($rule['name_exclude'] ?? [] as $ex) {
+            $query->where('name', 'not ilike', '%'.$this->escapeLike($ex).'%');
+        }
+
+        $includes = $rule['name_include'] ?? [];
+        if ($includes !== []) {
+            $query->where(function ($q) use ($includes) {
+                foreach ($includes as $inc) {
+                    $q->orWhere('name', 'ilike', '%'.$this->escapeLike($inc).'%')
+                        ->orWhere('part', 'ilike', '%'.$this->escapeLike($inc).'%');
+                }
+            });
+        }
+    }
+
+    /**
+     * @param  array{name_exclude?: list<string>, name_include?: list<string>}  $rule
+     */
+    private function passesNameTypeRule(string $name, array $rule): bool
+    {
+        $n = mb_strtolower($name);
+        foreach ($rule['name_exclude'] ?? [] as $ex) {
+            if (str_contains($n, mb_strtolower($ex))) {
+                return false;
+            }
+        }
+        $includes = $rule['name_include'] ?? [];
+        if ($includes === []) {
+            return true;
+        }
+        foreach ($includes as $inc) {
+            if (str_contains($n, mb_strtolower($inc))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return list<int>|null null = тип без правил; [] = правила есть, категорий не нашли
      */
     public function categoryIdsForType(string $type): ?array
     {
         $type = strtolower(trim($type));
-        $keywords = $this->typeKeywords()[$type] ?? null;
-        if ($keywords === null || $keywords === []) {
+        $rule = $this->typeRules()[$type] ?? null;
+        if ($rule === null) {
             return null;
         }
+        $keywords = $rule['cat'] ?? [];
+        if ($keywords === []) {
+            return null;
+        }
+        $exclude = $rule['cat_exclude'] ?? [];
 
-        return Cache::remember('store.quickfox.cat_ids.'.$type, now()->addHours(6), function () use ($keywords) {
+        return Cache::remember(self::CACHE_PREFIX.$type, now()->addHours(6), function () use ($keywords, $exclude) {
             $roots = StoreSupplierCatalogCategory::query()
                 ->where(function ($q) use ($keywords) {
                     foreach ($keywords as $kw) {
                         $q->orWhere('name', 'ilike', '%'.$this->escapeLike($kw).'%');
+                    }
+                })
+                ->when($exclude !== [], function ($q) use ($exclude) {
+                    foreach ($exclude as $ex) {
+                        $q->where('name', 'not ilike', '%'.$this->escapeLike($ex).'%');
                     }
                 })
                 ->pluck('external_id')
@@ -158,7 +283,6 @@ class StoreSupplierCatalogSearchService
         $vendor = mb_strtolower(trim((string) $p->vendor));
         $sku = (string) $p->sku;
 
-        // Нормализация: убрать пробелы/дефисы для моделей вроде 13400F
         $qCompact = preg_replace('/[\s\-_\/]+/u', '', $qLower) ?? $qLower;
         $partCompact = preg_replace('/[\s\-_\/]+/u', '', $part) ?? $part;
         $nameCompact = preg_replace('/[\s\-_\/]+/u', '', $name) ?? $name;
@@ -225,7 +349,6 @@ class StoreSupplierCatalogSearchService
      */
     private function expandWithDescendants(array $roots): array
     {
-        /** @var Collection<int, object{external_id:int,parent_external_id:?int}> $all */
         $all = StoreSupplierCatalogCategory::query()->get(['external_id', 'parent_external_id']);
         $byParent = [];
         foreach ($all as $cat) {

@@ -214,7 +214,8 @@ class StoreSupplierCatalogSyncService
 
     public function clearSearchCache(): void
     {
-        foreach (array_keys((new StoreSupplierCatalogSearchService)->typeKeywords()) as $type) {
+        foreach (array_keys((new StoreSupplierCatalogSearchService)->typeRules()) as $type) {
+            Cache::forget('store.quickfox.cat_ids.v3.'.$type);
             Cache::forget('store.quickfox.cat_ids.'.$type);
         }
     }
