@@ -291,6 +291,21 @@ const quickChips = computed(() => {
                 { id: '2000gb', label: '2000GB', token: '2000GB' },
                 { id: '4000gb', label: '4000GB', token: '4000GB' },
             ]
+        case 'storage_hdd':
+            return [
+                { id: '2tb', label: '2TB', token: '2TB' },
+                { id: '4tb', label: '4TB', token: '4TB' },
+                { id: '6tb', label: '6TB', token: '6TB' },
+                { id: '8tb', label: '8TB', token: '8TB' },
+            ]
+        case 'psu':
+            return [
+                { id: '500w', label: '500Вт', token: '500Вт' },
+                { id: '600w', label: '600Вт', token: '600Вт' },
+                { id: '700w', label: '700Вт', token: '700Вт' },
+                { id: '800w', label: '800Вт', token: '800Вт' },
+                { id: '1000w', label: '1000Вт', token: '1000Вт' },
+            ]
         default:
             return []
     }
@@ -312,6 +327,8 @@ const toggleChip = (token: string) => {
         ['am4', 'am5', '1700', '1851'],
         ['5050', '5060', '5070', '5080'],
         ['256gb', '500gb', '1000gb', '2000gb', '4000gb'],
+        ['2tb', '4tb', '6tb', '8tb'],
+        ['500вт', '600вт', '700вт', '800вт', '1000вт', '500w', '600w', '700w', '800w', '1000w'],
     ]
     const tokenLower = lower
     let next = [...parts]
@@ -662,6 +679,37 @@ const stockOptionsFor = (item: any) => {
                             { label: '1000GB', token: '1000GB' },
                             { label: '2000GB', token: '2000GB' },
                             { label: '4000GB', token: '4000GB' },
+                        ]" :key="chip.token" type="button"
+                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
+                                :class="chipActive(chip.token)
+                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
+                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
+                                @click="toggleChip(chip.token)">
+                            {{ chip.label }}
+                        </button>
+                    </div>
+                    <div v-else-if="lineTypeAt(searchLineIndex) === 'storage_hdd'" class="flex flex-wrap gap-2 pt-1">
+                        <button v-for="chip in [
+                            { label: '2TB', token: '2TB' },
+                            { label: '4TB', token: '4TB' },
+                            { label: '6TB', token: '6TB' },
+                            { label: '8TB', token: '8TB' },
+                        ]" :key="chip.token" type="button"
+                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
+                                :class="chipActive(chip.token)
+                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
+                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
+                                @click="toggleChip(chip.token)">
+                            {{ chip.label }}
+                        </button>
+                    </div>
+                    <div v-else-if="lineTypeAt(searchLineIndex) === 'psu'" class="flex flex-wrap gap-2 pt-1">
+                        <button v-for="chip in [
+                            { label: '500Вт', token: '500Вт' },
+                            { label: '600Вт', token: '600Вт' },
+                            { label: '700Вт', token: '700Вт' },
+                            { label: '800Вт', token: '800Вт' },
+                            { label: '1000Вт', token: '1000Вт' },
                         ]" :key="chip.token" type="button"
                                 class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
                                 :class="chipActive(chip.token)
