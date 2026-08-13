@@ -85,8 +85,8 @@ const save = (id: number) => {
             </div>
         </div>
 
-        <div v-if="showCreate" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" @click.self="showCreate = false">
-            <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-md space-y-4" @submit.prevent="create">
+        <div v-if="showCreate" class="fixed inset-0 bg-black/70 flex items-start justify-center z-50 p-4 overflow-y-auto" @click.self="showCreate = false">
+            <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-md space-y-4 my-8" @submit.prevent="create">
                 <h3 class="font-black uppercase italic text-xl">Новая локация</h3>
                 <input v-model="createForm.name" placeholder="Название" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" required />
                 <input v-model="createForm.slug" placeholder="slug (опционально)" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />

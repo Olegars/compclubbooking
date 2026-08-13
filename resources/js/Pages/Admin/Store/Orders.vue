@@ -328,8 +328,8 @@ const filterStatus = computed({
             </div>
         </div>
 
-        <div v-if="showForm" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" @click.self="closeForm">
-            <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-2xl space-y-4" @submit.prevent="save">
+        <div v-if="showForm" class="fixed inset-0 bg-black/70 flex items-start justify-center z-50 p-4 overflow-y-auto" @click.self="closeForm">
+            <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-2xl space-y-4 my-8" @submit.prevent="save">
                 <h3 class="font-black uppercase italic text-xl">
                     {{ editingId ? `Редактировать заказ #${editingId}` : 'Новый заказ' }}
                 </h3>

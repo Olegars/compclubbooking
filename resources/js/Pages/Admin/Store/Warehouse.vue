@@ -401,7 +401,7 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
             </div>
         </div>
 
-        <div v-if="showForm" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 overflow-y-auto" @click.self="showForm = false">
+        <div v-if="showForm" class="fixed inset-0 bg-black/70 flex items-start justify-center z-50 p-4 overflow-y-auto" @click.self="showForm = false">
             <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-xl space-y-4 my-8" @submit.prevent="save">
                 <h3 class="font-black uppercase italic text-xl">{{ form.id ? 'Редактировать' : 'Приход комплектующего' }}</h3>
 
@@ -506,8 +506,8 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
             </form>
         </div>
 
-        <div v-if="showSupplier" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" @click.self="showSupplier = false">
-            <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-md space-y-4" @submit.prevent="saveSupplier">
+        <div v-if="showSupplier" class="fixed inset-0 bg-black/70 flex items-start justify-center z-50 p-4 overflow-y-auto" @click.self="showSupplier = false">
+            <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-md space-y-4 my-8" @submit.prevent="saveSupplier">
                 <h3 class="font-black uppercase italic text-xl">Поставщик магазина</h3>
                 <div>
                     <label :class="labelClass">Название</label>
