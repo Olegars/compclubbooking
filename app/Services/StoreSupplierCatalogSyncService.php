@@ -67,13 +67,13 @@ class StoreSupplierCatalogSyncService
             $productRows[] = [
                 'sku' => (int) $p['sku'],
                 'category_external_id' => $categoryId,
-                'name' => (string) ($p['name'] ?? ''),
-                'part' => isset($p['part']) ? (string) $p['part'] : null,
-                'vendor' => isset($p['vendor']) ? (string) $p['vendor'] : null,
-                'rrp' => isset($p['rrp']) ? (float) $p['rrp'] : null,
-                'warranty' => isset($p['warranty']) ? (string) $p['warranty'] : null,
-                'multiplicity' => isset($p['multiplicity']) ? (int) $p['multiplicity'] : 1,
-                'barcodes' => isset($p['barcodes']) ? (string) $p['barcodes'] : null,
+                'name' => mb_substr(trim((string) ($p['name'] ?? '')), 0, 2000),
+                'part' => $this->nullableString($p['part'] ?? null, 2000),
+                'vendor' => $this->nullableString($p['vendor'] ?? null, 512),
+                'rrp' => $this->nullableFloat($p['rrp'] ?? null),
+                'warranty' => $this->nullableString($p['warranty'] ?? null, 64),
+                'multiplicity' => max(0, (int) ($p['multiplicity'] ?? 1)),
+                'barcodes' => $this->nullableString($p['barcodes'] ?? null, 4000),
                 'synced_at' => $now,
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -172,5 +172,30 @@ class StoreSupplierCatalogSyncService
         }
 
         return $include;
+    }
+
+    private function nullableString(mixed $value, int $maxLen): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $s = trim((string) $value);
+        if ($s === '' || $s === '?' || strcasecmp($s, 'null') === 0) {
+            return null;
+        }
+
+        return mb_substr($s, 0, $maxLen);
+    }
+
+    private function nullableFloat(mixed $value): ?float
+    {
+        if ($value === null || $value === '' || $value === '?') {
+            return null;
+        }
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        return (float) $value;
     }
 }
