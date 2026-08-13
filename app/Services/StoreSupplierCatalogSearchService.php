@@ -155,6 +155,23 @@ class StoreSupplierCatalogSearchService
 
         // Все слова запроса должны встретиться; для объёмов/Вт — синонимы + границы числа (700 ≠ 1700)
         foreach ($tokens as $token) {
+            if ($this->isAtxFormFactorToken($token)) {
+                // ATX ≠ mATX / MicroATX / Mini-ATX
+                $builder->where(function ($query) {
+                    $pos = '(^|[^a-zа-яё0-9])atx([^a-zа-яё0-9]|$)';
+                    $neg = '(^|[^a-zа-яё0-9])(m|micro|mini)\\s*-?\\s*atx([^a-zа-яё0-9]|$)';
+                    $query->where(function ($q) use ($pos) {
+                        $q->whereRaw('name ~* ?', [$pos])
+                            ->orWhereRaw('part ~* ?', [$pos]);
+                    })->whereRaw(
+                        "coalesce(name, '') || ' ' || coalesce(part, '') !~* ?",
+                        [$neg]
+                    );
+                });
+
+                continue;
+            }
+
             $aliases = $this->expandSearchToken($token);
             $bounded = $this->boundedTokenPatterns($token);
             $builder->where(function ($query) use ($aliases, $bounded, $token, $isNumericSku) {
@@ -200,6 +217,9 @@ class StoreSupplierCatalogSearchService
                 return null;
             }
             if ($type === 'fan' && ! $this->passesFanCpu120((string) $p->name)) {
+                return null;
+            }
+            if ($this->queryHasAtxToken($tokens) && ! $this->isStandaloneAtxName((string) $p->name.' '.(string) $p->part)) {
                 return null;
             }
             // score по самому «сильному» токену + бонус за покрытие всех
@@ -624,6 +644,36 @@ class StoreSupplierCatalogSearchService
         }
 
         return [];
+    }
+
+    private function isAtxFormFactorToken(string $token): bool
+    {
+        return mb_strtolower(trim($token)) === 'atx';
+    }
+
+    /**
+     * @param  list<string>  $tokens
+     */
+    private function queryHasAtxToken(array $tokens): bool
+    {
+        foreach ($tokens as $token) {
+            if ($this->isAtxFormFactorToken($token)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Полноценный ATX, без mATX / MicroATX / Mini-ATX. */
+    private function isStandaloneAtxName(string $name): bool
+    {
+        $n = mb_strtolower($name);
+        if (preg_match('/(^|[^a-zа-яё0-9])(m|micro|mini)\s*-?\s*atx([^a-zа-яё0-9]|$)/u', $n)) {
+            return false;
+        }
+
+        return (bool) preg_match('/(^|[^a-zа-яё0-9])atx([^a-zа-яё0-9]|$)/u', $n);
     }
 
     private function expandSearchTokenKey(string $compact): ?string
