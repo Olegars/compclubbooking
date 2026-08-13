@@ -210,6 +210,19 @@ const filterStatus = computed({
     set: (v: string) => router.get('/admin/store/estimates', v ? { status: v } : {}, { preserveState: true }),
 })
 
+const formSaleTotal = computed(() =>
+    form.items.reduce((sum, line) => {
+        if (!lineFilled(line) || line.sale_price == null) return sum
+        return sum + Number(line.sale_price) * Math.max(1, Number(line.qty) || 1)
+    }, 0)
+)
+const formPurchaseTotal = computed(() =>
+    form.items.reduce((sum, line) => {
+        if (!lineFilled(line) || line.supplier_price == null) return sum
+        return sum + Number(line.supplier_price) * Math.max(1, Number(line.qty) || 1)
+    }, 0)
+)
+
 // --- picker (каталог / склад) ---
 const pickerMode = ref<'catalog' | 'stock' | null>(null)
 const pickerLineIndex = ref<number | null>(null)
@@ -661,9 +674,15 @@ const stockOptionsFor = (item: any) => {
         <!-- форма создания / редактирования -->
         <div v-if="showForm" class="fixed inset-0 bg-black/70 flex items-start justify-center z-50 p-4 overflow-y-auto" @click.self="closeForm">
             <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 w-full max-w-3xl space-y-4 my-8" @submit.prevent="save">
-                <h3 class="font-black uppercase italic text-xl">
-                    {{ editingId ? `Смета #${editingId}` : 'Новая смета' }}
-                </h3>
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <h3 class="font-black uppercase italic text-xl">
+                        {{ editingId ? `Смета #${editingId}` : 'Новая смета' }}
+                    </h3>
+                    <div class="text-right shrink-0">
+                        <div class="font-black text-amber-400 text-xl">{{ money(formSaleTotal) }}</div>
+                        <div class="text-[10px] text-white/30 uppercase tracking-widest">закуп {{ money(formPurchaseTotal) }}</div>
+                    </div>
+                </div>
                 <input v-model="form.title" placeholder="Название (сборка / клиент)"
                        class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
                 <select v-model="form.store_client_id" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm">
