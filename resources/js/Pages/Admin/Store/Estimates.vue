@@ -241,7 +241,7 @@ const openSearchFor = (index: number) => {
     searchMeta.value = {}
 }
 
-const pickProduct = (p: any) => {
+const pickProduct = async (p: any) => {
     if (searchLineIndex.value === null) return
     const line = form.items[searchLineIndex.value]
     if (!line || lineLocked(line)) return
@@ -250,11 +250,37 @@ const pickProduct = (p: any) => {
     line.supplier_sku = p.sku
     line.supplier_part = p.part || ''
     line.supplier_name = p.name
-    line.supplier_price = p.rrp != null ? Number(p.rrp) : null
+    // RRP из файла каталога — не закупочная цена; живую цену тянем из API
+    line.supplier_price = null
     line.status = 'to_order'
     searchLineIndex.value = null
     searchResults.value = []
     searchQ.value = ''
+
+    try {
+        const res = await fetch('/admin/store/estimates/catalog-prices', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-XSRF-TOKEN': decodeURIComponent(document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] || ''),
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({ skus: [p.sku] }),
+        })
+        const json = await res.json()
+        const row = (json.products || []).find((x: any) => Number(x.sku) === Number(p.sku))
+        if (row && row.price != null) {
+            line.supplier_price = Number(row.price)
+            if (line.sale_price == null) {
+                // ориентир продажи = закупка, менеджер поправит наценку
+                line.sale_price = Number(row.price)
+            }
+        }
+    } catch {
+        // цена подтянется кнопкой «Цены API» после сохранения сметы
+    }
 }
 
 const canEditEstimate = (est: any) =>
@@ -450,15 +476,17 @@ const stockOptionsFor = (item: any) => {
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
                         <input v-model="line.part" placeholder="Part / 13400F" :disabled="lineLocked(line)"
                                class="bg-black border border-white/10 rounded-xl px-3 py-2 text-sm disabled:opacity-50" />
+                        <input v-model.number="line.supplier_price" type="number" step="0.01" min="0" placeholder="Закупка (API)"
+                               class="bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" :disabled="lineLocked(line)" />
                         <input v-model.number="line.sale_price" type="number" step="0.01" min="0" placeholder="Цена продажи"
                                class="bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" :disabled="lineLocked(line)" />
-                        <div class="flex gap-2">
-                            <button type="button" class="flex-1 text-[10px] uppercase font-black text-cyan-400 border border-cyan-500/20 rounded-xl"
-                                    :disabled="lineLocked(line) || !catalogStats.products"
-                                    @click="openSearchFor(i)">
-                                Из каталога API
-                            </button>
-                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="button" class="flex-1 text-[10px] uppercase font-black text-cyan-400 border border-cyan-500/20 rounded-xl py-2"
+                                :disabled="lineLocked(line) || !catalogStats.products"
+                                @click="openSearchFor(i)">
+                            Из каталога API
+                        </button>
                     </div>
                     <div v-if="line.supplier_sku" class="text-[10px] text-white/30 uppercase tracking-widest">
                         SKU {{ line.supplier_sku }}

@@ -202,6 +202,44 @@ class EstimateController extends StoreController
         ]);
     }
 
+    /**
+     * Живые цены/остатки по sku из API поставщика (не из файла каталога).
+     */
+    public function catalogPrices(Request $request, QuickFoxApiClient $api)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+
+        $data = $request->validate([
+            'skus' => 'required|array|min:1|max:50',
+            'skus.*' => 'integer',
+        ]);
+
+        if (! $api->isConfigured()) {
+            return response()->json(['message' => 'QuickFox не настроен', 'products' => []], 422);
+        }
+
+        try {
+            $rows = $api->getActiveProductsBySkus($data['skus']);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage(), 'products' => []], 422);
+        }
+
+        $products = [];
+        foreach ($rows as $row) {
+            if (! is_array($row) || empty($row['sku'])) {
+                continue;
+            }
+            $products[] = [
+                'sku' => (int) $row['sku'],
+                'price' => isset($row['price']) ? (float) $row['price'] : null,
+                'qty' => $row['real_qty'] ?? $row['qty'] ?? null,
+                'delivery_days' => $row['delivery_days'] ?? null,
+            ];
+        }
+
+        return response()->json(['products' => $products]);
+    }
+
     public function categories()
     {
         $cats = StoreSupplierCatalogCategory::query()
