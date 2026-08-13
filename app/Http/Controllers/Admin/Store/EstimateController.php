@@ -60,8 +60,8 @@ class EstimateController extends StoreController
                 'products' => StoreSupplierCatalogProduct::query()->count(),
                 'categories' => StoreSupplierCatalogCategory::query()->count(),
                 'priced' => StoreSupplierCatalogProduct::query()->whereNotNull('price')->count(),
-                'synced_at' => optional(StoreSupplierCatalogProduct::query()->max('synced_at')),
-                'price_synced_at' => optional(StoreSupplierCatalogProduct::query()->max('price_synced_at')),
+                'synced_at' => self::formatCatalogTimestamp(StoreSupplierCatalogProduct::query()->max('synced_at')),
+                'price_synced_at' => self::formatCatalogTimestamp(StoreSupplierCatalogProduct::query()->max('price_synced_at')),
             ],
         ]);
     }
@@ -500,5 +500,21 @@ class EstimateController extends StoreController
         }
 
         return array_map('intval', array_keys($include));
+    }
+
+    private static function formatCatalogTimestamp(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d H:i');
+        }
+        $s = trim((string) $value);
+        if ($s === '' || $s === '[object Object]') {
+            return null;
+        }
+
+        return str_replace('T', ' ', substr($s, 0, 16));
     }
 }

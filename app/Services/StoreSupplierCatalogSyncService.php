@@ -41,12 +41,10 @@ class StoreSupplierCatalogSyncService
         }
 
         DB::transaction(function () use ($categoryRows) {
+            // Полная перезаливка дерева категорий
+            StoreSupplierCatalogCategory::query()->delete();
             foreach (array_chunk($categoryRows, 500) as $chunk) {
-                StoreSupplierCatalogCategory::query()->upsert(
-                    $chunk,
-                    ['external_id'],
-                    ['parent_external_id', 'name', 'leaf', 'synced_at', 'updated_at']
-                );
+                StoreSupplierCatalogCategory::query()->insert($chunk);
             }
         });
 
@@ -82,20 +80,11 @@ class StoreSupplierCatalogSyncService
             ];
         }
 
-        DB::transaction(function () use ($productRows, $includeIds) {
-            if ($includeIds !== null) {
-                foreach (array_chunk($productRows, 500) as $chunk) {
-                    StoreSupplierCatalogProduct::query()->upsert(
-                        $chunk,
-                        ['sku'],
-                        ['category_external_id', 'name', 'part', 'vendor', 'rrp', 'warranty', 'multiplicity', 'barcodes', 'synced_at', 'updated_at']
-                    );
-                }
-            } else {
-                StoreSupplierCatalogProduct::query()->delete();
-                foreach (array_chunk($productRows, 500) as $chunk) {
-                    StoreSupplierCatalogProduct::query()->insert($chunk);
-                }
+        DB::transaction(function () use ($productRows) {
+            // Полная перезаливка: у ITP позиции периодически появляются/исчезают
+            StoreSupplierCatalogProduct::query()->delete();
+            foreach (array_chunk($productRows, 500) as $chunk) {
+                StoreSupplierCatalogProduct::query()->insert($chunk);
             }
         });
 

@@ -38,6 +38,12 @@ const flashSuccess = computed(() => (page.props as any).flash?.success || '')
 const flashError = computed(() => (page.props as any).flash?.error || '')
 
 const money = (v: any) => Number(v || 0).toLocaleString('ru-RU') + ' ₽'
+const fmtTs = (v: any): string => {
+    if (v == null || v === '') return ''
+    if (typeof v === 'string') return v.slice(0, 16).replace('T', ' ')
+    if (typeof v === 'object' && typeof v.date === 'string') return String(v.date).slice(0, 16).replace('T', ' ')
+    return ''
+}
 
 const expanded = ref<Record<number, boolean>>({})
 const isOpen = (id: number) => !!expanded.value[id]
@@ -450,8 +456,8 @@ const stockOptionsFor = (item: any) => {
                 <span v-if="quickfoxConfigured" class="text-white/50">
                     {{ catalogStats.products }} тов. / {{ catalogStats.categories }} кат.
                     · с ценой {{ catalogStats.priced ?? 0 }}
-                    <span v-if="catalogStats.synced_at"> · {{ String(catalogStats.synced_at).slice(0, 16).replace('T', ' ') }}</span>
-                    <span v-if="catalogStats.price_synced_at"> · цены {{ String(catalogStats.price_synced_at).slice(0, 16).replace('T', ' ') }}</span>
+                    <span v-if="fmtTs(catalogStats.synced_at)"> · {{ fmtTs(catalogStats.synced_at) }}</span>
+                    <span v-if="fmtTs(catalogStats.price_synced_at)"> · цены {{ fmtTs(catalogStats.price_synced_at) }}</span>
                 </span>
                 <span v-else class="text-orange-400/80">не настроен (STORE_QUICKFOX_*)</span>
             </div>
