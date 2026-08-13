@@ -398,7 +398,7 @@ const quickChips = computed(() => {
                 { id: 'white', label: 'белый', token: 'белый' },
                 { id: 'black', label: 'черный', token: 'черный' },
                 { id: 'side-glass', label: 'стекло с боку', token: 'боковое' },
-                { id: 'front-side-glass', label: 'стекло спереди и сбоку', token: 'панорам' },
+                { id: 'front-side-glass', label: 'стекло спереди и сбоку', token: 'frontglass' },
                 { id: 'atx', label: 'ATX', token: 'ATX' },
             ]
         default:
@@ -425,7 +425,7 @@ const toggleChip = (token: string) => {
         ['500вт', '600вт', '700вт', '800вт', '1000вт', '500w', '600w', '700w', '800w', '1000w'],
         ['120мм', '120mm'],
         ['белый', 'черный', 'белый', 'чёрный'],
-        ['боковое', 'панорам'],
+        ['боковое', 'frontglass'],
     ]
     const tokenLower = lower
     let next = [...parts]

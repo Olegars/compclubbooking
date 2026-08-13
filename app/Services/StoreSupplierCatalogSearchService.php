@@ -172,6 +172,16 @@ class StoreSupplierCatalogSearchService
                 continue;
             }
 
+            if ($this->isSideGlassToken($token)) {
+                $this->applySideGlassFilter($builder);
+                continue;
+            }
+
+            if ($this->isFrontSideGlassToken($token)) {
+                $this->applyFrontSideGlassFilter($builder);
+                continue;
+            }
+
             $aliases = $this->expandSearchToken($token);
             $bounded = $this->boundedTokenPatterns($token);
             $builder->where(function ($query) use ($aliases, $bounded, $token, $isNumericSku) {
@@ -220,6 +230,13 @@ class StoreSupplierCatalogSearchService
                 return null;
             }
             if ($this->queryHasAtxToken($tokens) && ! $this->isStandaloneAtxName((string) $p->name.' '.(string) $p->part)) {
+                return null;
+            }
+            $hay = mb_strtolower((string) $p->name.' '.(string) $p->part);
+            if ($this->queryHasSideGlassToken($tokens) && ! $this->isSideGlassName($hay)) {
+                return null;
+            }
+            if ($this->queryHasFrontSideGlassToken($tokens) && ! $this->isFrontSideGlassName($hay)) {
                 return null;
             }
             // score по самому «сильному» токену + бонус за покрытие всех
@@ -524,11 +541,9 @@ class StoreSupplierCatalogSearchService
             '700w' => ['700w', '700 w', '700вт', '700 вт', '700watt'],
             '800w' => ['800w', '800 w', '800вт', '800 вт', '800watt'],
             '1000w' => ['1000w', '1000 w', '1000вт', '1000 вт', '1000watt', '1kw'],
-            // Корпуса
+            // Корпуса (цвета; стекло — отдельные спец-токены боковое/frontglass)
             'белый' => ['белый', 'белая', 'белое', 'white'],
             'черный' => ['черный', 'чёрный', 'черная', 'чёрная', 'черное', 'чёрное', 'black'],
-            'боковое' => ['боковое', 'боковой', 'боковая', 'сбоку', 'окном', 'tempered'],
-            'панорам' => ['панорам', 'панорамное', 'панорамный', 'панорамная', 'dual glass', 'full glass'],
         ];
 
         // Нормализация входа к ключу группы
@@ -549,13 +564,10 @@ class StoreSupplierCatalogSearchService
             '700w' => '700w', '700вт' => '700w', '700watt' => '700w',
             '800w' => '800w', '800вт' => '800w', '800watt' => '800w',
             '1000w' => '1000w', '1000вт' => '1000w', '1000watt' => '1000w', '1kw' => '1000w',
-            // Корпуса
+            // Корпуса (цвета)
             'белый' => 'белый', 'белая' => 'белый', 'белое' => 'белый', 'white' => 'белый',
             'черный' => 'черный', 'чёрный' => 'черный', 'черная' => 'черный', 'чёрная' => 'черный',
             'черное' => 'черный', 'чёрное' => 'черный', 'black' => 'черный',
-            'боковое' => 'боковое', 'боковой' => 'боковое', 'боковая' => 'боковое', 'сбоку' => 'боковое',
-            'окном' => 'боковое', 'tempered' => 'боковое',
-            'панорам' => 'панорам', 'панорамное' => 'панорам', 'панорамный' => 'панорам', 'панорамная' => 'панорам',
         ];
 
         $key = $map[$t] ?? null;
@@ -651,6 +663,18 @@ class StoreSupplierCatalogSearchService
         return mb_strtolower(trim($token)) === 'atx';
     }
 
+    private function isSideGlassToken(string $token): bool
+    {
+        return in_array(mb_strtolower(trim($token)), ['боковое', 'сбоку'], true);
+    }
+
+    private function isFrontSideGlassToken(string $token): bool
+    {
+        $t = mb_strtolower(trim($token));
+
+        return in_array($t, ['frontglass', 'панорам', 'спереди'], true);
+    }
+
     /**
      * @param  list<string>  $tokens
      */
@@ -658,6 +682,34 @@ class StoreSupplierCatalogSearchService
     {
         foreach ($tokens as $token) {
             if ($this->isAtxFormFactorToken($token)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  list<string>  $tokens
+     */
+    private function queryHasSideGlassToken(array $tokens): bool
+    {
+        foreach ($tokens as $token) {
+            if ($this->isSideGlassToken($token)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  list<string>  $tokens
+     */
+    private function queryHasFrontSideGlassToken(array $tokens): bool
+    {
+        foreach ($tokens as $token) {
+            if ($this->isFrontSideGlassToken($token)) {
                 return true;
             }
         }
@@ -674,6 +726,100 @@ class StoreSupplierCatalogSearchService
         }
 
         return (bool) preg_match('/(^|[^a-zа-яё0-9])atx([^a-zа-яё0-9]|$)/u', $n);
+    }
+
+    /**
+     * Боковое стекло / окно (в т.ч. «боковое окно (панорама)»).
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\StoreSupplierCatalogProduct>  $builder
+     */
+    private function applySideGlassFilter($builder): void
+    {
+        $patterns = $this->sideGlassPatterns();
+        $builder->where(function ($query) use ($patterns) {
+            foreach ($patterns as $pattern) {
+                $query->orWhereRaw('name ~* ?', [$pattern])
+                    ->orWhereRaw('part ~* ?', [$pattern]);
+            }
+        });
+    }
+
+    /**
+     * Стекло и спереди, и сбоку — не путать с одним боковым «панорамным» окном.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\StoreSupplierCatalogProduct>  $builder
+     */
+    private function applyFrontSideGlassFilter($builder): void
+    {
+        $patterns = $this->frontSideGlassPatterns();
+        $builder->where(function ($query) use ($patterns) {
+            foreach ($patterns as $pattern) {
+                $query->orWhereRaw('name ~* ?', [$pattern])
+                    ->orWhereRaw('part ~* ?', [$pattern]);
+            }
+        });
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function sideGlassPatterns(): array
+    {
+        return [
+            'боков\\w{0,8}\\s*(окн|стекл)',
+            '(окн|стекл)\\w{0,8}\\s*боков',
+            'с\\s+окном',
+            'боковое\\s+окно',
+            'tempered\\s*glass',
+            'side\\s*(window|glass|panel)',
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function frontSideGlassPatterns(): array
+    {
+        // Нужен признак ПЕРЕДНЕГО стекла/окна + намёк на бок, либо явная «передняя и боковая» / dual glass
+        return [
+            'передн\\w{0,12}.{0,50}(стекл|окн|glass|tg)',
+            '(стекл|окн|glass).{0,50}передн\\w{0,12}',
+            'спереди.{0,40}(стекл|окн|glass|боков|сбоку)',
+            '(стекл|окн|glass).{0,40}спереди',
+            'front.{0,40}(glass|tg|window|panel).{0,40}(side|lateral)',
+            '(side|lateral).{0,40}(glass|tg|window).{0,40}front',
+            'dual[\\s-]*glass',
+            'full[\\s-]*glass',
+            'double[\\s-]*glass',
+            'передн\\w{0,12}.{0,40}боков',
+            'боков\\w{0,8}.{0,40}передн',
+            'спереди.{0,25}(и\\s+)?сбоку',
+            'сбоку.{0,25}(и\\s+)?спереди',
+            'передн\\w{0,12}\\s+и\\s+боков',
+            'стеклянн\\w{0,8}\\s+передн',
+        ];
+    }
+
+    private function isSideGlassName(string $hay): bool
+    {
+        foreach ($this->sideGlassPatterns() as $pattern) {
+            if (preg_match('/'.$pattern.'/ui', $hay)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isFrontSideGlassName(string $hay): bool
+    {
+        foreach ($this->frontSideGlassPatterns() as $pattern) {
+            if (preg_match('/'.$pattern.'/ui', $hay)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function expandSearchTokenKey(string $compact): ?string
