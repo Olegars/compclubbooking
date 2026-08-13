@@ -139,13 +139,16 @@ class StoreSupplierCatalogSearchService
                 $query->whereIn('category_external_id', $categoryIds);
             });
 
-        // Все слова запроса должны встретиться (DDR5 32GB → и тип, и объём)
+        // Все слова запроса должны встретиться; для объёмов — синонимы (1000GB ≈ 1TB)
         foreach ($tokens as $token) {
-            $like = '%'.$this->escapeLike($token).'%';
-            $builder->where(function ($query) use ($like, $token, $isNumericSku) {
-                $query->where('name', 'ilike', $like)
-                    ->orWhere('part', 'ilike', $like)
-                    ->orWhere('vendor', 'ilike', $like);
+            $aliases = $this->expandSearchToken($token);
+            $builder->where(function ($query) use ($aliases, $token, $isNumericSku) {
+                foreach ($aliases as $alias) {
+                    $like = '%'.$this->escapeLike($alias).'%';
+                    $query->orWhere('name', 'ilike', $like)
+                        ->orWhere('part', 'ilike', $like)
+                        ->orWhere('vendor', 'ilike', $like);
+                }
                 if ($isNumericSku) {
                     $query->orWhere('sku', (int) $token);
                 }
@@ -170,7 +173,9 @@ class StoreSupplierCatalogSearchService
             // score по самому «сильному» токену + бонус за покрытие всех
             $score = 0;
             foreach ($tokens as $token) {
-                $score = max($score, $this->score($token, $p));
+                foreach ($this->expandSearchToken($token) as $alias) {
+                    $score = max($score, $this->score($alias, $p));
+                }
             }
             if ($score <= 0) {
                 return null;
@@ -391,5 +396,40 @@ class StoreSupplierCatalogSearchService
     private function escapeLike(string $value): string
     {
         return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
+    }
+
+    /**
+     * Синонимы объёма: 1000GB ↔ 1TB, 2000GB ↔ 2TB, …
+     *
+     * @return list<string>
+     */
+    private function expandSearchToken(string $token): array
+    {
+        $t = mb_strtolower(trim($token));
+        $t = preg_replace('/\s+/u', '', $t) ?? $t;
+
+        $groups = [
+            '256gb' => ['256gb', '256 gb', '256гб', '256 гб'],
+            '500gb' => ['500gb', '500 gb', '500гб', '500 гб', '512gb', '512 gb', '512гб', '512 гб'],
+            '1000gb' => ['1000gb', '1000 gb', '1000гб', '1000 гб', '1tb', '1 tb', '1тб', '1 тб', '1.0tb'],
+            '2000gb' => ['2000gb', '2000 gb', '2000гб', '2000 гб', '2tb', '2 tb', '2тб', '2 тб', '2.0tb'],
+            '4000gb' => ['4000gb', '4000 gb', '4000гб', '4000 гб', '4tb', '4 tb', '4тб', '4 тб', '4.0tb'],
+        ];
+
+        // Нормализация входа к ключу группы
+        $map = [
+            '256gb' => '256gb', '256гб' => '256gb',
+            '500gb' => '500gb', '500гб' => '500gb', '512gb' => '500gb', '512гб' => '500gb',
+            '1000gb' => '1000gb', '1000гб' => '1000gb', '1tb' => '1000gb', '1тб' => '1000gb', '1.0tb' => '1000gb',
+            '2000gb' => '2000gb', '2000гб' => '2000gb', '2tb' => '2000gb', '2тб' => '2000gb', '2.0tb' => '2000gb',
+            '4000gb' => '4000gb', '4000гб' => '4000gb', '4tb' => '4000gb', '4тб' => '4000gb', '4.0tb' => '4000gb',
+        ];
+
+        $key = $map[$t] ?? null;
+        if ($key === null) {
+            return [$token];
+        }
+
+        return $groups[$key];
     }
 }
