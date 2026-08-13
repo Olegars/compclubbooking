@@ -59,7 +59,9 @@ class EstimateController extends StoreController
             'catalogStats' => [
                 'products' => StoreSupplierCatalogProduct::query()->count(),
                 'categories' => StoreSupplierCatalogCategory::query()->count(),
+                'priced' => StoreSupplierCatalogProduct::query()->whereNotNull('price')->count(),
                 'synced_at' => optional(StoreSupplierCatalogProduct::query()->max('synced_at')),
+                'price_synced_at' => optional(StoreSupplierCatalogProduct::query()->max('price_synced_at')),
             ],
         ]);
     }
@@ -209,31 +211,51 @@ class EstimateController extends StoreController
     {
         abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
 
-        $data = $request->validate([
-            'skus' => 'required|array|min:1|max:50',
-            'skus.*' => 'integer',
-        ]);
+        $skus = $request->input('skus', []);
+        if (is_string($skus)) {
+            $skus = array_filter(array_map('trim', explode(',', $skus)));
+        }
+        if (! is_array($skus)) {
+            $skus = [];
+        }
+        $skus = array_values(array_unique(array_map('intval', $skus)));
+        $skus = array_values(array_filter($skus, fn ($s) => $s > 0));
+        abort_if($skus === [] || count($skus) > 50, 422, 'Укажите 1–50 sku');
 
         if (! $api->isConfigured()) {
             return response()->json(['message' => 'QuickFox не настроен', 'products' => []], 422);
         }
 
         try {
-            $rows = $api->getActiveProductsBySkus($data['skus']);
+            $rows = $api->getActiveProductsBySkus($skus);
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage(), 'products' => []], 422);
         }
 
-        $products = [];
+        $bySku = [];
         foreach ($rows as $row) {
             if (! is_array($row) || empty($row['sku'])) {
                 continue;
             }
-            $products[] = [
-                'sku' => (int) $row['sku'],
+            $sku = (int) $row['sku'];
+            $bySku[$sku] = [
+                'sku' => $sku,
                 'price' => isset($row['price']) ? (float) $row['price'] : null,
                 'qty' => $row['real_qty'] ?? $row['qty'] ?? null,
                 'delivery_days' => $row['delivery_days'] ?? null,
+                'in_stock' => true,
+            ];
+        }
+
+        // Явно пометить отсутствующие (API отдаёт только в наличии)
+        $products = [];
+        foreach ($skus as $sku) {
+            $products[] = $bySku[$sku] ?? [
+                'sku' => $sku,
+                'price' => null,
+                'qty' => 0,
+                'delivery_days' => null,
+                'in_stock' => false,
             ];
         }
 
@@ -254,9 +276,22 @@ class EstimateController extends StoreController
         abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
 
         try {
-            $result = $sync->sync();
+            $result = $sync->sync(withPrices: true);
 
-            return back()->with('success', "Каталог: {$result['categories']} кат., {$result['products']} тов.");
+            return back()->with('success', "Каталог: {$result['categories']} кат., {$result['products']} тов., цен: {$result['priced']}");
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    public function syncPrices(StoreSupplierCatalogSyncService $sync)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+
+        try {
+            $priced = $sync->syncPrices();
+
+            return back()->with('success', "Цены обновлены: {$priced} позиций в наличии");
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }

@@ -131,6 +131,26 @@ class QuickFoxApiClient
     }
 
     /**
+     * Все товары в наличии с ценами (лимит API: 10/час).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function getAllActiveProducts(): array
+    {
+        $json = $this->api([
+            'request' => [
+                'method' => 'get_active_products',
+                'model' => 'client_api',
+                'module' => 'platform',
+            ],
+        ]);
+
+        $products = $json['data']['products'] ?? [];
+
+        return is_array($products) ? array_values($products) : [];
+    }
+
+    /**
      * @return array{id: int}
      */
     public function createOrder(?string $comment = null, int $logisticCenter = 1): array
@@ -234,13 +254,12 @@ class QuickFoxApiClient
     }
 
     /**
-     * @param  array<string, mixed>  $payload
-     * @return array<string, mixed>
+     * HTTP timeout for large catalog / full price dump.
      */
     private function postJson(array $payload, bool $withSession): array
     {
         $url = $this->baseUrl().'/api/2';
-        $request = Http::timeout(60)
+        $request = Http::timeout(300)
             ->acceptJson()
             ->asJson();
 

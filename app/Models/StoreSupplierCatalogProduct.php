@@ -9,12 +9,15 @@ class StoreSupplierCatalogProduct extends Model
 {
     protected $fillable = [
         'sku', 'category_external_id', 'name', 'part', 'vendor',
-        'rrp', 'warranty', 'multiplicity', 'barcodes', 'synced_at',
+        'rrp', 'price', 'stock_qty', 'price_synced_at',
+        'warranty', 'multiplicity', 'barcodes', 'synced_at',
     ];
 
     protected $casts = [
         'rrp' => 'decimal:2',
+        'price' => 'decimal:2',
         'synced_at' => 'datetime',
+        'price_synced_at' => 'datetime',
     ];
 
     public function category(): BelongsTo

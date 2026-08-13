@@ -81,7 +81,7 @@ class StoreSupplierCatalogSearchService
         // Берём с запасом, ранжируем в PHP
         $rows = $builder
             ->limit(min(300, max($limit * 8, 80)))
-            ->get(['sku', 'name', 'part', 'vendor', 'rrp', 'category_external_id']);
+            ->get(['sku', 'name', 'part', 'vendor', 'rrp', 'price', 'stock_qty', 'category_external_id']);
 
         $catNames = $this->categoryNames($rows->pluck('category_external_id')->filter()->unique()->all());
 
@@ -97,11 +97,20 @@ class StoreSupplierCatalogSearchService
                 'part' => $p->part,
                 'vendor' => $p->vendor,
                 'rrp' => $p->rrp,
+                'price' => $p->price !== null ? (float) $p->price : null,
+                'stock_qty' => $p->stock_qty,
+                'in_stock' => $p->price !== null,
                 'category_external_id' => $p->category_external_id ? (int) $p->category_external_id : null,
                 'category_name' => $catNames[(int) $p->category_external_id] ?? null,
                 'score' => $score,
             ];
         })->filter()->sort(function (array $a, array $b) {
+            // Сначала с ценой (в наличии), потом по релевантности
+            $aStock = $a['in_stock'] ? 1 : 0;
+            $bStock = $b['in_stock'] ? 1 : 0;
+            if ($aStock !== $bStock) {
+                return $bStock <=> $aStock;
+            }
             if ($a['score'] !== $b['score']) {
                 return $b['score'] <=> $a['score'];
             }

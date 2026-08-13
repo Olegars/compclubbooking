@@ -30,7 +30,7 @@ const props = defineProps<{
     filters: { status?: string | null }
     canManage: boolean
     quickfoxConfigured: boolean
-    catalogStats: { products: number, categories: number, synced_at?: string | null }
+    catalogStats: { products: number, categories: number, priced?: number, synced_at?: string | null, price_synced_at?: string | null }
 }>()
 
 const page = usePage()
@@ -151,9 +151,18 @@ const setStatus = (id: number, status: string) => {
 }
 
 const syncCatalog = () => {
-    if (!confirm('Скачать каталог поставщика? Может занять время.')) return
+    if (!confirm('Скачать каталог + цены поставщика? Может занять несколько минут.')) return
     catalogBusy.value = true
     router.post('/admin/store/estimates/sync-catalog', {}, {
+        preserveScroll: true,
+        onFinish: () => { catalogBusy.value = false },
+    })
+}
+
+const syncPrices = () => {
+    if (!confirm('Обновить только цены/остатки (1 запрос API, лимит 10/час)?')) return
+    catalogBusy.value = true
+    router.post('/admin/store/estimates/sync-prices', {}, {
         preserveScroll: true,
         onFinish: () => { catalogBusy.value = false },
     })
@@ -241,7 +250,7 @@ const openSearchFor = (index: number) => {
     searchMeta.value = {}
 }
 
-const pickProduct = async (p: any) => {
+const pickProduct = (p: any) => {
     if (searchLineIndex.value === null) return
     const line = form.items[searchLineIndex.value]
     if (!line || lineLocked(line)) return
@@ -250,37 +259,14 @@ const pickProduct = async (p: any) => {
     line.supplier_sku = p.sku
     line.supplier_part = p.part || ''
     line.supplier_name = p.name
-    // RRP из файла каталога — не закупочная цена; живую цену тянем из API
-    line.supplier_price = null
+    line.supplier_price = p.price != null ? Number(p.price) : null
+    if (line.sale_price == null && p.price != null) {
+        line.sale_price = Number(p.price)
+    }
     line.status = 'to_order'
     searchLineIndex.value = null
     searchResults.value = []
     searchQ.value = ''
-
-    try {
-        const res = await fetch('/admin/store/estimates/catalog-prices', {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'X-XSRF-TOKEN': decodeURIComponent(document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] || ''),
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-            credentials: 'same-origin',
-            body: JSON.stringify({ skus: [p.sku] }),
-        })
-        const json = await res.json()
-        const row = (json.products || []).find((x: any) => Number(x.sku) === Number(p.sku))
-        if (row && row.price != null) {
-            line.supplier_price = Number(row.price)
-            if (line.sale_price == null) {
-                // ориентир продажи = закупка, менеджер поправит наценку
-                line.sale_price = Number(row.price)
-            }
-        }
-    } catch {
-        // цена подтянется кнопкой «Цены API» после сохранения сметы
-    }
 }
 
 const canEditEstimate = (est: any) =>
@@ -318,6 +304,11 @@ const stockOptionsFor = (item: any) => {
                             @click="syncCatalog">
                         {{ catalogBusy ? 'Синк…' : 'Синк каталога' }}
                     </button>
+                    <button v-if="canManage && quickfoxConfigured" type="button" :disabled="catalogBusy"
+                            class="px-4 py-3 border border-cyan-500/30 text-cyan-400 font-black uppercase tracking-widest text-[10px] rounded-2xl disabled:opacity-40"
+                            @click="syncPrices">
+                        Цены
+                    </button>
                     <button v-if="canManage" type="button" @click="openCreate"
                             class="px-6 py-4 bg-amber-500 text-black font-black uppercase tracking-widest text-[10px] rounded-2xl">
                         + Смета
@@ -332,7 +323,9 @@ const stockOptionsFor = (item: any) => {
                 Каталог API:
                 <span v-if="quickfoxConfigured" class="text-white/50">
                     {{ catalogStats.products }} тов. / {{ catalogStats.categories }} кат.
+                    · с ценой {{ catalogStats.priced ?? 0 }}
                     <span v-if="catalogStats.synced_at"> · {{ String(catalogStats.synced_at).slice(0, 16).replace('T', ' ') }}</span>
+                    <span v-if="catalogStats.price_synced_at"> · цены {{ String(catalogStats.price_synced_at).slice(0, 16).replace('T', ' ') }}</span>
                 </span>
                 <span v-else class="text-orange-400/80">не настроен (STORE_QUICKFOX_*)</span>
             </div>
@@ -515,10 +508,16 @@ const stockOptionsFor = (item: any) => {
                         <button v-for="p in searchResults" :key="p.sku" type="button"
                                 class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/5 text-xs"
                                 @click="pickProduct(p)">
-                            <span class="text-white/80">{{ p.name }}</span>
-                            <span class="text-white/30"> · {{ p.part || '—' }} · sku {{ p.sku }}</span>
-                            <span v-if="p.category_name" class="text-cyan-400/50"> · {{ p.category_name }}</span>
-                            <span v-if="p.rrp != null" class="text-amber-400/70"> · RRP {{ money(p.rrp) }}</span>
+                            <div class="flex justify-between gap-3">
+                                <span class="text-white/80 min-w-0">{{ p.name }}</span>
+                                <span v-if="p.price != null" class="shrink-0 font-black text-amber-400">{{ money(p.price) }}</span>
+                                <span v-else class="shrink-0 text-white/25">нет в наличии</span>
+                            </div>
+                            <div class="text-white/30 mt-0.5">
+                                {{ p.part || '—' }} · sku {{ p.sku }}
+                                <span v-if="p.stock_qty != null"> · ост. {{ p.stock_qty }}</span>
+                                <span v-if="p.category_name" class="text-cyan-400/50"> · {{ p.category_name }}</span>
+                            </div>
                         </button>
                         <div v-if="searchQ.length >= 2 && !searchResults.length" class="text-white/30 text-xs py-2">
                             Ничего не найдено

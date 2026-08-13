@@ -6,15 +6,16 @@ use App\Models\StoreSupplierCatalogCategory;
 use App\Models\StoreSupplierCatalogProduct;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class StoreSupplierCatalogSyncService
 {
     public function __construct(private QuickFoxApiClient $api) {}
 
     /**
-     * @return array{categories: int, products: int}
+     * @return array{categories: int, products: int, priced: int}
      */
-    public function sync(): array
+    public function sync(bool $withPrices = true): array
     {
         if (! $this->api->isConfigured()) {
             throw new \RuntimeException('QuickFox не настроен (STORE_QUICKFOX_*).');
@@ -83,7 +84,6 @@ class StoreSupplierCatalogSyncService
 
         DB::transaction(function () use ($productRows, $includeIds) {
             if ($includeIds !== null) {
-                // Частичный sync: обновляем только выбранные категории
                 foreach (array_chunk($productRows, 500) as $chunk) {
                     StoreSupplierCatalogProduct::query()->upsert(
                         $chunk,
@@ -101,10 +101,115 @@ class StoreSupplierCatalogSyncService
 
         $this->clearSearchCache();
 
+        $priced = 0;
+        if ($withPrices) {
+            $priced = $this->syncPrices();
+        }
+
         return [
             'categories' => count($categoryRows),
             'products' => count($productRows),
+            'priced' => $priced,
         ];
+    }
+
+    /**
+     * Один запрос get_active_products → price/qty в локальный каталог.
+     * Лимит API: 10/час. Цена только у товаров в наличии.
+     */
+    public function syncPrices(): int
+    {
+        if (! $this->api->isConfigured()) {
+            throw new \RuntimeException('QuickFox не настроен (STORE_QUICKFOX_*).');
+        }
+
+        $active = $this->api->getAllActiveProducts();
+        $now = now();
+
+        StoreSupplierCatalogProduct::query()->update([
+            'price' => null,
+            'stock_qty' => null,
+            'price_synced_at' => null,
+        ]);
+
+        $rows = [];
+        foreach ($active as $p) {
+            if (! is_array($p) || empty($p['sku'])) {
+                continue;
+            }
+            if (! isset($p['price']) || ! is_numeric($p['price'])) {
+                continue;
+            }
+            $qty = null;
+            if (isset($p['real_qty']) && is_numeric($p['real_qty'])) {
+                $qty = (int) $p['real_qty'];
+            } elseif (isset($p['qty']) && is_numeric($p['qty'])) {
+                $qty = (int) $p['qty'];
+            }
+            $rows[] = [
+                'sku' => (int) $p['sku'],
+                'price' => (float) $p['price'],
+                'stock_qty' => $qty,
+            ];
+        }
+
+        $updated = 0;
+        foreach (array_chunk($rows, 400) as $chunk) {
+            $updated += $this->bulkUpdatePrices($chunk, $now);
+        }
+
+        return $updated;
+    }
+
+    /**
+     * @param  list<array{sku:int,price:float,stock_qty:?int}>  $chunk
+     */
+    private function bulkUpdatePrices(array $chunk, \DateTimeInterface $now): int
+    {
+        if ($chunk === []) {
+            return 0;
+        }
+
+        $driver = Schema::getConnection()->getDriverName();
+        $nowStr = $now->format('Y-m-d H:i:s');
+
+        if ($driver === 'pgsql') {
+            $values = [];
+            $bindings = [];
+            foreach ($chunk as $row) {
+                $values[] = '(?::bigint, ?::numeric, ?::integer)';
+                $bindings[] = $row['sku'];
+                $bindings[] = $row['price'];
+                $bindings[] = $row['stock_qty'];
+            }
+            $sql = '
+                UPDATE store_supplier_catalog_products AS p
+                SET price = v.price,
+                    stock_qty = v.stock_qty,
+                    price_synced_at = ?,
+                    updated_at = ?
+                FROM (VALUES '.implode(',', $values).') AS v(sku, price, stock_qty)
+                WHERE p.sku = v.sku
+            ';
+
+            return DB::update($sql, array_merge([$nowStr, $nowStr], $bindings));
+        }
+
+        $count = 0;
+        DB::transaction(function () use ($chunk, $nowStr, &$count) {
+            foreach ($chunk as $row) {
+                $count += DB::table('store_supplier_catalog_products')
+                    ->where('sku', $row['sku'])
+                    ->update([
+                        'price' => $row['price'],
+                        'stock_qty' => $row['stock_qty'],
+                        'price_synced_at' => $nowStr,
+                        'updated_at' => $nowStr,
+                    ]);
+            }
+        });
+
+        return $count;
     }
 
     public function clearSearchCache(): void
