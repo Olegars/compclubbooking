@@ -10,6 +10,29 @@ class StoreSupplierCatalogImageService
     public function __construct(private QuickFoxApiClient $api) {}
 
     /**
+     * @param  list<int|string|null>  $skus
+     * @return array<int, string|null> sku => proxy url
+     */
+    public function urlsForSkus(array $skus): array
+    {
+        $skus = array_values(array_unique(array_map('intval', $skus)));
+        $skus = array_values(array_filter($skus, fn ($s) => $s > 0));
+        if ($skus === []) {
+            return [];
+        }
+
+        $payload = array_map(fn (int $sku) => ['sku' => $sku, 'has_image' => false], $skus);
+        $attached = $this->attachToSearchResults($payload);
+
+        $map = [];
+        foreach ($attached as $row) {
+            $map[(int) $row['sku']] = $row['image_url'] ?? null;
+        }
+
+        return $map;
+    }
+
+    /**
      * Подтянуть пути картинок в БД (если ещё нет) и вернуть proxy-URL для выдачи в UI.
      *
      * @param  list<array<string, mixed>>  $products
@@ -40,7 +63,6 @@ class StoreSupplierCatalogImageService
             if (! $row) {
                 continue;
             }
-            // Ещё не пробовали тянуть картинку (или в каталоге есть флаг, а пути нет)
             if (blank($row->image_path) && ($row->image_synced_at === null || $row->has_image)) {
                 $needFetch[] = $sku;
             }

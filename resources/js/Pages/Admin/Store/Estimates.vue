@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
@@ -17,6 +17,7 @@ type EstimateLine = {
     status: string
     store_component_id: number | null
     notes: string
+    image_url: string | null
 }
 
 const props = defineProps<{
@@ -75,6 +76,7 @@ const emptyLine = (): EstimateLine => ({
     status: 'planned',
     store_component_id: null,
     notes: '',
+    image_url: null,
 })
 
 const addLine = () => form.items.push(emptyLine())
@@ -117,6 +119,7 @@ const openEdit = (est: any) => {
             status: item.status || 'planned',
             store_component_id: item.store_component_id,
             notes: item.notes || '',
+            image_url: item.supplier_image_url || null,
         }))
         : [emptyLine()]
     showForm.value = true
@@ -396,10 +399,32 @@ const pickProduct = (p: any) => {
         line.sale_price = Number(p.price)
     }
     line.status = 'to_order'
+    line.image_url = p.image_url || null
     searchLineIndex.value = null
     searchResults.value = []
     searchQ.value = ''
 }
+
+const lightbox = ref<{ url: string, title: string } | null>(null)
+const imageSized = (url: string, size: 'medium' | 'large' | 'original' = 'large') => {
+    try {
+        const u = new URL(url, window.location.origin)
+        u.searchParams.set('size', size)
+        return u.pathname + u.search
+    } catch {
+        return url
+    }
+}
+const openLightbox = (url: string | null | undefined, title = '') => {
+    if (!url) return
+    lightbox.value = { url: imageSized(url, 'large'), title }
+}
+const closeLightbox = () => { lightbox.value = null }
+const onLightboxKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && lightbox.value) closeLightbox()
+}
+onMounted(() => window.addEventListener('keydown', onLightboxKey))
+onUnmounted(() => window.removeEventListener('keydown', onLightboxKey))
 
 const canEditEstimate = (est: any) =>
     props.canManage && ['draft', 'agreed', 'procuring', 'ready'].includes(est.status)
@@ -488,7 +513,14 @@ const stockOptionsFor = (item: any) => {
                     <div v-show="isOpen(est.id)" class="px-5 pb-5 space-y-4 border-t border-white/5 pt-4">
                         <div class="space-y-2">
                             <div v-for="item in est.items" :key="item.id"
-                                 class="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 text-xs text-white/50 border border-white/5 rounded-xl p-3">
+                                 class="grid grid-cols-1 md:grid-cols-[auto_1fr_auto] gap-3 text-xs text-white/50 border border-white/5 rounded-xl p-3">
+                                <button v-if="item.supplier_image_url" type="button"
+                                        class="w-14 h-14 shrink-0 rounded-xl bg-black/60 border border-white/10 overflow-hidden hover:border-amber-500/40"
+                                        title="Увеличить"
+                                        @click="openLightbox(item.supplier_image_url, item.name)">
+                                    <img :src="item.supplier_image_url" :alt="item.name" class="w-full h-full object-contain" loading="lazy" />
+                                </button>
+                                <div v-else class="w-14 h-14 shrink-0 rounded-xl bg-black/40 border border-white/5 hidden md:block" />
                                 <div>
                                     <div class="text-white/80 font-black uppercase tracking-wide text-[11px]">
                                         {{ item.name }}
@@ -589,6 +621,14 @@ const stockOptionsFor = (item: any) => {
 
                 <div class="text-[10px] uppercase font-black text-white/30 tracking-widest">Комплектация</div>
                 <div v-for="(line, i) in form.items" :key="i" class="space-y-2 border border-white/5 rounded-2xl p-3">
+                    <div class="flex gap-3 items-start">
+                        <button v-if="line.image_url" type="button"
+                                class="w-14 h-14 shrink-0 rounded-xl bg-black/60 border border-white/10 overflow-hidden hover:border-amber-500/40"
+                                title="Увеличить"
+                                @click="openLightbox(line.image_url, line.name)">
+                            <img :src="line.image_url" :alt="line.name" class="w-full h-full object-contain" loading="lazy" />
+                        </button>
+                        <div class="min-w-0 flex-1 space-y-2">
                     <div class="grid grid-cols-[120px_1fr_40px] gap-2">
                         <select v-model="line.type" class="bg-black border border-white/10 rounded-xl px-2 py-2 text-sm" :disabled="lineLocked(line)">
                             <option :value="null">Тип</option>
@@ -617,6 +657,8 @@ const stockOptionsFor = (item: any) => {
                         SKU {{ line.supplier_sku }}
                         <span v-if="line.supplier_price != null"> · {{ money(line.supplier_price) }}</span>
                         · {{ itemStatusLabels[line.status] || line.status }}
+                    </div>
+                        </div>
                     </div>
                 </div>
                 <button type="button" class="text-[10px] uppercase font-black text-amber-400" @click="addLine">+ позиция</button>
@@ -775,7 +817,9 @@ const stockOptionsFor = (item: any) => {
                                 class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/5 text-xs"
                                 @click="pickProduct(p)">
                             <div class="flex gap-3 items-start">
-                                <div class="w-12 h-12 shrink-0 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center">
+                                <div class="w-12 h-12 shrink-0 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center"
+                                     :class="p.image_url ? 'cursor-zoom-in hover:border-amber-500/40' : ''"
+                                     @click.stop="openLightbox(p.image_url, p.name)">
                                     <img v-if="p.image_url" :src="p.image_url" :alt="p.name" class="w-full h-full object-contain" loading="lazy" />
                                     <span v-else class="text-[9px] text-white/20 uppercase">нет</span>
                                 </div>
@@ -808,6 +852,16 @@ const stockOptionsFor = (item: any) => {
                     </button>
                 </div>
             </form>
+        </div>
+
+        <div v-if="lightbox" class="fixed inset-0 z-[80] bg-black/85 flex items-center justify-center p-4"
+             @click.self="closeLightbox">
+            <button type="button" class="absolute top-4 right-4 text-white/50 hover:text-white text-2xl leading-none px-3 py-1"
+                    @click="closeLightbox">×</button>
+            <div class="max-w-4xl w-full max-h-[90vh] flex flex-col items-center gap-3" @click.stop>
+                <img :src="lightbox.url" :alt="lightbox.title" class="max-w-full max-h-[80vh] object-contain rounded-2xl border border-white/10 bg-black" />
+                <div v-if="lightbox.title" class="text-xs text-white/50 text-center uppercase tracking-widest">{{ lightbox.title }}</div>
+            </div>
         </div>
     </AdminLayout>
 </template>

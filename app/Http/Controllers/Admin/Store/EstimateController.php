@@ -46,8 +46,19 @@ class EstimateController extends StoreController
             ->orderBy('name')
             ->get(['id', 'name', 'type', 'purchase_price', 'warranty_number', 'serials', 'status']);
 
+        $estimates = $query->limit(80)->get();
+        $imageUrls = app(StoreSupplierCatalogImageService::class)->urlsForSkus(
+            $estimates->flatMap(fn (StoreEstimate $e) => $e->items->pluck('supplier_sku'))->all()
+        );
+        foreach ($estimates as $estimate) {
+            foreach ($estimate->items as $item) {
+                $sku = (int) ($item->supplier_sku ?? 0);
+                $item->setAttribute('supplier_image_url', $sku > 0 ? ($imageUrls[$sku] ?? null) : null);
+            }
+        }
+
         return Inertia::render('Admin/Store/Estimates', [
-            'estimates' => $query->limit(80)->get(),
+            'estimates' => $estimates,
             'clients' => StoreClient::query()->where('club_id', $clubId)->orderBy('name')->get(['id', 'name', 'phone']),
             'components' => $components,
             'componentTypes' => StoreComponent::TYPES,
@@ -213,9 +224,14 @@ class EstimateController extends StoreController
     /**
      * Прокси картинки поставщика (нужна session QuickFox).
      */
-    public function catalogImage(int $sku, QuickFoxApiClient $api, StoreSupplierCatalogImageService $images)
+    public function catalogImage(Request $request, int $sku, QuickFoxApiClient $api, StoreSupplierCatalogImageService $images)
     {
         abort_unless($sku > 0, 404);
+
+        $size = $request->string('size')->toString() ?: 'medium';
+        if (! in_array($size, ['medium', 'large', 'original'], true)) {
+            $size = 'medium';
+        }
 
         $product = StoreSupplierCatalogProduct::query()->where('sku', $sku)->first();
         abort_unless($product, 404);
@@ -230,7 +246,7 @@ class EstimateController extends StoreController
         abort_unless(filled($product->image_path), 404);
 
         try {
-            $file = $api->downloadProductImage((string) $product->image_path, 'medium');
+            $file = $api->downloadProductImage((string) $product->image_path, $size);
         } catch (\Throwable $e) {
             abort(502, 'Не удалось загрузить изображение');
         }
