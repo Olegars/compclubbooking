@@ -247,13 +247,14 @@ watch(searchQ, () => {
 
 watch(includeOos, () => { runCatalogSearch() })
 
-const searchType = computed(() =>
-    searchLineIndex.value !== null ? (form.items[searchLineIndex.value]?.type || null) : null
-)
+const lineTypeAt = (index: number | null) => {
+    if (index === null) return ''
+    return String(form.items[index]?.type || '').toLowerCase()
+}
 
 /** Быстрые фильтры по типу позиции */
 const quickChips = computed(() => {
-    switch (searchType.value) {
+    switch (lineTypeAt(searchLineIndex.value)) {
         case 'ram':
             return [
                 { id: 'ddr5', label: 'DDR5', token: 'DDR5' },
@@ -571,18 +572,51 @@ const stockOptionsFor = (item: any) => {
                     <p v-if="!form.items[searchLineIndex]?.type" class="text-[10px] text-orange-400/80 uppercase tracking-widest">
                         Выберите тип позиции — поиск сузится по категориям ITP
                     </p>
-                    <input v-model="searchQ" placeholder="13400F / Ryzen / точный sku…"
+                    <input v-model="searchQ" placeholder="13400F / Ryzen / DDR5 32GB…"
                            class="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" />
-                    <div v-if="quickChips.length" class="flex flex-wrap gap-2">
-                        <button v-for="chip in quickChips" :key="chip.id" type="button"
-                                class="px-3 py-1.5 rounded-lg border text-[10px] uppercase font-black tracking-widest transition-colors"
+
+                    <!-- Быстрые фильтры: завязаны на тип строки (как в заголовке поиска) -->
+                    <div v-if="lineTypeAt(searchLineIndex) === 'ram'" class="flex flex-wrap gap-2 pt-1">
+                        <button v-for="chip in [
+                            { label: 'DDR5', token: 'DDR5' },
+                            { label: 'DDR4', token: 'DDR4' },
+                            { label: '16GB', token: '16GB' },
+                            { label: '32GB', token: '32GB' },
+                            { label: '64GB', token: '64GB' },
+                        ]" :key="chip.token" type="button"
+                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
                                 :class="chipActive(chip.token)
-                                    ? 'border-amber-500/50 bg-amber-500/15 text-amber-400'
-                                    : 'border-white/10 text-white/50 hover:text-white/80 hover:border-white/25'"
+                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
+                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
                                 @click="toggleChip(chip.token)">
                             {{ chip.label }}
                         </button>
                     </div>
+                    <div v-else-if="lineTypeAt(searchLineIndex) === 'cpu'" class="flex flex-wrap gap-2 pt-1">
+                        <button v-for="chip in [
+                            { label: 'LGA1700', token: '1700' },
+                            { label: 'AM5', token: 'AM5' },
+                            { label: 'AM4', token: 'AM4' },
+                        ]" :key="chip.token" type="button"
+                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
+                                :class="chipActive(chip.token)
+                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
+                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
+                                @click="toggleChip(chip.token)">
+                            {{ chip.label }}
+                        </button>
+                    </div>
+                    <div v-else-if="quickChips.length" class="flex flex-wrap gap-2 pt-1">
+                        <button v-for="chip in quickChips" :key="chip.id" type="button"
+                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
+                                :class="chipActive(chip.token)
+                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
+                                    : 'border-white/20 text-white/70'"
+                                @click="toggleChip(chip.token)">
+                            {{ chip.label }}
+                        </button>
+                    </div>
+
                     <label class="flex items-center gap-2 text-[10px] uppercase font-black text-white/40 tracking-widest cursor-pointer">
                         <input v-model="includeOos" type="checkbox" class="accent-amber-500" />
                         Показывать нет в наличии
