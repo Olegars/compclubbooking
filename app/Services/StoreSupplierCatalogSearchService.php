@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Cache;
 
 class StoreSupplierCatalogSearchService
 {
-    private const CACHE_PREFIX = 'store.quickfox.cat_ids.v3.';
+    private const CACHE_PREFIX = 'store.quickfox.cat_ids.v4.';
 
     /**
      * Правила типа: категории ITP + жёсткий фильтр по названию товара.
@@ -62,9 +62,15 @@ class StoreSupplierCatalogSearchService
                 'name_include' => ['hdd', 'жестк', 'жёстк', 'винчестер'],
             ],
             'psu' => [
-                'cat' => ['блок питания', 'power supply', 'psu'],
-                'name_exclude' => ['материнск', 'видеокарт', 'процессор'],
-                'name_include' => ['блок питания', 'psu', 'watt', 'вт'],
+                'cat' => ['блок питания', 'power supply'],
+                'cat_exclude' => ['бытов', 'микроволн', 'аэрогрил', 'чайник', 'утюг', 'фен'],
+                'name_exclude' => [
+                    'микроволн', 'аэрогрил', 'гриль', 'духовк', 'печь', 'чайник', 'утюг', 'фен',
+                    'пылесос', 'бытов', 'кофевар', 'мультивар', 'обогревател', 'конвектор',
+                    'вытяжка', 'стиральн', 'посудомо', 'холодильн',
+                ],
+                // Нельзя включать голое «вт»/«watt» — иначе микроволновки и грили
+                'name_include' => ['блок питания', 'бп ', ' psu', 'psu ', 'power supply', 'atx'],
             ],
             'case' => [
                 'cat' => ['корпус'],
@@ -139,15 +145,23 @@ class StoreSupplierCatalogSearchService
                 $query->whereIn('category_external_id', $categoryIds);
             });
 
-        // Все слова запроса должны встретиться; для объёмов — синонимы (1000GB ≈ 1TB)
+        // Все слова запроса должны встретиться; для объёмов/Вт — синонимы + границы числа (700 ≠ 1700)
         foreach ($tokens as $token) {
             $aliases = $this->expandSearchToken($token);
-            $builder->where(function ($query) use ($aliases, $token, $isNumericSku) {
-                foreach ($aliases as $alias) {
-                    $like = '%'.$this->escapeLike($alias).'%';
-                    $query->orWhere('name', 'ilike', $like)
-                        ->orWhere('part', 'ilike', $like)
-                        ->orWhere('vendor', 'ilike', $like);
+            $bounded = $this->boundedTokenPatterns($token);
+            $builder->where(function ($query) use ($aliases, $bounded, $token, $isNumericSku) {
+                if ($bounded !== []) {
+                    foreach ($bounded as $pattern) {
+                        $query->orWhereRaw('name ~* ?', [$pattern])
+                            ->orWhereRaw('part ~* ?', [$pattern]);
+                    }
+                } else {
+                    foreach ($aliases as $alias) {
+                        $like = '%'.$this->escapeLike($alias).'%';
+                        $query->orWhere('name', 'ilike', $like)
+                            ->orWhere('part', 'ilike', $like)
+                            ->orWhere('vendor', 'ilike', $like);
+                    }
                 }
                 if ($isNumericSku) {
                     $query->orWhere('sku', (int) $token);
@@ -157,7 +171,8 @@ class StoreSupplierCatalogSearchService
 
         // Жёсткий фильтр по типу — даже если категории ITP не сматчились
         if (is_array($rule)) {
-            $this->applyNameTypeFilters($builder, $rule);
+            $requireNameInclude = $categoryIds === null || $categoryIds === [];
+            $this->applyNameTypeFilters($builder, $rule, $requireNameInclude);
         }
 
         $rows = $builder
@@ -166,8 +181,9 @@ class StoreSupplierCatalogSearchService
 
         $catNames = $this->categoryNames($rows->pluck('category_external_id')->filter()->unique()->all());
 
-        $scored = $rows->map(function (StoreSupplierCatalogProduct $p) use ($qLower, $catNames, $rule, $tokens) {
-            if (is_array($rule) && ! $this->passesNameTypeRule((string) $p->name, $rule)) {
+        $scored = $rows->map(function (StoreSupplierCatalogProduct $p) use ($qLower, $catNames, $rule, $tokens, $categoryIds) {
+            $requireNameInclude = $categoryIds === null || $categoryIds === [];
+            if (is_array($rule) && ! $this->passesNameTypeRule((string) $p->name, $rule, $requireNameInclude)) {
                 return null;
             }
             // score по самому «сильному» токену + бонус за покрытие всех
@@ -216,14 +232,14 @@ class StoreSupplierCatalogSearchService
     /**
      * @param  array{cat: list<string>, cat_exclude?: list<string>, name_exclude?: list<string>, name_include?: list<string>}  $rule
      */
-    private function applyNameTypeFilters($query, array $rule): void
+    private function applyNameTypeFilters($query, array $rule, bool $requireInclude = true): void
     {
         foreach ($rule['name_exclude'] ?? [] as $ex) {
             $query->where('name', 'not ilike', '%'.$this->escapeLike($ex).'%');
         }
 
         $includes = $rule['name_include'] ?? [];
-        if ($includes !== []) {
+        if ($requireInclude && $includes !== []) {
             $query->where(function ($q) use ($includes) {
                 foreach ($includes as $inc) {
                     $q->orWhere('name', 'ilike', '%'.$this->escapeLike($inc).'%')
@@ -236,7 +252,7 @@ class StoreSupplierCatalogSearchService
     /**
      * @param  array{name_exclude?: list<string>, name_include?: list<string>}  $rule
      */
-    private function passesNameTypeRule(string $name, array $rule): bool
+    private function passesNameTypeRule(string $name, array $rule, bool $requireInclude = true): bool
     {
         $n = mb_strtolower($name);
         foreach ($rule['name_exclude'] ?? [] as $ex) {
@@ -245,7 +261,7 @@ class StoreSupplierCatalogSearchService
             }
         }
         $includes = $rule['name_include'] ?? [];
-        if ($includes === []) {
+        if (! $requireInclude || $includes === []) {
             return true;
         }
         foreach ($includes as $inc) {
@@ -453,5 +469,98 @@ class StoreSupplierCatalogSearchService
         }
 
         return $groups[$key];
+    }
+
+    /**
+     * Regex-паттерны с границей числа: 700Вт не матчит 1700Вт.
+     *
+     * @return list<string>
+     */
+    private function boundedTokenPatterns(string $token): array
+    {
+        $t = mb_strtolower(trim($token));
+        $t = preg_replace('/\s+/u', '', $t) ?? $t;
+
+        // Вт / W
+        if (preg_match('/^(\d{3,4})(вт|w|watt)$/ui', $t, $m)) {
+            $n = $m[1];
+
+            return [
+                '(^|[^0-9])'.$n.'\\s*(вт|w|watt)($|[^0-9a-zа-яё])',
+            ];
+        }
+
+        // TB / ТБ / GB / ГБ
+        if (preg_match('/^(\d{1,4})(tb|тб|gb|гб)$/ui', $t, $m)) {
+            $n = $m[1];
+            $unit = mb_strtolower($m[2]);
+            $units = match (true) {
+                in_array($unit, ['tb', 'тб'], true) => 'tb|тб',
+                default => 'gb|гб',
+            };
+
+            return [
+                '(^|[^0-9])'.$n.'\\s*('.$units.')($|[^0-9a-zа-яё])',
+            ];
+        }
+
+        // Ключи синонимов 500w / 2tb / 1000gb — тоже с границами
+        $compact = preg_replace('/\s+/u', '', mb_strtolower($token)) ?? mb_strtolower($token);
+        if ($this->expandSearchTokenKey($compact) !== null) {
+            $key = $this->expandSearchTokenKey($compact);
+            if (str_ends_with($key, 'w')) {
+                $n = substr($key, 0, -1);
+
+                return ['(^|[^0-9])'.$n.'\\s*(вт|w|watt)($|[^0-9a-zа-яё])'];
+            }
+            if (str_ends_with($key, 'tb')) {
+                $n = substr($key, 0, -2);
+
+                return ['(^|[^0-9])'.$n.'\\s*(tb|тб)($|[^0-9a-zа-яё])'];
+            }
+            if (str_ends_with($key, 'gb')) {
+                $n = substr($key, 0, -2);
+                $patterns = ['(^|[^0-9])'.$n.'\\s*(gb|гб)($|[^0-9a-zа-яё])'];
+                // 1000gb ≈ 1tb
+                if ($n === '1000') {
+                    $patterns[] = '(^|[^0-9])1\\s*(tb|тб)($|[^0-9a-zа-яё])';
+                }
+                if ($n === '2000') {
+                    $patterns[] = '(^|[^0-9])2\\s*(tb|тб)($|[^0-9a-zа-яё])';
+                }
+                if ($n === '4000') {
+                    $patterns[] = '(^|[^0-9])4\\s*(tb|тб)($|[^0-9a-zа-яё])';
+                }
+                if ($n === '500') {
+                    $patterns[] = '(^|[^0-9])512\\s*(gb|гб)($|[^0-9a-zа-яё])';
+                }
+
+                return $patterns;
+            }
+        }
+
+        return [];
+    }
+
+    private function expandSearchTokenKey(string $compact): ?string
+    {
+        $map = [
+            '256gb' => '256gb', '256гб' => '256gb',
+            '500gb' => '500gb', '500гб' => '500gb', '512gb' => '500gb', '512гб' => '500gb',
+            '1000gb' => '1000gb', '1000гб' => '1000gb', '1tb' => '1000gb', '1тб' => '1000gb',
+            '2000gb' => '2000gb', '2000гб' => '2000gb',
+            '4000gb' => '4000gb', '4000гб' => '4000gb',
+            '2tb' => '2tb', '2тб' => '2tb',
+            '4tb' => '4tb', '4тб' => '4tb',
+            '6tb' => '6tb', '6тб' => '6tb',
+            '8tb' => '8tb', '8тб' => '8tb',
+            '500w' => '500w', '500вт' => '500w',
+            '600w' => '600w', '600вт' => '600w',
+            '700w' => '700w', '700вт' => '700w',
+            '800w' => '800w', '800вт' => '800w',
+            '1000w' => '1000w', '1000вт' => '1000w',
+        ];
+
+        return $map[$compact] ?? null;
     }
 }

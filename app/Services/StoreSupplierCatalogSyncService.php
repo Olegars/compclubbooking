@@ -216,6 +216,7 @@ class StoreSupplierCatalogSyncService
     {
         foreach (array_keys((new StoreSupplierCatalogSearchService)->typeRules()) as $type) {
             Cache::forget('store.quickfox.cat_ids.v3.'.$type);
+            Cache::forget('store.quickfox.cat_ids.v4.'.$type);
             Cache::forget('store.quickfox.cat_ids.'.$type);
         }
     }
