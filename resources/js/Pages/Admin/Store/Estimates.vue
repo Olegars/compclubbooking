@@ -212,33 +212,40 @@ const searchResults = ref<any[]>([])
 const searchMeta = ref<{ type?: string | null, type_filter_empty?: boolean, count?: number }>({})
 const searchLineIndex = ref<number | null>(null)
 const searchTimer = ref<any>(null)
+const includeOos = ref(false)
 
-watch(searchQ, (q) => {
-    clearTimeout(searchTimer.value)
+const runCatalogSearch = async () => {
+    const q = searchQ.value
     if (!q || q.trim().length < 2) {
         searchResults.value = []
         searchMeta.value = {}
         return
     }
-    searchTimer.value = setTimeout(async () => {
-        try {
-            const line = searchLineIndex.value !== null ? form.items[searchLineIndex.value] : null
-            const type = line?.type || ''
-            const params = new URLSearchParams({ q: q.trim() })
-            if (type) params.set('type', type)
-            const res = await fetch(`/admin/store/estimates/catalog-search?${params}`, {
-                headers: { Accept: 'application/json' },
-                credentials: 'same-origin',
-            })
-            const json = await res.json()
-            searchResults.value = json.products || []
-            searchMeta.value = json.meta || {}
-        } catch {
-            searchResults.value = []
-            searchMeta.value = {}
-        }
-    }, 300)
+    try {
+        const line = searchLineIndex.value !== null ? form.items[searchLineIndex.value] : null
+        const type = line?.type || ''
+        const params = new URLSearchParams({ q: q.trim() })
+        if (type) params.set('type', type)
+        if (includeOos.value) params.set('include_oos', '1')
+        const res = await fetch(`/admin/store/estimates/catalog-search?${params}`, {
+            headers: { Accept: 'application/json' },
+            credentials: 'same-origin',
+        })
+        const json = await res.json()
+        searchResults.value = json.products || []
+        searchMeta.value = json.meta || {}
+    } catch {
+        searchResults.value = []
+        searchMeta.value = {}
+    }
+}
+
+watch(searchQ, () => {
+    clearTimeout(searchTimer.value)
+    searchTimer.value = setTimeout(runCatalogSearch, 300)
 })
+
+watch(includeOos, () => { runCatalogSearch() })
 
 const openSearchFor = (index: number) => {
     searchLineIndex.value = index
@@ -504,6 +511,10 @@ const stockOptionsFor = (item: any) => {
                     </p>
                     <input v-model="searchQ" placeholder="13400F / Ryzen / точный sku…"
                            class="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" />
+                    <label class="flex items-center gap-2 text-[10px] uppercase font-black text-white/40 tracking-widest cursor-pointer">
+                        <input v-model="includeOos" type="checkbox" class="accent-amber-500" />
+                        Показывать нет в наличии
+                    </label>
                     <div class="max-h-48 overflow-y-auto space-y-1">
                         <button v-for="p in searchResults" :key="p.sku" type="button"
                                 class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/5 text-xs"

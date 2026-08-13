@@ -38,9 +38,9 @@ class StoreSupplierCatalogSearchService
     }
 
     /**
-     * @return list<array{sku:int,name:string,part:?string,vendor:?string,rrp:mixed,category_external_id:?int,score:int,category_name:?string}>
+     * @return list<array{sku:int,name:string,part:?string,vendor:?string,rrp:mixed,price:?float,stock_qty:?int,in_stock:bool,category_external_id:?int,score:int,category_name:?string}>
      */
-    public function search(string $q, ?string $type = null, ?int $categoryId = null, int $limit = 40): array
+    public function search(string $q, ?string $type = null, ?int $categoryId = null, int $limit = 40, bool $inStockOnly = true): array
     {
         $q = trim($q);
         if (mb_strlen($q) < 2) {
@@ -60,10 +60,10 @@ class StoreSupplierCatalogSearchService
 
         $qLower = mb_strtolower($q);
         $like = '%'.$this->escapeLike($q).'%';
-        $prefix = $this->escapeLike($q).'%';
         $isNumericSku = (bool) preg_match('/^\d{4,}$/', $q);
 
         $builder = StoreSupplierCatalogProduct::query()
+            ->when($inStockOnly, fn ($query) => $query->whereNotNull('price'))
             ->when($categoryIds !== null && $categoryIds !== [], function ($query) use ($categoryIds) {
                 $query->whereIn('category_external_id', $categoryIds);
             })
