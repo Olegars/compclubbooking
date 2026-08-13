@@ -271,8 +271,10 @@ const quickChips = computed(() => {
             ]
         case 'gpu':
             return [
-                { id: 'rtx40', label: 'RTX 40', token: 'RTX 40' },
-                { id: 'rtx30', label: 'RTX 30', token: 'RTX 30' },
+                { id: '5050', label: '5050', token: '5050' },
+                { id: '5060', label: '5060', token: '5060' },
+                { id: '5070', label: '5070', token: '5070' },
+                { id: '5080', label: '5080', token: '5080' },
             ]
         default:
             return []
@@ -293,6 +295,7 @@ const toggleChip = (token: string) => {
         ['ddr4', 'ddr5'],
         ['16gb', '32gb', '64gb'],
         ['am4', 'am5', '1700'],
+        ['5050', '5060', '5070', '5080'],
     ]
     const tokenLower = lower
     let next = [...parts]
@@ -597,6 +600,21 @@ const stockOptionsFor = (item: any) => {
                             { label: 'LGA1700', token: '1700' },
                             { label: 'AM5', token: 'AM5' },
                             { label: 'AM4', token: 'AM4' },
+                        ]" :key="chip.token" type="button"
+                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
+                                :class="chipActive(chip.token)
+                                    ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
+                                    : 'border-white/20 text-white/70 hover:border-amber-500/40 hover:text-amber-400'"
+                                @click="toggleChip(chip.token)">
+                            {{ chip.label }}
+                        </button>
+                    </div>
+                    <div v-else-if="lineTypeAt(searchLineIndex) === 'gpu'" class="flex flex-wrap gap-2 pt-1">
+                        <button v-for="chip in [
+                            { label: '5050', token: '5050' },
+                            { label: '5060', token: '5060' },
+                            { label: '5070', token: '5070' },
+                            { label: '5080', token: '5080' },
                         ]" :key="chip.token" type="button"
                                 class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black tracking-widest"
                                 :class="chipActive(chip.token)
