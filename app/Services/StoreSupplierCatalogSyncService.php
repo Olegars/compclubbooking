@@ -27,24 +27,36 @@ class StoreSupplierCatalogSyncService
         $this->flattenTree($tree, null, $flatCategories);
 
         $now = now();
+        $nowStr = $now->format('Y-m-d H:i:s');
         $categoryRows = [];
+        $categoryIds = [];
         foreach ($flatCategories as $cat) {
+            $categoryIds[] = $cat['external_id'];
             $categoryRows[] = [
                 'external_id' => $cat['external_id'],
                 'parent_external_id' => $cat['parent_external_id'],
                 'name' => $cat['name'],
                 'leaf' => $cat['leaf'] ? 1 : 0,
-                'synced_at' => $now,
-                'created_at' => $now,
-                'updated_at' => $now,
+                'synced_at' => $nowStr,
+                'created_at' => $nowStr,
+                'updated_at' => $nowStr,
             ];
         }
 
-        DB::transaction(function () use ($categoryRows) {
-            // Полная перезаливка дерева категорий
-            StoreSupplierCatalogCategory::query()->delete();
+        DB::transaction(function () use ($categoryRows, $categoryIds, $nowStr) {
             foreach (array_chunk($categoryRows, 500) as $chunk) {
-                StoreSupplierCatalogCategory::query()->insert($chunk);
+                StoreSupplierCatalogCategory::query()->upsert(
+                    $chunk,
+                    ['external_id'],
+                    ['parent_external_id', 'name', 'leaf', 'synced_at', 'updated_at']
+                );
+            }
+            if ($categoryIds !== []) {
+                StoreSupplierCatalogCategory::query()
+                    ->whereNotIn('external_id', $categoryIds)
+                    ->delete();
+            } else {
+                StoreSupplierCatalogCategory::query()->delete();
             }
         });
 
@@ -55,8 +67,13 @@ class StoreSupplierCatalogSyncService
 
         $products = $this->api->downloadProducts();
         $productRows = [];
+        $seenSkus = [];
         foreach ($products as $p) {
             if (! is_array($p) || empty($p['sku'])) {
+                continue;
+            }
+            $sku = (int) $p['sku'];
+            if ($sku <= 0 || isset($seenSkus[$sku])) {
                 continue;
             }
             $categoryId = isset($p['category']) ? (int) $p['category'] : null;
@@ -64,8 +81,9 @@ class StoreSupplierCatalogSyncService
                 continue;
             }
 
+            $seenSkus[$sku] = true;
             $productRows[] = [
-                'sku' => (int) $p['sku'],
+                'sku' => $sku,
                 'category_external_id' => $categoryId,
                 'name' => mb_substr(trim((string) ($p['name'] ?? '')), 0, 2000),
                 'part' => $this->nullableString($p['part'] ?? null, 2000),
@@ -75,24 +93,108 @@ class StoreSupplierCatalogSyncService
                 'multiplicity' => max(0, (int) ($p['multiplicity'] ?? 1)),
                 'barcodes' => $this->nullableString($p['barcodes'] ?? null, 4000),
                 'has_image' => ! empty($p['has_image']) ? 1 : 0,
+                // только для INSERT; при UPDATE не трогаем (см. upsert update columns)
                 'image_path' => null,
+                'image_paths' => null,
                 'image_synced_at' => null,
                 'case_color' => null,
                 'case_glass' => null,
                 'case_form' => null,
                 'case_attrs_at' => null,
-                'synced_at' => $now,
-                'created_at' => $now,
-                'updated_at' => $now,
+                'price' => null,
+                'stock_qty' => null,
+                'price_synced_at' => null,
+                'synced_at' => $nowStr,
+                'created_at' => $nowStr,
+                'updated_at' => $nowStr,
             ];
         }
 
-        DB::transaction(function () use ($productRows) {
-            // Полная перезаливка: у ITP позиции периодически появляются/исчезают
-            StoreSupplierCatalogProduct::query()->delete();
-            foreach (array_chunk($productRows, 500) as $chunk) {
-                StoreSupplierCatalogProduct::query()->insert($chunk);
+        // Если name/part сменились — сбросить DeepSeek-разметку (иначе устареет)
+        $resetCaseSkus = [];
+        $rowsBySku = [];
+        foreach ($productRows as $row) {
+            $rowsBySku[$row['sku']] = $row;
+        }
+        foreach (array_chunk(array_keys($rowsBySku), 2000) as $skuChunk) {
+            $existing = StoreSupplierCatalogProduct::query()
+                ->whereIn('sku', $skuChunk)
+                ->get(['sku', 'name', 'part']);
+            foreach ($existing as $old) {
+                $row = $rowsBySku[(int) $old->sku] ?? null;
+                if (! $row) {
+                    continue;
+                }
+                if ($this->norm($old->name) !== $this->norm($row['name'])
+                    || $this->norm($old->part) !== $this->norm($row['part'])) {
+                    $resetCaseSkus[] = (int) $old->sku;
+                }
             }
+        }
+        unset($rowsBySku);
+
+        DB::transaction(function () use ($productRows, $resetCaseSkus, $nowStr) {
+            foreach (array_chunk($productRows, 400) as $chunk) {
+                // Не затираем: case_*, image_*
+                // Цены обнуляем: «в наличии» только после syncPrices по get_active_products
+                StoreSupplierCatalogProduct::query()->upsert(
+                    $chunk,
+                    ['sku'],
+                    [
+                        'category_external_id',
+                        'name',
+                        'part',
+                        'vendor',
+                        'rrp',
+                        'warranty',
+                        'multiplicity',
+                        'barcodes',
+                        'has_image',
+                        'price',
+                        'stock_qty',
+                        'price_synced_at',
+                        'synced_at',
+                        'updated_at',
+                    ]
+                );
+            }
+
+            // Нет в текущем файле прайса ITP — убираем из локального каталога
+            StoreSupplierCatalogProduct::query()
+                ->where(function ($q) use ($nowStr) {
+                    $q->whereNull('synced_at')
+                        ->orWhere('synced_at', '<', $nowStr);
+                })
+                ->delete();
+
+            if ($resetCaseSkus !== []) {
+                foreach (array_chunk($resetCaseSkus, 500) as $chunk) {
+                    StoreSupplierCatalogProduct::query()
+                        ->whereIn('sku', $chunk)
+                        ->update([
+                            'case_color' => null,
+                            'case_glass' => null,
+                            'case_form' => null,
+                            'case_attrs_at' => null,
+                            'updated_at' => $nowStr,
+                        ]);
+                }
+            }
+
+            // Нет картинки у поставщика — чистим кэш путей
+            StoreSupplierCatalogProduct::query()
+                ->where('has_image', false)
+                ->where(function ($q) {
+                    $q->whereNotNull('image_path')
+                        ->orWhereNotNull('image_paths')
+                        ->orWhereNotNull('image_synced_at');
+                })
+                ->update([
+                    'image_path' => null,
+                    'image_paths' => null,
+                    'image_synced_at' => null,
+                    'updated_at' => $nowStr,
+                ]);
         });
 
         $this->clearSearchCache();
@@ -285,6 +387,11 @@ class StoreSupplierCatalogSyncService
         }
 
         return $include;
+    }
+
+    private function norm(mixed $value): string
+    {
+        return mb_strtolower(trim((string) ($value ?? '')));
     }
 
     private function nullableString(mixed $value, int $maxLen): ?string

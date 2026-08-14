@@ -12,5 +12,13 @@ Schedule::command('reactor:check-quality')->everyMinute();
 Schedule::command('reactor:update-statuses')->everyMinute()->withoutOverlapping();
 Schedule::command('reactor:check-reviews')->dailyAt('10:00')->withoutOverlapping();
 Schedule::command('reactor:sync-payments')->everyFiveMinutes()->withoutOverlapping();
-Schedule::command('store:sync-supplier-catalog')->dailyAt('09:00')->withoutOverlapping();
-Schedule::command('store:classify-cases')->dailyAt('09:40')->withoutOverlapping();
+Schedule::command('store:sync-supplier-catalog')
+    ->dailyAt('09:00')
+    ->timezone('Europe/Moscow')
+    ->withoutOverlapping(180)
+    ->appendOutputTo(storage_path('logs/catalog-sync.log'));
+Schedule::command('store:classify-cases')
+    ->dailyAt('09:40')
+    ->timezone('Europe/Moscow')
+    ->withoutOverlapping(120)
+    ->appendOutputTo(storage_path('logs/catalog-cases.log'));
