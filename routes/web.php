@@ -282,6 +282,7 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::get('/estimates/categories', [StoreEstimateController::class, 'categories'])->name('admin.store.estimates.categories');
             Route::put('/estimates/{storeEstimate}', [StoreEstimateController::class, 'update'])->name('admin.store.estimates.update');
             Route::delete('/estimates/{storeEstimate}', [StoreEstimateController::class, 'destroy'])->name('admin.store.estimates.destroy');
+            Route::get('/estimates/{storeEstimate}/pdf', [StoreEstimateController::class, 'printPdf'])->name('admin.store.estimates.pdf');
             Route::post('/estimates/{storeEstimate}/status', [StoreEstimateController::class, 'updateStatus'])->name('admin.store.estimates.status');
             Route::post('/estimates/{storeEstimate}/check-supplier', [StoreEstimateController::class, 'checkSupplier'])->name('admin.store.estimates.check-supplier');
             Route::post('/estimates/{storeEstimate}/order-missing', [StoreEstimateController::class, 'orderMissing'])->name('admin.store.estimates.order-missing');

@@ -482,6 +482,42 @@ class EstimateController extends StoreController
         }
     }
 
+    /** Смета A4 → печать / «Сохранить как PDF». */
+    public function printPdf(StoreEstimate $storeEstimate)
+    {
+        abort_unless($storeEstimate->club_id === $this->locationId(), 404);
+
+        $storeEstimate->load([
+            'client:id,name,phone',
+            'club:id,name,address',
+            'items',
+        ]);
+
+        $lines = $storeEstimate->items->map(function (StoreEstimateItem $item) {
+            $qty = max(1, (int) $item->qty);
+            $price = (float) ($item->sale_price ?? 0);
+
+            return [
+                'type' => $item->type,
+                'type_label' => $item->type
+                    ? (StoreComponent::TYPES[$item->type] ?? $item->type)
+                    : null,
+                'name' => $item->name,
+                'part' => $item->part,
+                'qty' => $qty,
+                'sale_price' => $price,
+                'line_total' => round($price * $qty, 2),
+            ];
+        })->values()->all();
+
+        return Inertia::render('Admin/Store/EstimatePrint', [
+            'estimate' => $storeEstimate,
+            'lines' => $lines,
+            'statusLabel' => StoreEstimate::STATUS_LABELS[$storeEstimate->status] ?? $storeEstimate->status,
+            'printedAt' => now()->timezone(config('app.timezone'))->format('d.m.Y H:i'),
+        ]);
+    }
+
     /**
      * @return array<string, mixed>
      */

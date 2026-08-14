@@ -788,6 +788,10 @@ const stockOptionsFor = (item: any) => {
                         </div>
 
                         <div class="flex flex-wrap gap-2 items-center">
+                            <a :href="`/admin/store/estimates/${est.id}/pdf`" target="_blank"
+                               class="px-3 py-2 rounded-xl border border-white/20 text-[10px] uppercase font-black text-white/70">
+                                PDF
+                            </a>
                             <button v-if="canManage && est.status === 'draft'" type="button"
                                     class="px-3 py-2 rounded-xl border border-amber-500/40 text-[10px] uppercase font-black text-amber-400"
                                     @click="setStatus(est.id, 'agreed')">
@@ -832,9 +836,13 @@ const stockOptionsFor = (item: any) => {
                     <h3 class="font-black uppercase italic text-xl">
                         {{ editingId ? `Смета #${editingId}` : 'Новая смета' }}
                     </h3>
-                    <div class="text-right shrink-0">
+                    <div class="text-right shrink-0 space-y-2">
                         <div class="font-black text-amber-400 text-xl">{{ money(formSaleTotal) }}</div>
                         <div class="text-[10px] text-white/30 uppercase tracking-widest">закуп {{ money(formPurchaseTotal) }}</div>
+                        <a v-if="editingId" :href="`/admin/store/estimates/${editingId}/pdf`" target="_blank"
+                           class="inline-block px-3 py-1.5 rounded-lg border border-white/20 text-[10px] uppercase font-black text-white/70">
+                            PDF
+                        </a>
                     </div>
                 </div>
                 <input v-model="form.title" placeholder="Название (сборка / клиент)"
