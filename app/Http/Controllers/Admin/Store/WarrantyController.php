@@ -9,6 +9,7 @@ use App\Models\StoreWarranty;
 use App\Services\StorePosPrintService;
 use App\Services\StoreWarrantyService;
 use App\Support\WarrantyQr;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -25,6 +26,7 @@ class WarrantyController extends StoreController
                 'client:id,name,phone',
                 'order:id,status',
                 'builtPc:id,title,serial_number,status',
+                'builtPc.componentLinks.component:id,name,type,warranty_number,serials,warranty_months',
             ])
             ->latest();
 
@@ -39,8 +41,13 @@ class WarrantyController extends StoreController
             });
         }
 
+        $svc = app(StoreWarrantyService::class);
+        $warranties = $query->limit(100)->get()
+            ->map(fn (StoreWarranty $w) => $this->presentWarranty($w, $svc))
+            ->values();
+
         return Inertia::render('Admin/Store/Warranty', [
-            'warranties' => $query->limit(100)->get(),
+            'warranties' => $warranties,
             'clients' => StoreClient::query()->where('club_id', $this->locationId())->orderBy('name')->get(['id', 'name', 'phone']),
             'orders' => StoreOrder::query()
                 ->where('club_id', $this->locationId())
@@ -209,5 +216,98 @@ class WarrantyController extends StoreController
         $w = $warranties->ensureForBuiltPc($storeBuiltPc);
 
         return redirect()->route('admin.store.warranty.print-talon', $w);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function presentWarranty(StoreWarranty $w, StoreWarrantyService $svc): array
+    {
+        $remaining = $this->remainingWarranty($w->ends_at);
+        $items = is_array($w->build_snapshot) ? array_values($w->build_snapshot) : [];
+        if ($items === [] && $w->builtPc) {
+            $items = $svc->buildSnapshot($w->builtPc);
+        }
+
+        return [
+            'id' => $w->id,
+            'serial' => $w->serial,
+            'product_name' => $w->product_name,
+            'status' => $w->status,
+            'claim_notes' => $w->claim_notes,
+            'started_at' => $w->started_at?->toDateString(),
+            'ends_at' => $w->ends_at?->toDateString(),
+            'warranty_months' => $w->warranty_months,
+            'repair_days' => $w->repair_days,
+            'client' => $w->client ? [
+                'id' => $w->client->id,
+                'name' => $w->client->name,
+                'phone' => $w->client->phone,
+            ] : null,
+            'order' => $w->order ? [
+                'id' => $w->order->id,
+                'status' => $w->order->status,
+            ] : null,
+            'built_pc' => $w->builtPc ? [
+                'id' => $w->builtPc->id,
+                'title' => $w->builtPc->title,
+                'serial_number' => $w->builtPc->serial_number,
+                'status' => $w->builtPc->status,
+            ] : null,
+            'build_items' => $items,
+            'warranty_state' => $remaining['state'],
+            'warranty_label' => $remaining['label'],
+        ];
+    }
+
+    /**
+     * @return array{state:string,label:?string}
+     */
+    private function remainingWarranty(mixed $endsAt): array
+    {
+        if (! $endsAt) {
+            return ['state' => 'none', 'label' => null];
+        }
+
+        $ends = $endsAt instanceof Carbon
+            ? $endsAt->copy()->startOfDay()
+            : Carbon::parse($endsAt)->startOfDay();
+        $today = now()->startOfDay();
+
+        if ($ends->lt($today)) {
+            $ago = (int) $ends->diffInDays($today);
+
+            return [
+                'state' => 'expired',
+                'label' => $ago === 0
+                    ? 'Гарантия истекла сегодня'
+                    : 'Гарантия истекла '.$this->daysRu($ago).' назад',
+            ];
+        }
+
+        $days = (int) $today->diffInDays($ends);
+        if ($days === 0) {
+            return ['state' => 'expiring', 'label' => 'Гарантия истекает сегодня'];
+        }
+
+        return [
+            'state' => $days <= 30 ? 'expiring' : 'active',
+            'label' => 'Гарантия истекает через '.$this->daysRu($days),
+        ];
+    }
+
+    private function daysRu(int $n): string
+    {
+        $n = abs($n);
+        $mod10 = $n % 10;
+        $mod100 = $n % 100;
+        if ($mod10 === 1 && $mod100 !== 11) {
+            return $n.' день';
+        }
+        if ($mod10 >= 2 && $mod10 <= 4 && ($mod100 < 12 || $mod100 > 14)) {
+            return $n.' дня';
+        }
+
+        return $n.' дней';
     }
 }

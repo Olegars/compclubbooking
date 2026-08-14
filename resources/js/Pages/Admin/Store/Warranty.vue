@@ -21,6 +21,7 @@ const statusLabel: Record<string, string> = {
 }
 
 const showCreate = ref(false)
+const detail = ref<any | null>(null)
 const form = useForm({
     store_client_id: null as number | null,
     store_order_id: null as number | null,
@@ -43,9 +44,20 @@ const printBarcodePos = (id: number) => {
     router.post(`/admin/store/warranty/${id}/print-barcode-pos`, {}, { preserveScroll: true })
 }
 
+const openDetail = (w: any) => {
+    detail.value = w
+}
+
+const fmtDate = (v: any): string => {
+    if (!v) return '—'
+    const d = new Date(v)
+    if (Number.isNaN(d.getTime())) return String(v).slice(0, 10)
+    return d.toLocaleDateString('ru-RU')
+}
+
 const filterStatus = computed({
     get: () => props.filters?.status || '',
-    set: (v: string) => router.get('/admin/store/warranty', v ? { status: v } : {}, { preserveState: true })
+    set: (v: string) => router.get('/admin/store/warranty', v ? { status: v } : {}, { preserveState: true }),
 })
 </script>
 
@@ -71,7 +83,9 @@ const filterStatus = computed({
             </div>
 
             <div class="space-y-3">
-                <div v-for="w in warranties" :key="w.id" class="border border-white/5 bg-[#080808] rounded-2xl p-5 flex flex-wrap justify-between gap-4">
+                <div v-for="w in warranties" :key="w.id"
+                     class="border border-white/5 bg-[#080808] rounded-2xl p-5 flex flex-wrap justify-between gap-4 cursor-pointer hover:bg-white/[0.02] transition-colors"
+                     @click="openDetail(w)">
                     <div>
                         <div class="font-black uppercase text-sm">{{ w.product_name || 'Без названия' }}</div>
                         <div class="text-[10px] text-white/30 uppercase tracking-widest mt-1">
@@ -81,10 +95,20 @@ const filterStatus = computed({
                             <span v-if="w.built_pc"> · сборка #{{ w.built_pc.id }}</span>
                             <span v-else-if="w.order"> · заказ #{{ w.order.id }}</span>
                         </div>
-                        <div v-if="w.ends_at" class="text-[10px] text-white/20 mt-2">До {{ w.ends_at }}</div>
+                        <div v-if="w.warranty_label"
+                             class="text-[10px] font-black uppercase tracking-wider mt-2"
+                             :class="{
+                                 'text-red-300': w.warranty_state === 'expired',
+                                 'text-amber-300': w.warranty_state === 'expiring',
+                                 'text-emerald-300/80': w.warranty_state === 'active',
+                             }">
+                            {{ w.warranty_label }}
+                            <span v-if="w.ends_at" class="text-white/25 font-normal normal-case tracking-normal"> · до {{ fmtDate(w.ends_at) }}</span>
+                        </div>
+                        <div v-else-if="w.ends_at" class="text-[10px] text-white/20 mt-2">До {{ fmtDate(w.ends_at) }}</div>
                         <div v-if="w.claim_notes" class="text-xs text-white/40 mt-2">{{ w.claim_notes }}</div>
                     </div>
-                    <div class="flex flex-wrap gap-2">
+                    <div class="flex flex-wrap gap-2" @click.stop>
                         <a v-if="w.serial" :href="`/admin/store/warranty/${w.id}/print-barcode`" target="_blank"
                            class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50">QR</a>
                         <button v-if="w.serial" type="button" @click="printBarcodePos(w.id)"
@@ -100,6 +124,81 @@ const filterStatus = computed({
                     </div>
                 </div>
                 <div v-if="!warranties.length" class="text-white/30 text-sm py-10 text-center">Гарантий нет</div>
+            </div>
+        </div>
+
+        <div v-if="detail" class="fixed inset-0 bg-black/70 flex items-start justify-center z-50 p-4 overflow-y-auto" @click.self="detail = null">
+            <div class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-7 w-full max-w-xl space-y-5 my-8" @click.stop>
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <div class="text-[10px] uppercase tracking-widest text-amber-400/80 font-black">{{ statusLabel[detail.status] || detail.status }}</div>
+                        <h3 class="font-black uppercase italic text-xl mt-1 leading-tight">{{ detail.product_name || 'Гарантия' }}</h3>
+                        <div class="text-[10px] text-white/35 uppercase tracking-widest mt-2">
+                            <span v-if="detail.serial">S/N {{ detail.serial }}</span>
+                            <span v-if="detail.client"> · {{ detail.client.name }}</span>
+                            <span v-if="detail.built_pc"> · сборка #{{ detail.built_pc.id }}</span>
+                        </div>
+                    </div>
+                    <button type="button" class="text-white/40 hover:text-white text-2xl leading-none px-2" @click="detail = null">×</button>
+                </div>
+
+                <div v-if="detail.warranty_label"
+                     class="rounded-2xl border px-4 py-3 text-xs font-black uppercase tracking-wider"
+                     :class="{
+                         'border-red-500/40 bg-red-500/10 text-red-300': detail.warranty_state === 'expired',
+                         'border-amber-500/40 bg-amber-500/10 text-amber-300': detail.warranty_state === 'expiring',
+                         'border-emerald-500/30 bg-emerald-500/10 text-emerald-300': detail.warranty_state === 'active',
+                     }">
+                    {{ detail.warranty_label }}
+                    <span v-if="detail.ends_at" class="block mt-1 text-[10px] font-normal normal-case tracking-normal text-white/40">
+                        {{ fmtDate(detail.started_at) }} — {{ fmtDate(detail.ends_at) }}
+                        <span v-if="detail.warranty_months"> · {{ detail.warranty_months }} мес.</span>
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div class="rounded-2xl border border-white/10 p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Клиент</div>
+                        <div>{{ detail.client?.name || '—' }}</div>
+                        <div v-if="detail.client?.phone" class="text-white/40 mt-1">{{ detail.client.phone }}</div>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Ремонт</div>
+                        <div>{{ detail.repair_days ? detail.repair_days + ' дн.' : '—' }}</div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="text-[10px] uppercase tracking-widest text-amber-400/80 font-black mb-3">Комплектующие сборки</div>
+                    <div v-if="detail.build_items?.length" class="space-y-2">
+                        <div v-for="(item, idx) in detail.build_items" :key="idx"
+                             class="rounded-2xl border border-white/10 px-4 py-3 text-xs flex flex-wrap justify-between gap-2">
+                            <div>
+                                <div class="text-[10px] uppercase tracking-widest text-white/30 font-black">{{ item.type_label || item.type || '—' }}</div>
+                                <div class="font-black uppercase mt-1">{{ item.name || '—' }}</div>
+                            </div>
+                            <div v-if="item.warranty_number || (item.serials && item.serials.length)"
+                                 class="font-mono text-cyan-400/80 text-[11px] self-center">
+                                {{ item.warranty_number || (item.serials || []).join(' · ') }}
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else class="text-white/30 text-xs py-4 text-center border border-dashed border-white/10 rounded-2xl">
+                        Комплектация не сохранена
+                    </div>
+                </div>
+
+                <div v-if="detail.claim_notes" class="text-xs text-white/40">
+                    <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Заметки</div>
+                    {{ detail.claim_notes }}
+                </div>
+
+                <div class="flex flex-wrap gap-2 justify-end pt-1">
+                    <a v-if="detail.serial" :href="`/admin/store/warranty/${detail.id}/print-talon`" target="_blank"
+                       class="px-4 py-3 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50">Талон</a>
+                    <button type="button" class="px-5 py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] uppercase font-black"
+                            @click="detail = null">Закрыть</button>
+                </div>
             </div>
         </div>
 
