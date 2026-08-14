@@ -24,6 +24,7 @@ class WarehouseController extends StoreController
             ->with([
                 'supplier:id,name',
                 'receiver:id,name',
+                'purchaseItem.purchase:id,external_order_id,status,store_estimate_id',
                 'orderItems.order.client:id,name,phone',
                 'orderItems.order.assignee:id,name',
                 'orderItems.order.builtPc:id,store_order_id,title,serial_number,sold_at,status,store_client_id',
@@ -281,6 +282,7 @@ class WarehouseController extends StoreController
         $receivedAt = $c->created_at;
         $warranty = $this->warrantyInfo($receivedAt, $c->warranty_months);
         $sale = $this->saleInfo($c);
+        $purchase = $c->purchaseItem?->purchase;
 
         return [
             'id' => $c->id,
@@ -299,6 +301,10 @@ class WarehouseController extends StoreController
             'supplier' => $c->supplier ? ['id' => $c->supplier->id, 'name' => $c->supplier->name] : null,
             'receiver' => $c->receiver ? ['id' => $c->receiver->id, 'name' => $c->receiver->name] : null,
             'received_at' => $receivedAt?->toIso8601String(),
+            'supplier_sku' => $c->purchaseItem?->supplier_sku,
+            'external_order_id' => $purchase?->external_order_id,
+            'purchase_id' => $purchase?->id,
+            'estimate_id' => $purchase?->store_estimate_id,
             'sent_to_repair_at' => $c->sent_to_repair_at?->toIso8601String(),
             'sent_to_repair_label' => $c->sent_to_repair_at
                 ? 'передана в ремонт '.$c->sent_to_repair_at->format('d.m.Y H:i')

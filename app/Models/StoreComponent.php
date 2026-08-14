@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class StoreComponent extends Model
 {
@@ -99,6 +100,11 @@ class StoreComponent extends Model
     public function orderItems(): HasMany
     {
         return $this->hasMany(StoreOrderItem::class, 'store_component_id');
+    }
+
+    public function purchaseItem(): HasOne
+    {
+        return $this->hasOne(StorePurchaseItem::class, 'store_component_id');
     }
 
     public function replaces(): BelongsTo

@@ -434,6 +434,11 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                         <div class="text-[10px] uppercase tracking-widest text-amber-400/80 font-black">{{ types[detail.type] || detail.type }}</div>
                         <h3 class="font-black uppercase italic text-xl mt-1 leading-tight">{{ detail.name }}</h3>
                         <div class="text-white/40 text-[10px] uppercase tracking-widest mt-2">{{ statuses[detail.status] || detail.status }}</div>
+                        <div v-if="detail.external_order_id || detail.supplier_sku" class="text-[10px] text-white/30 uppercase tracking-widest mt-1">
+                            <span v-if="detail.external_order_id">ext {{ detail.external_order_id }}</span>
+                            <span v-if="detail.external_order_id && detail.supplier_sku"> · </span>
+                            <span v-if="detail.supplier_sku">sku {{ detail.supplier_sku }}</span>
+                        </div>
                     </div>
                     <button type="button" class="text-white/40 hover:text-white text-2xl leading-none px-2" @click="detail = null">×</button>
                 </div>
@@ -454,6 +459,18 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                     <div class="rounded-2xl border border-white/10 p-3">
                         <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Кто принял</div>
                         <div>{{ detail.receiver?.name || '—' }}</div>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Заказ поставщика</div>
+                        <div class="font-mono">{{ detail.external_order_id ? ('EXT ' + detail.external_order_id) : '—' }}</div>
+                        <div v-if="detail.purchase_id" class="text-white/30 text-[10px] mt-1 uppercase tracking-widest">
+                            закупка #{{ detail.purchase_id }}
+                            <span v-if="detail.estimate_id"> · смета #{{ detail.estimate_id }}</span>
+                        </div>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">SKU поставщика</div>
+                        <div class="font-mono">{{ detail.supplier_sku || '—' }}</div>
                     </div>
                     <div class="rounded-2xl border border-white/10 p-3">
                         <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Поступление</div>
