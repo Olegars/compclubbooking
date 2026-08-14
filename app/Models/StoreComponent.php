@@ -31,6 +31,7 @@ class StoreComponent extends Model
         'reserved' => 'Резерв',
         'used' => 'В сборке / использовано',
         'sold' => 'Продано',
+        'repair' => 'Ремонт',
         'written_off' => 'Списано',
     ];
 

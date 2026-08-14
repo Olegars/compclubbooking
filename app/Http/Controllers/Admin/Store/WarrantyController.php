@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Admin\Store;
 
 use App\Models\StoreBuiltPc;
+use App\Models\StoreBuiltPcComponent;
 use App\Models\StoreClient;
+use App\Models\StoreComponent;
 use App\Models\StoreOrder;
 use App\Models\StoreWarranty;
 use App\Services\StorePosPrintService;
@@ -11,6 +13,7 @@ use App\Services\StoreWarrantyService;
 use App\Support\WarrantyQr;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class WarrantyController extends StoreController
@@ -26,7 +29,7 @@ class WarrantyController extends StoreController
                 'client:id,name,phone',
                 'order:id,status',
                 'builtPc:id,title,serial_number,status',
-                'builtPc.componentLinks.component:id,name,type,warranty_number,serials,warranty_months,created_at',
+                'builtPc.componentLinks.component:id,name,type,warranty_number,serials,warranty_months,created_at,status',
             ])
             ->latest();
 
@@ -138,6 +141,73 @@ class WarrantyController extends StoreController
         $storeWarranty->update($data);
 
         return back()->with('success', 'Гарантия обновлена.');
+    }
+
+    /**
+     * Вернуть комплектующую из гарантийной сборки на склад со статусом «ремонт».
+     */
+    public function sendToRepair(Request $request, StoreWarranty $storeWarranty)
+    {
+        abort_unless($storeWarranty->club_id === $this->locationId(), 404);
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+
+        $data = $request->validate([
+            'store_component_id' => 'required|integer',
+        ]);
+
+        $componentId = (int) $data['store_component_id'];
+
+        try {
+            DB::transaction(function () use ($storeWarranty, $componentId) {
+                $component = StoreComponent::query()
+                    ->where('club_id', $storeWarranty->club_id)
+                    ->whereKey($componentId)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if ($component->status === 'repair') {
+                    throw new \RuntimeException('Комплектующая уже в ремонте.');
+                }
+
+                $belongsToBuild = false;
+                if ($storeWarranty->store_built_pc_id) {
+                    $belongsToBuild = StoreBuiltPcComponent::query()
+                        ->where('store_built_pc_id', $storeWarranty->store_built_pc_id)
+                        ->where('store_component_id', $component->id)
+                        ->exists();
+                }
+
+                if (! $belongsToBuild && ! in_array($component->status, ['sold', 'used', 'reserved'], true)) {
+                    $inSnapshot = collect(is_array($storeWarranty->build_snapshot) ? $storeWarranty->build_snapshot : [])
+                        ->contains(fn ($row) => is_array($row) && (int) ($row['store_component_id'] ?? 0) === $component->id);
+                    if (! $inSnapshot) {
+                        throw new \RuntimeException('Комплектующая не относится к этой гарантии.');
+                    }
+                }
+
+                $note = trim((string) ($component->notes ?? ''));
+                $extra = 'Гарантия #'.$storeWarranty->id
+                    .($storeWarranty->serial ? ' · S/N '.$storeWarranty->serial : '')
+                    .' · в ремонт '.now()->format('d.m.Y H:i');
+                $component->update([
+                    'status' => 'repair',
+                    'notes' => $note !== '' ? $note."\n".$extra : $extra,
+                ]);
+
+                StoreBuiltPcComponent::query()
+                    ->where('store_component_id', $component->id)
+                    ->when($storeWarranty->store_built_pc_id, fn ($q) => $q->where('store_built_pc_id', $storeWarranty->store_built_pc_id))
+                    ->update(['store_component_id' => null]);
+
+                if ($storeWarranty->status === 'active') {
+                    $storeWarranty->update(['status' => 'claimed']);
+                }
+            });
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Комплектующая возвращена на склад со статусом «Ремонт».');
     }
 
     /** Очередь на POS (ESC/POS QR через kitchen-агент). */
@@ -285,6 +355,31 @@ class WarrantyController extends StoreController
             }
         }
 
+        $missingIds = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $cid = isset($item['store_component_id']) ? (int) $item['store_component_id'] : 0;
+            if ($cid > 0 && ! isset($byId[$cid])) {
+                $missingIds[] = $cid;
+            }
+        }
+        if ($missingIds !== []) {
+            StoreComponent::query()
+                ->whereIn('id', array_values(array_unique($missingIds)))
+                ->get()
+                ->each(function (StoreComponent $component) use (&$byId, &$bySerial) {
+                    $byId[(int) $component->id] = $component;
+                    foreach ($component->allSerials() as $serial) {
+                        $key = mb_strtolower(trim($serial));
+                        if ($key !== '') {
+                            $bySerial[$key] = $component;
+                        }
+                    }
+                });
+        }
+
         $out = [];
         foreach ($items as $item) {
             if (! is_array($item)) {
@@ -342,6 +437,9 @@ class WarrantyController extends StoreController
                 'warranty_number' => $item['warranty_number'] ?? null,
                 'serials' => is_array($item['serials'] ?? null) ? $item['serials'] : [],
                 'store_component_id' => $component?->id ?? ($cid > 0 ? $cid : null),
+                'component_status' => $component?->status,
+                'can_send_to_repair' => $component
+                    && ! in_array($component->status, ['repair', 'written_off', 'in_stock'], true),
                 'warranty_months' => $months !== null ? (int) $months : null,
                 'received_at' => $receivedAt?->toIso8601String(),
                 'warranty_days_left' => $partWarranty['days_left'],

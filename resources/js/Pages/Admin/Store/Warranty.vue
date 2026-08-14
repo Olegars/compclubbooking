@@ -40,6 +40,17 @@ const setStatus = (id: number, status: string) => {
     router.post(`/admin/store/warranty/${id}`, { status }, { preserveScroll: true })
 }
 
+const sendToRepair = (warrantyId: number, componentId: number | null | undefined) => {
+    if (!componentId) return
+    if (!confirm('Вернуть комплектующую на склад со статусом «Ремонт»?')) return
+    router.post(`/admin/store/warranty/${warrantyId}/send-to-repair`, {
+        store_component_id: componentId,
+    }, {
+        preserveScroll: true,
+        onSuccess: () => { detail.value = null },
+    })
+}
+
 const printBarcodePos = (id: number) => {
     router.post(`/admin/store/warranty/${id}/print-barcode-pos`, {}, { preserveScroll: true })
 }
@@ -183,22 +194,33 @@ const filterStatus = computed({
                                 <div v-if="item.warranty_months" class="text-[10px] text-white/25 mt-1 uppercase tracking-widest">
                                     {{ item.warranty_months }} мес. от поступления
                                 </div>
+                                <div v-if="item.component_status === 'repair'" class="text-[10px] text-amber-400/80 font-black uppercase tracking-widest mt-1">
+                                    Уже в ремонте на складе
+                                </div>
                             </div>
-                            <div v-if="item.warranty_badge != null"
-                                 class="shrink-0 w-12 h-12 rounded-xl border flex flex-col items-center justify-center font-black leading-none"
-                                 :class="{
-                                     'border-red-500/50 bg-red-500/15 text-red-300': item.warranty_state === 'expired',
-                                     'border-amber-500/50 bg-amber-500/15 text-amber-300': item.warranty_state === 'expiring',
-                                     'border-emerald-500/40 bg-emerald-500/10 text-emerald-300': item.warranty_state === 'active',
-                                     'border-white/15 bg-white/5 text-white/40': item.warranty_state === 'none',
-                                 }"
-                                 :title="item.warranty_label || (item.warranty_months ? (item.warranty_months + ' мес.') : '')">
-                                <span class="text-sm">{{ item.warranty_badge }}</span>
-                                <span class="text-[8px] uppercase tracking-wider mt-0.5 opacity-70">дн</span>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <button v-if="canManage && item.can_send_to_repair && item.store_component_id"
+                                        type="button"
+                                        class="px-3 py-2 rounded-xl border border-amber-500/40 text-[10px] uppercase font-black text-amber-400 hover:bg-amber-500/10"
+                                        @click="sendToRepair(detail.id, item.store_component_id)">
+                                    В ремонт
+                                </button>
+                                <div v-if="item.warranty_badge != null"
+                                     class="w-12 h-12 rounded-xl border flex flex-col items-center justify-center font-black leading-none"
+                                     :class="{
+                                         'border-red-500/50 bg-red-500/15 text-red-300': item.warranty_state === 'expired',
+                                         'border-amber-500/50 bg-amber-500/15 text-amber-300': item.warranty_state === 'expiring',
+                                         'border-emerald-500/40 bg-emerald-500/10 text-emerald-300': item.warranty_state === 'active',
+                                         'border-white/15 bg-white/5 text-white/40': item.warranty_state === 'none',
+                                     }"
+                                     :title="item.warranty_label || (item.warranty_months ? (item.warranty_months + ' мес.') : '')">
+                                    <span class="text-sm">{{ item.warranty_badge }}</span>
+                                    <span class="text-[8px] uppercase tracking-wider mt-0.5 opacity-70">дн</span>
+                                </div>
+                                <div v-else
+                                     class="w-12 h-12 rounded-xl border border-white/10 bg-white/[0.03] text-white/20 flex items-center justify-center text-[10px] font-black"
+                                     title="Срок гарантии не указан">—</div>
                             </div>
-                            <div v-else
-                                 class="shrink-0 w-12 h-12 rounded-xl border border-white/10 bg-white/[0.03] text-white/20 flex items-center justify-center text-[10px] font-black"
-                                 title="Срок гарантии не указан">—</div>
                         </div>
                     </div>
                     <div v-else class="text-white/30 text-xs py-4 text-center border border-dashed border-white/10 rounded-2xl">
