@@ -156,8 +156,10 @@ class StoreEstimateProcurementService
 
     /**
      * Принять закупку на склад (резерв под смету).
+     *
+     * @param  list<array{id:int,serials?:list<string>,notes?:string|null}>  $itemMeta
      */
-    public function receivePurchase(StorePurchase $purchase, int $adminId): void
+    public function receivePurchase(StorePurchase $purchase, int $adminId, array $itemMeta = [], ?string $comment = null): void
     {
         if ($purchase->status === 'received') {
             throw new RuntimeException('Закупка уже принята.');
@@ -166,7 +168,15 @@ class StoreEstimateProcurementService
             throw new RuntimeException('Закупку нельзя принять в статусе '.$purchase->status);
         }
 
-        DB::transaction(function () use ($purchase, $adminId) {
+        $metaById = [];
+        foreach ($itemMeta as $row) {
+            if (! is_array($row) || empty($row['id'])) {
+                continue;
+            }
+            $metaById[(int) $row['id']] = $row;
+        }
+
+        DB::transaction(function () use ($purchase, $adminId, $metaById, $comment) {
             $supplierId = $this->ensureApiSupplier($purchase->club_id);
             $purchase->load(['items.estimateItem', 'estimate']);
 
@@ -181,6 +191,8 @@ class StoreEstimateProcurementService
                 ->whereIn('sku', $skus)
                 ->pluck('warranty', 'sku');
 
+            $globalComment = trim((string) ($comment ?? ''));
+
             foreach ($purchase->items as $pItem) {
                 if ($pItem->status === 'received' && $pItem->store_component_id) {
                     continue;
@@ -193,6 +205,22 @@ class StoreEstimateProcurementService
                 $sku = (int) $pItem->supplier_sku;
                 $warrantyMonths = $this->parseWarrantyMonths($warrantyBySku->get($sku));
 
+                $meta = $metaById[(int) $pItem->id] ?? [];
+                $serials = collect($meta['serials'] ?? [])
+                    ->map(fn ($s) => trim((string) $s))
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->all();
+                $lineNote = trim((string) ($meta['notes'] ?? ''));
+
+                $notes = array_values(array_filter([
+                    'Смета #'.$purchase->store_estimate_id.' · закупка #'.$purchase->id.' · sku '.$pItem->supplier_sku,
+                    $purchase->external_order_id ? 'EXT '.$purchase->external_order_id : null,
+                    $globalComment !== '' ? $globalComment : null,
+                    $lineNote !== '' ? $lineNote : null,
+                ]));
+
                 $component = StoreComponent::query()->create([
                     'club_id' => $purchase->club_id,
                     'store_supplier_id' => $supplierId,
@@ -201,10 +229,12 @@ class StoreEstimateProcurementService
                     'original_name' => $eItem?->supplier_name,
                     'type' => $type,
                     'purchase_price' => $pItem->price,
+                    'warranty_number' => $serials[0] ?? null,
+                    'serials' => $serials,
                     'warranty_months' => $warrantyMonths,
                     'qty' => 1,
                     'status' => 'reserved',
-                    'notes' => 'Смета #'.$purchase->store_estimate_id.' · закупка #'.$purchase->id.' · sku '.$pItem->supplier_sku,
+                    'notes' => $notes !== [] ? implode("\n", $notes) : null,
                 ]);
 
                 $pItem->update([
@@ -224,6 +254,9 @@ class StoreEstimateProcurementService
             $purchase->update([
                 'status' => 'received',
                 'received_at' => now(),
+                'notes' => $globalComment !== ''
+                    ? trim((string) ($purchase->notes ?? '').($purchase->notes ? "\n" : '').$globalComment)
+                    : $purchase->notes,
             ]);
 
             $this->refreshEstimateReadiness($purchase->estimate);

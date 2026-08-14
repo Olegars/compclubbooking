@@ -184,9 +184,43 @@ const orderMissing = (id: number, confirmShip = false) => {
     router.post(`/admin/store/estimates/${id}/order-missing`, { confirm: confirmShip }, { preserveScroll: true })
 }
 
-const receivePurchase = (purchaseId: number) => {
-    if (!confirm('Принять закупку на склад (резерв под смету)?')) return
-    router.post(`/admin/store/purchases/${purchaseId}/receive`, {}, { preserveScroll: true })
+const receiveModal = ref<{
+    purchaseId: number
+    externalOrderId: string | number | null
+    comment: string
+    lines: { id: number, name: string, supplier_sku: number | null, qty: number, serial: string, comment: string }[]
+} | null>(null)
+
+const openReceivePurchase = (p: any) => {
+    receiveModal.value = {
+        purchaseId: p.id,
+        externalOrderId: p.external_order_id ?? null,
+        comment: '',
+        lines: (p.items || []).map((i: any) => ({
+            id: i.id,
+            name: i.name || ('SKU ' + (i.supplier_sku || '')),
+            supplier_sku: i.supplier_sku ?? null,
+            qty: Number(i.qty) || 1,
+            serial: '',
+            comment: '',
+        })),
+    }
+}
+
+const submitReceivePurchase = () => {
+    if (!receiveModal.value) return
+    const payload = {
+        comment: receiveModal.value.comment || null,
+        items: receiveModal.value.lines.map((l) => ({
+            id: l.id,
+            serials: l.serial.trim() ? [l.serial.trim()] : [],
+            notes: l.comment.trim() || null,
+        })),
+    }
+    router.post(`/admin/store/purchases/${receiveModal.value.purchaseId}/receive`, payload, {
+        preserveScroll: true,
+        onSuccess: () => { receiveModal.value = null },
+    })
 }
 
 const convert = (id: number) => {
@@ -747,7 +781,7 @@ const stockOptionsFor = (item: any) => {
                                 <span>#{{ p.id }} · ext {{ p.external_order_id || '—' }} · {{ p.status }} · {{ money(p.total) }}</span>
                                 <button v-if="canManage && ['submitted', 'confirmed'].includes(p.status)" type="button"
                                         class="px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-400 font-black"
-                                        @click="receivePurchase(p.id)">
+                                        @click="openReceivePurchase(p)">
                                     Принять на склад
                                 </button>
                             </div>
@@ -1007,6 +1041,64 @@ const stockOptionsFor = (item: any) => {
                         На складе ничего не найдено
                     </div>
                 </template>
+            </div>
+        </div>
+
+        <div v-if="receiveModal" class="fixed inset-0 z-[70] bg-black/80 flex items-start justify-center p-4 overflow-y-auto"
+             @click.self="receiveModal = null">
+            <div class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-7 w-full max-w-2xl space-y-5 my-8" @click.stop>
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <h3 class="font-black uppercase italic text-xl">Приём на склад</h3>
+                        <div class="text-[10px] text-white/35 uppercase tracking-widest mt-2">
+                            закупка #{{ receiveModal.purchaseId }}
+                            <span v-if="receiveModal.externalOrderId"> · EXT {{ receiveModal.externalOrderId }}</span>
+                        </div>
+                    </div>
+                    <button type="button" class="text-white/40 hover:text-white text-2xl leading-none px-2" @click="receiveModal = null">×</button>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] uppercase tracking-widest text-white/40 font-black mb-1.5">Общий комментарий</label>
+                    <textarea v-model="receiveModal.comment" rows="2"
+                              class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-amber-500/40"
+                              placeholder="Комментарий к приёмке (необязательно)" />
+                </div>
+
+                <div class="space-y-3">
+                    <div class="text-[10px] uppercase tracking-widest text-amber-400/80 font-black">Позиции</div>
+                    <div v-for="line in receiveModal.lines" :key="line.id"
+                         class="rounded-2xl border border-white/10 p-4 space-y-3">
+                        <div>
+                            <div class="font-black uppercase text-xs">{{ line.name }}</div>
+                            <div class="text-[10px] text-white/30 uppercase tracking-widest mt-1">
+                                <span v-if="line.supplier_sku">sku {{ line.supplier_sku }}</span>
+                                <span v-if="line.qty > 1"> · qty {{ line.qty }}</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] uppercase tracking-widest text-white/40 font-black mb-1.5">Серийный номер</label>
+                            <input v-model="line.serial" data-scan-capture
+                                   class="w-full bg-black border border-cyan-500/30 rounded-xl px-4 py-3 text-sm text-cyan-300 outline-none focus:border-cyan-400/50"
+                                   placeholder="Сканер или вручную" />
+                        </div>
+                        <div>
+                            <label class="block text-[10px] uppercase tracking-widest text-white/40 font-black mb-1.5">Комментарий к позиции</label>
+                            <input v-model="line.comment"
+                                   class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-amber-500/40"
+                                   placeholder="Необязательно" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 justify-end pt-1">
+                    <button type="button" class="px-4 py-3 text-[10px] uppercase font-black text-white/40" @click="receiveModal = null">Отмена</button>
+                    <button type="button"
+                            class="px-6 py-3 bg-emerald-500 text-black text-[10px] uppercase font-black rounded-xl"
+                            @click="submitReceivePurchase">
+                        Принять на склад
+                    </button>
+                </div>
             </div>
         </div>
 

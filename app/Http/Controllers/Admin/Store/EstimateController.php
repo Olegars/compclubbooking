@@ -395,13 +395,27 @@ class EstimateController extends StoreController
         }
     }
 
-    public function receivePurchase(StorePurchase $storePurchase, StoreEstimateProcurementService $procurement)
+    public function receivePurchase(StorePurchase $storePurchase, Request $request, StoreEstimateProcurementService $procurement)
     {
         abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
         abort_unless($storePurchase->club_id === $this->locationId(), 404);
 
+        $data = $request->validate([
+            'items' => 'nullable|array',
+            'items.*.id' => 'required|integer',
+            'items.*.serials' => 'nullable|array',
+            'items.*.serials.*' => 'nullable|string|max:128',
+            'items.*.notes' => 'nullable|string|max:2000',
+            'comment' => 'nullable|string|max:2000',
+        ]);
+
         try {
-            $procurement->receivePurchase($storePurchase, $this->admin()->id);
+            $procurement->receivePurchase(
+                $storePurchase,
+                $this->admin()->id,
+                $data['items'] ?? [],
+                $data['comment'] ?? null,
+            );
 
             return back()->with('success', 'Закупка принята на склад (резерв)');
         } catch (\Throwable $e) {
