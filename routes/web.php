@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\SharedFanRelayController;
 use App\Http\Controllers\Api\ShellIsolateRelayController;
 use App\Http\Controllers\Api\WifiGrantRelayController;
 use App\Http\Controllers\Api\KitchenPrintRelayController;
+use App\Http\Controllers\Api\VideoMarkerRelayController;
 use App\Http\Controllers\WifiAccessController;
 
 // Контроллеры Авторизации
@@ -472,6 +473,11 @@ Route::prefix('api/fans')->group(function () {
 Route::prefix('api/kitchen')->group(function () {
     Route::get('/print-targets', [KitchenPrintRelayController::class, 'targets']);
     Route::post('/print-applied', [KitchenPrintRelayController::class, 'applied']);
+});
+
+Route::prefix('api/video')->group(function () {
+    Route::get('/marker-targets', [VideoMarkerRelayController::class, 'targets']);
+    Route::post('/marker-applied', [VideoMarkerRelayController::class, 'applied']);
 });
 
 /*

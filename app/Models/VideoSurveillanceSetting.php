@@ -36,7 +36,7 @@ class VideoSurveillanceSetting extends Model
 
     public const PROVIDERS = [
         'generic_webhook' => 'HTTP Webhook (универсальный)',
-        'hikvision' => 'Hikvision (заготовка)',
+        'hikvision' => 'Hikvision NVR (ISAPI, DS-77xx)',
         'trassir' => 'Trassir (заготовка)',
         'macroscop' => 'Macroscop (заготовка)',
         'custom' => 'Свой адаптер',
@@ -47,6 +47,7 @@ class VideoSurveillanceSetting extends Model
         'hid.disconnected' => 'Отключение периферии (мышь/клавиатура)',
         'hid.device_changed' => 'Подмена периферии',
         'hid.unstable' => 'Нестабильная периферия',
+        'sos' => 'SOS с терминала',
         'manual' => 'Только вручную / тест',
     ];
 

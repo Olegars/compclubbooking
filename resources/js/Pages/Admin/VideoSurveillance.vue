@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { Head, router, useForm } from '@inertiajs/vue3'
 import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
@@ -40,6 +40,7 @@ const props = defineProps<{
     providers: Record<string, string>
     triggers: Record<string, string>
     clubs: Club[]
+    pending_jobs?: number
 }>()
 
 const { success, error } = useToast()
@@ -60,6 +61,8 @@ const settingsForm = useForm({
     webhook_method: props.settings.webhook_method || 'POST',
     notes: props.settings.notes || '',
 })
+
+const isHikvision = computed(() => settingsForm.provider === 'hikvision')
 
 const saveSettings = () => {
     settingsForm.put('/admin/video-surveillance', {
@@ -157,6 +160,14 @@ const seedMouseEvent = () => {
     newEvent.trigger_key = 'hid.disconnected'
     newEvent.marker_title = 'HID: отключение периферии'
 }
+
+const seedSosEvent = () => {
+    newEvent.name = 'SOS'
+    newEvent.code = 'sos'
+    newEvent.description = 'Метка при SOS с терминала'
+    newEvent.trigger_key = 'sos'
+    newEvent.marker_title = 'SOS'
+}
 </script>
 
 <template>
@@ -171,6 +182,9 @@ const seedMouseEvent = () => {
                     </h1>
                     <p class="text-white/30 text-[10px] uppercase tracking-[0.35em] font-black mt-2 italic">
                         Метки на таймлайне · настройка и события
+                    </p>
+                    <p v-if="(pending_jobs || 0) > 0" class="text-amber-400/80 text-[10px] font-black uppercase tracking-widest mt-3">
+                        В очереди агента: {{ pending_jobs }}
                     </p>
                 </div>
                 <button type="button" :disabled="testBusy" @click="runTest"
@@ -189,6 +203,21 @@ const seedMouseEvent = () => {
                     </label>
                 </div>
 
+                <div v-if="isHikvision" class="p-5 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 text-[11px] text-white/60 leading-relaxed space-y-2">
+                    <p class="text-[9px] font-black uppercase tracking-widest text-cyan-400">DS-7764NI-M4 · ISAPI</p>
+                    <p>
+                        Облако до регистратора не достучится. URL — LAN-адрес NVR
+                        (<span class="text-white/80 font-mono">http://192.168.x.x</span>), канал — номер камеры
+                        (1 → track 101). На NVR: System → Network → Platform Access → ISAPI, HTTP Digest.
+                    </p>
+                    <p>
+                        Агент в LAN: <span class="text-white/80 font-mono">scripts/hikvision-marker-agent.ps1</span>
+                        (токен <span class="text-white/80 font-mono">VIDEO_MARKER_RELAY_TOKEN</span> или
+                        <span class="text-white/80 font-mono">CLUB_WOL_RELAY_TOKEN</span>).
+                        Тег на таймлайне + lock интервала (длина / захват до события).
+                    </p>
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <label class="block space-y-2">
                         <span class="text-[9px] uppercase font-black tracking-widest text-white/30">Провайдер</span>
@@ -199,20 +228,20 @@ const seedMouseEvent = () => {
                     </label>
                     <label class="block space-y-2">
                         <span class="text-[9px] uppercase font-black tracking-widest text-white/30">Канал / камера по умолчанию</span>
-                        <input v-model="settingsForm.default_channel" type="text" placeholder="cam-01"
+                        <input v-model="settingsForm.default_channel" type="text" :placeholder="isHikvision ? '1' : 'cam-01'"
                                class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500/50" />
                     </label>
                     <label class="block space-y-2 md:col-span-2">
-                        <span class="text-[9px] uppercase font-black tracking-widest text-white/30">API Base URL</span>
-                        <input v-model="settingsForm.api_base_url" type="url" placeholder="https://nvr.local/api"
+                        <span class="text-[9px] uppercase font-black tracking-widest text-white/30">{{ isHikvision ? 'NVR Base URL (LAN)' : 'API Base URL' }}</span>
+                        <input v-model="settingsForm.api_base_url" type="url" :placeholder="isHikvision ? 'http://192.168.1.64' : 'https://nvr.local/api'"
                                class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500/50" />
                     </label>
                     <label class="block space-y-2">
-                        <span class="text-[9px] uppercase font-black tracking-widest text-white/30">Webhook path</span>
-                        <input v-model="settingsForm.webhook_path" type="text" placeholder="/markers"
+                        <span class="text-[9px] uppercase font-black tracking-widest text-white/30">{{ isHikvision ? 'ISAPI path (optional)' : 'Webhook path' }}</span>
+                        <input v-model="settingsForm.webhook_path" type="text" :placeholder="isHikvision ? '/ISAPI/ContentMgmt/record/tracks/{track}/recordTag' : '/markers'"
                                class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500/50" />
                     </label>
-                    <label class="block space-y-2">
+                    <label v-if="!isHikvision" class="block space-y-2">
                         <span class="text-[9px] uppercase font-black tracking-widest text-white/30">Метод</span>
                         <select v-model="settingsForm.webhook_method"
                                 class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500/50">
@@ -222,7 +251,7 @@ const seedMouseEvent = () => {
                         </select>
                     </label>
                     <label class="block space-y-2">
-                        <span class="text-[9px] uppercase font-black tracking-widest text-white/30">Логин (optional)</span>
+                        <span class="text-[9px] uppercase font-black tracking-widest text-white/30">{{ isHikvision ? 'Логин NVR' : 'Логин (optional)' }}</span>
                         <input v-model="settingsForm.api_login" type="text" autocomplete="off"
                                class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500/50" />
                     </label>
@@ -265,10 +294,16 @@ const seedMouseEvent = () => {
             <section class="bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] p-8 space-y-6">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <h2 class="text-xs font-black uppercase tracking-[0.3em] text-white/40 italic">События</h2>
-                    <button type="button" @click="seedMouseEvent"
-                            class="text-[10px] font-black uppercase tracking-widest text-cyan-400/80 hover:text-cyan-300 cursor-pointer">
-                        + Шаблон: отключение мыши
-                    </button>
+                    <div class="flex flex-wrap gap-3">
+                        <button type="button" @click="seedMouseEvent"
+                                class="text-[10px] font-black uppercase tracking-widest text-cyan-400/80 hover:text-cyan-300 cursor-pointer">
+                            + Шаблон: отключение мыши
+                        </button>
+                        <button type="button" @click="seedSosEvent"
+                                class="text-[10px] font-black uppercase tracking-widest text-cyan-400/80 hover:text-cyan-300 cursor-pointer">
+                            + Шаблон: SOS
+                        </button>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 p-5 rounded-2xl border border-dashed border-white/10 bg-black/40">

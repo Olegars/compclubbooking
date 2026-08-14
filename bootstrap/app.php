@@ -58,6 +58,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/power/isolate-applied',
             'api/fans/shared-applied',
             'api/kitchen/print-applied',
+            'api/video/marker-applied',
             'api/store/build-verify',
         ]);
     })

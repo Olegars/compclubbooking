@@ -717,6 +717,21 @@ class ShellApiController extends Controller
                 'reported_at' => $reportedAt->toIso8601String(),
             ]);
 
+            try {
+                app(VideoMarkerService::class)->placeMarkerForTrigger('sos', [
+                    'title' => 'SOS · '.$pcName.($reasonLabel !== '' ? ' · '.$reasonLabel : ''),
+                    'at' => $reportedAt,
+                    'meta' => [
+                        'computer_id' => $alert->computer_id,
+                        'alert_id' => $alert->id,
+                        'booking_id' => $alert->booking_id,
+                        'reason_code' => $reasonCode,
+                    ],
+                ], $pc?->club_id ? (int) $pc->club_id : null);
+            } catch (\Throwable $markerError) {
+                Log::warning('Video marker after SOS failed: '.$markerError->getMessage());
+            }
+
             return response()->json([
                 'status' => 'success',
                 'alert_id' => $alert->id,

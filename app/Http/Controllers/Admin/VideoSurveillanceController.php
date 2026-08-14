@@ -12,7 +12,7 @@ use Inertia\Inertia;
 
 class VideoSurveillanceController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, VideoMarkerService $markers)
     {
         $clubId = (int) ($request->input('club_id') ?: Club::query()->value('id'));
         $settings = VideoSurveillanceSetting::forClub($clubId);
@@ -31,6 +31,7 @@ class VideoSurveillanceController extends Controller
             'providers' => VideoSurveillanceSetting::PROVIDERS,
             'triggers' => VideoSurveillanceSetting::TRIGGERS,
             'clubs' => Club::query()->select('id', 'name')->orderBy('name')->get(),
+            'pending_jobs' => $markers->pendingCount($clubId),
         ]);
     }
 
@@ -199,7 +200,9 @@ class VideoSurveillanceController extends Controller
         }
 
         $msg = filled($s->api_base_url)
-            ? 'Тестовая метка отправлена'
+            ? ($s->provider === 'hikvision'
+                ? 'Метка в очереди LAN-агента (ISAPI → NVR)'
+                : 'Тестовая метка отправлена')
             : 'Dry-run OK (URL API пуст — метка только в лог)';
 
         return response()->json(['status' => 'ok', 'message' => $msg]);
