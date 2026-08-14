@@ -12,10 +12,10 @@ class StoreEstimateItem extends Model
 
     public const STATUS_LABELS = [
         'planned' => 'План',
-        'from_stock' => 'Со склада',
+        'from_stock' => 'Резерв (склад)',
         'to_order' => 'К закупке',
         'ordered' => 'Заказано',
-        'received' => 'На складе',
+        'received' => 'Резерв',
     ];
 
     protected $fillable = [

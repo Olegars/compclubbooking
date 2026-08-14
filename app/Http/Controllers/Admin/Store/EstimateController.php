@@ -47,6 +47,22 @@ class EstimateController extends StoreController
             ->get(['id', 'name', 'type', 'purchase_price', 'warranty_number', 'serials', 'status']);
 
         $estimates = $query->limit(80)->get();
+        $procurement = app(StoreEstimateProcurementService::class);
+        foreach ($estimates as $estimate) {
+            $healed = false;
+            foreach ($estimate->purchases as $purchase) {
+                if ($purchase->status === 'received' && $procurement->healReceivedPurchaseLinks($purchase)) {
+                    $healed = true;
+                }
+            }
+            if ($healed) {
+                $procurement->refreshEstimateReadiness($estimate);
+                $estimate->unsetRelation('items');
+                $estimate->load([
+                    'items.component:id,name,type,status,purchase_price,serials,warranty_number',
+                ]);
+            }
+        }
         $imageUrls = app(StoreSupplierCatalogImageService::class)->urlsForSkus(
             $estimates->flatMap(fn (StoreEstimate $e) => $e->items->pluck('supplier_sku'))->all()
         );

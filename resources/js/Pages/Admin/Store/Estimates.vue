@@ -753,6 +753,9 @@ const stockOptionsFor = (item: any) => {
                                     </div>
                                     <div v-if="item.component" class="text-[10px] text-cyan-400/80 mt-1">
                                         Склад #{{ item.component.id }} · {{ item.component.name }}
+                                        <span v-if="item.component.status" class="text-amber-400/90">
+                                            · {{ item.component.status === 'reserved' ? 'Резерв' : item.component.status }}
+                                        </span>
                                     </div>
                                 </div>
                                 <div class="flex flex-wrap gap-2 items-start justify-end">
@@ -765,7 +768,8 @@ const stockOptionsFor = (item: any) => {
                                             </option>
                                         </select>
                                     </template>
-                                    <button v-if="canManage && item.status === 'from_stock'" type="button"
+                                    <button v-if="canManage && ['from_stock', 'received'].includes(item.status) && item.component"
+                                            type="button"
                                             class="text-[10px] uppercase font-black text-red-400/80"
                                             @click="unlinkStock(item.id)">
                                         Снять резерв

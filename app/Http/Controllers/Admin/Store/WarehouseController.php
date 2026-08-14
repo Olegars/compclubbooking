@@ -41,7 +41,21 @@ class WarehouseController extends StoreController
             $query->where('type', $type);
         }
 
-        $components = $query->limit(300)->get()->map(fn (StoreComponent $c) => $this->presentComponent($c))->values();
+        $components = $query->limit(300)->get();
+
+        foreach ($components as $c) {
+            if ($c->status !== 'in_stock') {
+                continue;
+            }
+            $purchase = $c->purchaseItem?->purchase;
+            if (! $purchase || $purchase->status !== 'received' || ! $purchase->store_estimate_id) {
+                continue;
+            }
+            $c->update(['status' => 'reserved']);
+            $c->status = 'reserved';
+        }
+
+        $components = $components->map(fn (StoreComponent $c) => $this->presentComponent($c))->values();
 
         return Inertia::render('Admin/Store/Warehouse', [
             'components' => $components,

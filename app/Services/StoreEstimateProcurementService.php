@@ -198,8 +198,7 @@ class StoreEstimateProcurementService
                     continue;
                 }
 
-                /** @var StoreEstimateItem|null $eItem */
-                $eItem = $pItem->estimateItem;
+                $eItem = $this->resolveEstimateItem($purchase, $pItem);
                 $type = $eItem?->type ?: 'other';
                 $name = $pItem->name ?: ($eItem?->name ?? 'SKU '.$pItem->supplier_sku);
                 $sku = (int) $pItem->supplier_sku;
@@ -237,9 +236,15 @@ class StoreEstimateProcurementService
                     'notes' => $notes !== [] ? implode("\n", $notes) : null,
                 ]);
 
+                // На случай дефолта БД / старых триггеров — явно фиксируем резерв.
+                if ($component->status !== 'reserved') {
+                    $component->forceFill(['status' => 'reserved'])->save();
+                }
+
                 $pItem->update([
                     'status' => 'received',
                     'store_component_id' => $component->id,
+                    'store_estimate_item_id' => $eItem?->id ?? $pItem->store_estimate_item_id,
                 ]);
 
                 if ($eItem) {
@@ -259,8 +264,84 @@ class StoreEstimateProcurementService
                     : $purchase->notes,
             ]);
 
+            $this->healReceivedPurchaseLinks($purchase->fresh(['items']) ?? $purchase);
             $this->refreshEstimateReadiness($purchase->estimate);
         });
+    }
+
+    /**
+     * Починить связку после приёмки: позиция сметы → received, комплектующая → reserved.
+     * Также чинит уже принятые закупки, если статус «застрял».
+     *
+     * @return bool были ли изменения
+     */
+    public function healReceivedPurchaseLinks(StorePurchase $purchase): bool
+    {
+        if ($purchase->status !== 'received') {
+            return false;
+        }
+
+        $purchase->loadMissing('items');
+        $changed = false;
+
+        foreach ($purchase->items as $pItem) {
+            if (! $pItem->store_component_id) {
+                continue;
+            }
+
+            $component = StoreComponent::query()->find($pItem->store_component_id);
+            if ($component && $component->status === 'in_stock') {
+                $component->update(['status' => 'reserved']);
+                $changed = true;
+            }
+
+            $eItem = $this->resolveEstimateItem($purchase, $pItem);
+            if (! $eItem) {
+                continue;
+            }
+
+            $patch = [];
+            if ((int) $eItem->store_component_id !== (int) $pItem->store_component_id) {
+                $patch['store_component_id'] = (int) $pItem->store_component_id;
+            }
+            if (in_array($eItem->status, ['ordered', 'to_order', 'planned'], true)) {
+                $patch['status'] = 'received';
+            }
+            if ($patch !== []) {
+                $eItem->update($patch);
+                $changed = true;
+            }
+
+            if (! $pItem->store_estimate_item_id) {
+                $pItem->update(['store_estimate_item_id' => $eItem->id]);
+                $changed = true;
+            }
+        }
+
+        return $changed;
+    }
+
+    private function resolveEstimateItem(StorePurchase $purchase, StorePurchaseItem $pItem): ?StoreEstimateItem
+    {
+        if ($pItem->store_estimate_item_id) {
+            $found = StoreEstimateItem::query()->whereKey($pItem->store_estimate_item_id)->first();
+            if ($found) {
+                return $found;
+            }
+        }
+
+        $sku = (int) ($pItem->supplier_sku ?? 0);
+        if (! $purchase->store_estimate_id || $sku <= 0) {
+            return null;
+        }
+
+        return StoreEstimateItem::query()
+            ->where('store_estimate_id', $purchase->store_estimate_id)
+            ->where('supplier_sku', $sku)
+            ->whereIn('status', ['ordered', 'to_order', 'planned', 'received'])
+            ->orderByRaw("CASE status WHEN 'ordered' THEN 0 WHEN 'to_order' THEN 1 WHEN 'planned' THEN 2 ELSE 3 END")
+            ->orderBy('id')
+            ->first();
     }
 
     /**
