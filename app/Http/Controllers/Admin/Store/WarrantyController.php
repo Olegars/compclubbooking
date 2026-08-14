@@ -26,7 +26,7 @@ class WarrantyController extends StoreController
                 'client:id,name,phone',
                 'order:id,status',
                 'builtPc:id,title,serial_number,status',
-                'builtPc.componentLinks.component:id,name,type,warranty_number,serials,warranty_months',
+                'builtPc.componentLinks.component:id,name,type,warranty_number,serials,warranty_months,created_at',
             ])
             ->latest();
 
@@ -228,6 +228,7 @@ class WarrantyController extends StoreController
         if ($items === [] && $w->builtPc) {
             $items = $svc->buildSnapshot($w->builtPc);
         }
+        $items = $this->enrichBuildItems($items, $w->builtPc);
 
         return [
             'id' => $w->id,
@@ -257,6 +258,129 @@ class WarrantyController extends StoreController
             'build_items' => $items,
             'warranty_state' => $remaining['state'],
             'warranty_label' => $remaining['label'],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $items
+     * @return list<array<string, mixed>>
+     */
+    private function enrichBuildItems(array $items, ?StoreBuiltPc $pc): array
+    {
+        $byId = [];
+        $bySerial = [];
+        if ($pc) {
+            foreach ($pc->componentLinks as $link) {
+                $component = $link->component;
+                if (! $component) {
+                    continue;
+                }
+                $byId[(int) $component->id] = $component;
+                foreach ($component->allSerials() as $serial) {
+                    $key = mb_strtolower(trim($serial));
+                    if ($key !== '') {
+                        $bySerial[$key] = $component;
+                    }
+                }
+            }
+        }
+
+        $out = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $component = null;
+            $cid = isset($item['store_component_id']) ? (int) $item['store_component_id'] : 0;
+            if ($cid > 0 && isset($byId[$cid])) {
+                $component = $byId[$cid];
+            }
+            if (! $component && ! empty($item['serials']) && is_array($item['serials'])) {
+                foreach ($item['serials'] as $serial) {
+                    $key = mb_strtolower(trim((string) $serial));
+                    if ($key !== '' && isset($bySerial[$key])) {
+                        $component = $bySerial[$key];
+                        break;
+                    }
+                }
+            }
+            if (! $component && ! empty($item['warranty_number'])) {
+                foreach (preg_split('/\s*·\s*/u', (string) $item['warranty_number']) ?: [] as $serial) {
+                    $key = mb_strtolower(trim($serial));
+                    if ($key !== '' && isset($bySerial[$key])) {
+                        $component = $bySerial[$key];
+                        break;
+                    }
+                }
+            }
+
+            $months = $component?->warranty_months;
+            if ($months === null && array_key_exists('warranty_months', $item) && $item['warranty_months'] !== null) {
+                $months = (int) $item['warranty_months'];
+            }
+            $receivedAt = $component?->created_at;
+            if (! $receivedAt && ! empty($item['received_at'])) {
+                try {
+                    $receivedAt = Carbon::parse($item['received_at']);
+                } catch (\Throwable) {
+                    $receivedAt = null;
+                }
+            }
+
+            // 0 у поставщика = 12 мес. (как при приёмке на склад)
+            if ($months !== null && (int) $months === 0) {
+                $months = 12;
+            }
+
+            $partWarranty = $this->remainingFromReceipt($receivedAt, $months !== null ? (int) $months : null);
+
+            $out[] = [
+                'type' => $item['type'] ?? 'other',
+                'type_label' => $item['type_label'] ?? ($item['type'] ?? '—'),
+                'name' => $item['name'] ?? '',
+                'warranty_number' => $item['warranty_number'] ?? null,
+                'serials' => is_array($item['serials'] ?? null) ? $item['serials'] : [],
+                'store_component_id' => $component?->id ?? ($cid > 0 ? $cid : null),
+                'warranty_months' => $months !== null ? (int) $months : null,
+                'received_at' => $receivedAt?->toIso8601String(),
+                'warranty_days_left' => $partWarranty['days_left'],
+                'warranty_state' => $partWarranty['state'],
+                'warranty_label' => $partWarranty['label'],
+                'warranty_badge' => $partWarranty['badge'],
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Остаток гарантии комплектующей от даты поступления + warranty_months.
+     *
+     * @return array{state:string,label:?string,days_left:?int,badge:?int}
+     */
+    private function remainingFromReceipt(mixed $receivedAt, ?int $months): array
+    {
+        if (! $receivedAt || ! $months || $months <= 0) {
+            return ['state' => 'none', 'label' => null, 'days_left' => null, 'badge' => null];
+        }
+
+        $start = $receivedAt instanceof Carbon
+            ? $receivedAt->copy()->startOfDay()
+            : Carbon::parse($receivedAt)->startOfDay();
+        $ends = $start->copy()->addMonthsNoOverflow($months)->startOfDay();
+        $base = $this->remainingWarranty($ends);
+        $today = now()->startOfDay();
+        $daysLeft = $ends->lt($today)
+            ? -((int) $ends->diffInDays($today))
+            : (int) $today->diffInDays($ends);
+
+        return [
+            'state' => $base['state'],
+            'label' => $base['label'],
+            'days_left' => $daysLeft,
+            // В квадратике — остаток в днях (0 если истекла)
+            'badge' => max(0, $daysLeft),
         ];
     }
 

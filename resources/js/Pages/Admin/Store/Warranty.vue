@@ -172,15 +172,33 @@ const filterStatus = computed({
                     <div class="text-[10px] uppercase tracking-widest text-amber-400/80 font-black mb-3">Комплектующие сборки</div>
                     <div v-if="detail.build_items?.length" class="space-y-2">
                         <div v-for="(item, idx) in detail.build_items" :key="idx"
-                             class="rounded-2xl border border-white/10 px-4 py-3 text-xs flex flex-wrap justify-between gap-2">
-                            <div>
+                             class="rounded-2xl border border-white/10 px-4 py-3 text-xs flex flex-wrap items-center justify-between gap-3">
+                            <div class="min-w-0 flex-1">
                                 <div class="text-[10px] uppercase tracking-widest text-white/30 font-black">{{ item.type_label || item.type || '—' }}</div>
                                 <div class="font-black uppercase mt-1">{{ item.name || '—' }}</div>
+                                <div v-if="item.warranty_number || (item.serials && item.serials.length)"
+                                     class="font-mono text-cyan-400/80 text-[11px] mt-1">
+                                    {{ item.warranty_number || (item.serials || []).join(' · ') }}
+                                </div>
+                                <div v-if="item.warranty_months" class="text-[10px] text-white/25 mt-1 uppercase tracking-widest">
+                                    {{ item.warranty_months }} мес. от поступления
+                                </div>
                             </div>
-                            <div v-if="item.warranty_number || (item.serials && item.serials.length)"
-                                 class="font-mono text-cyan-400/80 text-[11px] self-center">
-                                {{ item.warranty_number || (item.serials || []).join(' · ') }}
+                            <div v-if="item.warranty_badge != null"
+                                 class="shrink-0 w-12 h-12 rounded-xl border flex flex-col items-center justify-center font-black leading-none"
+                                 :class="{
+                                     'border-red-500/50 bg-red-500/15 text-red-300': item.warranty_state === 'expired',
+                                     'border-amber-500/50 bg-amber-500/15 text-amber-300': item.warranty_state === 'expiring',
+                                     'border-emerald-500/40 bg-emerald-500/10 text-emerald-300': item.warranty_state === 'active',
+                                     'border-white/15 bg-white/5 text-white/40': item.warranty_state === 'none',
+                                 }"
+                                 :title="item.warranty_label || (item.warranty_months ? (item.warranty_months + ' мес.') : '')">
+                                <span class="text-sm">{{ item.warranty_badge }}</span>
+                                <span class="text-[8px] uppercase tracking-wider mt-0.5 opacity-70">дн</span>
                             </div>
+                            <div v-else
+                                 class="shrink-0 w-12 h-12 rounded-xl border border-white/10 bg-white/[0.03] text-white/20 flex items-center justify-center text-[10px] font-black"
+                                 title="Срок гарантии не указан">—</div>
                         </div>
                     </div>
                     <div v-else class="text-white/30 text-xs py-4 text-center border border-dashed border-white/10 rounded-2xl">

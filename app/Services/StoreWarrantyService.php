@@ -100,7 +100,16 @@ class StoreWarrantyService
     }
 
     /**
-     * @return list<array{type:string,type_label:string,name:string,warranty_number:?string,serials:list<string>}>
+     * @return list<array{
+     *   type:string,
+     *   type_label:string,
+     *   name:string,
+     *   warranty_number:?string,
+     *   serials:list<string>,
+     *   store_component_id:?int,
+     *   warranty_months:?int,
+     *   received_at:?string
+     * }>
      */
     public function buildSnapshot(StoreBuiltPc $pc): array
     {
@@ -109,7 +118,8 @@ class StoreWarrantyService
         if ($pc->componentLinks->isNotEmpty()) {
             return $pc->componentLinks->map(function ($link) {
                 $type = (string) ($link->type ?: 'other');
-                $serials = $link->component?->allSerials() ?? [];
+                $component = $link->component;
+                $serials = $component?->allSerials() ?? [];
                 $label = $serials !== [] ? implode(' · ', $serials) : null;
 
                 return [
@@ -118,6 +128,11 @@ class StoreWarrantyService
                     'name' => (string) $link->name,
                     'warranty_number' => $label,
                     'serials' => $serials,
+                    'store_component_id' => $component?->id,
+                    'warranty_months' => $component?->warranty_months !== null
+                        ? (int) $component->warranty_months
+                        : null,
+                    'received_at' => $component?->created_at?->toIso8601String(),
                 ];
             })->values()->all();
         }
@@ -139,6 +154,9 @@ class StoreWarrantyService
                 'name' => (string) ($row['name'] ?? ''),
                 'warranty_number' => $serials !== [] ? implode(' · ', $serials) : null,
                 'serials' => $serials,
+                'store_component_id' => isset($row['store_component_id']) ? (int) $row['store_component_id'] : null,
+                'warranty_months' => isset($row['warranty_months']) ? (int) $row['warranty_months'] : null,
+                'received_at' => $row['received_at'] ?? null,
             ];
         })->filter(fn ($r) => $r['name'] !== '')->values()->all();
     }
