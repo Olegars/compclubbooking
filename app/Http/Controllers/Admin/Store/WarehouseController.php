@@ -299,6 +299,12 @@ class WarehouseController extends StoreController
             'supplier' => $c->supplier ? ['id' => $c->supplier->id, 'name' => $c->supplier->name] : null,
             'receiver' => $c->receiver ? ['id' => $c->receiver->id, 'name' => $c->receiver->name] : null,
             'received_at' => $receivedAt?->toIso8601String(),
+            'sent_to_repair_at' => $c->sent_to_repair_at?->toIso8601String(),
+            'sent_to_repair_label' => $c->sent_to_repair_at
+                ? 'передана в ремонт '.$c->sent_to_repair_at->format('d.m.Y H:i')
+                : null,
+            'replaces_component_id' => $c->replaces_component_id,
+            'replaced_by_component_id' => $c->replaced_by_component_id,
             'warranty_ends_at' => $warranty['ends_at'],
             'warranty_state' => $warranty['state'],
             'warranty_label' => $warranty['label'],

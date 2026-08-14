@@ -38,13 +38,15 @@ class StoreComponent extends Model
     protected $fillable = [
         'club_id', 'store_supplier_id', 'received_by', 'name', 'original_name', 'barcode', 'type', 'specs',
         'purchase_price', 'warranty_number', 'serials', 'warranty_months', 'qty',
-        'status', 'notes',
+        'status', 'status_before_repair', 'sent_to_repair_at',
+        'replaces_component_id', 'replaced_by_component_id', 'notes',
     ];
 
     protected $casts = [
         'purchase_price' => 'decimal:2',
         'specs' => 'array',
         'serials' => 'array',
+        'sent_to_repair_at' => 'datetime',
     ];
 
     /** Все серийники комплекта (или один из warranty_number). */
@@ -97,6 +99,16 @@ class StoreComponent extends Model
     public function orderItems(): HasMany
     {
         return $this->hasMany(StoreOrderItem::class, 'store_component_id');
+    }
+
+    public function replaces(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'replaces_component_id');
+    }
+
+    public function replacedBy(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'replaced_by_component_id');
     }
 
     public static function typeLabel(string $type): string

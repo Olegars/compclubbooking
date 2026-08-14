@@ -293,6 +293,8 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::post('/warranty', [StoreWarrantyController::class, 'store'])->name('admin.store.warranty.store');
             Route::post('/warranty/{storeWarranty}', [StoreWarrantyController::class, 'update'])->name('admin.store.warranty.update');
             Route::post('/warranty/{storeWarranty}/send-to-repair', [StoreWarrantyController::class, 'sendToRepair'])->name('admin.store.warranty.send-to-repair');
+            Route::post('/warranty/{storeWarranty}/return-from-repair', [StoreWarrantyController::class, 'returnFromRepair'])->name('admin.store.warranty.return-from-repair');
+            Route::post('/warranty/{storeWarranty}/replace-component', [StoreWarrantyController::class, 'replaceComponent'])->name('admin.store.warranty.replace-component');
             Route::get('/warranty/{storeWarranty}/print-barcode', [StoreWarrantyController::class, 'printBarcode'])->name('admin.store.warranty.print-barcode');
             Route::post('/warranty/{storeWarranty}/print-barcode-pos', [StoreWarrantyController::class, 'printBarcodePos'])->name('admin.store.warranty.print-barcode-pos');
             Route::get('/warranty/{storeWarranty}/print-talon', [StoreWarrantyController::class, 'printTalon'])->name('admin.store.warranty.print-talon');

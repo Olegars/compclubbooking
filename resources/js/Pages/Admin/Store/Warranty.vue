@@ -22,6 +22,7 @@ const statusLabel: Record<string, string> = {
 
 const showCreate = ref(false)
 const detail = ref<any | null>(null)
+const replaceFor = ref<any | null>(null)
 const form = useForm({
     store_client_id: null as number | null,
     store_order_id: null as number | null,
@@ -30,6 +31,14 @@ const form = useForm({
     started_at: '',
     ends_at: '',
     claim_notes: '',
+})
+const replaceForm = useForm({
+    store_component_id: null as number | null,
+    name: '',
+    serials: [''] as string[],
+    purchase_price: 0 as number | null,
+    warranty_months: null as number | null,
+    notes: '',
 })
 
 const create = () => {
@@ -40,14 +49,53 @@ const setStatus = (id: number, status: string) => {
     router.post(`/admin/store/warranty/${id}`, { status }, { preserveScroll: true })
 }
 
+const refreshDetail = (warrantyId: number) => {
+    const fresh = props.warranties.find((w) => w.id === warrantyId)
+    detail.value = fresh || null
+}
+
 const sendToRepair = (warrantyId: number, componentId: number | null | undefined) => {
     if (!componentId) return
-    if (!confirm('Вернуть комплектующую на склад со статусом «Ремонт»?')) return
+    if (!confirm('Передать комплектующую в ремонт? Связь со сборкой сохранится.')) return
     router.post(`/admin/store/warranty/${warrantyId}/send-to-repair`, {
         store_component_id: componentId,
     }, {
         preserveScroll: true,
-        onSuccess: () => { detail.value = null },
+        onSuccess: () => refreshDetail(warrantyId),
+    })
+}
+
+const returnFromRepair = (warrantyId: number, componentId: number | null | undefined) => {
+    if (!componentId) return
+    if (!confirm('Вернуть комплектующую в сборку после ремонта?')) return
+    router.post(`/admin/store/warranty/${warrantyId}/return-from-repair`, {
+        store_component_id: componentId,
+    }, {
+        preserveScroll: true,
+        onSuccess: () => refreshDetail(warrantyId),
+    })
+}
+
+const openReplace = (item: any) => {
+    replaceFor.value = item
+    replaceForm.store_component_id = item.store_component_id
+    replaceForm.name = item.name || ''
+    replaceForm.serials = ['']
+    replaceForm.purchase_price = null
+    replaceForm.warranty_months = item.warranty_months ?? null
+    replaceForm.notes = ''
+}
+
+const submitReplace = () => {
+    if (!detail.value || !replaceForm.store_component_id) return
+    const warrantyId = detail.value.id
+    replaceForm.serials = replaceForm.serials.map((s) => String(s || '').trim()).filter(Boolean)
+    replaceForm.post(`/admin/store/warranty/${warrantyId}/replace-component`, {
+        preserveScroll: true,
+        onSuccess: () => {
+            replaceFor.value = null
+            refreshDetail(warrantyId)
+        },
     })
 }
 
@@ -194,17 +242,37 @@ const filterStatus = computed({
                                 <div v-if="item.warranty_months" class="text-[10px] text-white/25 mt-1 uppercase tracking-widest">
                                     {{ item.warranty_months }} мес. от поступления
                                 </div>
-                                <div v-if="item.component_status === 'repair'" class="text-[10px] text-amber-400/80 font-black uppercase tracking-widest mt-1">
-                                    Уже в ремонте на складе
+                                <div v-if="item.sent_to_repair_label" class="text-[10px] text-amber-400 font-black uppercase tracking-wider mt-2">
+                                    {{ item.sent_to_repair_label }}
+                                </div>
+                                <div v-if="item.replaced_by_component_id" class="text-[10px] text-white/35 mt-1 uppercase tracking-widest">
+                                    Заменена на ID {{ item.replaced_by_component_id }}
+                                </div>
+                                <div v-if="item.replaces_component_id" class="text-[10px] text-white/35 mt-1 uppercase tracking-widest">
+                                    Замена ID {{ item.replaces_component_id }}
                                 </div>
                             </div>
-                            <div class="flex items-center gap-2 shrink-0">
-                                <button v-if="canManage && item.can_send_to_repair && item.store_component_id"
-                                        type="button"
-                                        class="px-3 py-2 rounded-xl border border-amber-500/40 text-[10px] uppercase font-black text-amber-400 hover:bg-amber-500/10"
-                                        @click="sendToRepair(detail.id, item.store_component_id)">
-                                    В ремонт
-                                </button>
+                            <div class="flex flex-col items-end gap-2 shrink-0">
+                                <div class="flex flex-wrap justify-end gap-2">
+                                    <button v-if="canManage && item.can_send_to_repair && item.store_component_id"
+                                            type="button"
+                                            class="px-3 py-2 rounded-xl border border-amber-500/40 text-[10px] uppercase font-black text-amber-400 hover:bg-amber-500/10"
+                                            @click="sendToRepair(detail.id, item.store_component_id)">
+                                        В ремонт
+                                    </button>
+                                    <button v-if="canManage && item.can_return_from_repair"
+                                            type="button"
+                                            class="px-3 py-2 rounded-xl border border-emerald-500/40 text-[10px] uppercase font-black text-emerald-300 hover:bg-emerald-500/10"
+                                            @click="returnFromRepair(detail.id, item.store_component_id)">
+                                        Вернуть в сборку
+                                    </button>
+                                    <button v-if="canManage && item.can_replace"
+                                            type="button"
+                                            class="px-3 py-2 rounded-xl border border-red-500/40 text-[10px] uppercase font-black text-red-300 hover:bg-red-500/10"
+                                            @click="openReplace(item)">
+                                        Списать со склада
+                                    </button>
+                                </div>
                                 <div v-if="item.warranty_badge != null"
                                      class="w-12 h-12 rounded-xl border flex flex-col items-center justify-center font-black leading-none"
                                      :class="{
@@ -240,6 +308,43 @@ const filterStatus = computed({
                             @click="detail = null">Закрыть</button>
                 </div>
             </div>
+        </div>
+
+        <div v-if="replaceFor" class="fixed inset-0 bg-black/80 flex items-start justify-center z-[60] p-4 overflow-y-auto" @click.self="replaceFor = null">
+            <form class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-7 w-full max-w-lg space-y-4 my-8" @submit.prevent="submitReplace">
+                <h3 class="font-black uppercase italic text-xl">Списать и заменить</h3>
+                <p class="text-[10px] text-white/35 uppercase tracking-widest leading-relaxed">
+                    Старая деталь #{{ replaceFor.store_component_id }} будет списана. Новая попадёт на склад и в сборку с пометкой «замена ID {{ replaceFor.store_component_id }}».
+                </p>
+                <div>
+                    <label class="block text-[10px] uppercase tracking-widest text-white/40 font-black mb-1.5">Название новой детали</label>
+                    <input v-model="replaceForm.name" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" required />
+                </div>
+                <div>
+                    <label class="block text-[10px] uppercase tracking-widest text-white/40 font-black mb-1.5">Серийный номер</label>
+                    <input v-model="replaceForm.serials[0]" class="w-full bg-black border border-cyan-500/30 rounded-xl px-4 py-3 text-sm text-cyan-300" placeholder="S/N новой детали" />
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] uppercase tracking-widest text-white/40 font-black mb-1.5">Закупка, ₽</label>
+                        <input v-model.number="replaceForm.purchase_price" type="number" min="0" step="0.01" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
+                    </div>
+                    <div>
+                        <label class="block text-[10px] uppercase tracking-widest text-white/40 font-black mb-1.5">Гарантия, мес.</label>
+                        <input v-model.number="replaceForm.warranty_months" type="number" min="0" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] uppercase tracking-widest text-white/40 font-black mb-1.5">Заметка</label>
+                    <textarea v-model="replaceForm.notes" rows="2" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
+                </div>
+                <div class="flex gap-3 justify-end pt-1">
+                    <button type="button" class="px-4 py-3 text-[10px] uppercase font-black text-white/40" @click="replaceFor = null">Отмена</button>
+                    <button class="px-6 py-3 bg-red-500/90 text-black text-[10px] uppercase font-black rounded-xl" :disabled="replaceForm.processing">
+                        Списать и поставить замену
+                    </button>
+                </div>
+            </form>
         </div>
 
         <div v-if="showCreate" class="fixed inset-0 bg-black/70 flex items-start justify-center z-50 p-4 overflow-y-auto" @click.self="showCreate = false">

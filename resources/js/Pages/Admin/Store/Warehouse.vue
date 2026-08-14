@@ -491,6 +491,15 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                     <div v-if="detail.sale.order_id" class="flex justify-between gap-3"><span class="text-white/35">Заказ</span><span class="text-right">#{{ detail.sale.order_id }}</span></div>
                 </div>
 
+                <div v-if="detail.sent_to_repair_label"
+                     class="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs font-black uppercase tracking-wider text-amber-300">
+                    {{ detail.sent_to_repair_label }}
+                </div>
+                <div v-if="detail.replaces_component_id || detail.replaced_by_component_id" class="text-xs text-white/40 space-y-1">
+                    <div v-if="detail.replaces_component_id">Замена ID {{ detail.replaces_component_id }}</div>
+                    <div v-if="detail.replaced_by_component_id">Заменена на ID {{ detail.replaced_by_component_id }}</div>
+                </div>
+
                 <div v-if="detail.notes" class="text-xs text-white/40">
                     <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Заметки</div>
                     {{ detail.notes }}
