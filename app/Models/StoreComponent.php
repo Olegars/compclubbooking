@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class StoreComponent extends Model
 {
@@ -90,6 +91,11 @@ class StoreComponent extends Model
         return $this->belongsToMany(StoreBuiltPc::class, 'store_built_pc_components')
             ->withPivot(['type', 'name'])
             ->withTimestamps();
+    }
+
+    public function orderItems(): HasMany
+    {
+        return $this->hasMany(StoreOrderItem::class, 'store_component_id');
     }
 
     public static function typeLabel(string $type): string

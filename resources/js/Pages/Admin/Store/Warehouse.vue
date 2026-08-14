@@ -24,11 +24,27 @@ const props = defineProps<{
 }>()
 
 const money = (v: any) => Number(v || 0).toLocaleString('ru-RU') + ' ₽'
+const fmtDt = (v: any): string => {
+    if (!v) return '—'
+    const d = new Date(v)
+    if (Number.isNaN(d.getTime())) return String(v).slice(0, 16).replace('T', ' ')
+    return d.toLocaleString('ru-RU', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+    })
+}
+const fmtDate = (v: any): string => {
+    if (!v) return '—'
+    const d = new Date(v)
+    if (Number.isNaN(d.getTime())) return String(v).slice(0, 10)
+    return d.toLocaleDateString('ru-RU')
+}
 const { info } = useToast()
 const { receiveMode, enableReceiveMode, disableReceiveMode } = useAdminBarcodeScanner()
 
 const showForm = ref(false)
 const showSupplier = ref(false)
+const detail = ref<any | null>(null)
 const serialInput = ref<HTMLInputElement | null>(null)
 
 const specs = reactive<Record<string, string>>({})
@@ -247,6 +263,8 @@ const openCreate = (serial = '') => {
 }
 
 const openEdit = (c: any) => {
+    if (c.status === 'sold') return
+    detail.value = null
     form.id = c.id
     form.name = c.name
     form.original_name = c.original_name || ''
@@ -258,9 +276,9 @@ const openEdit = (c: any) => {
         ? c.serials.map((s: any) => String(s || ''))
         : [c.warranty_number || c.barcode || '']
     form.serials = list.length ? list : ['']
-    form.warranty_number = form.serials.find((s) => s.trim()) || ''
+    form.warranty_number = form.serials.find((s: string) => s.trim()) || ''
     form.warranty_months = c.warranty_months
-    form.qty = Number(c.qty) || 1
+    form.qty = 1
     form.status = c.status
     form.notes = c.notes || ''
     resetSpecs(c.specs || {})
@@ -268,6 +286,12 @@ const openEdit = (c: any) => {
     syncSerialSlots(serialSlotCount.value, form.serials)
     showForm.value = true
 }
+
+const openDetail = (c: any) => {
+    detail.value = c
+}
+
+const canEditRow = (c: any) => props.canManage && c.status !== 'sold'
 
 const save = () => {
     form.specs = { ...specs }
@@ -277,6 +301,7 @@ const save = () => {
         form.serials = [String(form.warranty_number).trim()]
     }
     form.warranty_number = form.serials[0] || ''
+    form.qty = 1
     if (form.id) {
         form.put(`/admin/store/warehouse/${form.id}`, { onSuccess: () => { showForm.value = false } })
     } else {
@@ -286,6 +311,7 @@ const save = () => {
 
 const remove = (id: number) => {
     if (!confirm('Удалить комплектующее?')) return
+    detail.value = null
     router.delete(`/admin/store/warehouse/${id}`)
 }
 
@@ -365,39 +391,118 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                         <tr>
                             <th class="px-4 py-3">Тип</th>
                             <th class="px-4 py-3">Наименование</th>
-                            <th class="px-4 py-3">Оригинал (с ПК)</th>
                             <th class="px-4 py-3">Серийный номер</th>
                             <th class="px-4 py-3">Поставщик</th>
                             <th class="px-4 py-3">Закупка</th>
                             <th class="px-4 py-3">Гарантия</th>
-                            <th class="px-4 py-3">Кол-во</th>
+                            <th class="px-4 py-3">Поступление</th>
                             <th class="px-4 py-3">Кто принял</th>
                             <th class="px-4 py-3">Статус</th>
                             <th class="px-4 py-3"></th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="c in components" :key="c.id" class="border-b border-white/5 hover:bg-white/[0.02]">
+                        <tr v-for="c in components" :key="c.id"
+                            class="border-b border-white/5 hover:bg-white/[0.02] cursor-pointer"
+                            @click="openDetail(c)">
                             <td class="px-4 py-3 text-amber-400/80">{{ types[c.type] || c.type }}</td>
                             <td class="px-4 py-3 font-black uppercase">{{ c.name }}</td>
-                            <td class="px-4 py-3 text-white/40 text-xs normal-case font-normal max-w-[220px]">
-                                {{ c.original_name || '—' }}
-                            </td>
                             <td class="px-4 py-3 text-cyan-400/80 font-mono">{{ serialsLabel(c) }}</td>
                             <td class="px-4 py-3 text-white/40">{{ c.supplier?.name || '—' }}</td>
                             <td class="px-4 py-3">{{ money(c.purchase_price) }}</td>
                             <td class="px-4 py-3 text-white/40">{{ c.warranty_months ? c.warranty_months + ' мес.' : '—' }}</td>
-                            <td class="px-4 py-3 font-black text-amber-400">{{ c.qty }}</td>
+                            <td class="px-4 py-3 text-white/40 whitespace-nowrap">{{ fmtDate(c.received_at) }}</td>
                             <td class="px-4 py-3 text-white/40">{{ c.receiver?.name || '—' }}</td>
                             <td class="px-4 py-3 text-white/50">{{ statuses[c.status] || c.status }}</td>
-                            <td class="px-4 py-3 text-right space-x-2 whitespace-nowrap">
-                                <button v-if="canManage" @click="openEdit(c)" class="text-amber-400 uppercase font-black text-[10px]">Edit</button>
-                                <button v-if="canManage" @click="remove(c.id)" class="text-red-400 uppercase font-black text-[10px]">Del</button>
+                            <td class="px-4 py-3 text-right space-x-2 whitespace-nowrap" @click.stop>
+                                <template v-if="canEditRow(c)">
+                                    <button @click="openEdit(c)" class="text-amber-400 uppercase font-black text-[10px]">Edit</button>
+                                    <button @click="remove(c.id)" class="text-red-400 uppercase font-black text-[10px]">Del</button>
+                                </template>
                             </td>
                         </tr>
                     </tbody>
                 </table>
                 <div v-if="!components.length" class="text-white/30 text-sm py-10 text-center">Склад пуст</div>
+            </div>
+        </div>
+
+        <div v-if="detail" class="fixed inset-0 bg-black/70 flex items-start justify-center z-50 p-4 overflow-y-auto" @click.self="detail = null">
+            <div class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-7 w-full max-w-lg space-y-5 my-8" @click.stop>
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <div class="text-[10px] uppercase tracking-widest text-amber-400/80 font-black">{{ types[detail.type] || detail.type }}</div>
+                        <h3 class="font-black uppercase italic text-xl mt-1 leading-tight">{{ detail.name }}</h3>
+                        <div class="text-white/40 text-[10px] uppercase tracking-widest mt-2">{{ statuses[detail.status] || detail.status }}</div>
+                    </div>
+                    <button type="button" class="text-white/40 hover:text-white text-2xl leading-none px-2" @click="detail = null">×</button>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div class="rounded-2xl border border-white/10 p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Серийник</div>
+                        <div class="font-mono text-cyan-400/90 break-all">{{ serialsLabel(detail) }}</div>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Закупка</div>
+                        <div class="font-black">{{ money(detail.purchase_price) }}</div>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Поставщик</div>
+                        <div>{{ detail.supplier?.name || '—' }}</div>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Кто принял</div>
+                        <div>{{ detail.receiver?.name || '—' }}</div>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Поступление</div>
+                        <div>{{ fmtDt(detail.received_at) }}</div>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Срок гарантии</div>
+                        <div>{{ detail.warranty_months ? detail.warranty_months + ' мес.' : '—' }}</div>
+                    </div>
+                </div>
+
+                <div v-if="detail.warranty_label"
+                     class="rounded-2xl border px-4 py-3 text-xs font-black uppercase tracking-wider"
+                     :class="{
+                         'border-red-500/40 bg-red-500/10 text-red-300': detail.warranty_state === 'expired',
+                         'border-amber-500/40 bg-amber-500/10 text-amber-300': detail.warranty_state === 'expiring',
+                         'border-emerald-500/30 bg-emerald-500/10 text-emerald-300': detail.warranty_state === 'active',
+                     }">
+                    {{ detail.warranty_label }}
+                    <span v-if="detail.warranty_ends_at" class="block mt-1 text-[10px] font-normal normal-case tracking-normal text-white/40">
+                        до {{ fmtDate(detail.warranty_ends_at) }}
+                    </span>
+                </div>
+
+                <div v-if="detail.sale" class="rounded-2xl border border-white/10 p-4 space-y-2 text-xs">
+                    <div class="text-[10px] uppercase tracking-widest text-amber-400/80 font-black">Продажа</div>
+                    <div class="flex justify-between gap-3"><span class="text-white/35">Клиент</span><span class="text-right">{{ detail.sale.client_name || '—' }}</span></div>
+                    <div v-if="detail.sale.client_phone" class="flex justify-between gap-3"><span class="text-white/35">Телефон</span><span class="text-right">{{ detail.sale.client_phone }}</span></div>
+                    <div class="flex justify-between gap-3"><span class="text-white/35">Кто продал</span><span class="text-right">{{ detail.sale.sold_by || '—' }}</span></div>
+                    <div class="flex justify-between gap-3"><span class="text-white/35">Продано</span><span class="text-right">{{ fmtDt(detail.sale.sold_at) }}</span></div>
+                    <div v-if="detail.sale.built_pc_title" class="flex justify-between gap-3">
+                        <span class="text-white/35">Сборка</span>
+                        <span class="text-right">{{ detail.sale.built_pc_title }}</span>
+                    </div>
+                    <div v-if="detail.sale.order_id" class="flex justify-between gap-3"><span class="text-white/35">Заказ</span><span class="text-right">#{{ detail.sale.order_id }}</span></div>
+                </div>
+
+                <div v-if="detail.notes" class="text-xs text-white/40">
+                    <div class="text-[10px] uppercase tracking-widest text-white/30 font-black mb-1">Заметки</div>
+                    {{ detail.notes }}
+                </div>
+
+                <div class="flex gap-3 justify-end pt-1">
+                    <button v-if="canEditRow(detail)" type="button"
+                            class="px-4 py-3 text-[10px] uppercase font-black text-amber-400"
+                            @click="openEdit(detail)">Edit</button>
+                    <button type="button" class="px-5 py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] uppercase font-black"
+                            @click="detail = null">Закрыть</button>
+                </div>
             </div>
         </div>
 
@@ -459,11 +564,6 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                 </div>
 
                 <div>
-                    <label :class="labelClass">Оригинальное название (с ПК / check_build)</label>
-                    <input v-model="form.original_name" placeholder="Заполнится при сверке сборки" :class="fieldClass" />
-                </div>
-
-                <div>
                     <label :class="labelClass">Поставщик</label>
                     <select v-model="form.store_supplier_id" :class="fieldClass">
                         <option :value="null">Не указан</option>
@@ -471,15 +571,9 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
                     </select>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label :class="labelClass">Цена закупки, ₽</label>
-                        <input v-model.number="form.purchase_price" type="number" min="0" step="0.01" :class="fieldClass" required />
-                    </div>
-                    <div>
-                        <label :class="labelClass">Количество</label>
-                        <input v-model.number="form.qty" type="number" min="1" :class="fieldClass" />
-                    </div>
+                <div>
+                    <label :class="labelClass">Цена закупки, ₽</label>
+                    <input v-model.number="form.purchase_price" type="number" min="0" step="0.01" :class="fieldClass" required />
                 </div>
 
                 <div>

@@ -10,6 +10,7 @@ use App\Models\StoreOrderItem;
 use App\Models\StorePurchase;
 use App\Models\StorePurchaseItem;
 use App\Models\StoreSupplier;
+use App\Models\StoreSupplierCatalogProduct;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -169,6 +170,17 @@ class StoreEstimateProcurementService
             $supplierId = $this->ensureApiSupplier($purchase->club_id);
             $purchase->load(['items.estimateItem', 'estimate']);
 
+            $skus = $purchase->items
+                ->pluck('supplier_sku')
+                ->map(fn ($s) => (int) $s)
+                ->filter(fn ($s) => $s > 0)
+                ->unique()
+                ->values()
+                ->all();
+            $warrantyBySku = StoreSupplierCatalogProduct::query()
+                ->whereIn('sku', $skus)
+                ->pluck('warranty', 'sku');
+
             foreach ($purchase->items as $pItem) {
                 if ($pItem->status === 'received' && $pItem->store_component_id) {
                     continue;
@@ -178,6 +190,8 @@ class StoreEstimateProcurementService
                 $eItem = $pItem->estimateItem;
                 $type = $eItem?->type ?: 'other';
                 $name = $pItem->name ?: ($eItem?->name ?? 'SKU '.$pItem->supplier_sku);
+                $sku = (int) $pItem->supplier_sku;
+                $warrantyMonths = $this->parseWarrantyMonths($warrantyBySku->get($sku));
 
                 $component = StoreComponent::query()->create([
                     'club_id' => $purchase->club_id,
@@ -187,6 +201,7 @@ class StoreEstimateProcurementService
                     'original_name' => $eItem?->supplier_name,
                     'type' => $type,
                     'purchase_price' => $pItem->price,
+                    'warranty_months' => $warrantyMonths,
                     'qty' => 1,
                     'status' => 'reserved',
                     'notes' => 'Смета #'.$purchase->store_estimate_id.' · закупка #'.$purchase->id.' · sku '.$pItem->supplier_sku,
@@ -373,5 +388,38 @@ class StoreEstimateProcurementService
         );
 
         return (int) $supplier->id;
+    }
+
+    /**
+     * warranty из прайса ITP: "12", "36"; "0" у них = 12 мес.; "?" / no_info — неизвестно.
+     */
+    private function parseWarrantyMonths(mixed $raw): ?int
+    {
+        if ($raw === null || $raw === '' || $raw === '?' || $raw === 'no_info') {
+            return null;
+        }
+        if (is_int($raw) || is_float($raw)) {
+            $n = (int) $raw;
+            if ($n === 0) {
+                return 12;
+            }
+
+            return $n > 0 && $n <= 120 ? $n : null;
+        }
+
+        $s = trim((string) $raw);
+        if ($s === '' || $s === '?' || strcasecmp($s, 'no_info') === 0) {
+            return null;
+        }
+        if (preg_match('/(\d{1,3})/', $s, $m)) {
+            $n = (int) $m[1];
+            if ($n === 0) {
+                return 12;
+            }
+
+            return $n > 0 && $n <= 120 ? $n : null;
+        }
+
+        return null;
     }
 }
