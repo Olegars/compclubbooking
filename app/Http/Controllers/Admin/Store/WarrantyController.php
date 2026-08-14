@@ -484,6 +484,7 @@ class WarrantyController extends StoreController
             $items = $svc->buildSnapshot($w->builtPc);
         }
         $items = $this->enrichBuildItems($items, $w->builtPc);
+        $hasRepair = collect($items)->contains(fn ($row) => ($row['component_status'] ?? null) === 'repair');
 
         return [
             'id' => $w->id,
@@ -511,6 +512,7 @@ class WarrantyController extends StoreController
                 'status' => $w->builtPc->status,
             ] : null,
             'build_items' => $items,
+            'has_repair' => $hasRepair,
             'warranty_state' => $remaining['state'],
             'warranty_label' => $remaining['label'],
         ];

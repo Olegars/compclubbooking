@@ -179,7 +179,13 @@ const filterStatus = computed({
                         <button v-if="canClose" @click="setStatus(w.id, 'closed')"
                                 class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400">Закрыть</button>
                         <button v-if="canManage" @click="setStatus(w.id, 'active')"
-                                class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50">Active</button>
+                                class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black"
+                                :class="w.has_repair
+                                    ? 'border-red-500/50 text-red-400 bg-red-500/10'
+                                    : 'border-white/10 text-white/50'"
+                                :title="w.has_repair ? 'В сборке есть деталь в ремонте' : ''">
+                            Active
+                        </button>
                     </div>
                 </div>
                 <div v-if="!warranties.length" class="text-white/30 text-sm py-10 text-center">Гарантий нет</div>
