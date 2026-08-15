@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import axios from 'axios' // <--- Прямой импорт (решает проблему с window.axios)
 
@@ -15,8 +15,12 @@ import { useClubName } from '@/Composables/useClubName'
 
 const page = usePage()
 const clubName = useClubName()
+const brandSubtitle = computed(() => {
+    return String(clubName.value || '')
+        .replace(/^0451[\s\-–—]*/i, '')
+        .trim()
+})
 
-const isRolling = ref(false)
 const isPhoneModalOpen = ref(false)
 const isSmsModalOpen = ref(false)
 const authPhone = ref('')
@@ -284,16 +288,8 @@ const handleSmsVerify = (code: string) => {
     })
 }
 
-const triggerRoll = async () => {
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-    isRolling.value = false
-    await nextTick()
-    setTimeout(() => { isRolling.value = true }, 30)
-}
-
 onMounted(() => {
     clearReceiptSession()
-    setTimeout(() => { triggerRoll() }, 500)
     try {
         const params = new URLSearchParams(window.location.search)
         if (params.get('qr') && isAuthenticated.value) {
@@ -320,25 +316,15 @@ onUnmounted(() => {
 
         <div class="fixed inset-0 pointer-events-none z-[100] opacity-[0.02] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,0,0.06))] bg-[length:100%_4px,3px_100%]"></div>
 
-        <header class="bg-black/80 backdrop-blur-2xl sticky top-0 z-50 py-4 sm:py-6 flex-shrink-0">
-            <div class="max-w-[1600px] mx-auto px-4 sm:px-6 flex flex-col items-center gap-4 sm:gap-5 relative text-center">
+        <header class="bg-black/90 backdrop-blur-xl sticky top-0 z-50 flex-shrink-0 border-b border-white/5">
+            <div class="max-w-[1600px] mx-auto px-4 sm:px-6 py-3 sm:py-3.5 flex flex-wrap items-center justify-between gap-3">
 
-                <Link href="/" class="flex items-center justify-center cursor-pointer select-none" @click="triggerRoll">
-                    <h1 class="flex items-center justify-center">
-                        <span class="sector-neon text-[34px] sm:text-[52px] lg:text-[68px] uppercase leading-none tracking-tighter italic font-bomber">Sector</span>
-                        <div class="slot-container ml-2 sm:ml-4 lg:ml-6 flex items-center justify-center relative border border-white/5 rounded-lg overflow-hidden bg-black/50">
-                            <div class="slot-inner flex w-full h-full">
-                                <div v-for="(digit, index) in [0, 4, 5, 1]" :key="index" class="digit-box border-r border-white/5 last:border-0">
-                                    <div class="digit-strip" :class="[`strip-${digit}`, { 'roll-active': isRolling }]" :style="{ animationDelay: isRolling ? `${index * 150}ms` : '0ms' }">
-                                        <span v-for="n in 20" :key="n" class="d-cell font-mono font-black italic">{{ (n - 1) % 10 }}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </h1>
+                <Link href="/" class="flex items-baseline gap-2.5 min-w-0 shrink-0 no-underline">
+                    <span class="brand-0451">0451</span>
+                    <span v-if="brandSubtitle" class="brand-club">{{ brandSubtitle }}</span>
                 </Link>
 
-                <nav class="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+                <nav class="flex flex-wrap items-center justify-end gap-2 sm:gap-3 min-w-0">
                     <Link href="/" class="nav-btn" :class="{ 'active': $page.url === '/' }">Главная</Link>
                     <Link
                         v-if="isAuthenticated"
@@ -516,49 +502,42 @@ onUnmounted(() => {
 <style scoped>
 @reference "../../css/app.css";
 
-.font-bomber { font-family: 'BomberEscort', sans-serif; }
-.sector-neon { color: #000; -webkit-text-stroke: 1.2px #22c55e; text-shadow: 0 0 5px rgba(34, 197, 94, 0.8), 0 0 20px rgba(34, 197, 94, 0.4); filter: brightness(1.2); font-family: 'BomberEscort', sans-serif; }
-
-/* Геометрия слот-машины считается от высоты ячейки, поэтому цифры
-   остаются выровненными на любом размере экрана. */
-.slot-container { --cell: 38px; width: calc(var(--cell) * 2.87); height: var(--cell); }
-@media (min-width: 640px) { .slot-container { --cell: 56px; } }
-@media (min-width: 1024px) { .slot-container { --cell: 72px; } }
-
-.digit-box { width: 25%; height: 100%; position: relative; overflow: hidden; }
-.digit-strip { display: flex; flex-direction: column; will-change: transform; width: 100%; }
-.d-cell {
-    height: var(--cell);
-    line-height: var(--cell);
-    font-size: calc(var(--cell) * 0.78);
-    display: flex; align-items: center; justify-content: center;
-    color: #000;
-    -webkit-text-stroke: calc(var(--cell) * 0.028) #22c55e;
-    paint-order: stroke fill;
+.brand-0451 {
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: 900;
+    font-style: italic;
+    letter-spacing: 0.18em;
+    font-size: 1.05rem;
+    line-height: 1;
+    color: #22c55e;
+    text-shadow: 0 0 12px rgba(34, 197, 94, 0.45);
 }
-
-.strip-0 { transform: translateY(0); }
-.strip-1 { transform: translateY(calc(var(--cell) * -1)); }
-.strip-4 { transform: translateY(calc(var(--cell) * -4)); }
-.strip-5 { transform: translateY(calc(var(--cell) * -5)); }
-
-.roll-active { animation-duration: 2.5s; animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 0.95); animation-fill-mode: both; }
-.strip-0.roll-active { animation-name: roll-0; } .strip-4.roll-active { animation-name: roll-4; } .strip-5.roll-active { animation-name: roll-5; } .strip-1.roll-active { animation-name: roll-1; }
-
-@keyframes roll-0 { from { transform: translateY(0); } 100% { transform: translateY(calc(var(--cell) * -10)); } }
-@keyframes roll-1 { from { transform: translateY(calc(var(--cell) * -1)); } 100% { transform: translateY(calc(var(--cell) * -11)); } }
-@keyframes roll-4 { from { transform: translateY(calc(var(--cell) * -4)); } 100% { transform: translateY(calc(var(--cell) * -14)); } }
-@keyframes roll-5 { from { transform: translateY(calc(var(--cell) * -5)); } 100% { transform: translateY(calc(var(--cell) * -15)); } }
-
-@media (prefers-reduced-motion: reduce) {
-    .roll-active { animation: none !important; }
+@media (min-width: 640px) {
+    .brand-0451 { font-size: 1.35rem; }
+}
+.brand-club {
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: 800;
+    font-style: italic;
+    letter-spacing: 0.14em;
+    font-size: 0.72rem;
+    line-height: 1;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.55);
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+@media (min-width: 640px) {
+    .brand-club { font-size: 0.82rem; max-width: 22rem; }
 }
 
 .nav-btn {
     @apply px-4 py-2.5 sm:px-6 sm:py-3 border border-white/10 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer uppercase tracking-widest italic;
     font-family: Arial, Helvetica, sans-serif;
 }
-@media (min-width: 1024px) { .nav-btn { min-width: 170px; } }
+@media (min-width: 1024px) { .nav-btn { min-width: 140px; } }
 .nav-btn.active { @apply bg-[#22c55e] text-black border-transparent shadow-[0_0_20px_rgba(34,197,94,0.4)]; }
 
 .nav-btn-icon {

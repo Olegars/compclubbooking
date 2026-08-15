@@ -481,10 +481,7 @@ onMounted(() => {
 
             <div class="md:col-span-2 flex flex-col gap-px md:gap-6 bg-white/[0.06] md:bg-transparent">
 
-                <div class="cabinet-block bg-[#0a0a0a] border-0 md:border md:border-[#22c55e]/20 rounded-none md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 relative overflow-hidden md:shadow-2xl md:shadow-[#22c55e]/5">
-                    <div class="absolute top-0 right-0 p-4 sm:p-8 opacity-10 pointer-events-none">
-                        <svg class="w-20 h-20 sm:w-32 sm:h-32 text-[#22c55e]" fill="currentColor" viewBox="0 0 24 24"><path d="M21 18l-3-3h-5l-2 2h-3l-2-2H4l-3 3V5l3-3h5l2 2h3l2-2h5l3 3v13z"/></svg>
-                    </div>
+                <div class="cabinet-block bg-[#0a0a0a] border-0 md:border md:border-[#22c55e]/20 rounded-none md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 relative md:shadow-2xl md:shadow-[#22c55e]/5">
 
                     <span class="text-[10px] uppercase text-[#22c55e] tracking-[0.35em] font-black italic relative z-10">Баланс {{ userName }}</span>
                     <div class="mt-2 sm:mt-4 flex items-baseline gap-2 sm:gap-4 relative z-10">
