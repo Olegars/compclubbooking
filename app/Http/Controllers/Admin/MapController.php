@@ -54,18 +54,6 @@ class MapController extends Controller
             $hadGeometry = ! empty($existingConfig['zoneRects']) || ! empty($existingConfig['walls']);
             $existingPcCount = Computer::query()->where('club_id', $clubId)->count();
 
-            if ($namedPcs === [] && $existingPcCount > 0) {
-                Log::warning('save-map refused: empty pcs would delete all club computers', [
-                    'club_id' => $clubId,
-                    'existing_pcs' => $existingPcCount,
-                ]);
-
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Пустой список ПК не затирает карту клуба. Удалите места по одному или перезагрузите карту.',
-                ], 422);
-            }
-
             if ($geometryEmpty && $hadGeometry) {
                 Log::warning('save-map refused: empty geometry would wipe map_config', [
                     'club_id' => $clubId,
@@ -77,7 +65,15 @@ class MapController extends Controller
                 ], 422);
             }
 
-            DB::transaction(function () use ($clubId, $incomingConfig, $namedPcs) {
+            $skipPcSync = $namedPcs === [];
+            if ($skipPcSync && $existingPcCount > 0) {
+                Log::info('save-map: empty pcs, keeping existing computers', [
+                    'club_id' => $clubId,
+                    'existing_pcs' => $existingPcCount,
+                ]);
+            }
+
+            DB::transaction(function () use ($clubId, $incomingConfig, $namedPcs, $skipPcSync) {
                 $viewbox = $incomingConfig['viewbox'] ?? null;
                 DB::table('clubs')->where('id', $clubId)->update(array_filter([
                     'map_config' => json_encode($incomingConfig),
@@ -86,6 +82,10 @@ class MapController extends Controller
                 ], fn ($v) => $v !== null));
 
                 $this->syncSpaces($clubId, is_array($incomingConfig['zoneRects'] ?? null) ? $incomingConfig['zoneRects'] : []);
+
+                if ($skipPcSync) {
+                    return;
+                }
 
                 $pcClassId = SeatClass::query()->where('slug', 'pc')->value('id');
                 $tvClassId = SeatClass::query()->where('slug', 'tv')->value('id');
@@ -166,7 +166,9 @@ class MapController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Карта сохранена, комнаты и допы синхронизированы.',
+                'message' => $skipPcSync && $existingPcCount > 0
+                    ? 'Карта сохранена. Список ПК был пустой — места не трогали.'
+                    : 'Карта сохранена, комнаты и допы синхронизированы.',
             ]);
         } catch (\Exception $e) {
             return response()->json([

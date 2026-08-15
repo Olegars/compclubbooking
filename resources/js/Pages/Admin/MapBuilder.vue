@@ -820,13 +820,9 @@ const loadFromDB = async () => {
 }
 
 const saveToDB = async () => {
-    if (computers.value.length === 0) {
-        alert('Пустой список ПК не сохраняется — так можно затереть карту клуба. Перезагрузите страницу.');
-        return
-    }
     isSaving.value = true
     try {
-        await axios.post('/admin/save-map', {
+        const { data } = await axios.post('/admin/save-map', {
             club_id: activeClubId.value,
             config: {
                 walls: walls.value,
@@ -854,7 +850,7 @@ const saveToDB = async () => {
             }))
         });
         await loadFromDB();
-        alert('Данные карты успешно сохранены!');
+        alert(data?.message || 'Данные карты успешно сохранены!');
     } catch (e) {
         console.error(e);
         const msg = e?.response?.data?.message || 'Ошибка при сохранении карты.';

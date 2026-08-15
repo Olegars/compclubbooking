@@ -131,6 +131,42 @@ class ShellMapBindTest extends TestCase
         $this->assertNotEmpty($this->club->map_config['walls'] ?? []);
     }
 
+    public function test_save_map_geometry_without_pcs_keeps_computers(): void
+    {
+        $admin = Admin::create([
+            'name' => 'Map Admin',
+            'email' => 'map-geom@test.local',
+            'password' => 'password',
+            'role' => 'supervisor',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class)
+            ->postJson('/admin/save-map', [
+                'club_id' => $this->club->id,
+                'config' => [
+                    'walls' => [['d' => 'M0 0 L40 0']],
+                    'zoneRects' => [[
+                        'x' => 0, 'y' => 0, 'w' => 16, 'h' => 10,
+                        'type' => 'duo',
+                    ]],
+                    'labels' => [],
+                    'viewbox' => '-10 -10 120 200',
+                ],
+                'pcs' => [],
+            ])
+            ->assertOk()
+            ->assertJsonPath('status', 'success');
+
+        $this->assertSame(1, Computer::query()->count());
+        $this->assertDatabaseHas('computers', [
+            'id' => $this->seat->id,
+            'name' => 'PC-01',
+        ]);
+        $this->club->refresh();
+        $this->assertSame('duo', $this->club->map_config['zoneRects'][0]['type'] ?? null);
+    }
+
     public function test_save_map_still_removes_pcs_not_in_payload(): void
     {
         $other = Computer::create([
