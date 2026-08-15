@@ -12,6 +12,10 @@ import { useClubName } from '@/Composables/useClubName'
 
 const page = usePage()
 const clubName = useClubName()
+const userName = computed(() => {
+    const props = page.props as any
+    return String(props.auth?.user?.name || props.user?.name || 'игрок').trim() || 'игрок'
+})
 
 // --- ЛОГИКА БАЛАНСА ---
 const getRawBalance = () => {
@@ -482,7 +486,7 @@ onMounted(() => {
                         <svg class="w-20 h-20 sm:w-32 sm:h-32 text-[#22c55e]" fill="currentColor" viewBox="0 0 24 24"><path d="M21 18l-3-3h-5l-2 2h-3l-2-2H4l-3 3V5l3-3h5l2 2h3l2-2h5l3 3v13z"/></svg>
                     </div>
 
-                    <span class="text-[10px] uppercase text-[#22c55e] tracking-[0.35em] font-black italic relative z-10">Лицевой счет {{ clubName }}</span>
+                    <span class="text-[10px] uppercase text-[#22c55e] tracking-[0.35em] font-black italic relative z-10">Баланс {{ userName }}</span>
                     <div class="mt-2 sm:mt-4 flex items-baseline gap-2 sm:gap-4 relative z-10">
                         <span class="text-5xl sm:text-8xl font-black italic tracking-tighter text-white drop-shadow-[0_0_25px_rgba(34,197,94,0.4)] leading-none">
                             {{ Math.floor(displayBalance) }}
