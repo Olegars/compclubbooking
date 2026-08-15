@@ -1145,7 +1145,7 @@ onUnmounted(() => {
                                           selectedLabel === l ? 'drop-shadow-[0_0_10px_rgba(255,255,255,0.8)] fill-white' : ''
                                       ]"
                                       :transform="l.rotate ? `rotate(${l.rotate} ${safeNum(l.x)} ${safeNum(l.y)})` : ''"
-                                      :fill="l.color || '#ffffff'" :font-size="safeNum(l.size, 6)" font-weight="900">{{ l.content || 'ТЕКСТ' }}</text>
+                                      :fill="l.color || '#ffffff'" :font-size="Math.max(0.3, safeNum(l.size, 6))" font-weight="700">{{ l.content || 'ТЕКСТ' }}</text>
                             </g>
                         </g>
 
@@ -1265,7 +1265,11 @@ onUnmounted(() => {
                         </div>
                         <div>
                             <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Размер</label>
-                            <input type="range" v-model.number="selectedLabel.size" min="2" max="30" class="w-full accent-cyan-500">
+                            <div class="flex items-center gap-3">
+                                <input type="range" v-model.number="selectedLabel.size" min="0.3" max="30" step="0.1" class="flex-1 accent-cyan-500">
+                                <input type="number" v-model.number="selectedLabel.size" min="0.3" max="30" step="0.1"
+                                       class="w-16 bg-black border border-white/10 text-white text-xs px-2 py-1.5 rounded-lg outline-none focus:border-cyan-500 text-center" />
+                            </div>
                         </div>
                         <button @click="selectedLabel.rotate = (selectedLabel.rotate === 90 ? 0 : 90)" class="text-[10px] font-black tracking-widest uppercase bg-white/5 hover:bg-white/10 py-3 rounded-xl transition-colors border border-white/5 mt-2">Повернуть на 90°</button>
                     </div>

@@ -86,8 +86,8 @@
                     :transform="l.rotate ? `rotate(${l.rotate} ${l.x} ${l.y})` : ''"
                     :fill="l.color || '#ffffff'"
                     fill-opacity="0.85"
-                    :font-size="l.size || 6"
-                    font-weight="900"
+                    :font-size="Math.max(0.3, Number(l.size) || 6)"
+                    font-weight="700"
                     font-family="Arial, sans-serif"
                     class="uppercase pointer-events-none"
                 >
