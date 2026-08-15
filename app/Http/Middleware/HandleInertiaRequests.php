@@ -26,7 +26,9 @@ class HandleInertiaRequests extends Middleware
         $balance = $user ? $user->availableBalance() : 0.0;
         $location = $admin ? AdminLocation::resolve($admin) : null;
         $canAccessClub = $admin ? $admin->canAccessClub() : false;
-        $canAccessStore = $admin && $admin->canAccessStore() && $location && $location->hasStore();
+        $canAccessStore = $admin && $admin->canAccessStore()
+            && $location
+            && ($admin->role === 'owner' || $location->hasStore());
 
         return array_merge(parent::share($request), [
             'flash' => [

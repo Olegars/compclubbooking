@@ -14,7 +14,7 @@ class Admin extends Authenticatable
 
     public const CLUB_ROLES = ['admin', 'supervisor', 'owner'];
 
-    public const STORE_ROLES = ['admin', 'supervisor', 'owner', 'store_manager', 'assembler', 'senior_manager'];
+    public const STORE_ROLES = ['store_manager', 'assembler', 'senior_manager', 'owner'];
 
     public const STORE_ONLY_ROLES = ['store_manager', 'assembler', 'senior_manager'];
 
@@ -65,12 +65,12 @@ class Admin extends Authenticatable
 
     public function canManageStoreCatalog(): bool
     {
-        return in_array($this->role, ['store_manager', 'senior_manager', 'owner', 'supervisor', 'admin'], true);
+        return in_array($this->role, ['store_manager', 'senior_manager', 'owner'], true);
     }
 
     public function canManageStoreInventory(): bool
     {
-        return in_array($this->role, ['store_manager', 'senior_manager', 'owner', 'supervisor', 'admin'], true);
+        return in_array($this->role, ['store_manager', 'senior_manager', 'owner'], true);
     }
 
     public function canCancelStoreOrders(): bool

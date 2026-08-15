@@ -17,7 +17,10 @@ class EnsureStoreAccess
         }
 
         $location = AdminLocation::resolve($admin);
-        if (! $location || ! $location->hasStore()) {
+        if (! $location) {
+            abort(403, 'REACTOR: Локация не выбрана.');
+        }
+        if ($admin->role !== 'owner' && ! $location->hasStore()) {
             abort(403, 'REACTOR: У этой локации магазин не включён.');
         }
 

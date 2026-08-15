@@ -22,12 +22,12 @@ class Club extends Model
 
     public function hasStore(): bool
     {
-        return in_array($this->type, ['store', 'both'], true);
+        return in_array(strtolower(trim((string) $this->type)), ['store', 'both'], true);
     }
 
     public function hasClub(): bool
     {
-        return in_array($this->type, ['club', 'both'], true);
+        return in_array(strtolower(trim((string) $this->type)), ['club', 'both'], true);
     }
 
     public function computers(): HasMany
