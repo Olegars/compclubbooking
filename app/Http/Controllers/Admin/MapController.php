@@ -12,6 +12,7 @@ use App\Support\RoomInfoEdge;
 use App\Support\ZoneSlug;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class MapController extends Controller
 {
@@ -26,18 +27,65 @@ class MapController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($clubId, $config, $pcs) {
-                if (is_array($config)) {
-                    $config = ZoneSlug::normalizeMapConfig($config);
+            $namedPcs = [];
+            $pcs = is_array($pcs) ? $pcs : [];
+            foreach ($pcs as $pc) {
+                if (is_array($pc) && ! empty($pc['name'])) {
+                    $namedPcs[] = $pc;
                 }
-                $viewbox = is_array($config) ? ($config['viewbox'] ?? null) : null;
+            }
+
+            $incomingConfig = is_array($config) ? ZoneSlug::normalizeMapConfig($config) : [];
+            $incomingRects = is_array($incomingConfig['zoneRects'] ?? null) ? $incomingConfig['zoneRects'] : [];
+            $incomingWalls = is_array($incomingConfig['walls'] ?? null) ? $incomingConfig['walls'] : [];
+            $geometryEmpty = $incomingRects === [] && $incomingWalls === [];
+
+            $clubRow = DB::table('clubs')->where('id', $clubId)->first();
+            if (! $clubRow) {
+                return response()->json(['status' => 'error', 'message' => 'Club not found'], 404);
+            }
+            $rawConfig = $clubRow->map_config ?? null;
+            $existingConfig = is_array($rawConfig)
+                ? $rawConfig
+                : (json_decode((string) ($rawConfig ?? 'null'), true) ?: []);
+            if (! is_array($existingConfig)) {
+                $existingConfig = [];
+            }
+            $hadGeometry = ! empty($existingConfig['zoneRects']) || ! empty($existingConfig['walls']);
+            $existingPcCount = Computer::query()->where('club_id', $clubId)->count();
+
+            if ($namedPcs === [] && $existingPcCount > 0) {
+                Log::warning('save-map refused: empty pcs would delete all club computers', [
+                    'club_id' => $clubId,
+                    'existing_pcs' => $existingPcCount,
+                ]);
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Пустой список ПК не затирает карту клуба. Удалите места по одному или перезагрузите карту.',
+                ], 422);
+            }
+
+            if ($geometryEmpty && $hadGeometry) {
+                Log::warning('save-map refused: empty geometry would wipe map_config', [
+                    'club_id' => $clubId,
+                ]);
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Пустая геометрия не затирает карту клуба. Удалите стены и зоны по одному или перезагрузите карту.',
+                ], 422);
+            }
+
+            DB::transaction(function () use ($clubId, $incomingConfig, $namedPcs) {
+                $viewbox = $incomingConfig['viewbox'] ?? null;
                 DB::table('clubs')->where('id', $clubId)->update(array_filter([
-                    'map_config' => json_encode($config),
+                    'map_config' => json_encode($incomingConfig),
                     'viewbox' => is_string($viewbox) && $viewbox !== '' ? $viewbox : null,
                     'updated_at' => now(),
                 ], fn ($v) => $v !== null));
 
-                $spaceIds = $this->syncSpaces($clubId, is_array($config) ? ($config['zoneRects'] ?? []) : []);
+                $this->syncSpaces($clubId, is_array($incomingConfig['zoneRects'] ?? null) ? $incomingConfig['zoneRects'] : []);
 
                 $pcClassId = SeatClass::query()->where('slug', 'pc')->value('id');
                 $tvClassId = SeatClass::query()->where('slug', 'tv')->value('id');
@@ -49,13 +97,8 @@ class MapController extends Controller
                     ->keyBy('id');
 
                 $keepIds = [];
-                $pcs = is_array($pcs) ? $pcs : [];
 
-                foreach ($pcs as $pc) {
-                    if (! is_array($pc) || empty($pc['name'])) {
-                        continue;
-                    }
-
+                foreach ($namedPcs as $pc) {
                     $kind = in_array($pc['kind'] ?? 'pc', ['pc', 'tv', 'ps5'], true)
                         ? $pc['kind']
                         : 'pc';
@@ -109,15 +152,16 @@ class MapController extends Controller
                     }
                 }
 
-                $toDeleteQuery = Computer::query()->where('club_id', $clubId);
-                if ($keepIds !== []) {
-                    $toDeleteQuery->whereNotIn('id', $keepIds);
+                if ($keepIds === []) {
+                    return;
                 }
+
+                $toDeleteQuery = Computer::query()
+                    ->where('club_id', $clubId)
+                    ->whereNotIn('id', $keepIds);
                 foreach ($toDeleteQuery->get() as $dead) {
                     $dead->delete();
                 }
-
-                unset($spaceIds);
             });
 
             return response()->json([

@@ -769,8 +769,6 @@ const loadFromDB = async () => {
     if (!activeClubId.value) return;
 
     isLoading.value = true;
-    walls.value = []; zones.value = []; labels.value = []; computers.value = [];
-    mapAddons.value = [];
 
     try {
         const { data } = await axios.get(`/admin/get-map?club_id=${activeClubId.value}`);
@@ -780,6 +778,9 @@ const loadFromDB = async () => {
             try { rawConfig = JSON.parse(rawConfig); }
             catch(e) { break; }
         }
+
+        walls.value = []; zones.value = []; labels.value = []; computers.value = [];
+        mapAddons.value = [];
 
         if (rawConfig) {
             walls.value = cleanArray(rawConfig.walls).filter(w => w && w.d);
@@ -819,6 +820,10 @@ const loadFromDB = async () => {
 }
 
 const saveToDB = async () => {
+    if (computers.value.length === 0) {
+        alert('Пустой список ПК не сохраняется — так можно затереть карту клуба. Перезагрузите страницу.');
+        return
+    }
     isSaving.value = true
     try {
         await axios.post('/admin/save-map', {
@@ -852,7 +857,8 @@ const saveToDB = async () => {
         alert('Данные карты успешно сохранены!');
     } catch (e) {
         console.error(e);
-        alert('Ошибка при сохранении карты.');
+        const msg = e?.response?.data?.message || 'Ошибка при сохранении карты.';
+        alert(msg);
     } finally {
         isSaving.value = false
     }

@@ -34,6 +34,7 @@ use App\Services\ProductStockService;
 use App\Services\UserCloudSettingsService;
 use App\Services\VideoMarkerService;
 use App\Services\ShellQrLoginService;
+use App\Services\WakeOnLan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -1863,33 +1864,38 @@ class ShellApiController extends Controller
     {
         try {
             $request->validate([
-                'hwid'      => 'required|string',
-                'zone_type' => 'required|string',
-                'name'      => 'required|string'
+                'hwid'        => 'required|string',
+                'zone_type'   => 'required|string',
+                'name'        => 'required|string',
+                'mac_address' => 'nullable|string|max:32',
             ]);
 
             $hwid = strtolower(trim((string) $request->hwid));
             $zoneType = strtolower(trim((string) $request->zone_type));
             $name = trim((string) $request->name);
+            $mac = $request->input('mac_address');
+            $defaultClubId = \App\Models\Club::first()?->id ?? 1;
+            $kind = $zoneType === 'tv' ? Computer::KIND_TV : Computer::KIND_PC;
 
-            // Только HWID: нашли → update (в т.ч. имя на карте), не нашли → create
-            $computer = Computer::query()
-                ->whereRaw('LOWER(hwid) = ?', [$hwid])
-                ->first();
+            $computer = $this->findComputerByHwid($hwid)
+                ?? $this->findComputerByMac(is_string($mac) ? $mac : null)
+                ?? $this->findComputerByName($name, (int) $defaultClubId);
 
             if ($computer) {
+                $this->adoptShellIdentity($computer, $hwid, is_string($mac) ? $mac : null);
                 $computer->update([
                     'type' => $zoneType,
                     'name' => $name,
-                    'hwid' => $hwid,
                     'kind' => $zoneType === 'tv' ? Computer::KIND_TV : ($computer->kind ?: Computer::KIND_PC),
                 ]);
+                $computer->refresh();
 
-                Log::info('Shell registerTerminal: updated by hwid', [
+                Log::info('Shell registerTerminal: bound existing map seat', [
                     'computer_id' => $computer->id,
                     'hwid' => $hwid,
                     'name' => $name,
-                    'kind' => $computer->kind,
+                    'x' => $computer->x,
+                    'y' => $computer->y,
                 ]);
 
                 return response()->json([
@@ -1899,9 +1905,6 @@ class ShellApiController extends Controller
                 ]);
             }
 
-            $defaultClubId = \App\Models\Club::first()?->id ?? 1;
-            $kind = $zoneType === 'tv' ? Computer::KIND_TV : Computer::KIND_PC;
-
             $newComputer = Computer::create([
                 'club_id' => $defaultClubId,
                 'hwid' => $hwid,
@@ -1910,6 +1913,7 @@ class ShellApiController extends Controller
                 'kind' => $kind,
                 'status' => 'available',
             ]);
+            $this->adoptShellIdentity($newComputer, $hwid, is_string($mac) ? $mac : null);
 
             if ($kind === Computer::KIND_PC) {
                 Game::query()->pluck('id')->each(fn ($gameId) =>
@@ -1920,7 +1924,7 @@ class ShellApiController extends Controller
                 );
             }
 
-            Log::warning('Shell registerTerminal: created new station (hwid not found)', [
+            Log::warning('Shell registerTerminal: created new station (no map seat by hwid/mac/name)', [
                 'computer_id' => $newComputer->id,
                 'hwid' => $hwid,
                 'name' => $name,
@@ -1946,16 +1950,22 @@ class ShellApiController extends Controller
     {
         try {
             $request->validate([
-                'hwid' => 'required|string'
+                'hwid' => 'required|string',
+                'mac_address' => 'nullable|string|max:32',
+                'legacy_hwid' => 'nullable|string',
             ]);
 
             $hwid = strtolower(trim((string) $request->hwid));
-            $computer = Computer::query()
-                ->with(['space.zone'])
-                ->whereRaw('LOWER(hwid) = ?', [$hwid])
-                ->first();
+            $mac = $request->input('mac_address');
+            $legacy = strtolower(trim((string) $request->input('legacy_hwid', '')));
+
+            $computer = $this->findComputerByHwid($hwid)
+                ?? $this->findComputerByMac(is_string($mac) ? $mac : null)
+                ?? ($legacy !== '' ? $this->findComputerByHwid($legacy) : null);
 
             if ($computer) {
+                $this->adoptShellIdentity($computer, $hwid, is_string($mac) ? $mac : null);
+                $computer->loadMissing(['space.zone']);
                 // Шелл на связи: сначала жёстко пишем last_seen/power_state через SQL NOW().
                 try {
                     app(ComputerPowerService::class)->heartbeat($computer);
@@ -1968,6 +1978,7 @@ class ShellApiController extends Controller
                         Log::warning('Power touch on check failed: '.$e2->getMessage());
                     }
                 }
+                $computer->load(['space.zone']);
 
                 $zone = $computer->space?->zone;
                 $zoneSlug = ZoneSlug::normalize($zone?->slug ?: ($computer->type ?? ''));
@@ -2323,11 +2334,16 @@ class ShellApiController extends Controller
             if ($request->filled('terminal_id')) {
                 $computer = Computer::find((int) $request->terminal_id);
             }
-            if (! $computer && $request->filled('hwid')) {
-                $hwid = strtolower(trim((string) $request->hwid));
-                $computer = Computer::query()
-                    ->whereRaw('LOWER(hwid) = ?', [$hwid])
-                    ->first();
+            $hwid = strtolower(trim((string) $request->input('hwid', '')));
+            $mac = $request->input('mac_address');
+            if (! $computer && $hwid !== '') {
+                $computer = $this->findComputerByHwid($hwid);
+            }
+            if (! $computer) {
+                $computer = $this->findComputerByMac(is_string($mac) ? $mac : null);
+            }
+            if ($computer && $hwid !== '') {
+                $this->adoptShellIdentity($computer, $hwid, is_string($mac) ? $mac : null);
             }
 
             if (! $computer) {
@@ -2760,5 +2776,79 @@ class ShellApiController extends Controller
                 'message' => 'Ошибка сервера при сохранении кэша: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function findComputerByHwid(string $hwid): ?Computer
+    {
+        $hwid = strtolower(trim($hwid));
+        if ($hwid === '') {
+            return null;
+        }
+
+        return Computer::query()->whereRaw('LOWER(hwid) = ?', [$hwid])->first();
+    }
+
+    private function findComputerByMac(?string $mac): ?Computer
+    {
+        if ($mac === null || trim($mac) === '') {
+            return null;
+        }
+        $normalized = app(WakeOnLan::class)->normalizeMac($mac);
+        if ($normalized === null) {
+            return null;
+        }
+
+        $found = Computer::query()->where('mac_address', $normalized)->first();
+        if ($found) {
+            return $found;
+        }
+
+        return $this->findComputerByHwid('mac:'.strtolower($normalized));
+    }
+
+    private function findComputerByName(string $name, int $clubId): ?Computer
+    {
+        $name = trim($name);
+        if ($name === '' || $clubId <= 0) {
+            return null;
+        }
+
+        return Computer::query()
+            ->where('club_id', $clubId)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->orderByRaw("CASE WHEN hwid IS NULL OR hwid = '' THEN 0 ELSE 1 END")
+            ->orderBy('id')
+            ->first();
+    }
+
+    private function adoptShellIdentity(Computer $computer, string $hwid, ?string $mac = null): Computer
+    {
+        $hwid = strtolower(trim($hwid));
+        $patch = [];
+        if ($hwid !== '' && strtolower((string) $computer->hwid) !== $hwid) {
+            $taken = Computer::query()
+                ->whereRaw('LOWER(hwid) = ?', [$hwid])
+                ->where('id', '!=', $computer->id)
+                ->exists();
+            if (! $taken) {
+                $patch['hwid'] = $hwid;
+            }
+        }
+        if (is_string($mac) && trim($mac) !== '') {
+            $normalized = app(WakeOnLan::class)->normalizeMac($mac);
+            if ($normalized) {
+                $patch['mac_address'] = $normalized;
+            }
+        }
+        if ($patch !== []) {
+            $computer->update($patch);
+            Log::info('Shell identity migrated', [
+                'computer_id' => $computer->id,
+                'hwid' => $patch['hwid'] ?? $computer->hwid,
+                'mac_address' => $patch['mac_address'] ?? $computer->mac_address,
+            ]);
+        }
+
+        return $computer->refresh();
     }
 }
