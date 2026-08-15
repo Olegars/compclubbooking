@@ -246,7 +246,7 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     // =====================================================================
     // МАГАЗИН ПРИ КЛУБЕ — store roles + owner (и локация с type store/both)
     // =====================================================================
-    Route::middleware(['role:store_manager,assembler,senior_manager,owner', 'store'])
+    Route::middleware(['role:admin,supervisor,owner,store_manager,assembler,senior_manager', 'store'])
         ->prefix('store')
         ->group(function () {
             Route::get('/warehouse', [StoreWarehouseController::class, 'index'])->name('admin.store.warehouse');

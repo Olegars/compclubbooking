@@ -8,17 +8,17 @@ use PHPUnit\Framework\TestCase;
 
 class StoreRoleAccessTest extends TestCase
 {
-    public function test_club_roles_cannot_access_store_except_owner(): void
+    public function test_club_roles_can_access_store_at_club_shop(): void
     {
         $admin = new Admin(['role' => 'admin']);
         $supervisor = new Admin(['role' => 'supervisor']);
         $owner = new Admin(['role' => 'owner']);
 
         $this->assertTrue($admin->canAccessClub());
-        $this->assertFalse($admin->canAccessStore());
+        $this->assertTrue($admin->canAccessStore());
 
         $this->assertTrue($supervisor->canAccessClub());
-        $this->assertFalse($supervisor->canAccessStore());
+        $this->assertTrue($supervisor->canAccessStore());
 
         $this->assertTrue($owner->canAccessClub());
         $this->assertTrue($owner->canAccessStore());
