@@ -323,15 +323,7 @@ onUnmounted(() => {
                             <span class="masthead-title">компьютерный клуб</span>
                         </Link>
 
-                        <nav class="masthead-nav">
-                            <Link href="/" class="nav-btn" :class="{ 'active': $page.url === '/' }">Главная</Link>
-                            <Link
-                                v-if="isAuthenticated"
-                                href="/account/dashboard"
-                                class="nav-btn"
-                                :class="{ 'active': $page.url.startsWith('/account') }"
-                            >Кабинет</Link>
-                            <Link href="/booking" class="nav-btn" :class="{ 'active': $page.url.startsWith('/booking') }">Бронирование</Link>
+                        <div class="masthead-tools">
                             <button
                                 v-if="isAuthenticated"
                                 type="button"
@@ -372,12 +364,25 @@ onUnmounted(() => {
                             <template v-else>
                                 <button type="button" @click="isPhoneModalOpen = true" class="nav-btn nav-btn-enter">Войти</button>
                             </template>
-                        </nav>
+                        </div>
                     </div>
                 </div>
             </div>
             </div>
         </header>
+
+        <div class="w-full px-4 sm:px-4 lg:px-6 pb-3 sm:pb-4">
+            <nav class="site-nav max-w-7xl mx-auto">
+                <Link href="/" class="nav-btn" :class="{ 'active': $page.url === '/' }">Главная</Link>
+                <Link
+                    v-if="isAuthenticated"
+                    href="/account/dashboard"
+                    class="nav-btn"
+                    :class="{ 'active': $page.url.startsWith('/account') }"
+                >Кабинет</Link>
+                <Link href="/booking" class="nav-btn" :class="{ 'active': $page.url.startsWith('/booking') }">Бронирование</Link>
+            </nav>
+        </div>
 
         <div
             class="flex-grow w-full flex flex-col items-center"
@@ -518,7 +523,6 @@ onUnmounted(() => {
     gap: 0.75rem 1rem;
     padding: 0.7rem 0.85rem;
     flex-wrap: nowrap;
-    overflow-x: auto;
 }
 @media (min-width: 640px) {
     .masthead-row { padding: 0.85rem 1.15rem; gap: 1rem 1.25rem; }
@@ -569,6 +573,8 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     height: var(--brand);
+    min-width: 0;
+    overflow: hidden;
     font-family: 'BomberEscort', Arial, Helvetica, sans-serif;
     font-weight: 900;
     font-style: italic;
@@ -583,7 +589,7 @@ onUnmounted(() => {
     filter: brightness(1.2);
     paint-order: stroke fill;
 }
-.masthead-nav {
+.masthead-tools {
     display: flex;
     align-items: center;
     gap: 0.4rem;
@@ -591,20 +597,26 @@ onUnmounted(() => {
     flex-shrink: 0;
 }
 @media (min-width: 640px) {
-    .masthead-nav { gap: 0.5rem; }
+    .masthead-tools { gap: 0.5rem; }
+}
+.site-nav {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+}
+.site-nav .nav-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
 }
 
 .nav-btn {
-    @apply px-3 py-2 sm:px-4 sm:py-2.5 border border-white/10 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer uppercase tracking-widest italic;
+    @apply px-4 py-2.5 sm:px-6 sm:py-3 border border-white/10 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer uppercase tracking-widest italic;
     font-family: Arial, Helvetica, sans-serif;
     white-space: nowrap;
-}
-.masthead-nav .nav-btn {
-    flex: 0 0 auto;
-    min-width: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
 }
 .nav-btn.active { @apply bg-[#22c55e] text-black border-transparent shadow-[0_0_20px_rgba(34,197,94,0.4)]; }
 .nav-btn-exit { @apply !text-red-500 !border-red-500/20 hover:!bg-red-500 hover:!text-white; }
