@@ -15,11 +15,6 @@ import { useClubName } from '@/Composables/useClubName'
 
 const page = usePage()
 const clubName = useClubName()
-const brandSubtitle = computed(() => {
-    return String(clubName.value || '')
-        .replace(/^0451[\s\-–—]*/i, '')
-        .trim()
-})
 
 const isPhoneModalOpen = ref(false)
 const isSmsModalOpen = ref(false)
@@ -320,18 +315,23 @@ onUnmounted(() => {
             <div class="w-full px-4 sm:px-4 lg:px-6">
             <div class="max-w-7xl mx-auto">
                 <div class="masthead">
-                    <div class="masthead-top">
+                    <div class="masthead-row">
                         <Link href="/" class="masthead-brand">
                             <div class="masthead-digits" aria-hidden="true">
                                 <span>0</span><span>4</span><span>5</span><span>1</span>
                             </div>
-                            <div class="masthead-copy">
-                                <strong>{{ brandSubtitle || clubName }}</strong>
-                                <em>компьютерный клуб</em>
-                            </div>
+                            <span class="masthead-title">компьютерный клуб</span>
                         </Link>
 
-                        <div class="masthead-tools">
+                        <nav class="masthead-nav">
+                            <Link href="/" class="nav-btn" :class="{ 'active': $page.url === '/' }">Главная</Link>
+                            <Link
+                                v-if="isAuthenticated"
+                                href="/account/dashboard"
+                                class="nav-btn"
+                                :class="{ 'active': $page.url.startsWith('/account') }"
+                            >Кабинет</Link>
+                            <Link href="/booking" class="nav-btn" :class="{ 'active': $page.url.startsWith('/booking') }">Бронирование</Link>
                             <button
                                 v-if="isAuthenticated"
                                 type="button"
@@ -352,7 +352,6 @@ onUnmounted(() => {
                                     <path d="M13.5 13.5h1.5v1.5h-1.5zm2 0h1.5v1.5H15.5zm0 2h1.5V17H15.5zm-2 0h1.5V17h-1.5z" fill="currentColor" stroke="none" />
                                 </svg>
                             </button>
-
                             <template v-if="isAuthenticated">
                                 <div class="nav-meta">
                                     <span class="nav-meta-name">
@@ -373,19 +372,8 @@ onUnmounted(() => {
                             <template v-else>
                                 <button type="button" @click="isPhoneModalOpen = true" class="nav-btn nav-btn-enter">Войти</button>
                             </template>
-                        </div>
+                        </nav>
                     </div>
-
-                    <nav class="masthead-nav">
-                        <Link href="/" class="nav-btn" :class="{ 'active': $page.url === '/' }">Главная</Link>
-                        <Link
-                            v-if="isAuthenticated"
-                            href="/account/dashboard"
-                            class="nav-btn"
-                            :class="{ 'active': $page.url.startsWith('/account') }"
-                        >Кабинет</Link>
-                        <Link href="/booking" class="nav-btn" :class="{ 'active': $page.url.startsWith('/booking') }">Бронирование</Link>
-                    </nav>
                 </div>
             </div>
             </div>
@@ -515,129 +503,108 @@ onUnmounted(() => {
 @reference "../../css/app.css";
 
 .masthead {
+    --brand: 2.85rem;
     background: #0a0a0a;
     border: 1px solid rgba(34, 197, 94, 0.2);
     border-radius: 1.125rem;
     overflow: hidden;
     box-shadow: 0 20px 50px -20px rgba(34, 197, 94, 0.12);
 }
-.masthead-top {
+@media (min-width: 640px) { .masthead { --brand: 3.6rem; } }
+@media (min-width: 1024px) { .masthead { --brand: 4.5rem; } }
+.masthead-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem 1.25rem;
-    flex-wrap: wrap;
-    padding: 1rem 1rem 0.85rem;
+    gap: 0.75rem 1rem;
+    padding: 0.7rem 0.85rem;
+    flex-wrap: nowrap;
+    overflow-x: auto;
 }
 @media (min-width: 640px) {
-    .masthead-top { padding: 1.15rem 1.5rem 1rem; }
+    .masthead-row { padding: 0.85rem 1.15rem; gap: 1rem 1.25rem; }
 }
 .masthead-brand {
     display: flex;
     align-items: center;
-    gap: 0.85rem;
+    gap: 0.7rem;
     min-width: 0;
+    flex-shrink: 1;
     text-decoration: none;
+    height: var(--brand);
+}
+@media (min-width: 640px) {
+    .masthead-brand { gap: 0.9rem; }
 }
 .masthead-digits {
     display: flex;
     gap: 3px;
+    height: var(--brand);
     flex-shrink: 0;
 }
 .masthead-digits span {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 1.7rem;
-    height: 2.2rem;
+    width: calc(var(--brand) * 0.72);
+    height: var(--brand);
     border: 1px solid rgba(34, 197, 94, 0.38);
     border-radius: 0.4rem;
     background:
         linear-gradient(180deg, rgba(34, 197, 94, 0.16) 0%, rgba(10, 10, 10, 0.9) 55%),
         #050505;
-    color: #22c55e;
+    color: #000;
+    -webkit-text-stroke: calc(var(--brand) * 0.028) #22c55e;
+    paint-order: stroke fill;
     font-family: Arial, Helvetica, sans-serif;
     font-weight: 900;
     font-style: italic;
-    font-size: 1.05rem;
+    font-size: calc(var(--brand) * 0.62);
     line-height: 1;
-    text-shadow: 0 0 12px rgba(34, 197, 94, 0.5);
+    text-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.08),
         0 0 12px rgba(34, 197, 94, 0.08);
 }
-@media (min-width: 640px) {
-    .masthead-digits span {
-        width: 2.25rem;
-        height: 2.75rem;
-        font-size: 1.45rem;
-        border-radius: 0.5rem;
-    }
-}
-.masthead-copy {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    gap: 0.22rem;
-}
-.masthead-copy strong {
-    font-family: Arial, Helvetica, sans-serif;
-    font-weight: 900;
-    font-style: italic;
-    letter-spacing: 0.14em;
-    font-size: 0.95rem;
-    text-transform: uppercase;
-    color: #fff;
-    line-height: 1.05;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.masthead-copy em {
-    font-family: Arial, Helvetica, sans-serif;
-    font-style: italic;
-    font-weight: 700;
-    font-size: 0.58rem;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.38);
-    line-height: 1;
-}
-@media (min-width: 640px) {
-    .masthead-copy strong { font-size: 1.35rem; letter-spacing: 0.16em; }
-    .masthead-copy em { font-size: 0.68rem; }
-}
-.masthead-tools {
+.masthead-title {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-left: auto;
+    height: var(--brand);
+    font-family: 'BomberEscort', Arial, Helvetica, sans-serif;
+    font-weight: 900;
+    font-style: italic;
+    font-size: calc(var(--brand) * 0.78);
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: -0.05em;
+    white-space: nowrap;
+    color: #000;
+    -webkit-text-stroke: 1.2px #22c55e;
+    text-shadow: 0 0 5px rgba(34, 197, 94, 0.8), 0 0 20px rgba(34, 197, 94, 0.4);
+    filter: brightness(1.2);
+    paint-order: stroke fill;
 }
 .masthead-nav {
     display: flex;
+    align-items: center;
     gap: 0.4rem;
-    padding: 0.7rem 0.7rem 0.75rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent);
+    margin-left: auto;
+    flex-shrink: 0;
 }
 @media (min-width: 640px) {
-    .masthead-nav { gap: 0.6rem; padding: 0.8rem 1rem 1rem; }
+    .masthead-nav { gap: 0.5rem; }
 }
 
 .nav-btn {
-    @apply px-4 py-2.5 sm:px-6 sm:py-3 border border-white/10 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer uppercase tracking-widest italic;
+    @apply px-3 py-2 sm:px-4 sm:py-2.5 border border-white/10 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer uppercase tracking-widest italic;
     font-family: Arial, Helvetica, sans-serif;
+    white-space: nowrap;
 }
-@media (min-width: 1024px) { .nav-btn { min-width: 140px; } }
 .masthead-nav .nav-btn {
-    flex: 1 1 0;
+    flex: 0 0 auto;
     min-width: 0;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    text-align: center;
 }
 .nav-btn.active { @apply bg-[#22c55e] text-black border-transparent shadow-[0_0_20px_rgba(34,197,94,0.4)]; }
 .nav-btn-exit { @apply !text-red-500 !border-red-500/20 hover:!bg-red-500 hover:!text-white; }
@@ -654,12 +621,12 @@ onUnmounted(() => {
 }
 
 .nav-meta {
-    @apply inline-flex items-center gap-2 sm:gap-3 px-4 py-2.5 sm:px-6 sm:py-3 border border-white/10 rounded-xl
+    @apply inline-flex items-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-2.5 border border-white/10 rounded-xl
            text-[10px] sm:text-[11px] font-black uppercase tracking-widest italic text-white/70 bg-white/[0.03] box-border;
     font-family: Arial, Helvetica, sans-serif;
 }
 .nav-meta-name {
-    @apply truncate max-w-[9rem] sm:max-w-[14rem];
+    @apply truncate max-w-[6rem] lg:max-w-[10rem];
     font-family: inherit;
 }
 .nav-meta-balance {
