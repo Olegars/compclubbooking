@@ -726,9 +726,12 @@ class FanControlService
         }
 
         $bound = [];
+        $seenFanIds = [];
         foreach ($boundFans as $f) {
+            $id = (int) $f->id;
+            $seenFanIds[$id] = true;
             $bound[] = [
-                'fan_id' => (int) $f->id,
+                'fan_id' => $id,
                 'relay_board_id' => (int) $f->relay_board_id,
                 'channel' => (int) $f->channel,
                 'channel2' => (int) $f->channel2,
@@ -738,6 +741,28 @@ class FanControlService
             ];
         }
 
+        foreach ($boardPayload as $board) {
+            foreach ($board['pairs'] as $pair) {
+                $fid = (int) ($pair['fan_id'] ?? 0);
+                if ($fid <= 0 || isset($seenFanIds[$fid])) {
+                    continue;
+                }
+                if (($pair['status'] ?? 'free') === 'free') {
+                    continue;
+                }
+                $seenFanIds[$fid] = true;
+                $bound[] = [
+                    'fan_id' => $fid,
+                    'relay_board_id' => (int) $board['id'],
+                    'channel' => (int) $pair['channel'],
+                    'channel2' => (int) $pair['channel2'],
+                    'host' => (string) $board['host'],
+                    'port' => (int) $board['port'],
+                    'label' => (string) $pair['label'],
+                ];
+            }
+        }
+
         return [
             'available' => true,
             'club_id' => $clubId,
@@ -745,7 +770,7 @@ class FanControlService
             'space_name' => (string) ($computer->space?->name ?: ('#'.$spaceId)),
             'bound' => $bound,
             'current' => $bound[0] ?? null, // compat
-            'slots_used' => count($bound),
+            'slots_used' => count($boundFans),
             'slots_max' => $slotsMax,
             'boards' => $boardPayload,
         ];
@@ -892,20 +917,20 @@ class FanControlService
     public function unbindForComputer(int $computerId, int $fanId): array
     {
         $computer = Computer::query()->find($computerId);
-        if (! $computer || ! $computer->space_id) {
-            return ['ok' => false, 'message' => 'ПК без комнаты'];
+        if (! $computer || ! $computer->club_id) {
+            return ['ok' => false, 'message' => 'ПК без клуба'];
         }
 
         $fan = SpaceFan::query()
             ->where('id', $fanId)
-            ->where('space_id', $computer->space_id)
             ->where('club_id', $computer->club_id)
             ->first();
 
         if (! $fan) {
-            return ['ok' => false, 'message' => 'Вентилятор не найден в этой комнате'];
+            return ['ok' => false, 'message' => 'Вентилятор не найден в этом клубе'];
         }
 
+        $label = 'K'.$fan->channel.'+K'.$fan->channel2;
         $fan->delete();
 
         app(SharedFanControlService::class)->recomputeAfterPersonalChange(
@@ -913,7 +938,7 @@ class FanControlService
             [(int) $fanId]
         );
 
-        return ['ok' => true, 'message' => 'Вентилятор отвязан (K'.$fan->channel.'+K'.$fan->channel2.')'];
+        return ['ok' => true, 'message' => 'Вентилятор отвязан ('.$label.')'];
     }
 
     private function touchSharedFans(int $clubId, int $spaceId): void

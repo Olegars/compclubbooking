@@ -364,7 +364,6 @@ const fetchGamesAvailability = async () => {
 const totalAmount = ref(0)
 const computersTotalMinor = ref(0)
 const addonsTotalMinor = ref(0)
-const pricedAddonLines = ref<Array<{ name: string; total_minor: number }>>([])
 const gamesTotalMinor = ref(0)
 const isPriceLoading = ref(false)
 const priceError = ref('')
@@ -379,7 +378,6 @@ const fetchServerPrice = async () => {
             totalAmount.value = 0
             computersTotalMinor.value = 0
             addonsTotalMinor.value = 0
-            pricedAddonLines.value = []
             gamesTotalMinor.value = 0
         }
         return
@@ -394,12 +392,6 @@ const fetchServerPrice = async () => {
         totalAmount.value = Number(response.data?.total_price ?? totalMinor / 100)
         const addonsMinor = Number(response.data?.addons_total_minor ?? 0)
         addonsTotalMinor.value = addonsMinor
-        pricedAddonLines.value = Array.isArray(response.data?.addons)
-            ? response.data.addons.map((a: any) => ({
-                name: String(a.name || 'Доп'),
-                total_minor: Number(a.total_minor || 0),
-            }))
-            : []
         // База мест без допов (если сервер отдал computers_base_minor).
         const baseMinor = response.data?.computers_base_minor != null
             ? Number(response.data.computers_base_minor)
@@ -412,7 +404,6 @@ const fetchServerPrice = async () => {
         totalAmount.value = 0
         computersTotalMinor.value = 0
         addonsTotalMinor.value = 0
-        pricedAddonLines.value = []
         gamesTotalMinor.value = 0
         if (e?.response?.status === 401) {
             priceError.value = 'Войдите по номеру телефона, чтобы продолжить'
@@ -708,31 +699,6 @@ const seatGroups = computed(() => {
         seats: [...group.seats].sort((a, b) => a.name.localeCompare(b.name, 'ru', { numeric: true })),
         freeCount: group.seats.filter(seat => !seat.occupied).length,
     }))
-})
-
-const priceBreakdown = computed(() => {
-    if (!selectedIds.value.length || isPriceLoading.value) return []
-
-    const lines: Array<{ label: string; value: number }> = []
-    if (computersTotalMinor.value > 0) {
-        const seats = selectedIds.value.length
-        const label = seats > 1
-            ? `Места, ${seats} × ${formatDuration(duration.value)}`
-            : `Место, ${formatDuration(duration.value)}`
-        lines.push({ label, value: computersTotalMinor.value / 100 })
-    }
-    for (const addon of pricedAddonLines.value) {
-        if (addon.total_minor > 0) {
-            lines.push({
-                label: `${String(addon.name || '').toUpperCase()}, ${formatDuration(duration.value)}`,
-                value: addon.total_minor / 100,
-            })
-        }
-    }
-    if (gamesTotalMinor.value > 0) {
-        lines.push({ label: 'Платная игра', value: gamesTotalMinor.value / 100 })
-    }
-    return lines
 })
 
 const clearAddonsForSeats = (seatIds: string[]) => {
@@ -1265,14 +1231,6 @@ onUnmounted(() => {
                             <div class="mt-3 pt-3 border-t border-white/5 flex justify-center items-baseline gap-2">
                                 <span class="text-white/40 uppercase tracking-widest text-[10px] italic">Длительность:</span>
                                 <span class="text-[#22c55e] font-black text-xl font-mono leading-none">{{ formatDuration(duration) }}</span>
-                            </div>
-                        </div>
-
-                        <div v-if="priceBreakdown.length" class="mb-4 rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 shrink-0">
-                            <div v-for="line in priceBreakdown" :key="line.label"
-                                 class="flex items-center justify-between gap-3 py-1.5 text-[11px] border-b border-white/5 last:border-0">
-                                <span class="text-white/45">{{ line.label }}</span>
-                                <span class="font-mono text-white/80 whitespace-nowrap">{{ formatMoney(line.value) }} ₽</span>
                             </div>
                         </div>
 
