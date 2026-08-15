@@ -56,6 +56,59 @@ class DeepSeekChat
     }
 
     /**
+     * Cheap live check from admin: one short completion, no STT/TTS.
+     *
+     * @return array{ok:true, reply:string, model:string, base_url:string, provider:string}
+     */
+    public function probe(?int $clubId = null): array
+    {
+        $settings = AiAssistantSetting::forClub($clubId);
+        $key = $settings->resolvedLlmApiKey();
+        if ($key === '') {
+            throw new RuntimeException('LLM API-ключ не задан (админка или .env).');
+        }
+
+        $base = $settings->resolvedLlmBaseUrl();
+        $model = $settings->resolvedLlmModel();
+        $timeout = min(20.0, (float) config('ai_assistant.http_timeout', 60));
+
+        $response = Http::timeout($timeout)
+            ->withToken($key)
+            ->acceptJson()
+            ->post($base.'/chat/completions', [
+                'model' => $model,
+                'temperature' => 0,
+                'max_tokens' => 16,
+                'messages' => [
+                    ['role' => 'system', 'content' => 'Ответь одним словом: ок'],
+                    ['role' => 'user', 'content' => 'пинг'],
+                ],
+            ]);
+
+        if (! $response->successful()) {
+            $body = trim($response->body());
+            if (mb_strlen($body) > 400) {
+                $body = mb_substr($body, 0, 400).'…';
+            }
+
+            throw new RuntimeException('LLM failed: HTTP '.$response->status().' '.$body);
+        }
+
+        $text = trim((string) data_get($response->json(), 'choices.0.message.content', ''));
+        if ($text === '') {
+            throw new RuntimeException('LLM вернул пустой ответ.');
+        }
+
+        return [
+            'ok' => true,
+            'reply' => $text,
+            'model' => $model,
+            'base_url' => $base,
+            'provider' => $settings->resolvedLlmProvider(),
+        ];
+    }
+
+    /**
      * Personalized spoken greeting after Shell login (no STT).
      *
      * @param  array{

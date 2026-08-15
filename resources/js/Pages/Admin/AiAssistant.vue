@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, router, useForm, usePage } from '@inertiajs/vue3'
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { useClubName } from '@/Composables/useClubName'
 
@@ -128,6 +129,27 @@ const save = () => {
 const resetPrompts = () => {
     if (!confirm('Сбросить оба промпта к значениям по умолчанию?')) return
     router.post('/admin/ai-assistant/reset-prompts', { club_id: form.club_id }, { preserveScroll: true })
+}
+
+const testBusy = ref(false)
+const testResult = ref<{ ok: boolean, reply?: string, message?: string, model?: string, base_url?: string, provider?: string } | null>(null)
+
+const testLlm = async () => {
+    testBusy.value = true
+    testResult.value = null
+    try {
+        const { data } = await axios.post('/admin/ai-assistant/test-llm', {
+            club_id: form.club_id,
+        })
+        testResult.value = data
+    } catch (e: any) {
+        testResult.value = {
+            ok: false,
+            message: e?.response?.data?.message || e?.message || 'Тест не прошёл',
+        }
+    } finally {
+        testBusy.value = false
+    }
 }
 
 const inputClass = 'w-full bg-black/40 border border-white/10 focus:border-cyan-500/50 rounded-xl px-5 py-3 text-sm text-white outline-none'
@@ -268,6 +290,29 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                             <p class="mt-2 text-[10px] text-white/25 italic">Пусто — пресет / .env</p>
                             <p v-if="form.errors.llm_model" class="mt-2 text-red-400 text-xs">{{ form.errors.llm_model }}</p>
                         </div>
+                    </div>
+
+                    <div class="rounded-xl border border-white/10 bg-black/30 px-5 py-4 space-y-3">
+                        <div class="flex flex-wrap items-center gap-3">
+                            <button
+                                type="button"
+                                class="px-6 py-3 rounded-xl border border-cyan-500/40 text-cyan-400 font-black uppercase tracking-widest text-[10px] hover:bg-cyan-500/10 transition-all disabled:opacity-50"
+                                :disabled="testBusy"
+                                @click="testLlm"
+                            >
+                                {{ testBusy ? 'Проверка…' : 'Проверить LLM' }}
+                            </button>
+                            <p class="text-[10px] text-white/30 italic">
+                                Короткий ping к сохранённому ключу. Без брони, без голоса. Сначала сохраните ключ.
+                            </p>
+                        </div>
+                        <p v-if="testResult?.ok" class="text-xs text-[#22c55e] leading-relaxed">
+                            OK · {{ testResult.provider }} · {{ testResult.model }}
+                            <span class="block mt-1 text-white/70 normal-case tracking-normal not-italic">{{ testResult.reply }}</span>
+                        </p>
+                        <p v-else-if="testResult && !testResult.ok" class="text-xs text-red-400 leading-relaxed break-words">
+                            {{ testResult.message }}
+                        </p>
                     </div>
 
                     <div class="grid md:grid-cols-3 gap-6">

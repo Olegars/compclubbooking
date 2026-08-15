@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AiAssistantSetting;
+use App\Models\Admin;
 use App\Models\Booking;
 use App\Models\Club;
 use App\Models\Computer;
@@ -356,6 +357,36 @@ class AiAssistantTest extends TestCase
             return str_contains($request->url(), 'api.openai.com/v1/chat/completions')
                 && ($request['model'] ?? null) === 'gpt-4o-mini'
                 && $request->hasHeader('Authorization', 'Bearer sk-openai-llm');
+        });
+    }
+
+    public function test_admin_llm_probe_returns_reply(): void
+    {
+        $admin = Admin::create([
+            'name' => 'AI Admin',
+            'email' => 'ai-admin@example.test',
+            'password' => 'password',
+            'role' => 'owner',
+        ]);
+
+        Http::fake([
+            'api.deepseek.com/chat/completions' => Http::response([
+                'choices' => [['message' => ['content' => 'ок']]],
+            ], 200),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class)
+            ->postJson('/admin/ai-assistant/test-llm', ['club_id' => $this->club->id])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('reply', 'ок')
+            ->assertJsonPath('provider', 'deepseek');
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'chat/completions')
+                && $request->hasHeader('Authorization', 'Bearer sk-deepseek-test')
+                && ($request['max_tokens'] ?? null) === 16;
         });
     }
 

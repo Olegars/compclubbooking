@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\AiAssistantSetting;
 use App\Models\Club;
+use App\Services\AiAssistant\DeepSeekChat;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -110,5 +111,23 @@ class AiAssistantSettingsController extends Controller
         ]);
 
         return back()->with('success', 'Промпты сброшены к значениям по умолчанию');
+    }
+
+    public function testLlm(Request $request, DeepSeekChat $llm)
+    {
+        $data = $request->validate([
+            'club_id' => 'nullable|integer|exists:clubs,id',
+        ]);
+
+        $clubId = (int) ($data['club_id'] ?? Club::query()->value('id'));
+
+        try {
+            return response()->json($llm->probe($clubId));
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
     }
 }

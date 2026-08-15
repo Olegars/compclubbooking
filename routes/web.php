@@ -377,6 +377,7 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::get('/ai-assistant', [AiAssistantSettingsController::class, 'index'])->name('admin.ai-assistant');
         Route::post('/ai-assistant', [AiAssistantSettingsController::class, 'update']);
         Route::post('/ai-assistant/reset-prompts', [AiAssistantSettingsController::class, 'resetPrompts']);
+        Route::post('/ai-assistant/test-llm', [AiAssistantSettingsController::class, 'testLlm']);
 
         Route::prefix('api')->group(function () {
             Route::post('/incidents/{id}/resolve', [AdminController::class, 'resolveIncident']);
