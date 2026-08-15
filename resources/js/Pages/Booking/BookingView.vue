@@ -201,6 +201,7 @@ const tariffGridError = ref('')
 let tariffGridRequestId = 0
 
 const timeSteps = Array.from({ length: 96 }, (_, i) => i * 0.25)
+const TIME_CELL_PX = 56
 const formatTimeLabel = (h: number) => {
     const hours = Math.floor(h).toString().padStart(2, '0')
     const mins = Math.round((h % 1) * 60).toString().padStart(2, '0')
@@ -1184,38 +1185,55 @@ onUnmounted(() => {
                         </div>
 
                         <div class="bg-black border border-white/10 rounded-[14px] p-3 sm:p-4 mb-4 shrink-0">
-                            <div class="grid grid-cols-2 gap-2 sm:gap-3">
-                                <div class="flex flex-col items-center gap-1">
+                            <div class="grid grid-cols-2 gap-2 sm:gap-4">
+                                <div class="flex flex-col items-center">
                                     <span class="time-label">Начало</span>
+                                    <button type="button" class="wheel-chevron" @click="stepTime('start', -1)" aria-label="Начало раньше">⌃</button>
                                     <div class="w-full wheel-container touch-none"
                                          @wheel.prevent="handleWheel($event, 'start')"
                                          @pointerdown="startTimeDrag($event, 'start')"
                                          @pointermove="moveTimeDrag"
                                          @pointerup="endTimeDrag"
                                          @pointercancel="endTimeDrag">
-                                        <div class="wheel-strip" :style="{ transform: `translateY(-${getIndexByTime(startH) * 60}px)` }">
-                                            <div v-for="s in timeSteps" :key="'s'+s" class="time-cell">{{ formatTimeLabel(s) }}</div>
+                                        <div class="wheel-window" aria-hidden="true"></div>
+                                        <div class="wheel-strip" :style="{ transform: `translateY(${TIME_CELL_PX - getIndexByTime(startH) * TIME_CELL_PX}px)` }">
+                                            <div v-for="s in timeSteps" :key="'s'+s"
+                                                 class="time-cell"
+                                                 :class="{ 'is-active': getIndexByTime(s) === getIndexByTime(startH) }">
+                                                {{ formatTimeLabel(s) }}
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="flex gap-1.5 w-full">
+                                    <button type="button" class="wheel-chevron" @click="stepTime('start', 1)" aria-label="Начало позже">⌄</button>
+                                    <div class="flex gap-1.5 w-full mt-1">
                                         <button type="button" class="time-step" @click="stepTime('start', -1)" aria-label="Начало на 15 минут раньше">−15</button>
                                         <button type="button" class="time-step" @click="stepTime('start', 1)" aria-label="Начало на 15 минут позже">+15</button>
                                     </div>
                                 </div>
 
-                                <div class="flex flex-col items-center gap-1">
+                                <div class="flex flex-col items-center">
                                     <span class="time-label">Конец</span>
+                                    <button type="button" class="wheel-chevron" :disabled="bookingMode === 'packages'"
+                                            @click="stepTime('end', -1)" aria-label="Конец раньше">⌃</button>
                                     <div class="w-full wheel-container touch-none"
+                                         :class="{ 'is-locked': bookingMode === 'packages' }"
                                          @wheel.prevent="handleWheel($event, 'end')"
                                          @pointerdown="startTimeDrag($event, 'end')"
                                          @pointermove="moveTimeDrag"
                                          @pointerup="endTimeDrag"
                                          @pointercancel="endTimeDrag">
-                                        <div class="wheel-strip" :style="{ transform: `translateY(-${getIndexByTime(endH) * 60}px)` }">
-                                            <div v-for="e in timeSteps" :key="'e'+e" class="time-cell">{{ formatTimeLabel(e) }}</div>
+                                        <div class="wheel-window" aria-hidden="true"></div>
+                                        <div class="wheel-strip" :style="{ transform: `translateY(${TIME_CELL_PX - getIndexByTime(endH) * TIME_CELL_PX}px)` }">
+                                            <div v-for="e in timeSteps" :key="'e'+e"
+                                                 class="time-cell"
+                                                 :class="{ 'is-active': getIndexByTime(e) === getIndexByTime(endH) }">
+                                                {{ formatTimeLabel(e) }}
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="flex gap-1.5 w-full">
+                                    <button type="button" class="wheel-chevron" :disabled="bookingMode === 'packages'"
+                                            @click="stepTime('end', 1)" aria-label="Конец позже">⌄</button>
+                                    <div class="flex gap-1.5 w-full mt-1">
                                         <button type="button" class="time-step" :disabled="bookingMode === 'packages'"
                                                 @click="stepTime('end', -1)" aria-label="Конец на 15 минут раньше">−15</button>
                                         <button type="button" class="time-step" :disabled="bookingMode === 'packages'"
@@ -1340,10 +1358,83 @@ onUnmounted(() => {
 .panel-scroll::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.04); border-radius: 999px; }
 .panel-scroll::-webkit-scrollbar-thumb { background: rgba(34, 197, 94, 0.45); border-radius: 999px; }
 .panel-scroll::-webkit-scrollbar-thumb:hover { background: rgba(34, 197, 94, 0.7); }
-.wheel-container { overflow: hidden; height: 60px; position: relative; display: flex; justify-content: center; z-index: 20; cursor: ns-resize; }
-.wheel-strip { display: flex; flex-direction: column; align-items: center; transition: transform 0.5s cubic-bezier(0.23, 1, 0.32, 1); will-change: transform; width: 100%; }
-/* Размер подстраивается под ширину: на узких экранах фиксированные 2.8rem обрезались. */
-.time-cell { height: 60px; min-height: 60px; display: flex; align-items: center; justify-content: center; font-size: clamp(1.75rem, 8.5vw, 2.8rem); font-weight: 900; color: #22c55e; font-family: ui-monospace, monospace; text-shadow: 0 0 10px rgba(34, 197, 94, 0.4); }
+.wheel-container {
+    overflow: hidden;
+    height: 168px;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    z-index: 20;
+    cursor: ns-resize;
+    user-select: none;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
+}
+.wheel-container.is-locked { cursor: not-allowed; opacity: 0.4; }
+.wheel-window {
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    top: 50%;
+    height: 56px;
+    transform: translateY(-50%);
+    border-top: 1px solid rgba(34, 197, 94, 0.45);
+    border-bottom: 1px solid rgba(34, 197, 94, 0.45);
+    border-radius: 8px;
+    background: rgba(34, 197, 94, 0.07);
+    box-shadow: inset 0 0 12px rgba(34, 197, 94, 0.08);
+    pointer-events: none;
+    z-index: 2;
+}
+.wheel-strip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: transform 0.28s cubic-bezier(0.23, 1, 0.32, 1);
+    will-change: transform;
+    width: 100%;
+    position: relative;
+    z-index: 1;
+}
+.time-cell {
+    height: 56px;
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: rgba(34, 197, 94, 0.28);
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+    transform: scale(0.78);
+    transition: color 0.2s, transform 0.2s, font-size 0.2s, font-weight 0.2s;
+}
+.time-cell.is-active {
+    font-size: clamp(1.55rem, 6.5vw, 2.15rem);
+    font-weight: 700;
+    color: #22c55e;
+    text-shadow: 0 0 10px rgba(34, 197, 94, 0.35);
+    transform: scale(1);
+}
+.wheel-chevron {
+    width: 100%;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(34, 197, 94, 0.55);
+    font-size: 18px;
+    line-height: 1;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    opacity: 0.7;
+}
+.wheel-chevron:hover:not(:disabled) { color: #22c55e; opacity: 1; }
+.wheel-chevron:disabled { opacity: 0.2; cursor: not-allowed; }
 
 .time-label { font-size: 9px; font-weight: 900; font-style: italic; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(255, 255, 255, 0.35); }
 .time-step {
