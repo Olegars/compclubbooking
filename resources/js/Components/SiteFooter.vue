@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useClubName } from '@/Composables/useClubName'
 
 type Contacts = {
     club_name?: string
@@ -50,6 +51,7 @@ const phoneHref = computed(() => {
 })
 
 const year = new Date().getFullYear()
+const clubName = useClubName()
 </script>
 
 <template>
@@ -57,7 +59,7 @@ const year = new Date().getFullYear()
         <div class="max-w-[1400px] mx-auto px-4 sm:px-6 py-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4 text-[13px] text-white/60">
             <div>
                 <div class="text-white font-black italic uppercase tracking-widest text-sm mb-3">
-                    {{ contacts?.club_name || 'Sector 0451' }}
+                    {{ contacts?.club_name || clubName }}
                 </div>
                 <p v-if="contacts?.address" class="leading-relaxed">
                     <span v-if="contacts?.city">{{ contacts.city }}, </span>{{ contacts.address }}
@@ -95,7 +97,7 @@ const year = new Date().getFullYear()
         </div>
 
         <div class="max-w-[1400px] mx-auto px-4 sm:px-6 pb-10 text-[11px] text-white/30 flex flex-wrap gap-x-6 gap-y-2">
-            <span>© {{ year }} {{ contacts?.club_name || 'Sector 0451' }}</span>
+            <span>© {{ year }} {{ contacts?.club_name || clubName }}</span>
             <span v-if="legal.entity">{{ legal.entity }}</span>
             <span v-if="legal.inn">ИНН {{ legal.inn }}</span>
         </div>

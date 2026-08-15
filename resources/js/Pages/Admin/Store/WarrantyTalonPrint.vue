@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3'
 import { computed, onMounted } from 'vue'
+import { useClubName } from '@/Composables/useClubName'
 
 const props = defineProps<{
     warranty: any
@@ -9,12 +10,14 @@ const props = defineProps<{
     buildItems: Array<{ type?: string; type_label?: string; name?: string; warranty_number?: string | null }>
 }>()
 
+const brandName = useClubName()
+const clubName = computed(() => props.warranty?.club?.name || brandName.value)
+
 const fmt = (d: string | null | undefined) => {
     if (!d) return '—'
     return String(d).slice(0, 10).split('-').reverse().join('.')
 }
 
-const clubName = computed(() => props.warranty?.club?.name || 'REACTOR STORE')
 const clientName = computed(() => props.warranty?.client?.name || '—')
 const clientPhone = computed(() => props.warranty?.client?.phone || '')
 const months = computed(() => props.warranty?.warranty_months || 12)

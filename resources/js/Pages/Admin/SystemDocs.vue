@@ -2,6 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import { Head, Link } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 type DocItem = {
     title: string
@@ -93,7 +96,7 @@ watch([query, activeSection, filtered], () => {
 </script>
 
 <template>
-    <Head title="REACTOR | О системе" />
+    <Head :title="`${clubName} | О системе`" />
     <AdminLayout>
         <div class="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-500 font-mono pb-20 px-4">
 
@@ -103,7 +106,7 @@ watch([query, activeSection, filtered], () => {
                         О <span class="text-[#22c55e]">системе</span>
                     </h1>
                     <p class="text-white/25 text-[10px] uppercase tracking-[0.35em] font-black mt-2 italic">
-                        Справочник функций Reactor · {{ totalItems }} модулей · разделы свёрнуты
+                        Справочник функций {{ clubName }} · {{ totalItems }} модулей · разделы свёрнуты
                     </p>
                 </div>
 

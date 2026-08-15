@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 const props = defineProps<{
     staff: any[]
@@ -23,7 +26,7 @@ const roleClass = (role: string) => {
 </script>
 
 <template>
-    <Head title="REACTOR | Штат" />
+    <Head :title="`${clubName} | Штат`" />
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
 

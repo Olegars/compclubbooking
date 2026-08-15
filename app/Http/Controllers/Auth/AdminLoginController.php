@@ -36,7 +36,7 @@ class AdminLoginController extends Controller
         }
 
         throw ValidationException::withMessages([
-            'email' => 'Неверные данные для входа в систему REACTOR.',
+            'email' => 'Неверные данные для входа в систему '.\App\Support\ClubBrand::name().'.',
         ]);
     }
 

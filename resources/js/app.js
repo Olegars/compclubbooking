@@ -7,7 +7,7 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { ZiggyVue } from 'ziggy-js'; // <--- Импорт из NPM
 
 createInertiaApp({
-    title: (title) => (title ? `${title} — Sector 0451` : 'Sector 0451 — киберспортивный клуб'),
+    title: (title) => title,
     resolve: (name) => resolvePageComponent(`./Pages/${name}.vue`, import.meta.glob('./Pages/**/*.vue')),
     setup({ el, App, props, plugin }) {
         createApp({ render: () => h(App, props) })

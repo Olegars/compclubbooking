@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import axios from 'axios'
+import { useClubName } from '@/Composables/useClubName'
 
 declare global {
     interface Window {
@@ -22,8 +23,10 @@ const emit = defineEmits<{
         amount: number
         fiscal_receipt_url?: string | null
         fiscal_status?: string | null
+        is_stub?: boolean
     }]
 }>()
+const clubName = useClubName()
 
 const WIDGET_SCRIPT = 'https://yookassa.ru/checkout-widget/v1/checkout-widget.js'
 const containerId = `yookassa-form-${Math.random().toString(36).slice(2)}`
@@ -200,7 +203,7 @@ onBeforeUnmount(destroyWidget)
                 <div class="relative flex max-h-[calc(100vh-24px)] w-full max-w-[520px] flex-col overflow-hidden rounded-2xl border border-[#22c55e]/30 bg-[#080808] shadow-[0_0_80px_rgba(34,197,94,0.18)]">
                     <div class="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-4 sm:px-6">
                         <div>
-                            <div class="text-[10px] font-black uppercase italic tracking-[0.22em] text-[#22c55e]">Reactor Pay</div>
+                            <div class="text-[10px] font-black uppercase italic tracking-[0.22em] text-[#22c55e]">{{ clubName }} Pay</div>
                             <div class="mt-1 text-xl font-black italic text-white">{{ amount.toLocaleString('ru-RU') }} ₽</div>
                         </div>
                         <button
@@ -233,7 +236,7 @@ onBeforeUnmount(destroyWidget)
                     </div>
 
                     <div class="shrink-0 border-t border-white/5 px-5 py-3 text-center text-[8px] font-bold uppercase tracking-[0.18em] text-white/25">
-                        Защищённая форма ЮKassa · данные карты не передаются REACTOR
+                        Защищённая форма ЮKassa · данные карты не передаются {{ clubName }}
                     </div>
                 </div>
             </div>

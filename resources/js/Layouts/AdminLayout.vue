@@ -4,10 +4,12 @@ import { computed, watch, ref } from 'vue'
 import Toast from '@/Components/Toast.vue'
 import { useAdminAlerts } from '@/Composables/useAdminAlerts'
 import { useAdminBarcodeScanner } from '@/Composables/useAdminBarcodeScanner'
+import { useClubName } from '@/Composables/useClubName'
 
 useAdminBarcodeScanner().attachGlobalListener()
 
 const page = usePage()
+const clubName = useClubName()
 const currentUrl = computed(() => page.url)
 
 const currentPath = computed(() => {
@@ -71,7 +73,7 @@ const switchLocation = (clubId: string | number) => {
                 <div class="flex items-center gap-3">
                     <div class="w-3 h-3 bg-[#22c55e] rounded-full animate-pulse shadow-[0_0_10px_#22c55e]"></div>
                     <span class="text-2xl font-bold uppercase tracking-tight text-white">
-                        Reactor <span class="text-[#22c55e]">Ctrl</span>
+                        {{ clubName }} <span class="text-[#22c55e]">Ctrl</span>
                     </span>
                 </div>
                 <div class="text-[11px] text-white/35 uppercase font-semibold tracking-[0.18em] mt-2">

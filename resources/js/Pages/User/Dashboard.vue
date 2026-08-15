@@ -8,7 +8,10 @@ import YooKassaWidgetModal from '@/Components/YooKassaWidgetModal.vue'
 import PaymentReceiptConsent from '@/Components/PaymentReceiptConsent.vue'
 import FiscalReceiptModal from '@/Components/FiscalReceiptModal.vue'
 
+import { useClubName } from '@/Composables/useClubName'
+
 const page = usePage()
+const clubName = useClubName()
 
 // --- ЛОГИКА БАЛАНСА ---
 const getRawBalance = () => {
@@ -479,7 +482,7 @@ onMounted(() => {
                         <svg class="w-20 h-20 sm:w-32 sm:h-32 text-[#22c55e]" fill="currentColor" viewBox="0 0 24 24"><path d="M21 18l-3-3h-5l-2 2h-3l-2-2H4l-3 3V5l3-3h5l2 2h3l2-2h5l3 3v13z"/></svg>
                     </div>
 
-                    <span class="text-[10px] uppercase text-[#22c55e] tracking-[0.35em] font-black italic relative z-10">Лицевой счет REACTOR</span>
+                    <span class="text-[10px] uppercase text-[#22c55e] tracking-[0.35em] font-black italic relative z-10">Лицевой счет {{ clubName }}</span>
                     <div class="mt-2 sm:mt-4 flex items-baseline gap-2 sm:gap-4 relative z-10">
                         <span class="text-5xl sm:text-8xl font-black italic tracking-tighter text-white drop-shadow-[0_0_25px_rgba(34,197,94,0.4)] leading-none">
                             {{ Math.floor(displayBalance) }}
@@ -695,7 +698,7 @@ onMounted(() => {
             <div v-if="isTopUpInputOpen" class="fixed inset-0 flex items-center justify-center z-[9998] p-6 animate-in fade-in duration-300">
                 <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="isTopUpInputOpen = false"></div>
                 <div class="relative max-w-md w-full bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1.25rem] p-12 text-center shadow-[0_0_120px_rgba(34,197,94,0.2)]">
-                    <h2 class="text-[#22c55e] text-4xl font-black uppercase italic mb-10 tracking-tighter">Reactor Pay</h2>
+                    <h2 class="text-[#22c55e] text-4xl font-black uppercase italic mb-10 tracking-tighter">{{ clubName }} Pay</h2>
                     <div class="grid grid-cols-3 gap-3 mb-8">
                         <button v-for="amount in [500, 1000, 2000]" :key="amount" @click="topUpAmount = amount"
                                 :class="['py-4 rounded-2xl font-black transition-all italic text-[12px]', topUpAmount === amount ? 'bg-[#22c55e] text-black' : 'bg-white/5 text-white border border-white/10']">

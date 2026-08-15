@@ -2,6 +2,9 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 type EstimateLine = {
     id?: number | null
@@ -669,7 +672,7 @@ const stockOptionsFor = (item: any) => {
 </script>
 
 <template>
-    <Head title="REACTOR | Сметы" />
+    <Head :title="`${clubName} | Сметы`" />
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 pb-20 px-4 font-mono">
             <div class="flex flex-wrap justify-between items-end gap-4 border-b border-white/10 pb-6">

@@ -6,8 +6,10 @@ import ConfirmModal from './ConfirmModal.vue'
 import SmsModal from './SmsModal.vue'
 import PaymentModal from './PaymentModal.vue'
 import YooKassaWidgetModal from './YooKassaWidgetModal.vue'
+import { useClubName } from '@/Composables/useClubName'
 
 const page = usePage()
+const clubName = useClubName()
 const amount = ref('')
 const paymentMethod = ref<'card' | 'sbp' | null>('card')
 const currentMode = ref<'topup' | 'view'>('topup')
@@ -122,7 +124,7 @@ const modalData = computed(() => {
   return {
     date: today,
     price: currentMode.value === 'topup' ? (amount.value || '0') : String((page.props as any).auth?.user?.balance ?? 0),
-    pcNumber: currentMode.value === 'topup' ? 'СЧЕТ: REACTOR' : 'СТАТУС: БАЛАНС'
+    pcNumber: currentMode.value === 'topup' ? `СЧЕТ: ${clubName.value}` : 'СТАТУС: БАЛАНС'
   }
 })
 </script>
@@ -133,7 +135,7 @@ const modalData = computed(() => {
     <div class="mb-8 flex justify-between items-end border-b border-[#22c55e]/10 pb-5 shrink-0">
       <div class="flex flex-col">
         <h3 class="text-[#22c55e] text-2xl font-black uppercase italic tracking-widest leading-none mb-2">Управление счетом</h3>
-        <span class="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Финансовый шлюз REACTOR</span>
+        <span class="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Финансовый шлюз {{ clubName }}</span>
       </div>
       <div class="font-mono text-[10px] text-[#22c55e] flex items-center gap-2 px-3 py-1.5 bg-[#22c55e]/5 rounded-full border border-[#22c55e]/20 shadow-inner">
         <span class="w-1.5 h-1.5 bg-[#22c55e] rounded-full animate-pulse"></span>

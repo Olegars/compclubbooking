@@ -3,6 +3,9 @@ import { computed, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 type TxUser = {
     id: number
@@ -106,7 +109,7 @@ const printCopy = async (tx: TxRow) => {
   @media print{button{display:none}}
 </style></head><body>
 <h1>КОПИЯ ЧЕКА</h1>
-<div class="muted">Не является повторной фискализацией · REACTOR</div>
+<div class="muted">Не является повторной фискализацией · ${clubName.value}</div>
 <div class="box">
   <div class="row"><span>Транзакция</span><strong>#${data.id}</strong></div>
   <div class="row"><span>Гость</span><strong>${data.user?.name || '—'}</strong></div>

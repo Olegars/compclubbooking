@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3'
 import { computed } from 'vue'
+import { useClubName } from '@/Composables/useClubName'
 
 const props = defineProps<{
     estimate: any
@@ -17,7 +18,8 @@ const props = defineProps<{
     printedAt: string
 }>()
 
-const clubName = computed(() => props.estimate?.club?.name || 'REACTOR STORE')
+const brandName = useClubName()
+const clubName = computed(() => props.estimate?.club?.name || brandName.value)
 const clubAddress = computed(() => props.estimate?.club?.address || '')
 const clientName = computed(() => props.estimate?.client?.name || '—')
 const clientPhone = computed(() => props.estimate?.client?.phone || '')

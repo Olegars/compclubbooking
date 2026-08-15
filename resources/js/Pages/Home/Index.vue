@@ -6,6 +6,9 @@ import MainLayout from '@/Layouts/MainLayout.vue'
 import ClubMap, { type RoomInfoShowPayload } from '@/Components/ClubMap.vue'
 import ZoneInfoModal from '@/Components/ZoneInfoModal.vue'
 import SiteFooter from '@/Components/SiteFooter.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 type SeatKinds = Record<string, { total: number; free: number }>
 
@@ -165,7 +168,7 @@ const steps = [
 
 <template>
     <!-- Бренд к заголовку добавляет app.js, meta description отдаёт blade из config('club.seo'). -->
-    <Head title="Киберспортивный клуб: бронирование мест" />
+    <Head :title="`${clubName}: бронирование мест`" />
 
     <MainLayout>
         <div class="w-full max-w-[1400px]">

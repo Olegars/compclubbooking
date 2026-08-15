@@ -2,6 +2,9 @@
 import { computed, ref } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 type UtilZone = {
     id: number
@@ -138,7 +141,7 @@ const money = (n: number) =>
 </script>
 
 <template>
-    <Head title="REACTOR | Аналитика" />
+    <Head :title="`${clubName} | Аналитика`" />
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
 

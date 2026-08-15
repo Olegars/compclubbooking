@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 
 const page = usePage()
-const clubName = computed(() => (page.props as any).club?.name || 'REACTOR')
+const clubName = computed(() => (page.props as any).club?.name || (page.props as any).club_name || 'Клуб')
 </script>
 
 <template>

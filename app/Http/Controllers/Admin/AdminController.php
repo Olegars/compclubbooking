@@ -111,7 +111,7 @@ class AdminController extends Controller
                 'amount' => $amount,
                 'type' => 'deposit',
                 'source' => 'admin_cash',
-                'description' => $request->reason ?: 'Пополнение кассой REACTOR',
+                'description' => $request->reason ?: ('Пополнение кассой '.\App\Support\ClubBrand::name()),
             ]);
 
             return $balance;

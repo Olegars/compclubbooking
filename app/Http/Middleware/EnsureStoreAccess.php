@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Support\AdminLocation;
+use App\Support\ClubBrand;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -13,15 +14,15 @@ class EnsureStoreAccess
     {
         $admin = auth('admin')->user();
         if (! $admin || ! $admin->canAccessStore()) {
-            abort(403, 'REACTOR: Нет доступа к магазину.');
+            abort(403, ClubBrand::name($admin).': Нет доступа к магазину.');
         }
 
         $location = AdminLocation::resolve($admin);
         if (! $location) {
-            abort(403, 'REACTOR: Локация не выбрана.');
+            abort(403, ClubBrand::name($admin).': Локация не выбрана.');
         }
         if ($admin->role !== 'owner' && ! $location->hasStore()) {
-            abort(403, 'REACTOR: У этой локации магазин не включён.');
+            abort(403, ClubBrand::name($admin).': У этой локации магазин не включён.');
         }
 
         return $next($request);

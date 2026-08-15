@@ -134,7 +134,7 @@ const refreshStatuses = async () => {
             }
         }
         isFirstPoll.value = false
-    } catch (e) { console.error('📡 REACTOR Link Error') }
+    } catch (e) { console.error('Link Error', e) }
 }
 
 const forceOffFan = async (fanId: number) => {

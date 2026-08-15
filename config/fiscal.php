@@ -18,7 +18,7 @@ return [
         'password' => env('KKM_SERVER_PASS', ''),
         'num_device' => (int) env('KKM_NUM_DEVICE', 0),
         'inn_kassa' => env('KKM_INN_KASSA', ''),
-        'cashier_name' => env('KKM_CASHIER_NAME', 'REACTOR System'),
+        'cashier_name' => env('KKM_CASHIER_NAME', ''),
         'timeout' => (int) env('KKM_TIMEOUT', 15),
         /** Не печатать бумагу — только ОФД / электронный чек */
         'not_print' => (bool) env('KKM_NOT_PRINT', false),

@@ -5,6 +5,7 @@ import axios from 'axios'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import jsQR from '@/vendor/jsQR.js'
+import { useClubName } from '@/Composables/useClubName'
 
 const props = defineProps<{
     isOpen: boolean
@@ -15,6 +16,7 @@ const emit = defineEmits<{
     activated: [payload: Record<string, unknown>]
     'request-topup': [suggestedAmount: number]
 }>()
+const clubName = useClubName()
 
 type Phase = 'scan' | 'busy' | 'needs_booking' | 'success' | 'error'
 
@@ -322,7 +324,7 @@ defineExpose({
                     Сканер QR
                 </h2>
                 <p class="text-white/40 text-[10px] uppercase tracking-widest mb-6">
-                    Вход на терминал Sector 0451
+                    Вход на терминал {{ clubName }}
                 </p>
 
                 <div v-if="phase === 'scan' || phase === 'busy'" class="space-y-4">

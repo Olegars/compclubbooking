@@ -20,7 +20,7 @@ class CheckRole
         // Если админ не авторизован ИЛИ его роль не входит в список разрешенных
         if (!$admin || !in_array($admin->role, $roles)) {
             // Выдаем ошибку 403 (Доступ запрещен)
-            abort(403, 'REACTOR: У вас нет допуска к этому разделу.');
+            abort(403, \App\Support\ClubBrand::name($admin).': У вас нет допуска к этому разделу.');
         }
 
         return $next($request);

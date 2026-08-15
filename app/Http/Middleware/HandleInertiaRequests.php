@@ -50,6 +50,9 @@ class HandleInertiaRequests extends Middleware
                 'role' => $admin->role,
                 'club_id' => $admin->club_id,
             ] : null,
+            'club_name' => filled($location?->name)
+                ? trim((string) $location->name)
+                : \App\Support\ClubBrand::name($admin),
             'can_access_club' => $canAccessClub,
             'can_access_store' => $canAccessStore,
             'admin_location' => $location ? [

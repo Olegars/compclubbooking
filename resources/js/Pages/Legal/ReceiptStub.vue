@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3'
 import { computed } from 'vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 const props = defineProps<{
     receipt: {
@@ -38,7 +41,7 @@ const qrSrc = computed(() => {
 
                 <div class="relative p-8 space-y-4">
                     <div class="text-center border-b border-dashed border-black/20 pb-4">
-                        <div class="text-[10px] uppercase tracking-[0.35em] font-black text-black/45">REACTOR · Sector 0451</div>
+                        <div class="text-[10px] uppercase tracking-[0.35em] font-black text-black/45">{{ clubName }}</div>
                         <div class="mt-2 text-lg font-black uppercase italic tracking-tighter">Электронный чек</div>
                         <div class="mt-1 text-[10px] uppercase tracking-widest font-black text-amber-700/90">
                             Заглушка · касса не подключена

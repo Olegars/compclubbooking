@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3'
 import { onMounted } from 'vue'
+import { useClubName } from '@/Composables/useClubName'
 
 const props = defineProps<{
     warranty: any
@@ -8,6 +9,8 @@ const props = defineProps<{
     qrImageUrl: string
     endsAtLabel?: string | null
 }>()
+
+const clubName = useClubName()
 
 onMounted(() => {
     setTimeout(() => window.print(), 250)
@@ -23,7 +26,7 @@ onMounted(() => {
             <Link href="/admin/store/warranty">Гарантии</Link>
         </div>
         <div class="label">
-            <div class="brand">REACTOR STORE</div>
+            <div class="brand">{{ clubName }}</div>
             <div class="title">{{ warranty.product_name || warranty.built_pc?.title || 'Сборка ПК' }}</div>
             <img class="qr" :src="qrImageUrl" :alt="qrPayload" width="240" height="240" />
             <div class="sn">S/N {{ warranty.serial || '—' }}</div>

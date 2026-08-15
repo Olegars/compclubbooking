@@ -6,8 +6,11 @@ import AdminLayout from '@/Layouts/AdminLayout.vue'
 import SuggestInput from '@/Components/SuggestInput.vue'
 import { useAdminBarcodeScanner } from '@/Composables/useAdminBarcodeScanner'
 import { useToast } from '@/Composables/useToast'
+import { useClubName } from '@/Composables/useClubName'
 import { normalizeScanLayout } from '@/utils/scanKeyboard'
 import { inferSpecFills } from '@/utils/storeSpecInfer'
+
+const clubName = useClubName()
 
 type SpecField = { key: string, label: string, suggest: string }
 
@@ -343,7 +346,7 @@ const labelClass = 'block text-[10px] uppercase tracking-widest text-white/40 fo
 </script>
 
 <template>
-    <Head title="REACTOR | Склад комплектующих" />
+    <Head :title="`${clubName} | Склад комплектующих`" />
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 pb-20 px-4 font-mono">
             <div class="flex flex-wrap justify-between items-end gap-4 border-b border-white/10 pb-6">

@@ -4,6 +4,7 @@ import { Head } from '@inertiajs/vue3'
 import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { useAdminBarcodeScanner } from '@/Composables/useAdminBarcodeScanner'
+import { useClubName } from '@/Composables/useClubName'
 
 const props = defineProps<{
     canManageCatalog?: boolean
@@ -17,6 +18,7 @@ const canManageCatalog = computed(() => Boolean(props.canManageCatalog))
 const canAdjustStock = computed(() => props.canAdjustStock !== false)
 const suppliers = computed(() => props.suppliers || [])
 const { receiveMode, enableReceiveMode, disableReceiveMode } = useAdminBarcodeScanner()
+const clubName = useClubName()
 
 const cloneProducts = (list: any[] = []) => list.map((p) => ({
     ...p,
@@ -374,7 +376,7 @@ const receiveTargetName = computed(() => {
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-2xl relative overflow-hidden">
                 <div class="absolute inset-0 bg-gradient-to-r from-cyan-500/5 to-transparent pointer-events-none"></div>
                 <div class="relative z-10">
-                    <h1 class="text-4xl font-black uppercase italic text-cyan-500 tracking-tighter">Reactor <span class="text-white">Warehouse</span></h1>
+                    <h1 class="text-4xl font-black uppercase italic text-cyan-500 tracking-tighter">{{ clubName }} <span class="text-white">Warehouse</span></h1>
                     <div class="flex items-center gap-3 mt-2">
                         <div class="w-2 h-2 bg-cyan-500 rounded-full animate-pulse shadow-[0_0_10px_#06b6d4]"></div>
                         <p class="text-white/30 text-[10px] uppercase tracking-[0.4em] font-black italic">

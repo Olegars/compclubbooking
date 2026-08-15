@@ -2,6 +2,9 @@
 import { ref } from 'vue'
 import { Head, router, useForm } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 const props = defineProps<{
     claims: any[]
@@ -67,7 +70,7 @@ const sourceLabel = (source: string | null | undefined) => {
 </script>
 
 <template>
-    <Head title="REACTOR | Бонусы за отзывы" />
+    <Head :title="`${clubName} | Бонусы за отзывы`" />
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
 

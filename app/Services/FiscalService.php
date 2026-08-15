@@ -517,7 +517,7 @@ class FiscalService
             'TypeCheck' => $typeCheck,
             'NotPrint' => (bool) ($kkm['not_print'] ?? false),
             'NumberCopies' => 0,
-            'CashierName' => (string) ($kkm['cashier_name'] ?? 'REACTOR System'),
+            'CashierName' => (string) (filled($kkm['cashier_name'] ?? null) ? $kkm['cashier_name'] : \App\Support\ClubBrand::name()),
             'CheckStrings' => [
                 [
                     'Register' => [

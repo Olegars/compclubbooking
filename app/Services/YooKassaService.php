@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Payment;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Support\ClubBrand;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use YooKassa\Client;
@@ -73,7 +74,7 @@ class YooKassaService
                 'currency' => 'RUB',
             ],
             'capture' => true,
-            'description' => 'Пополнение депозита REACTOR #' . $payment->id,
+            'description' => 'Пополнение депозита '.\App\Support\ClubBrand::name().' #'.$payment->id,
             'metadata' => [
                 'payment_uuid' => $payment->uuid,
                 'user_id' => (string) $user->id,

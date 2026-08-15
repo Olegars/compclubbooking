@@ -140,6 +140,7 @@ class BillingController extends Controller
                 // Обязательный параметр виджета ЮKassa (см. quick-start).
                 // Берём host из текущего запроса (как syncUrl), а не APP_URL.
                 'returnUrl' => url('/billing/yookassa/return/'.$local->uuid),
+                'clubName' => \App\Support\ClubBrand::name(),
             ])
             ->header('Cache-Control', 'no-store, no-cache, must-revalidate');
     }

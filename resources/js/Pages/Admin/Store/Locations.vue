@@ -2,6 +2,9 @@
 import { onMounted, reactive, ref } from 'vue'
 import { Head, router, useForm } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 const props = defineProps<{
     locations: any[]
@@ -52,7 +55,7 @@ const save = (id: number) => {
 </script>
 
 <template>
-    <Head title="REACTOR | Локации" />
+    <Head :title="`${clubName} | Локации`" />
     <AdminLayout>
         <div class="max-w-5xl mx-auto space-y-8 pb-20 px-4 font-mono">
             <div class="flex justify-between items-end border-b border-white/10 pb-6">

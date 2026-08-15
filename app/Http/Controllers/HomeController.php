@@ -177,7 +177,7 @@ class HomeController extends Controller
             ->all();
 
         return [
-            'club_name' => (string) ($club?->name ?: 'Sector 0451'),
+            'club_name' => (string) ($club?->name ?: \App\Support\ClubBrand::name()),
             'city' => (string) config('club.city'),
             'address' => (string) ($club?->address ?: config('club.address')),
             'hours' => (string) config('club.hours'),

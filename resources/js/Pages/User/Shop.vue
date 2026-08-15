@@ -3,6 +3,9 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import axios from 'axios'
 import MainLayout from '@/Layouts/MainLayout.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 type Product = {
     id: number
@@ -207,7 +210,7 @@ onMounted(fetchProducts)
 
             <div class="space-y-5">
                 <div>
-                    <h1 class="text-4xl font-black uppercase italic text-[#22c55e] tracking-tighter drop-shadow-[0_0_15px_rgba(34,197,94,0.3)]">Reactor Market</h1>
+                    <h1 class="text-4xl font-black uppercase italic text-[#22c55e] tracking-tighter drop-shadow-[0_0_15px_rgba(34,197,94,0.3)]">{{ clubName }} Market</h1>
                     <p class="mt-2 text-sm sm:text-base text-white/70 font-medium normal-case tracking-normal not-italic leading-snug">
                         Снаряжение и провизия для рейда
                     </p>

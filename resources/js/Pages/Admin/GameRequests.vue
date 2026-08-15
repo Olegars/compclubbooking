@@ -2,6 +2,9 @@
 import { computed } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 type TopRow = {
     title: string
@@ -68,7 +71,7 @@ const formatDate = (iso: string | null) => {
 </script>
 
 <template>
-    <Head title="REACTOR | Заявки на игры" />
+    <Head :title="`${clubName} | Заявки на игры`" />
     <AdminLayout>
         <div class="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
 

@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { useClubName } from '@/Composables/useClubName'
+
 defineProps<{
     isOpen: boolean;
 }>();
 
 const emit = defineEmits(['close', 'confirm']);
+const clubName = useClubName()
 </script>
 
 <template>
@@ -16,7 +19,7 @@ const emit = defineEmits(['close', 'confirm']);
         </div>
 
         <p class="text-white/80 text-sm leading-relaxed mb-8 font-medium">
-            Согласно законодательству РФ и правилам REACTOR, посещение клуба гражданами младше
+            Согласно законодательству РФ и правилам {{ clubName }}, посещение клуба гражданами младше
             <span class="text-yellow-500 font-bold text-lg">18 лет</span> в период
             с <span class="text-white font-bold">22:00 до 06:00</span> запрещено без сопровождения взрослых.
 

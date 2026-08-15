@@ -2,6 +2,9 @@
 import { Head, useForm, usePage } from '@inertiajs/vue3'
 import { computed } from 'vue'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 const props = defineProps<{
     settings: {
@@ -32,7 +35,7 @@ const save = () => {
 </script>
 
 <template>
-    <Head title="REACTOR | Правила брони" />
+    <Head :title="`${clubName} | Правила брони`" />
     <AdminLayout>
         <div class="max-w-3xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
             <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-2xl">

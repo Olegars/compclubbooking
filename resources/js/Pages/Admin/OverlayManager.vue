@@ -2,6 +2,9 @@
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 interface Layer {
     type: 'video' | 'text' | 'image';
@@ -119,7 +122,7 @@ const saveOverlay = async (block: OverlayBlock) => {
         const response = await axios.put(`/admin/api/overlays/${block.id}`, payload)
 
         if (response.data.status === 'success') {
-            alert('REACTOR: БЛОК УСПЕШНО СИНХРОНИЗИРОВАН!')
+            alert(`${clubName.value}: БЛОК УСПЕШНО СИНХРОНИЗИРОВАН!`)
             await fetchOverlays()
         }
     } catch (error: any) {
@@ -185,11 +188,11 @@ const formatPositionName = (pos: string) => {
                 <div>
                     <h2 class="text-2xl font-black uppercase italic mb-2 flex items-center gap-4 tracking-tighter">
                         <span class="w-2 h-10 bg-purple-500 rounded-full shadow-[0_0_15px_rgba(168,85,247,0.5)]"></span>
-                        REACTOR Media Center
+                        {{ clubName }} Media Center
                     </h2>
                     <p class="text-[10px] text-white/40 uppercase tracking-[0.3em] ml-6 italic">Video + Text Overlay · v3.1</p>
                 </div>
-                <div class="text-xs text-purple-500/50 font-black tracking-widest">2026 // SECTOR 0451</div>
+                <div class="text-xs text-purple-500/50 font-black tracking-widest">{{ clubName }}</div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500">

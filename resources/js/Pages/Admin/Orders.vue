@@ -5,6 +5,9 @@ import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AdminConfirm from '@/Components/AdminConfirm.vue'
 import { useToast } from '@/Composables/useToast'
 import { useAdminBarcodeScanner } from '@/Composables/useAdminBarcodeScanner'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 const props = defineProps({ orders: Array })
 
@@ -122,7 +125,7 @@ onUnmounted(() => {
                 <div>
                     <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">Очередь заказов</h1>
                     <p class="text-white/30 text-[10px] uppercase tracking-[0.4em] font-black mt-1 italic">
-                        {{ hasOpenMarking ? 'Сканер глобальный — КМ списывается с любой страницы' : 'Reactor Market // Обработка' }}
+                        {{ hasOpenMarking ? 'Сканер глобальный — КМ списывается с любой страницы' : `${clubName} Market // Обработка` }}
                     </p>
                 </div>
             </div>

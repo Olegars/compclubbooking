@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useClubName } from '@/Composables/useClubName'
 
 const props = withDefaults(defineProps<{
   isOpen: boolean;
@@ -11,6 +12,7 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits(['close'])
+const clubName = useClubName()
 
 const status = ref<'processing' | 'success'>('processing')
 const progress = ref(0)
@@ -76,7 +78,7 @@ watch(() => props.isOpen, (val) => {
                 <div class="flex justify-between items-center border-b border-white/5 pb-3 gap-3">
                   <span class="text-[9px] text-slate-600 uppercase tracking-widest font-black shrink-0">ОБЪЕКТ</span>
                   <span class="text-white text-sm font-black uppercase leading-none italic text-right">
-                    {{ mode === 'view' ? 'СТАТУС: БАЛАНС' : (mode === 'topup' ? 'СЧЕТ: REACTOR' : data?.pcNumber) }}
+                    {{ mode === 'view' ? 'СТАТУС: БАЛАНС' : (mode === 'topup' ? `СЧЕТ: ${clubName}` : data?.pcNumber) }}
                   </span>
                 </div>
 

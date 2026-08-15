@@ -1,5 +1,8 @@
 <script setup>
 import { Head, useForm } from '@inertiajs/vue3';
+import { useClubName } from '@/Composables/useClubName';
+
+const clubName = useClubName();
 
 const form = useForm({
     email: '',
@@ -16,7 +19,7 @@ const submit = () => {
 </script>
 
 <template>
-    <Head title="REACTOR | Вход в систему" />
+    <Head :title="`${clubName} | Вход в систему`" />
     <div class="admin-ui min-h-screen bg-[#020202] flex flex-col justify-center items-center p-6 font-sans text-white selection:bg-[#22c55e] selection:text-black">
 
         <div class="w-full max-w-md bg-[#050505] border border-white/5 rounded-[1rem] p-10 shadow-[0_0_80px_rgba(34,197,94,0.05)] animate-in">
@@ -24,7 +27,7 @@ const submit = () => {
             <div class="flex items-center gap-3 mb-2">
                 <div class="w-3 h-3 bg-[#22c55e] rounded-full animate-pulse shadow-[0_0_10px_#22c55e]"></div>
                 <h1 class="text-2xl font-bold uppercase tracking-tight">
-                    Reactor <span class="text-[#22c55e]">Ctrl</span>
+                    {{ clubName }} <span class="text-[#22c55e]">Ctrl</span>
                 </h1>
             </div>
             <p class="text-white/40 text-xs uppercase tracking-[0.16em] font-semibold mb-10">

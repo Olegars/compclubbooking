@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use App\Models\Overlay;
+use App\Support\ClubBrand;
 
 class OverlaySeeder extends Seeder
 {
@@ -23,7 +24,7 @@ class OverlaySeeder extends Seeder
                 [
                     'title' => 'БЛОК ' . strtoupper($pos),
                     'type' => 'text',
-                    'content' => ['text' => 'Добро пожаловать в REACTOR'],
+                    'content' => ['text' => 'Добро пожаловать в '.ClubBrand::name()],
                     'is_active' => true,
                 ]
             );

@@ -2,6 +2,9 @@
 import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import { computed, watch } from 'vue'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import { useClubName } from '@/Composables/useClubName'
+
+const clubName = useClubName()
 
 const props = defineProps<{
     settings: {
@@ -132,7 +135,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
 </script>
 
 <template>
-    <Head title="REACTOR | ИИ-ассистент" />
+    <Head :title="`${clubName} | ИИ-ассистент`" />
     <AdminLayout>
         <div class="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
             <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-2xl">

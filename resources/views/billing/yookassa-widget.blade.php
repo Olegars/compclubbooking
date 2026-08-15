@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Оплата · REACTOR</title>
+    <title>Оплата · {{ $clubName }}</title>
     <style>
         :root { color-scheme: dark; }
         * { box-sizing: border-box; }
@@ -123,7 +123,7 @@
             <div id="status" class="banner"></div>
         @endif
     </div>
-    <div class="foot">Защищённая форма ЮKassa · данные карты не передаются REACTOR</div>
+    <div class="foot">Защищённая форма ЮKassa · данные карты не передаются {{ $clubName }}</div>
 </div>
 
 @if (!$payment->isFinal() && $confirmationToken)
