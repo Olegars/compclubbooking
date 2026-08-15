@@ -488,14 +488,14 @@ onMounted(() => {
                     </div>
 
                     <div class="mt-5 sm:mt-10 grid grid-cols-3 gap-1.5 sm:gap-3 relative z-10">
-                        <button @click="isTopUpInputOpen = true" class="py-3.5 sm:py-4 bg-[#22c55e] text-black font-black rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] tracking-widest hover:scale-[1.02] transition-all uppercase italic">Пополнить</button>
-                        <button @click="openSeatAction" class="py-3.5 sm:py-4 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] tracking-widest hover:bg-[#22c55e]/10 transition-all uppercase italic">
+                        <button @click="isTopUpInputOpen = true" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm tracking-wide hover:bg-[#22c55e]/10 transition-all uppercase italic leading-tight">Пополнить</button>
+                        <button @click="openSeatAction" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm tracking-wide hover:bg-[#22c55e]/10 transition-all uppercase italic leading-tight">
                             {{ hasLiveSession ? 'Пересесть' : 'Сесть за ПК' }}
                         </button>
-                        <Link href="/booking" class="py-3.5 sm:py-4 bg-white/5 border border-white/10 text-white font-black rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] flex items-center justify-center tracking-widest hover:bg-white/10 transition-all uppercase italic">Бронь</Link>
-                        <Link href="/shop" class="py-3.5 sm:py-4 bg-white/5 border border-white/10 text-white font-black rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] flex items-center justify-center tracking-widest hover:bg-white/10 transition-all uppercase italic">Маркет</Link>
-                        <button @click="openReviewModal" class="py-3.5 sm:py-4 bg-white/5 border border-yellow-500/40 text-yellow-500 font-black rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] tracking-widest hover:bg-yellow-500/10 transition-all uppercase italic">Бонус</button>
-                        <button @click="openGameRequestModal" class="py-3.5 sm:py-4 bg-white/5 border border-cyan-500/40 text-cyan-400 font-black rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] tracking-widest hover:bg-cyan-500/10 transition-all uppercase italic">Хочу игру</button>
+                        <Link href="/booking" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-white/10 text-white font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm flex items-center justify-center tracking-wide hover:bg-white/10 transition-all uppercase italic leading-tight">Бронь</Link>
+                        <Link href="/shop" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-white/10 text-white font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm flex items-center justify-center tracking-wide hover:bg-white/10 transition-all uppercase italic leading-tight">Маркет</Link>
+                        <button @click="openReviewModal" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-yellow-500/40 text-yellow-500 font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm tracking-wide hover:bg-yellow-500/10 transition-all uppercase italic leading-tight">Бонус</button>
+                        <button @click="openGameRequestModal" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-cyan-500/40 text-cyan-400 font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm tracking-wide hover:bg-cyan-500/10 transition-all uppercase italic leading-tight">Хочу игру</button>
                     </div>
                 </div>
 

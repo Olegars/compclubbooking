@@ -347,7 +347,7 @@ onUnmounted(() => {
                     <button
                         v-if="isAuthenticated"
                         type="button"
-                        class="nav-btn-icon lg:hidden"
+                        class="nav-btn-icon md:hidden"
                         :class="{ 'active': isQrScannerOpen }"
                         title="Сканировать QR"
                         aria-label="Сканировать QR"
@@ -564,6 +564,9 @@ onUnmounted(() => {
 }
 .nav-btn-icon:hover { @apply border-[#22c55e]/40 text-[#22c55e]; }
 .nav-btn-icon.active { @apply bg-[#22c55e] text-black border-transparent shadow-[0_0_20px_rgba(34,197,94,0.4)]; }
+@media (min-width: 768px) {
+    .nav-btn-icon { display: none !important; }
+}
 
 .nav-meta {
     @apply inline-flex items-center gap-2 sm:gap-3 px-4 py-2.5 sm:px-6 sm:py-3 border border-white/10 rounded-xl
