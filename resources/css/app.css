@@ -14,6 +14,7 @@
 
 @theme {
     --font-bomber: "BomberEscort", sans-serif;
+    --font-sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
     --color-reactor: #22c55e;
     --color-bg-dark: #020202;
 
@@ -59,9 +60,20 @@
     }
 
     .admin-nav-link {
-        @apply flex items-center gap-3 px-4 py-3 rounded-lg text-xs font-bold text-white/50 transition-all hover:bg-white/5 hover:text-white;
+        @apply flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold text-white/50 transition-all hover:bg-white/5 hover:text-white;
     }
     .admin-nav-link.active {
         @apply bg-[#22c55e]/10 text-[#22c55e] border-l-2 border-[#22c55e] rounded-l-none;
     }
+}
+
+/* Вне @layer — иначе utility font-mono перебивает правило по каскаду слоёв. */
+.admin-ui {
+    font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+.admin-ui .font-mono {
+    font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
 }
