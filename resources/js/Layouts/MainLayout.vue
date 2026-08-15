@@ -316,66 +316,78 @@ onUnmounted(() => {
 
         <div class="fixed inset-0 pointer-events-none z-[100] opacity-[0.02] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,0,0.06))] bg-[length:100%_4px,3px_100%]"></div>
 
-        <header class="bg-black/90 backdrop-blur-xl sticky top-0 z-50 flex-shrink-0 border-b border-white/5">
-            <div class="max-w-[1600px] mx-auto px-4 sm:px-6 py-3 sm:py-3.5 flex flex-wrap items-center justify-between gap-3">
+        <header class="sticky top-0 z-50 flex-shrink-0 bg-[#050505]/92 backdrop-blur-xl pt-3 sm:pt-4 pb-2 sm:pb-3">
+            <div class="w-full px-4 sm:px-4 lg:px-6">
+            <div class="max-w-7xl mx-auto">
+                <div class="masthead">
+                    <div class="masthead-top">
+                        <Link href="/" class="masthead-brand">
+                            <div class="masthead-digits" aria-hidden="true">
+                                <span>0</span><span>4</span><span>5</span><span>1</span>
+                            </div>
+                            <div class="masthead-copy">
+                                <strong>{{ brandSubtitle || clubName }}</strong>
+                                <em>компьютерный клуб</em>
+                            </div>
+                        </Link>
 
-                <Link href="/" class="flex items-baseline gap-2.5 min-w-0 shrink-0 no-underline">
-                    <span class="brand-0451">0451</span>
-                    <span v-if="brandSubtitle" class="brand-club">{{ brandSubtitle }}</span>
-                </Link>
-
-                <nav class="flex flex-wrap items-center justify-end gap-2 sm:gap-3 min-w-0">
-                    <Link href="/" class="nav-btn" :class="{ 'active': $page.url === '/' }">Главная</Link>
-                    <Link
-                        v-if="isAuthenticated"
-                        href="/account/dashboard"
-                        class="nav-btn"
-                        :class="{ 'active': $page.url.startsWith('/account') }"
-                    >Кабинет</Link>
-                    <Link href="/booking" class="nav-btn" :class="{ 'active': $page.url.startsWith('/booking') }">Бронирование</Link>
-                    <button
-                        v-if="isAuthenticated"
-                        type="button"
-                        class="nav-btn-icon md:hidden"
-                        :class="{ 'active': isQrScannerOpen }"
-                        title="Сканировать QR"
-                        aria-label="Сканировать QR"
-                        @click="openQrScanner"
-                    >
-                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M3 7V5a2 2 0 0 1 2-2h2" />
-                            <path d="M17 3h2a2 2 0 0 1 2 2v2" />
-                            <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
-                            <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
-                            <rect x="7" y="7" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
-                            <rect x="13.5" y="7" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
-                            <rect x="7" y="13.5" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
-                            <path d="M13.5 13.5h1.5v1.5h-1.5zm2 0h1.5v1.5H15.5zm0 2h1.5V17H15.5zm-2 0h1.5V17h-1.5z" fill="currentColor" stroke="none" />
-                        </svg>
-                    </button>
-
-                    <template v-if="isAuthenticated">
-                        <div class="nav-meta">
-                            <span class="nav-meta-name">
-                                {{ $page.props.auth?.user?.name || $page.props.user?.name || '—' }}
-                            </span>
-                            <span class="nav-meta-balance">
-                                {{ Math.floor(displayBalance) }}<span class="text-[#22c55e] ml-0.5">₽</span>
-                            </span>
+                        <div class="masthead-tools">
                             <button
+                                v-if="isAuthenticated"
                                 type="button"
-                                @click="openTopUp"
-                                title="Пополнить баланс"
-                                class="nav-meta-plus"
-                            >+</button>
-                        </div>
-                        <button type="button" @click="handleLogout" class="nav-btn !text-red-500 !border-red-500/20 hover:!bg-red-500 hover:!text-white">Выйти</button>
-                    </template>
+                                class="nav-btn-icon md:hidden"
+                                :class="{ 'active': isQrScannerOpen }"
+                                title="Сканировать QR"
+                                aria-label="Сканировать QR"
+                                @click="openQrScanner"
+                            >
+                                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+                                    <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+                                    <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+                                    <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+                                    <rect x="7" y="7" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
+                                    <rect x="13.5" y="7" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
+                                    <rect x="7" y="13.5" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
+                                    <path d="M13.5 13.5h1.5v1.5h-1.5zm2 0h1.5v1.5H15.5zm0 2h1.5V17H15.5zm-2 0h1.5V17h-1.5z" fill="currentColor" stroke="none" />
+                                </svg>
+                            </button>
 
-                    <template v-else>
-                        <button type="button" @click="isPhoneModalOpen = true" class="nav-btn !text-[#22c55e] !border-[#22c55e]/30 hover:!bg-[#22c55e] hover:!text-black">Войти</button>
-                    </template>
-                </nav>
+                            <template v-if="isAuthenticated">
+                                <div class="nav-meta">
+                                    <span class="nav-meta-name">
+                                        {{ $page.props.auth?.user?.name || $page.props.user?.name || '—' }}
+                                    </span>
+                                    <span class="nav-meta-balance">
+                                        {{ Math.floor(displayBalance) }}<span class="text-[#22c55e] ml-0.5">₽</span>
+                                    </span>
+                                    <button
+                                        type="button"
+                                        @click="openTopUp"
+                                        title="Пополнить баланс"
+                                        class="nav-meta-plus"
+                                    >+</button>
+                                </div>
+                                <button type="button" @click="handleLogout" class="nav-btn nav-btn-exit">Выйти</button>
+                            </template>
+                            <template v-else>
+                                <button type="button" @click="isPhoneModalOpen = true" class="nav-btn nav-btn-enter">Войти</button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <nav class="masthead-nav">
+                        <Link href="/" class="nav-btn" :class="{ 'active': $page.url === '/' }">Главная</Link>
+                        <Link
+                            v-if="isAuthenticated"
+                            href="/account/dashboard"
+                            class="nav-btn"
+                            :class="{ 'active': $page.url.startsWith('/account') }"
+                        >Кабинет</Link>
+                        <Link href="/booking" class="nav-btn" :class="{ 'active': $page.url.startsWith('/booking') }">Бронирование</Link>
+                    </nav>
+                </div>
+            </div>
             </div>
         </header>
 
@@ -502,35 +514,116 @@ onUnmounted(() => {
 <style scoped>
 @reference "../../css/app.css";
 
-.brand-0451 {
+.masthead {
+    background: #0a0a0a;
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    border-radius: 1.125rem;
+    overflow: hidden;
+    box-shadow: 0 20px 50px -20px rgba(34, 197, 94, 0.12);
+}
+.masthead-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1.25rem;
+    flex-wrap: wrap;
+    padding: 1rem 1rem 0.85rem;
+}
+@media (min-width: 640px) {
+    .masthead-top { padding: 1.15rem 1.5rem 1rem; }
+}
+.masthead-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 0;
+    text-decoration: none;
+}
+.masthead-digits {
+    display: flex;
+    gap: 3px;
+    flex-shrink: 0;
+}
+.masthead-digits span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.7rem;
+    height: 2.2rem;
+    border: 1px solid rgba(34, 197, 94, 0.38);
+    border-radius: 0.4rem;
+    background:
+        linear-gradient(180deg, rgba(34, 197, 94, 0.16) 0%, rgba(10, 10, 10, 0.9) 55%),
+        #050505;
+    color: #22c55e;
     font-family: Arial, Helvetica, sans-serif;
     font-weight: 900;
     font-style: italic;
-    letter-spacing: 0.18em;
     font-size: 1.05rem;
     line-height: 1;
-    color: #22c55e;
-    text-shadow: 0 0 12px rgba(34, 197, 94, 0.45);
+    text-shadow: 0 0 12px rgba(34, 197, 94, 0.5);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 12px rgba(34, 197, 94, 0.08);
 }
 @media (min-width: 640px) {
-    .brand-0451 { font-size: 1.35rem; }
+    .masthead-digits span {
+        width: 2.25rem;
+        height: 2.75rem;
+        font-size: 1.45rem;
+        border-radius: 0.5rem;
+    }
 }
-.brand-club {
+.masthead-copy {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 0.22rem;
+}
+.masthead-copy strong {
     font-family: Arial, Helvetica, sans-serif;
-    font-weight: 800;
+    font-weight: 900;
     font-style: italic;
     letter-spacing: 0.14em;
-    font-size: 0.72rem;
-    line-height: 1;
+    font-size: 0.95rem;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.55);
-    max-width: 14rem;
+    color: #fff;
+    line-height: 1.05;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.masthead-copy em {
+    font-family: Arial, Helvetica, sans-serif;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 0.58rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.38);
+    line-height: 1;
+}
 @media (min-width: 640px) {
-    .brand-club { font-size: 0.82rem; max-width: 22rem; }
+    .masthead-copy strong { font-size: 1.35rem; letter-spacing: 0.16em; }
+    .masthead-copy em { font-size: 0.68rem; }
+}
+.masthead-tools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+.masthead-nav {
+    display: flex;
+    gap: 0.4rem;
+    padding: 0.7rem 0.7rem 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent);
+}
+@media (min-width: 640px) {
+    .masthead-nav { gap: 0.6rem; padding: 0.8rem 1rem 1rem; }
 }
 
 .nav-btn {
@@ -538,7 +631,17 @@ onUnmounted(() => {
     font-family: Arial, Helvetica, sans-serif;
 }
 @media (min-width: 1024px) { .nav-btn { min-width: 140px; } }
+.masthead-nav .nav-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
 .nav-btn.active { @apply bg-[#22c55e] text-black border-transparent shadow-[0_0_20px_rgba(34,197,94,0.4)]; }
+.nav-btn-exit { @apply !text-red-500 !border-red-500/20 hover:!bg-red-500 hover:!text-white; }
+.nav-btn-enter { @apply !text-[#22c55e] !border-[#22c55e]/30 hover:!bg-[#22c55e] hover:!text-black; }
 
 .nav-btn-icon {
     @apply inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 border border-white/10 rounded-xl

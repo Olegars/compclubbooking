@@ -171,7 +171,7 @@ const steps = [
     <Head :title="`${clubName}: бронирование мест`" />
 
     <MainLayout>
-        <div class="w-full max-w-[1400px]">
+        <div class="w-full max-w-7xl">
 
             <!-- HERO -->
             <section class="grid gap-6 lg:grid-cols-[1.2fr_1fr] lg:items-stretch mb-16">
