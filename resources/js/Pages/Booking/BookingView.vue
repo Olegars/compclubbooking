@@ -201,7 +201,7 @@ const tariffGridError = ref('')
 let tariffGridRequestId = 0
 
 const timeSteps = Array.from({ length: 96 }, (_, i) => i * 0.25)
-const TIME_CELL_PX = 56
+const TIME_CELL_PX = 48
 const formatTimeLabel = (h: number) => {
     const hours = Math.floor(h).toString().padStart(2, '0')
     const mins = Math.round((h % 1) * 60).toString().padStart(2, '0')
@@ -959,33 +959,53 @@ const handleWheel = (e: WheelEvent, type: 'start' | 'end') => {
     stepTime(type, (e.deltaY ?? 0) > 0 ? 1 : -1)
 }
 
-// Свайп пальцем: на тач-устройствах события wheel не существует.
-const DRAG_STEP_PX = 24
-let dragState: { type: 'start' | 'end'; lastY: number; accumulated: number } | null = null
+const startWheelShift = ref(0)
+const endWheelShift = ref(0)
+const draggingWheel = ref<'start' | 'end' | null>(null)
+
+const wheelShiftOf = (type: 'start' | 'end') => (type === 'start' ? startWheelShift : endWheelShift)
+
+const wheelTranslate = (time: number, shift: number) =>
+    TIME_CELL_PX - (getIndexByTime(time) + shift) * TIME_CELL_PX
+
+const activeWheelIndex = (time: number, shift: number) => {
+    const idx = getIndexByTime(time) + Math.round(shift)
+    return Math.max(0, Math.min(timeSteps.length - 1, idx))
+}
+
+let dragState: { type: 'start' | 'end'; lastY: number } | null = null
 
 const startTimeDrag = (e: PointerEvent, type: 'start' | 'end') => {
     if (bookingMode.value === 'packages' && type === 'end') return
-    dragState = { type, lastY: e.clientY, accumulated: 0 }
+    dragState = { type, lastY: e.clientY }
+    draggingWheel.value = type
+    wheelShiftOf(type).value = 0
     ;(e.currentTarget as HTMLElement)?.setPointerCapture?.(e.pointerId)
 }
 
 const moveTimeDrag = (e: PointerEvent) => {
     if (!dragState) return
-    // Движение вверх листает время вперёд, как в нативных пикерах.
-    dragState.accumulated += dragState.lastY - e.clientY
+    const type = dragState.type
+    const shiftRef = wheelShiftOf(type)
+    const idx = getIndexByTime(type === 'start' ? startH.value : endH.value)
+    shiftRef.value += (dragState.lastY - e.clientY) / TIME_CELL_PX
     dragState.lastY = e.clientY
-
-    while (Math.abs(dragState.accumulated) >= DRAG_STEP_PX) {
-        const direction: 1 | -1 = dragState.accumulated > 0 ? 1 : -1
-        dragState.accumulated -= direction * DRAG_STEP_PX
-        stepTime(dragState.type, direction)
-    }
+    const minShift = -idx
+    const maxShift = timeSteps.length - 1 - idx
+    if (shiftRef.value < minShift) shiftRef.value = minShift
+    if (shiftRef.value > maxShift) shiftRef.value = maxShift
 }
 
 const endTimeDrag = (e: PointerEvent) => {
     if (!dragState) return
+    const type = dragState.type
+    const steps = Math.round(wheelShiftOf(type).value)
+    wheelShiftOf(type).value = 0
+    draggingWheel.value = null
     ;(e.currentTarget as HTMLElement)?.releasePointerCapture?.(e.pointerId)
     dragState = null
+    const dir: 1 | -1 = steps > 0 ? 1 : -1
+    for (let i = 0; i < Math.abs(steps); i++) stepTime(type, dir)
 }
 
 const formatDuration = (hours: number) => {
@@ -1120,11 +1140,10 @@ onUnmounted(() => {
                 </div>
 
                 <div class="relative lg:flex-1 lg:min-h-0">
-                    <div ref="panelScroller" @scroll="updatePanelScrollState"
-                         class="panel-scroll lg:h-full lg:overflow-y-auto lg:pr-2">
+                    <div ref="panelScroller" class="lg:h-full lg:overflow-hidden">
 
                         <p class="step-label"><span class="step-num">01</span> Места</p>
-                        <div class="mb-4 h-[92px] shrink-0 bg-white/[0.02] border border-white/5 px-4 py-3 rounded-2xl relative shadow-inner flex flex-col">
+                        <div class="mb-4 h-[72px] shrink-0 bg-white/[0.02] border border-white/5 px-4 py-2.5 rounded-2xl relative shadow-inner flex flex-col">
                             <div class="flex justify-between text-[9px] text-slate-500 font-black uppercase italic tracking-widest mb-2 shrink-0">
                                 <span>Ваш выбор</span>
                                 <button v-if="selectedIds.length" @click="selectedIds = []" class="text-red-500 cursor-pointer uppercase">сброс ✕</button>
@@ -1184,22 +1203,23 @@ onUnmounted(() => {
                             </p>
                         </div>
 
-                        <div class="bg-black border border-white/10 rounded-[14px] p-3 sm:p-4 mb-4 shrink-0">
+                        <div class="bg-black border border-white/10 rounded-[14px] p-2 sm:p-3 mb-3 shrink-0">
                             <div class="grid grid-cols-2 gap-2 sm:gap-4">
                                 <div class="flex flex-col items-center">
                                     <span class="time-label">Начало</span>
                                     <button type="button" class="wheel-chevron" @click="stepTime('start', -1)" aria-label="Начало раньше">⌃</button>
                                     <div class="w-full wheel-container touch-none"
+                                         :class="{ 'is-dragging': draggingWheel === 'start' }"
                                          @wheel.prevent="handleWheel($event, 'start')"
                                          @pointerdown="startTimeDrag($event, 'start')"
                                          @pointermove="moveTimeDrag"
                                          @pointerup="endTimeDrag"
                                          @pointercancel="endTimeDrag">
                                         <div class="wheel-window" aria-hidden="true"></div>
-                                        <div class="wheel-strip" :style="{ transform: `translateY(${TIME_CELL_PX - getIndexByTime(startH) * TIME_CELL_PX}px)` }">
+                                        <div class="wheel-strip" :style="{ transform: `translateY(${wheelTranslate(startH, startWheelShift)}px)` }">
                                             <div v-for="s in timeSteps" :key="'s'+s"
                                                  class="time-cell"
-                                                 :class="{ 'is-active': getIndexByTime(s) === getIndexByTime(startH) }">
+                                                 :class="{ 'is-active': getIndexByTime(s) === activeWheelIndex(startH, startWheelShift) }">
                                                 {{ formatTimeLabel(s) }}
                                             </div>
                                         </div>
@@ -1216,17 +1236,17 @@ onUnmounted(() => {
                                     <button type="button" class="wheel-chevron" :disabled="bookingMode === 'packages'"
                                             @click="stepTime('end', -1)" aria-label="Конец раньше">⌃</button>
                                     <div class="w-full wheel-container touch-none"
-                                         :class="{ 'is-locked': bookingMode === 'packages' }"
+                                         :class="{ 'is-locked': bookingMode === 'packages', 'is-dragging': draggingWheel === 'end' }"
                                          @wheel.prevent="handleWheel($event, 'end')"
                                          @pointerdown="startTimeDrag($event, 'end')"
                                          @pointermove="moveTimeDrag"
                                          @pointerup="endTimeDrag"
                                          @pointercancel="endTimeDrag">
                                         <div class="wheel-window" aria-hidden="true"></div>
-                                        <div class="wheel-strip" :style="{ transform: `translateY(${TIME_CELL_PX - getIndexByTime(endH) * TIME_CELL_PX}px)` }">
+                                        <div class="wheel-strip" :style="{ transform: `translateY(${wheelTranslate(endH, endWheelShift)}px)` }">
                                             <div v-for="e in timeSteps" :key="'e'+e"
                                                  class="time-cell"
-                                                 :class="{ 'is-active': getIndexByTime(e) === getIndexByTime(endH) }">
+                                                 :class="{ 'is-active': getIndexByTime(e) === activeWheelIndex(endH, endWheelShift) }">
                                                 {{ formatTimeLabel(e) }}
                                             </div>
                                         </div>
@@ -1257,11 +1277,6 @@ onUnmounted(() => {
                         </div>
 
                     </div>
-
-                    <div v-if="hasHiddenPanelContent"
-                         class="hidden lg:flex pointer-events-none absolute bottom-0 left-0 right-2 h-12 items-end justify-center bg-gradient-to-t from-[#050505] via-[#050505]/80 to-transparent">
-                        <span class="text-[8px] font-black uppercase tracking-[0.3em] text-white/30 animate-pulse">↓ прокрутите</span>
-                    </div>
                 </div>
 
                 <div class="shrink-0 pt-3 sticky bottom-0 z-30 -mx-2 sm:-mx-6 lg:mx-0 px-2 sm:px-6 lg:px-0 pb-1 lg:pb-0 bg-[#050505] lg:static border-t border-white/5 lg:border-t-0">
@@ -1272,7 +1287,7 @@ onUnmounted(() => {
                     <button @click="selectedIds.length && !isBookingLoading && checkAgeRestriction()"
                             :disabled="isProcessing || isBookingLoading || !selectedIds.length"
                             :class="['group w-full p-1 bg-[#22c55e] rounded-[1rem] transition-all active:scale-95', !selectedIds.length || isProcessing || isBookingLoading ? 'opacity-30 grayscale cursor-not-allowed' : 'cursor-pointer shadow-[0_10px_30px_rgba(34,197,94,0.2)]']">
-                        <div class="bg-[#0a0a0a] rounded-[0.9375rem] p-5 lg:p-6 flex justify-between items-center border border-white/10 group-hover:bg-transparent transition-all">
+                        <div class="bg-[#0a0a0a] rounded-[0.9375rem] p-4 lg:p-5 flex justify-between items-center border border-white/10 group-hover:bg-transparent transition-all">
                             <span class="font-black uppercase text-sm text-white group-hover:text-black italic tracking-widest">
                                 <template v-if="isBookingLoading">Расчет...</template>
                                 <template v-else-if="isProcessing">Связь...</template>
@@ -1360,7 +1375,7 @@ onUnmounted(() => {
 .panel-scroll::-webkit-scrollbar-thumb:hover { background: rgba(34, 197, 94, 0.7); }
 .wheel-container {
     overflow: hidden;
-    height: 168px;
+    height: 144px;
     position: relative;
     display: flex;
     justify-content: center;
@@ -1378,7 +1393,7 @@ onUnmounted(() => {
     left: 10%;
     right: 10%;
     top: 50%;
-    height: 56px;
+    height: 48px;
     transform: translateY(-50%);
     border-top: 1px solid rgba(34, 197, 94, 0.45);
     border-bottom: 1px solid rgba(34, 197, 94, 0.45);
@@ -1398,22 +1413,23 @@ onUnmounted(() => {
     position: relative;
     z-index: 1;
 }
+.wheel-container.is-dragging .wheel-strip { transition: none; }
 .time-cell {
-    height: 56px;
-    min-height: 56px;
+    height: 48px;
+    min-height: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.15rem;
+    font-size: 1.05rem;
     font-weight: 600;
     color: rgba(34, 197, 94, 0.28);
     font-family: ui-sans-serif, system-ui, "Segoe UI", Arial, sans-serif;
     font-variant-numeric: tabular-nums;
     transform: scale(0.78);
-    transition: color 0.2s, transform 0.2s, font-size 0.2s, font-weight 0.2s;
+    transition: color 0.15s, transform 0.15s, font-size 0.15s, font-weight 0.15s;
 }
 .time-cell.is-active {
-    font-size: clamp(1.55rem, 6.5vw, 2.15rem);
+    font-size: clamp(1.4rem, 5.5vw, 1.95rem);
     font-weight: 700;
     color: #22c55e;
     text-shadow: 0 0 10px rgba(34, 197, 94, 0.35);
@@ -1421,12 +1437,12 @@ onUnmounted(() => {
 }
 .wheel-chevron {
     width: 100%;
-    height: 22px;
+    height: 18px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: rgba(34, 197, 94, 0.55);
-    font-size: 18px;
+    font-size: 16px;
     line-height: 1;
     background: transparent;
     border: 0;
