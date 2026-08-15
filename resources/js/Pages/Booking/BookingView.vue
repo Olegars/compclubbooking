@@ -1105,8 +1105,8 @@ onUnmounted(() => {
                     </div>
                 </div>
 
-                <div class="relative lg:flex-1 lg:min-h-0">
-                    <div ref="panelScroller" class="lg:h-full lg:overflow-hidden">
+                <div class="relative lg:min-h-0">
+                    <div ref="panelScroller" class="lg:overflow-visible">
 
                         <p class="step-label"><span class="step-num">01</span> Места</p>
                         <div class="mb-4 h-[72px] shrink-0 bg-white/[0.02] border border-white/5 px-4 py-2.5 rounded-2xl relative shadow-inner flex flex-col">
@@ -1237,7 +1237,7 @@ onUnmounted(() => {
                     </div>
                 </div>
 
-                <div class="shrink-0 pt-3 sticky bottom-0 z-30 -mx-2 sm:-mx-6 lg:mx-0 px-2 sm:px-6 lg:px-0 pb-1 lg:pb-0 bg-[#050505] lg:static border-t border-white/5 lg:border-t-0">
+                <div class="shrink-0 mt-3 pt-0 sticky bottom-0 z-30 -mx-2 sm:-mx-6 lg:mx-0 px-2 sm:px-6 lg:px-0 pb-1 lg:pb-0 bg-[#050505] lg:static">
                     <p v-if="priceError" class="mb-2 text-[9px] text-red-400 uppercase tracking-widest leading-snug">
                         {{ priceError }}
                     </p>
