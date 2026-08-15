@@ -886,12 +886,12 @@ onUnmounted(() => {
 
 <template>
     <AdminLayout>
-        <div class="h-[calc(100vh-8rem)] min-h-[600px] flex flex-col bg-[#050505] border border-white/5 rounded-[1rem] overflow-hidden shadow-2xl animate-in fade-in duration-500 font-mono text-white relative">
+        <div class="h-[calc(100vh-8rem)] min-h-[600px] flex flex-col bg-[#050505] border border-white/5 rounded-[1rem] overflow-hidden shadow-2xl animate-in fade-in duration-500 font-sans text-white relative" style="font-family: ui-sans-serif, system-ui, 'Segoe UI', Arial, sans-serif;">
 
             <div v-if="isLoading" class="absolute inset-0 bg-black/70 backdrop-blur-md z-[999] flex items-center justify-center">
                 <div class="flex flex-col items-center gap-4">
                     <div class="w-16 h-16 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
-                    <span class="text-cyan-500 text-xs tracking-widest uppercase font-black animate-pulse">СИНХРОНИЗАЦИЯ...</span>
+                    <span class="text-cyan-500 text-sm font-semibold">Синхронизация…</span>
                 </div>
             </div>
 
@@ -900,7 +900,7 @@ onUnmounted(() => {
                     <div class="flex bg-white/5 p-1 rounded-xl border border-white/10">
                         <button v-for="m in [{id: 'walls', n: 'Стены'}, {id: 'zones', n: 'Зоны'}, {id: 'addons', n: 'Допы'}, {id: 'labels', n: 'Текст'}, {id: 'pcs', n: 'ПК'}, {id: 'erase', n: 'Ластик'}]"
                                 :key="m.id" @click="mode = m.id as any"
-                                :class="['px-4 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all', mode === m.id ? (m.id === 'erase' ? 'bg-red-500 text-black' : 'bg-cyan-500 text-black shadow-[0_0_10px_rgba(6,182,212,0.4)]') : 'text-white/40 hover:text-white']">
+                                :class="['px-4 py-1.5 text-xs font-semibold rounded-lg transition-all', mode === m.id ? (m.id === 'erase' ? 'bg-red-500 text-black' : 'bg-cyan-500 text-black shadow-[0_0_10px_rgba(6,182,212,0.4)]') : 'text-white/50 hover:text-white']">
                             {{ m.n }}
                         </button>
                     </div>
@@ -908,18 +908,18 @@ onUnmounted(() => {
                     <div v-if="mode === 'zones'" class="flex items-center gap-3 ml-2 px-4 border-l border-white/10">
                         <template v-if="topologyZones.length">
                             <select v-model="currentZoneType"
-                                    class="bg-black border border-white/10 text-cyan-500 font-bold text-[10px] py-1.5 px-3 rounded-lg uppercase outline-none focus:border-cyan-500"
+                                    class="bg-black border border-white/10 text-cyan-500 font-semibold text-xs py-1.5 px-3 rounded-lg outline-none focus:border-cyan-500"
                                     :style="{ borderColor: currentZoneColor + '66', color: currentZoneColor }">
                                 <option v-for="z in topologyZones" :key="z.id" :value="z.slug">{{ z.name }}</option>
                             </select>
                             <div class="w-6 h-6 rounded-full border-2 border-white/40 shrink-0"
                                  :style="{ backgroundColor: currentZoneColor, boxShadow: `0 0 10px ${currentZoneColor}66` }"
                                  :title="selectedTopologyZone ? `${selectedTopologyZone.name} (${selectedTopologyZone.slug})` : ''"></div>
-                            <span class="text-[9px] text-white/30 font-mono uppercase tracking-widest hidden xl:inline">
+                            <span class="text-[11px] text-white/40 hidden xl:inline">
                                 {{ selectedTopologyZone?.slug }}
                             </span>
                         </template>
-                        <span v-else class="text-[10px] text-amber-400/90 font-black uppercase tracking-widest">
+                        <span v-else class="text-xs text-amber-400/90 font-semibold">
                             Сначала добавьте зоны в «Топология залов»
                         </span>
                     </div>
@@ -928,48 +928,48 @@ onUnmounted(() => {
                         <template v-if="mapAddons.length">
                             <select :value="currentAddonId ?? ''"
                                     @change="currentAddonId = Number(($event.target as HTMLSelectElement).value) || null"
-                                    class="bg-black border border-white/10 text-cyan-500 font-bold text-[10px] py-1.5 px-3 rounded-lg uppercase outline-none focus:border-cyan-500">
+                                    class="bg-black border border-white/10 text-cyan-500 font-semibold text-xs py-1.5 px-3 rounded-lg outline-none focus:border-cyan-500">
                                 <option v-for="a in mapAddons" :key="a.id" :value="a.id">
                                     {{ a.name }} · {{ Math.round(a.price_per_hour) }}₽/ч{{ a.billing_mode === 'optional' ? ' · опция' : '' }}
                                 </option>
                             </select>
-                            <span class="text-[9px] text-white/35 uppercase tracking-widest hidden lg:inline">клик по зоне · тяни PS</span>
+                            <span class="text-[11px] text-white/40 hidden lg:inline">клик по зоне · тяни PS</span>
                         </template>
-                        <span v-else class="text-[10px] text-amber-400/90 font-black uppercase tracking-widest">
+                        <span v-else class="text-xs text-amber-400/90 font-semibold">
                             Создайте доп с ценой на странице тарифов
                         </span>
                     </div>
 
                     <button @click="isMagnetOn = !isMagnetOn"
-                            :class="['px-4 py-1.5 text-[10px] font-black uppercase rounded-lg transition-colors border ml-2 shrink-0', isMagnetOn ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400' : 'border-white/10 text-white/40 hover:text-white']">
+                            :class="['px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors border ml-2 shrink-0', isMagnetOn ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400' : 'border-white/10 text-white/40 hover:text-white']">
                         🧲 {{ isMagnetOn ? 'МАГНИТ' : 'СВОБОДНО' }}
                     </button>
 
                     <button v-if="mode === 'walls'"
                             @click="finishWall"
                             :disabled="currentPoints.length <= 2"
-                            class="shrink-0 bg-blue-600/20 border border-blue-500 text-blue-400 px-4 py-1.5 text-[10px] font-black uppercase rounded-lg hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-blue-600/20 disabled:hover:text-blue-400">
+                            class="shrink-0 bg-blue-600/20 border border-blue-500 text-blue-400 px-4 py-1.5 text-xs font-semibold rounded-lg hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-blue-600/20 disabled:hover:text-blue-400">
                         Замкнуть контур
                         <span v-if="currentPoints.length" class="ml-1 opacity-70">({{ currentPoints.length }})</span>
                     </button>
-                    <button v-if="mode === 'pcs'" @click="syncDefaultPcs" class="bg-purple-500/20 text-purple-400 border border-purple-500/30 px-4 py-1.5 text-[10px] uppercase font-black rounded-lg hover:bg-purple-500 hover:text-white transition-all shrink-0">ДОБАВИТЬ ПК</button>
+                    <button v-if="mode === 'pcs'" @click="syncDefaultPcs" class="bg-purple-500/20 text-purple-400 border border-purple-500/30 px-4 py-1.5 text-xs font-semibold rounded-lg hover:bg-purple-500 hover:text-white transition-all shrink-0">Добавить ПК</button>
                     <div v-if="mode === 'pcs'" class="flex items-center gap-2 ml-2 px-3 border-l border-white/10 shrink-0">
                         <button v-for="opt in seatKindOptions" :key="opt.id"
                                 @click="currentSeatKind = opt.id"
-                                :class="['px-3 py-1.5 text-[10px] font-black uppercase rounded-lg border transition-all',
+                                :class="['px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all',
                                          currentSeatKind === opt.id ? 'text-black' : 'text-white/50 border-white/10 hover:text-white']"
                                 :style="currentSeatKind === opt.id
                                     ? { backgroundColor: opt.color, borderColor: opt.color }
                                     : { borderColor: opt.color + '55', color: opt.color }">
                             {{ opt.label }}
                         </button>
-                        <span class="text-[9px] text-white/30 font-black uppercase tracking-widest hidden xl:inline">клик = поставить</span>
+                        <span class="text-[11px] text-white/40 hidden xl:inline">клик = поставить</span>
                     </div>
                 </div>
 
                 <div class="flex gap-4 shrink-0">
-                    <button @click="resetMap" class="text-red-500 text-[10px] font-black uppercase px-4 py-2 rounded-lg hover:bg-red-500/10 transition-colors">Сброс</button>
-                    <button @click="saveToDB" :disabled="isSaving" class="bg-cyan-500 hover:bg-cyan-400 text-black px-8 py-2 text-xs font-black uppercase rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] disabled:opacity-30 transition-all">Сохранить</button>
+                    <button @click="resetMap" class="text-red-500 text-xs font-semibold px-4 py-2 rounded-lg hover:bg-red-500/10 transition-colors">Сброс</button>
+                    <button @click="saveToDB" :disabled="isSaving" class="bg-cyan-500 hover:bg-cyan-400 text-black px-8 py-2 text-sm font-semibold rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] disabled:opacity-30 transition-all">Сохранить</button>
                 </div>
             </header>
 
@@ -1003,15 +1003,15 @@ onUnmounted(() => {
                         </g>
 
                         <!-- Цифры по краю: сверху весь ряд, слева у самого края -->
-                        <g class="pointer-events-none" style="font-family: ui-monospace, monospace;">
+                        <g class="pointer-events-none" style="font-family: ui-sans-serif, system-ui, 'Segoe UI', Arial, sans-serif;">
                             <text v-for="tick in edgeLabelsX" :key="'xt'+tick.value"
                                   :x="tick.x" :y="tick.y"
                                   :font-size="axisLabelSize" fill="#67e8f9" fill-opacity="0.95"
-                                  font-weight="800" text-anchor="middle" dominant-baseline="middle">{{ tick.value }}</text>
+                                  font-weight="600" text-anchor="middle" dominant-baseline="middle">{{ tick.value }}</text>
                             <text v-for="tick in edgeLabelsY" :key="'yt'+tick.value"
                                   :x="tick.x" :y="tick.y"
                                   :font-size="axisLabelSize" fill="#a5f3fc" fill-opacity="0.95"
-                                  font-weight="800" text-anchor="start" dominant-baseline="middle">{{ tick.value }}</text>
+                                  font-weight="600" text-anchor="start" dominant-baseline="middle">{{ tick.value }}</text>
                         </g>
 
                         <!-- Порядок слоёв снизу вверх: стены → зоны → текст → ПК -->
@@ -1170,7 +1170,7 @@ onUnmounted(() => {
 
                 <aside class="w-80 border-l border-white/5 p-6 bg-[#0a0a0a] flex flex-col gap-6 shrink-0 overflow-y-auto relative z-10">
                     <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                        <label class="text-[9px] uppercase text-cyan-500 block mb-2 font-black tracking-widest">Выбор локации</label>
+                        <label class="text-[11px] text-cyan-500 block mb-2 font-semibold">Выбор локации</label>
                         <div class="flex gap-2">
                             <select v-model.number="activeClubId" @change="loadFromDB" class="w-full bg-black p-3 text-xs text-white font-bold outline-none rounded-xl border border-white/10 focus:border-cyan-500">
                                 <option v-for="club in clubList" :key="club.id" :value="club.id">{{ club.name }}</option>
@@ -1185,36 +1185,36 @@ onUnmounted(() => {
 
                         <template v-if="isTvZone(selectedZone)">
                             <div>
-                                <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Диагональ экрана</label>
+                                <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Диагональ экрана</label>
                                 <input v-model="selectedZone.info.screen_diagonal" type="text" placeholder="55&quot;"
                                        class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500" />
                             </div>
                             <div>
-                                <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Модель PS</label>
+                                <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Модель PS</label>
                                 <input v-model="selectedZone.info.ps_model" type="text" placeholder="PlayStation 5"
                                        class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500" />
                             </div>
                         </template>
                         <template v-else>
                             <div>
-                                <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Процессор</label>
+                                <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Процессор</label>
                                 <input v-model="selectedZone.info.cpu" type="text" placeholder="AMD Ryzen…"
                                        class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500" />
                             </div>
                             <div>
-                                <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Видеокарта</label>
+                                <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Видеокарта</label>
                                 <input v-model="selectedZone.info.gpu" type="text" placeholder="RTX…"
                                        class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500" />
                             </div>
                             <div>
-                                <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Монитор</label>
+                                <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Монитор</label>
                                 <input v-model="selectedZone.info.monitor" type="text" placeholder="27&quot; 240Hz"
                                        class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500" />
                             </div>
                         </template>
 
                         <div>
-                            <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Край «?»</label>
+                            <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Край «?»</label>
                             <select v-model="selectedZone.info.info_edge"
                                     class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-black uppercase">
                                 <option value="">Авто (проход)</option>
@@ -1230,11 +1230,11 @@ onUnmounted(() => {
                     <div v-if="selectedPc" class="p-4 bg-cyan-500/5 border border-cyan-500/20 rounded-2xl animate-in zoom-in duration-200 flex flex-col gap-3">
                         <p class="text-[10px] text-cyan-500 font-black uppercase tracking-widest">Маркер</p>
                         <div>
-                            <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Имя</label>
+                            <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Имя</label>
                             <input v-model="selectedPc.name" type="text" class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-black" />
                         </div>
                         <div>
-                            <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Тип</label>
+                            <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Тип</label>
                             <select v-model="selectedPc.kind"
                                     @change="selectedPc.booth_id = (selectedPc.kind === 'tv' || selectedPc.kind === 'ps5') ? boothIdForPoint(Number(selectedPc.x), Number(selectedPc.y)) : null"
                                     class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-black uppercase">
@@ -1242,7 +1242,7 @@ onUnmounted(() => {
                             </select>
                         </div>
                         <div v-if="selectedPc.kind === 'tv' || selectedPc.kind === 'ps5'">
-                            <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Кабина (booth)</label>
+                            <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Кабина (booth)</label>
                             <input v-model="selectedPc.booth_id" type="text" placeholder="авто из зоны"
                                    class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-mono" />
                             <p class="text-[9px] opacity-40 italic mt-1">Одинаковый booth у TV и PS одной зоны</p>
@@ -1260,11 +1260,11 @@ onUnmounted(() => {
 
                     <div v-if="selectedLabel" class="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col gap-4 animate-in zoom-in duration-200">
                         <div>
-                            <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Текст метки</label>
+                            <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Текст метки</label>
                             <input v-model="selectedLabel.content" type="text" class="w-full bg-black border border-white/10 text-white text-xs px-3 py-3 rounded-lg outline-none focus:border-cyan-500 transition-colors font-black" />
                         </div>
                         <div>
-                            <label class="text-[9px] uppercase text-white/40 block mb-1.5 font-black tracking-widest">Размер</label>
+                            <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Размер</label>
                             <input type="range" v-model.number="selectedLabel.size" min="2" max="30" class="w-full accent-cyan-500">
                         </div>
                         <button @click="selectedLabel.rotate = (selectedLabel.rotate === 90 ? 0 : 90)" class="text-[10px] font-black tracking-widest uppercase bg-white/5 hover:bg-white/10 py-3 rounded-xl transition-colors border border-white/5 mt-2">Повернуть на 90°</button>
