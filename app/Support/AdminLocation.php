@@ -15,10 +15,7 @@ class AdminLocation
             return null;
         }
 
-        if ($admin->club_id) {
-            return Club::query()->find($admin->club_id);
-        }
-
+        // Owner переключает локацию через сессию, даже если у учётки есть club_id.
         if ($admin->role === 'owner') {
             $sessionId = Session::get('admin_location_id');
             if ($sessionId) {
@@ -28,7 +25,18 @@ class AdminLocation
                 }
             }
 
+            if ($admin->club_id) {
+                $fromClub = Club::query()->find($admin->club_id);
+                if ($fromClub) {
+                    return $fromClub;
+                }
+            }
+
             return Club::query()->orderBy('id')->first();
+        }
+
+        if ($admin->club_id) {
+            return Club::query()->find($admin->club_id);
         }
 
         return Club::query()->orderBy('id')->first();
@@ -42,7 +50,7 @@ class AdminLocation
     public static function switch(int $clubId, ?Admin $admin = null): bool
     {
         $admin = $admin ?: auth('admin')->user();
-        if (! $admin || $admin->role !== 'owner' || $admin->club_id) {
+        if (! $admin || $admin->role !== 'owner') {
             return false;
         }
 

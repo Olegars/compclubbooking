@@ -26,11 +26,12 @@ const adminName = computed(() => admin.value?.name || admin.value?.email || 'О�
 const adminRole = computed(() => admin.value?.role || null)
 const isOwner = computed(() => adminRole.value === 'owner')
 const isSupervisorPlus = computed(() => adminRole.value === 'supervisor' || adminRole.value === 'owner')
-const canAccessClub = computed(() => Boolean(page.props.can_access_club))
-const canAccessStore = computed(() => Boolean(page.props.can_access_store))
+const canAccessClub = computed(() => isOwner.value || Boolean(page.props.can_access_club))
+const canAccessStore = computed(() => isOwner.value || Boolean(page.props.can_access_store))
 const location = computed(() => page.props.admin_location as any)
 const locations = computed(() => (page.props.admin_locations as any[]) || [])
 const switching = ref(false)
+const showLocationSwitcher = computed(() => isOwner.value && locations.value.length > 0)
 
 const shift = computed(() => page.props.admin_shift as any)
 const shiftIsActive = computed(() => Boolean(shift.value?.is_mine))
@@ -76,7 +77,20 @@ const switchLocation = (clubId: string | number) => {
                 <div class="text-[11px] text-white/35 uppercase font-semibold tracking-[0.18em] mt-2">
                     Terminal Node // v2.7
                 </div>
-                <div v-if="location" class="mt-4 text-xs uppercase tracking-wider text-cyan-400/80 font-semibold">
+                <div v-if="showLocationSwitcher" class="mt-4">
+                    <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] mb-2">Локация</div>
+                    <select
+                        class="w-full bg-black/40 border border-cyan-500/30 rounded-xl px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-cyan-300 outline-none"
+                        :value="location?.id || ''"
+                        :disabled="switching"
+                        @change="switchLocation(($event.target as HTMLSelectElement).value)"
+                    >
+                        <option v-for="loc in locations" :key="loc.id" :value="loc.id">
+                            {{ loc.name }} ({{ loc.type }})
+                        </option>
+                    </select>
+                </div>
+                <div v-else-if="location" class="mt-4 text-xs uppercase tracking-wider text-cyan-400/80 font-semibold">
                     {{ location.name }}
                     <span class="text-white/30">· {{ location.type }}</span>
                 </div>
@@ -131,32 +145,32 @@ const switchLocation = (clubId: string | number) => {
                 <!-- СЕКЦИЯ: МАГАЗИН ПРИ КЛУБЕ -->
                 <div v-if="canAccessStore || isOwner" class="space-y-2">
                     <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Магазин</div>
-                    <Link v-if="canAccessStore" href="/admin/store/warehouse"
+                    <Link v-if="canAccessStore || isOwner" href="/admin/store/warehouse"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/store/warehouse') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🧩</span> Склад комплектующих
                     </Link>
-                    <Link v-if="canAccessStore" href="/admin/store/estimates"
+                    <Link v-if="canAccessStore || isOwner" href="/admin/store/estimates"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/store/estimates') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>📋</span> Сметы
                     </Link>
-                    <Link v-if="canAccessStore" href="/admin/store/built-pcs"
+                    <Link v-if="canAccessStore || isOwner" href="/admin/store/built-pcs"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/store/built-pcs') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🖥️</span> Готовые ПК
                     </Link>
-                    <Link v-if="canAccessStore" href="/admin/store/orders"
+                    <Link v-if="canAccessStore || isOwner" href="/admin/store/orders"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/store/orders') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🛠️</span> Заказы
                     </Link>
-                    <Link v-if="canAccessStore" href="/admin/store/warranty"
+                    <Link v-if="canAccessStore || isOwner" href="/admin/store/warranty"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/store/warranty') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🛡️</span> Гарантия
                     </Link>
-                    <Link v-if="canAccessStore" href="/admin/store/clients"
+                    <Link v-if="canAccessStore || isOwner" href="/admin/store/clients"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/store/clients') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>👤</span> Клиенты
@@ -313,17 +327,24 @@ const switchLocation = (clubId: string | number) => {
             <header class="h-24 border-b border-white/5 flex items-center justify-between px-10 select-none bg-[#020202]/50 backdrop-blur-md shrink-0">
                 <div class="flex items-center gap-4 text-xs uppercase font-semibold tracking-wider text-white/50">
                     <span>Node: <span class="text-cyan-400">{{ currentUrl }}</span></span>
-                    <select
-                        v-if="isOwner && locations.length > 1"
-                        class="bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-wider text-cyan-300 outline-none"
-                        :value="location?.id || ''"
-                        :disabled="switching"
-                        @change="switchLocation(($event.target as HTMLSelectElement).value)"
-                    >
-                        <option v-for="loc in locations" :key="loc.id" :value="loc.id">
-                            {{ loc.name }} ({{ loc.type }})
-                        </option>
-                    </select>
+                    <div v-if="isOwner" class="flex items-center gap-2">
+                        <span class="text-white/40">Локация</span>
+                        <select
+                            v-if="locations.length > 0"
+                            class="bg-black/40 border border-cyan-500/30 rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-wider text-cyan-300 outline-none"
+                            :value="location?.id || ''"
+                            :disabled="switching"
+                            @change="switchLocation(($event.target as HTMLSelectElement).value)"
+                        >
+                            <option v-for="loc in locations" :key="loc.id" :value="loc.id">
+                                {{ loc.name }} ({{ loc.type }})
+                            </option>
+                        </select>
+                        <Link href="/admin/store/locations"
+                              class="px-3 py-2 border border-white/10 hover:border-cyan-500/40 text-white/50 hover:text-cyan-300 rounded-xl text-xs font-semibold uppercase transition-all">
+                            Управление
+                        </Link>
+                    </div>
                 </div>
 
                 <div class="flex items-center gap-6">

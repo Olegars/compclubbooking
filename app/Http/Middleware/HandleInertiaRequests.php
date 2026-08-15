@@ -25,10 +25,12 @@ class HandleInertiaRequests extends Middleware
 
         $balance = $user ? $user->availableBalance() : 0.0;
         $location = $admin ? AdminLocation::resolve($admin) : null;
-        $canAccessClub = $admin ? $admin->canAccessClub() : false;
-        $canAccessStore = $admin && $admin->canAccessStore()
-            && $location
-            && ($admin->role === 'owner' || $location->hasStore());
+        $isOwner = $admin && $admin->role === 'owner';
+        $canAccessClub = $admin ? ($isOwner || $admin->canAccessClub()) : false;
+        $canAccessStore = $admin && (
+            $isOwner
+            || ($admin->canAccessStore() && $location && $location->hasStore())
+        );
 
         return array_merge(parent::share($request), [
             'flash' => [
@@ -58,7 +60,7 @@ class HandleInertiaRequests extends Middleware
                 'has_store' => $location->hasStore(),
                 'has_club' => $location->hasClub(),
             ] : null,
-            'admin_locations' => $admin && $admin->role === 'owner' && ! $admin->club_id
+            'admin_locations' => $isOwner
                 ? fn () => collect(AdminLocation::listForOwner($admin))->map(fn ($c) => [
                     'id' => $c->id,
                     'name' => $c->name,
