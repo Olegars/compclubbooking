@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import axios from 'axios' // <--- Прямой импорт (решает проблему с window.axios)
 
@@ -283,6 +283,79 @@ const handleSmsVerify = (code: string) => {
     })
 }
 
+const TARGET_DIGITS = [0, 4, 5, 1] as const
+const FLIP_MS = 340
+const FLIPS_PER_RUN = 10
+const FLIP_STAGGER_MS = 150
+const FLIP_EVERY_MS = 20_000
+
+type FlipCell = { from: number; to: number; flipping: boolean }
+const flipCells = ref<FlipCell[]>(
+    TARGET_DIGITS.map((d) => ({ from: d, to: d, flipping: false })),
+)
+
+let flipTimer: ReturnType<typeof setInterval> | null = null
+let flipDelays: ReturnType<typeof setTimeout>[] = []
+let flipRunning = false
+
+const sleepFlip = (ms: number) => new Promise<void>((resolve) => {
+    flipDelays.push(setTimeout(resolve, ms))
+})
+
+const prefersReducedMotion = () => {
+    try {
+        return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    } catch {
+        return false
+    }
+}
+
+const flipDigitTo = async (index: number, next: number) => {
+    const cell = flipCells.value[index]
+    if (!cell || cell.from === next) return
+    cell.to = next
+    cell.flipping = false
+    await nextTick()
+    cell.flipping = true
+    await sleepFlip(FLIP_MS)
+    cell.from = next
+    cell.flipping = false
+}
+
+const playFlipCycle = async () => {
+    if (flipRunning || prefersReducedMotion()) return
+    flipRunning = true
+    try {
+        await Promise.all(TARGET_DIGITS.map(async (_digit, index) => {
+            await sleepFlip(index * FLIP_STAGGER_MS)
+            let current = flipCells.value[index].from
+            for (let n = 0; n < FLIPS_PER_RUN; n++) {
+                current = (current + 1) % 10
+                await flipDigitTo(index, current)
+            }
+        }))
+    } finally {
+        flipRunning = false
+    }
+}
+
+const startFlipClock = () => {
+    stopFlipClock()
+    if (prefersReducedMotion()) return
+    flipTimer = setInterval(() => { void playFlipCycle() }, FLIP_EVERY_MS)
+}
+
+const stopFlipClock = () => {
+    if (flipTimer) {
+        clearInterval(flipTimer)
+        flipTimer = null
+    }
+    flipDelays.forEach((t) => clearTimeout(t))
+    flipDelays = []
+    flipRunning = false
+    flipCells.value = TARGET_DIGITS.map((d) => ({ from: d, to: d, flipping: false }))
+}
+
 onMounted(() => {
     clearReceiptSession()
     try {
@@ -291,6 +364,7 @@ onMounted(() => {
             isQrScannerOpen.value = true
         }
     } catch { /* ignore */ }
+    startFlipClock()
 })
 
 // Layout живёт между страницами Inertia — гасим попап пополнения/чека при уходе.
@@ -303,6 +377,7 @@ watch(() => page.url, () => {
 
 onUnmounted(() => {
     stopOrderPolling()
+    stopFlipClock()
 })
 </script>
 
@@ -318,7 +393,17 @@ onUnmounted(() => {
                     <div class="masthead-row">
                         <Link href="/" class="masthead-brand">
                             <div class="masthead-digits" aria-hidden="true">
-                                <span>0</span><span>4</span><span>5</span><span>1</span>
+                                <div
+                                    v-for="(cell, index) in flipCells"
+                                    :key="index"
+                                    class="flip-unit"
+                                    :class="{ 'is-flip': cell.flipping }"
+                                >
+                                    <div class="flip-static flip-top"><span>{{ cell.to }}</span></div>
+                                    <div class="flip-static flip-bot"><span>{{ cell.from }}</span></div>
+                                    <div class="flip-leaf flip-top"><span>{{ cell.from }}</span></div>
+                                    <div class="flip-leaf flip-bot"><span>{{ cell.to }}</span></div>
+                                </div>
                             </div>
                             <span class="masthead-title">компьютерный клуб</span>
                         </Link>
@@ -545,10 +630,8 @@ onUnmounted(() => {
     height: var(--brand);
     flex-shrink: 0;
 }
-.masthead-digits span {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.flip-unit {
+    position: relative;
     width: calc(var(--brand) * 0.72);
     height: var(--brand);
     border: 1px solid rgba(34, 197, 94, 0.38);
@@ -556,6 +639,57 @@ onUnmounted(() => {
     background:
         linear-gradient(180deg, rgba(34, 197, 94, 0.16) 0%, rgba(10, 10, 10, 0.9) 55%),
         #050505;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 12px rgba(34, 197, 94, 0.08);
+    perspective: 420px;
+    overflow: hidden;
+}
+.flip-unit::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: rgba(0, 0, 0, 0.72);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
+    z-index: 6;
+    pointer-events: none;
+}
+.flip-static,
+.flip-leaf {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 50%;
+    overflow: hidden;
+    background:
+        linear-gradient(180deg, rgba(34, 197, 94, 0.16) 0%, rgba(10, 10, 10, 0.95) 55%),
+        #050505;
+}
+.flip-top { top: 0; }
+.flip-bot { bottom: 0; }
+.flip-static { z-index: 1; }
+.flip-leaf.flip-top {
+    z-index: 4;
+    transform-origin: bottom center;
+    backface-visibility: hidden;
+}
+.flip-leaf.flip-bot {
+    z-index: 3;
+    transform-origin: top center;
+    backface-visibility: hidden;
+    transform: rotateX(90deg);
+}
+.flip-unit span {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: var(--brand);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     color: #000;
     -webkit-text-stroke: calc(var(--brand) * 0.028) #22c55e;
     paint-order: stroke fill;
@@ -565,9 +699,23 @@ onUnmounted(() => {
     font-size: calc(var(--brand) * 0.62);
     line-height: 1;
     text-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.08),
-        0 0 12px rgba(34, 197, 94, 0.08);
+}
+.flip-top span { top: 0; }
+.flip-bot span { top: calc(var(--brand) * -0.5); }
+.flip-unit.is-flip .flip-leaf.flip-top {
+    animation: flip-fold-top 0.34s ease-in forwards;
+}
+.flip-unit.is-flip .flip-leaf.flip-bot {
+    animation: flip-unfold-bot 0.34s ease-out forwards;
+}
+@keyframes flip-fold-top {
+    0% { transform: rotateX(0deg); }
+    49% { transform: rotateX(-90deg); }
+    100% { transform: rotateX(-90deg); }
+}
+@keyframes flip-unfold-bot {
+    0%, 49% { transform: rotateX(90deg); }
+    100% { transform: rotateX(0deg); }
 }
 .masthead-title {
     display: flex;
@@ -692,5 +840,7 @@ onUnmounted(() => {
     .order-live-bar,
     .order-live-title,
     .order-live-dot { animation: none !important; opacity: 1; }
+    .flip-unit.is-flip .flip-leaf.flip-top,
+    .flip-unit.is-flip .flip-leaf.flip-bot { animation: none !important; }
 }
 </style>
