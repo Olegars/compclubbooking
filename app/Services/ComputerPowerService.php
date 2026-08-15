@@ -84,7 +84,9 @@ class ComputerPowerService
         $rows = DB::table('computers')->whereIn('id', $ids)->get();
         foreach ($rows as $row) {
             $id = (int) $row->id;
-            $desired = in_array($id, $needOn, true) ? self::DESIRED_ON : self::DESIRED_OFF;
+            $desired = $this->rowInMaintenance($row, $now)
+                ? self::DESIRED_ON
+                : (in_array($id, $needOn, true) ? self::DESIRED_ON : self::DESIRED_OFF);
             $alive = isset($aliveIds[$id]);
 
             $patch = $this->reconcileRow($row, $desired, $alive, $now);
@@ -181,17 +183,33 @@ class ComputerPowerService
     /**
      * Heartbeat / любой сигнал что шелл жив.
      *
-     * @return array{power_desired: string, power_state: string, power_action: string, session_active: bool}
+     * @param  array{
+     *     maintenance?: bool|null,
+     *     cache_ok?: bool|null,
+     *     cache_free_gb?: float|int|string|null,
+     *     data_root?: string|null,
+     *     volume_letter?: string|null
+     * }  $extras
+     * @return array{power_desired: string, power_state: string, power_action: string, session_active: bool, maintenance: bool, cache_ok: bool|null}
      */
-    public function heartbeat(Computer $computer, ?string $mac = null): array
+    public function heartbeat(Computer $computer, ?string $mac = null, array $extras = []): array
     {
         $id = (int) $computer->id;
         $this->markOnline($id, $mac);
+        $this->applyHeartbeatExtras($id, $extras);
+        $computer->refresh();
+
+        $now = CarbonImmutable::now();
+        $inMaintenance = $computer->isInMaintenance($now);
 
         $desired = self::DESIRED_OFF;
         try {
-            $needOn = $this->computersNeedingPower([$id], CarbonImmutable::now());
-            $desired = $needOn !== [] ? self::DESIRED_ON : self::DESIRED_OFF;
+            if ($inMaintenance) {
+                $desired = self::DESIRED_ON;
+            } else {
+                $needOn = $this->computersNeedingPower([$id], $now);
+                $desired = $needOn !== [] ? self::DESIRED_ON : self::DESIRED_OFF;
+            }
             DB::table('computers')->where('id', $id)->update(['power_desired' => $desired]);
         } catch (\Throwable $e) {
             Log::warning('Power desired recalculation failed', [
@@ -202,12 +220,18 @@ class ComputerPowerService
         }
 
         $sessionActive = $this->hasActiveSession($id);
+        $action = 'none';
+        if (! $inMaintenance && ! $sessionActive) {
+            $action = $this->actionForDesired($desired);
+        }
 
         return [
             'power_desired' => $desired,
             'power_state' => self::STATE_ON,
-            'power_action' => $sessionActive ? 'none' : $this->actionForDesired($desired),
+            'power_action' => $action,
             'session_active' => $sessionActive,
+            'maintenance' => $inMaintenance,
+            'cache_ok' => $computer->cache_ok,
         ];
     }
 
@@ -274,6 +298,10 @@ class ComputerPowerService
         $this->syncFor([$computerId], $now);
 
         $desired = DB::table('computers')->where('id', $computerId)->value('power_desired');
+        $computer = Computer::query()->find($computerId);
+        if ($computer && $computer->isInMaintenance($now)) {
+            return 'none';
+        }
 
         return $this->actionForDesired((string) $desired);
     }
@@ -293,6 +321,7 @@ class ComputerPowerService
         $stale = $this->staleSeconds();
 
         $sql = "SELECT id, name, status, power_desired, last_seen_at, space_id, club_id,
+                       cache_ok, cache_free_gb, data_root, volume_letter, maintenance,
                        CASE
                            WHEN last_seen_at IS NOT NULL
                                 AND last_seen_at >= NOW() - (? * INTERVAL '1 second')
@@ -470,5 +499,65 @@ class ComputerPowerService
         }
 
         return array_values($ids);
+    }
+
+    /**
+     * @param  array<string, mixed>  $extras
+     */
+    private function applyHeartbeatExtras(int $computerId, array $extras): void
+    {
+        $patch = [];
+
+        if (array_key_exists('cache_ok', $extras) && $extras['cache_ok'] !== null) {
+            $patch['cache_ok'] = filter_var($extras['cache_ok'], FILTER_VALIDATE_BOOLEAN);
+        }
+        if (array_key_exists('cache_free_gb', $extras) && $extras['cache_free_gb'] !== null && $extras['cache_free_gb'] !== '') {
+            $patch['cache_free_gb'] = round((float) $extras['cache_free_gb'], 2);
+        }
+        if (! empty($extras['data_root'])) {
+            $patch['data_root'] = mb_substr((string) $extras['data_root'], 0, 260);
+        }
+        if (! empty($extras['volume_letter'])) {
+            $patch['volume_letter'] = mb_substr((string) $extras['volume_letter'], 0, 8);
+        }
+
+        if (array_key_exists('maintenance', $extras) && $extras['maintenance'] !== null) {
+            $on = filter_var($extras['maintenance'], FILTER_VALIDATE_BOOLEAN);
+            $patch['maintenance'] = $on;
+            if ($on) {
+                $patch['status'] = 'maintenance';
+            } else {
+                $patch['maintenance_until'] = null;
+                $current = (string) (DB::table('computers')->where('id', $computerId)->value('status') ?? '');
+                if ($current === 'maintenance') {
+                    $patch['status'] = 'available';
+                }
+            }
+        }
+
+        if ($patch !== []) {
+            $patch['updated_at'] = DB::raw('NOW()');
+            DB::table('computers')->where('id', $computerId)->update($patch);
+        }
+
+        if (isset($patch['maintenance']) && $patch['maintenance'] === false) {
+            app(ComputerStatusService::class)->syncFor([$computerId]);
+        }
+    }
+
+    private function rowInMaintenance(object $row, CarbonImmutable $now): bool
+    {
+        if ((string) ($row->status ?? '') === 'maintenance') {
+            return true;
+        }
+        if (! filter_var($row->maintenance ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            return false;
+        }
+        $until = $row->maintenance_until ?? null;
+        if ($until === null || $until === '') {
+            return true;
+        }
+
+        return CarbonImmutable::parse($until)->greaterThan($now);
     }
 }

@@ -37,7 +37,9 @@ const spaceNameHint = (spaceId: number) => {
 }
 
 const powerTileClass = (pc: any) => {
-    // Активная сессия — циан (как раньше), питание смотрим когда места свободно.
+    if (pc.status === 'maintenance' || pc.maintenance) return 'bg-orange-500/15 border-orange-500/40'
+    if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
+        return 'bg-fuchsia-500/15 border-fuchsia-500/40'
     if (pc.status === 'busy') return 'bg-cyan-500/10 border-cyan-500/40'
     const state = pc.power_state || 'off'
     if (state === 'on') return 'bg-emerald-500/15 border-emerald-500/40'
@@ -47,6 +49,9 @@ const powerTileClass = (pc: any) => {
 }
 
 const powerLabelClass = (pc: any) => {
+    if (pc.status === 'maintenance' || pc.maintenance) return 'text-orange-400'
+    if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
+        return 'text-fuchsia-300'
     if (pc.status === 'busy') return 'text-cyan-400'
     const state = pc.power_state || 'off'
     if (state === 'on') return 'text-emerald-400'
@@ -56,6 +61,9 @@ const powerLabelClass = (pc: any) => {
 }
 
 const powerLabel = (pc: any) => {
+    if (pc.status === 'maintenance' || pc.maintenance) return 'сервис'
+    if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
+        return 'кэш'
     if (pc.status === 'busy') return 'сессия'
     const state = pc.power_state || 'off'
     if (state === 'on') return 'онлайн'
@@ -91,6 +99,10 @@ const refreshStatuses = async () => {
                 power_state: updated.power_state,
                 last_seen_at: updated.last_seen_at,
                 space_id: updated.space_id ?? pc.space_id,
+                cache_ok: updated.cache_ok,
+                cache_free_gb: updated.cache_free_gb,
+                data_root: updated.data_root,
+                maintenance: updated.maintenance,
             }
         })
 
@@ -325,6 +337,8 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span> Загрузка</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span> Ошибка WOL</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Сессия</span>
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-orange-400"></span> Обслуживание</span>
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-fuchsia-400"></span> Кэш SSD мёртв</span>
                     </div>
                     <div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
                         <div v-for="pc in localComputers" :key="pc.id" @click="selectedPc = pc"

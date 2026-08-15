@@ -154,6 +154,9 @@ class BookingSeatTransferService
             if ($pc->isTvBoothSeat()) {
                 continue;
             }
+            if ($pc->isInMaintenance()) {
+                continue;
+            }
             $rate = $this->hourlyRateForComputer($pc, $clubId, $now);
             $free[] = [
                 'id' => (int) $pc->id,

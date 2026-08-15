@@ -2312,6 +2312,11 @@ class ShellApiController extends Controller
                 'terminal_id' => 'nullable|integer',
                 'hwid' => 'nullable|string',
                 'mac_address' => 'nullable|string|max:32',
+                'maintenance' => 'nullable|boolean',
+                'cache_ok' => 'nullable|boolean',
+                'cache_free_gb' => 'nullable|numeric',
+                'data_root' => 'nullable|string|max:260',
+                'volume_letter' => 'nullable|string|max:8',
             ]);
 
             $computer = null;
@@ -2334,7 +2339,14 @@ class ShellApiController extends Controller
 
             $result = app(ComputerPowerService::class)->heartbeat(
                 $computer,
-                $request->input('mac_address')
+                $request->input('mac_address'),
+                [
+                    'maintenance' => $request->has('maintenance') ? $request->boolean('maintenance') : null,
+                    'cache_ok' => $request->has('cache_ok') ? $request->boolean('cache_ok') : null,
+                    'cache_free_gb' => $request->input('cache_free_gb'),
+                    'data_root' => $request->input('data_root'),
+                    'volume_letter' => $request->input('volume_letter'),
+                ]
             );
 
             return response()->json(array_merge(['status' => 'success'], $result), 200);
