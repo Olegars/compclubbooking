@@ -84,7 +84,8 @@ class ShellMapBindTest extends TestCase
         ])->assertOk()
             ->assertJsonPath('status', 'success')
             ->assertJsonPath('computer_id', $this->seat->id)
-            ->assertJsonPath('name', 'PC-01');
+            ->assertJsonPath('name', 'PC-01')
+            ->assertJsonPath('club_name', 'Map Club');
 
         $this->seat->refresh();
         $this->assertSame('new-smbios-uuid', $this->seat->hwid);

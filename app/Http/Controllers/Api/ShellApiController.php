@@ -14,6 +14,7 @@ use App\Models\GameAccountMachineCache;
 use App\Models\Game;
 use App\Models\QuickApp;
 use App\Models\Computer;
+use App\Support\ClubBrand;
 use App\Support\OrderDeliveryTarget;
 use App\Support\ZoneSlug;
 use App\Models\UserGameStat;
@@ -224,10 +225,13 @@ class ShellApiController extends Controller
             $primaryReceipt = collect($fiscalReceipts)
                 ->first(fn ($r) => filled($r['fiscal_receipt_url'] ?? null));
 
+            $loginComputer = Computer::query()->with('club')->find($terminalId);
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Авторизация успешна.',
                 'booking_id' => $booking->id,
+                'club_name' => $this->clubNameForComputer($loginComputer),
                 'fan' => $fanState,
                 'user' => [
                     'id' => $user->id,
@@ -1901,6 +1905,7 @@ class ShellApiController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'terminal_id' => $computer->id,
+                    'club_name' => $this->clubNameForComputer($computer),
                     'message' => 'Конфигурация обновлена. '.$computer->name.' (id '.$computer->id.')',
                 ]);
             }
@@ -1934,6 +1939,7 @@ class ShellApiController extends Controller
             return response()->json([
                 'status' => 'success',
                 'terminal_id' => $newComputer->id,
+                'club_name' => $this->clubNameForComputer($newComputer),
                 'message' => 'Создана станция '.$newComputer->name.' (id '.$newComputer->id.', kind '.$kind.'). При необходимости поставьте на карту в админке.',
             ]);
 
@@ -1965,7 +1971,7 @@ class ShellApiController extends Controller
 
             if ($computer) {
                 $this->adoptShellIdentity($computer, $hwid, is_string($mac) ? $mac : null);
-                $computer->loadMissing(['space.zone']);
+                $computer->loadMissing(['space.zone', 'club']);
                 // Шелл на связи: сначала жёстко пишем last_seen/power_state через SQL NOW().
                 try {
                     app(ComputerPowerService::class)->heartbeat($computer);
@@ -1978,7 +1984,7 @@ class ShellApiController extends Controller
                         Log::warning('Power touch on check failed: '.$e2->getMessage());
                     }
                 }
-                $computer->load(['space.zone']);
+                $computer->load(['space.zone', 'club']);
 
                 $zone = $computer->space?->zone;
                 $zoneSlug = ZoneSlug::normalize($zone?->slug ?: ($computer->type ?? ''));
@@ -1990,6 +1996,7 @@ class ShellApiController extends Controller
                     'status' => 'success',
                     'computer_id' => $computer->id,
                     'name' => $computer->name,
+                    'club_name' => $this->clubNameForComputer($computer),
                     'type' => $zoneSlug,
                     'zone_name' => $zone?->name,
                     'zone_slug' => $zoneSlug,
@@ -2776,6 +2783,15 @@ class ShellApiController extends Controller
                 'message' => 'Ошибка сервера при сохранении кэша: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function clubNameForComputer(?Computer $computer): string
+    {
+        if ($computer) {
+            $computer->loadMissing('club');
+        }
+
+        return ClubBrand::nameForClub($computer?->club);
     }
 
     private function findComputerByHwid(string $hwid): ?Computer

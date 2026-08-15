@@ -25,4 +25,11 @@ class ClubBrand
 
         return 'Клуб';
     }
+
+    public static function nameForClub(?Club $club): string
+    {
+        $name = trim((string) ($club?->name ?? ''));
+
+        return $name !== '' ? $name : self::name();
+    }
 }
