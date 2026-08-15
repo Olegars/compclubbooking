@@ -283,24 +283,12 @@ const handleSmsVerify = (code: string) => {
     })
 }
 
-const TARGET_DIGITS = [0, 4, 5, 1] as const
-const FLIP_MS = 340
-const FLIPS_PER_RUN = 10
-const FLIP_STAGGER_MS = 150
+const BRAND_DIGITS = [0, 4, 5, 1] as const
 const FLIP_EVERY_MS = 20_000
-
-type FlipCell = { from: number; to: number; flipping: boolean }
-const flipCells = ref<FlipCell[]>(
-    TARGET_DIGITS.map((d) => ({ from: d, to: d, flipping: false })),
-)
+const isRolling = ref(false)
 
 let flipTimer: ReturnType<typeof setInterval> | null = null
-let flipDelays: ReturnType<typeof setTimeout>[] = []
-let flipRunning = false
-
-const sleepFlip = (ms: number) => new Promise<void>((resolve) => {
-    flipDelays.push(setTimeout(resolve, ms))
-})
+let flipKick: ReturnType<typeof setTimeout> | null = null
 
 const prefersReducedMotion = () => {
     try {
@@ -310,39 +298,22 @@ const prefersReducedMotion = () => {
     }
 }
 
-const flipDigitTo = async (index: number, next: number) => {
-    const cell = flipCells.value[index]
-    if (!cell || cell.from === next) return
-    cell.to = next
-    cell.flipping = false
+const triggerRoll = async () => {
+    if (prefersReducedMotion()) return
+    isRolling.value = false
     await nextTick()
-    cell.flipping = true
-    await sleepFlip(FLIP_MS)
-    cell.from = next
-    cell.flipping = false
-}
-
-const playFlipCycle = async () => {
-    if (flipRunning || prefersReducedMotion()) return
-    flipRunning = true
-    try {
-        await Promise.all(TARGET_DIGITS.map(async (_digit, index) => {
-            await sleepFlip(index * FLIP_STAGGER_MS)
-            let current = flipCells.value[index].from
-            for (let n = 0; n < FLIPS_PER_RUN; n++) {
-                current = (current + 1) % 10
-                await flipDigitTo(index, current)
-            }
-        }))
-    } finally {
-        flipRunning = false
-    }
+    if (flipKick) clearTimeout(flipKick)
+    flipKick = setTimeout(() => {
+        isRolling.value = true
+        flipKick = null
+    }, 30)
 }
 
 const startFlipClock = () => {
     stopFlipClock()
     if (prefersReducedMotion()) return
-    flipTimer = setInterval(() => { void playFlipCycle() }, FLIP_EVERY_MS)
+    void triggerRoll()
+    flipTimer = setInterval(() => { void triggerRoll() }, FLIP_EVERY_MS)
 }
 
 const stopFlipClock = () => {
@@ -350,10 +321,11 @@ const stopFlipClock = () => {
         clearInterval(flipTimer)
         flipTimer = null
     }
-    flipDelays.forEach((t) => clearTimeout(t))
-    flipDelays = []
-    flipRunning = false
-    flipCells.value = TARGET_DIGITS.map((d) => ({ from: d, to: d, flipping: false }))
+    if (flipKick) {
+        clearTimeout(flipKick)
+        flipKick = null
+    }
+    isRolling.value = false
 }
 
 onMounted(() => {
@@ -394,62 +366,21 @@ onUnmounted(() => {
                         <Link href="/" class="masthead-brand">
                             <div class="masthead-digits" aria-hidden="true">
                                 <div
-                                    v-for="(cell, index) in flipCells"
+                                    v-for="(digit, index) in BRAND_DIGITS"
                                     :key="index"
                                     class="flip-unit"
-                                    :class="{ 'is-flip': cell.flipping }"
                                 >
-                                    <div class="flip-static flip-top"><span>{{ cell.to }}</span></div>
-                                    <div class="flip-static flip-bot"><span>{{ cell.from }}</span></div>
-                                    <div class="flip-leaf flip-top"><span>{{ cell.from }}</span></div>
-                                    <div class="flip-leaf flip-bot"><span>{{ cell.to }}</span></div>
+                                    <div
+                                        class="digit-strip"
+                                        :class="[`strip-${digit}`, { 'roll-active': isRolling }]"
+                                        :style="{ animationDelay: isRolling ? `${index * 160}ms` : '0ms' }"
+                                    >
+                                        <span v-for="n in 20" :key="n" class="d-cell">{{ (n - 1) % 10 }}</span>
+                                    </div>
                                 </div>
                             </div>
                             <span class="masthead-title">компьютерный клуб</span>
                         </Link>
-
-                        <div class="masthead-tools">
-                            <button
-                                v-if="isAuthenticated"
-                                type="button"
-                                class="nav-btn-icon md:hidden"
-                                :class="{ 'active': isQrScannerOpen }"
-                                title="Сканировать QR"
-                                aria-label="Сканировать QR"
-                                @click="openQrScanner"
-                            >
-                                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M3 7V5a2 2 0 0 1 2-2h2" />
-                                    <path d="M17 3h2a2 2 0 0 1 2 2v2" />
-                                    <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
-                                    <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
-                                    <rect x="7" y="7" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
-                                    <rect x="13.5" y="7" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
-                                    <rect x="7" y="13.5" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
-                                    <path d="M13.5 13.5h1.5v1.5h-1.5zm2 0h1.5v1.5H15.5zm0 2h1.5V17H15.5zm-2 0h1.5V17h-1.5z" fill="currentColor" stroke="none" />
-                                </svg>
-                            </button>
-                            <template v-if="isAuthenticated">
-                                <div class="nav-meta">
-                                    <span class="nav-meta-name">
-                                        {{ $page.props.auth?.user?.name || $page.props.user?.name || '—' }}
-                                    </span>
-                                    <span class="nav-meta-balance">
-                                        {{ Math.floor(displayBalance) }}<span class="text-[#22c55e] ml-0.5">₽</span>
-                                    </span>
-                                    <button
-                                        type="button"
-                                        @click="openTopUp"
-                                        title="Пополнить баланс"
-                                        class="nav-meta-plus"
-                                    >+</button>
-                                </div>
-                                <button type="button" @click="handleLogout" class="nav-btn nav-btn-exit">Выйти</button>
-                            </template>
-                            <template v-else>
-                                <button type="button" @click="isPhoneModalOpen = true" class="nav-btn nav-btn-enter">Войти</button>
-                            </template>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -458,14 +389,58 @@ onUnmounted(() => {
 
         <div class="w-full px-4 sm:px-4 lg:px-6 pb-3 sm:pb-4">
             <nav class="site-nav max-w-7xl mx-auto">
-                <Link href="/" class="nav-btn" :class="{ 'active': $page.url === '/' }">Главная</Link>
-                <Link
-                    v-if="isAuthenticated"
-                    href="/account/dashboard"
-                    class="nav-btn"
-                    :class="{ 'active': $page.url.startsWith('/account') }"
-                >Кабинет</Link>
-                <Link href="/booking" class="nav-btn" :class="{ 'active': $page.url.startsWith('/booking') }">Бронирование</Link>
+                <div class="site-nav-links">
+                    <Link href="/" class="nav-btn" :class="{ 'active': $page.url === '/' }">Главная</Link>
+                    <Link
+                        v-if="isAuthenticated"
+                        href="/account/dashboard"
+                        class="nav-btn"
+                        :class="{ 'active': $page.url.startsWith('/account') }"
+                    >Кабинет</Link>
+                    <Link href="/booking" class="nav-btn" :class="{ 'active': $page.url.startsWith('/booking') }">Бронирование</Link>
+                </div>
+                <div class="masthead-tools">
+                    <button
+                        v-if="isAuthenticated"
+                        type="button"
+                        class="nav-btn-icon md:hidden"
+                        :class="{ 'active': isQrScannerOpen }"
+                        title="Сканировать QR"
+                        aria-label="Сканировать QR"
+                        @click="openQrScanner"
+                    >
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+                            <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+                            <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+                            <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+                            <rect x="7" y="7" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
+                            <rect x="13.5" y="7" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
+                            <rect x="7" y="13.5" width="3.5" height="3.5" rx="0.5" fill="currentColor" stroke="none" />
+                            <path d="M13.5 13.5h1.5v1.5h-1.5zm2 0h1.5v1.5H15.5zm0 2h1.5V17H15.5zm-2 0h1.5V17h-1.5z" fill="currentColor" stroke="none" />
+                        </svg>
+                    </button>
+                    <template v-if="isAuthenticated">
+                        <div class="nav-meta">
+                            <span class="nav-meta-name">
+                                {{ $page.props.auth?.user?.name || $page.props.user?.name || '—' }}
+                            </span>
+                            <span class="nav-meta-balance">
+                                {{ Math.floor(displayBalance) }}<span class="text-[#22c55e] ml-0.5">₽</span>
+                            </span>
+                            <button
+                                type="button"
+                                @click="openTopUp"
+                                title="Пополнить баланс"
+                                class="nav-meta-plus"
+                            >+</button>
+                        </div>
+                        <button type="button" @click="handleLogout" class="nav-btn nav-btn-exit">Выйти</button>
+                    </template>
+                    <template v-else>
+                        <button type="button" @click="isPhoneModalOpen = true" class="nav-btn nav-btn-enter">Войти</button>
+                    </template>
+                </div>
             </nav>
         </div>
 
@@ -642,7 +617,6 @@ onUnmounted(() => {
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.08),
         0 0 12px rgba(34, 197, 94, 0.08);
-    perspective: 420px;
     overflow: hidden;
 }
 .flip-unit::after {
@@ -657,35 +631,13 @@ onUnmounted(() => {
     z-index: 6;
     pointer-events: none;
 }
-.flip-static,
-.flip-leaf {
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 50%;
-    overflow: hidden;
-    background:
-        linear-gradient(180deg, rgba(34, 197, 94, 0.16) 0%, rgba(10, 10, 10, 0.95) 55%),
-        #050505;
+.digit-strip {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    will-change: transform;
 }
-.flip-top { top: 0; }
-.flip-bot { bottom: 0; }
-.flip-static { z-index: 1; }
-.flip-leaf.flip-top {
-    z-index: 4;
-    transform-origin: bottom center;
-    backface-visibility: hidden;
-}
-.flip-leaf.flip-bot {
-    z-index: 3;
-    transform-origin: top center;
-    backface-visibility: hidden;
-    transform: rotateX(90deg);
-}
-.flip-unit span {
-    position: absolute;
-    left: 0;
-    right: 0;
+.d-cell {
     height: var(--brand);
     display: flex;
     align-items: center;
@@ -699,23 +651,36 @@ onUnmounted(() => {
     font-size: calc(var(--brand) * 0.62);
     line-height: 1;
     text-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
+    flex-shrink: 0;
 }
-.flip-top span { top: 0; }
-.flip-bot span { top: calc(var(--brand) * -0.5); }
-.flip-unit.is-flip .flip-leaf.flip-top {
-    animation: flip-fold-top 0.34s ease-in forwards;
+.strip-0 { transform: translateY(0); }
+.strip-1 { transform: translateY(calc(var(--brand) * -1)); }
+.strip-4 { transform: translateY(calc(var(--brand) * -4)); }
+.strip-5 { transform: translateY(calc(var(--brand) * -5)); }
+.roll-active {
+    animation-duration: 2.6s;
+    animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 0.95);
+    animation-fill-mode: both;
 }
-.flip-unit.is-flip .flip-leaf.flip-bot {
-    animation: flip-unfold-bot 0.34s ease-out forwards;
+.strip-0.roll-active { animation-name: roll-0; }
+.strip-1.roll-active { animation-name: roll-1; }
+.strip-4.roll-active { animation-name: roll-4; }
+.strip-5.roll-active { animation-name: roll-5; }
+@keyframes roll-0 {
+    from { transform: translateY(0); }
+    to { transform: translateY(calc(var(--brand) * -10)); }
 }
-@keyframes flip-fold-top {
-    0% { transform: rotateX(0deg); }
-    49% { transform: rotateX(-90deg); }
-    100% { transform: rotateX(-90deg); }
+@keyframes roll-1 {
+    from { transform: translateY(calc(var(--brand) * -1)); }
+    to { transform: translateY(calc(var(--brand) * -11)); }
 }
-@keyframes flip-unfold-bot {
-    0%, 49% { transform: rotateX(90deg); }
-    100% { transform: rotateX(0deg); }
+@keyframes roll-4 {
+    from { transform: translateY(calc(var(--brand) * -4)); }
+    to { transform: translateY(calc(var(--brand) * -14)); }
+}
+@keyframes roll-5 {
+    from { transform: translateY(calc(var(--brand) * -5)); }
+    to { transform: translateY(calc(var(--brand) * -15)); }
 }
 .masthead-title {
     display: flex;
@@ -741,7 +706,6 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    margin-left: auto;
     flex-shrink: 0;
 }
 @media (min-width: 640px) {
@@ -752,7 +716,13 @@ onUnmounted(() => {
     align-items: stretch;
     gap: 0.5rem;
 }
-.site-nav .nav-btn {
+.site-nav-links {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 0.5rem;
+}
+.site-nav-links .nav-btn {
     flex: 1 1 0;
     min-width: 0;
     display: flex;
@@ -840,7 +810,6 @@ onUnmounted(() => {
     .order-live-bar,
     .order-live-title,
     .order-live-dot { animation: none !important; opacity: 1; }
-    .flip-unit.is-flip .flip-leaf.flip-top,
-    .flip-unit.is-flip .flip-leaf.flip-bot { animation: none !important; }
+    .roll-active { animation: none !important; }
 }
 </style>
