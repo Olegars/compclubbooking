@@ -2,9 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Models\Booking;
+use App\Models\BookingGroup;
 use App\Models\Club;
 use App\Models\Computer;
+use App\Models\User;
 use App\Services\ComputerPowerService;
+use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -16,10 +21,23 @@ class ShellHybridHeartbeatTest extends TestCase
 
     private Computer $computer;
 
+    private User $user;
+
     protected function setUp(): void
     {
         parent::setUp();
 
+        config([
+            'club.booking.late_start_grace_minutes' => 30,
+            'club.power.warmup_minutes' => 30,
+        ]);
+
+        $this->user = User::create([
+            'name' => 'Hybrid User',
+            'phone' => '+79991112233',
+            'email' => 'hybrid@example.test',
+            'password' => 'password',
+        ]);
         $this->club = Club::create(['name' => 'Hybrid Club', 'slug' => 'hybrid-club']);
         $this->computer = Computer::create([
             'club_id' => $this->club->id,
@@ -28,6 +46,13 @@ class ShellHybridHeartbeatTest extends TestCase
             'kind' => 'pc',
             'hwid' => 'aabbccdd-eeff-1122-3344-556677889900',
         ]);
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        CarbonImmutable::setTestNow();
+        parent::tearDown();
     }
 
     public function test_heartbeat_stores_cache_and_skips_shutdown_in_maintenance(): void
@@ -88,5 +113,70 @@ class ShellHybridHeartbeatTest extends TestCase
 
         $action = app(ComputerPowerService::class)->powerActionFor((int) $this->computer->id);
         $this->assertSame('none', $action);
+    }
+
+    public function test_late_pin_keeps_pc_on_during_soft_grace(): void
+    {
+        $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));
+        $this->makeBooking($startsAt, $startsAt->addHour());
+        $now = $startsAt->addMinutes(15);
+        Carbon::setTestNow($now);
+        CarbonImmutable::setTestNow($now);
+
+        $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $this->computer->hwid,
+        ])->assertOk()
+            ->assertJsonPath('power_desired', 'on')
+            ->assertJsonPath('session_active', false);
+    }
+
+    public function test_exhausted_soft_grace_without_pin_allows_shutdown(): void
+    {
+        $startsAt = CarbonImmutable::parse('2026-08-01 10:00:00', config('app.timezone'));
+        $this->makeBooking($startsAt, $startsAt->addHour());
+        $now = $startsAt->addMinutes(95);
+        Carbon::setTestNow($now);
+        CarbonImmutable::setTestNow($now);
+
+        $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $this->computer->hwid,
+        ])->assertOk()
+            ->assertJsonPath('power_desired', 'off')
+            ->assertJsonPath('power_action', 'shutdown');
+    }
+
+    private function makeBooking(CarbonImmutable $startsAt, CarbonImmutable $endsAt): Booking
+    {
+        $local = $startsAt->timezone(config('app.timezone'));
+        $group = BookingGroup::create([
+            'user_id' => $this->user->id,
+            'club_id' => $this->club->id,
+            'starts_at' => $startsAt,
+            'ends_at' => $endsAt,
+            'status' => 'confirmed',
+            'payment_status' => 'paid',
+            'currency' => 'RUB',
+            'computers_total_minor' => 10000,
+            'games_total_minor' => 0,
+            'total_minor' => 10000,
+            'paid_total_minor' => 10000,
+            'paid_at' => $startsAt->subDay(),
+        ]);
+
+        return Booking::create([
+            'booking_group_id' => $group->id,
+            'user_id' => $this->user->id,
+            'computer_id' => $this->computer->id,
+            'pc_ids' => [(string) $this->computer->id],
+            'date' => $local->toDateString(),
+            'start_time' => $local->hour + ($local->minute / 60),
+            'duration' => $startsAt->diffInMinutes($endsAt) / 60,
+            'price' => 100,
+            'price_minor' => 10000,
+            'status' => 'confirmed',
+            'pin_code' => '1234',
+            'starts_at' => $startsAt,
+            'ends_at' => $endsAt,
+        ]);
     }
 }

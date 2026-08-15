@@ -26,6 +26,46 @@ class BookingSessionTimingService
     }
 
     /**
+     * Нужен ли ПК включённым под эту бронь (WOL warmup + окно ввода PIN).
+     * Неначатая бронь: от warmup до конца мягкого ожидания (grace), не до «не ввели PIN за 10 мин».
+     */
+    public function computerNeedsPowerForBooking(
+        Booking $booking,
+        CarbonImmutable $now,
+        int $warmupMinutes = 30
+    ): bool {
+        if (! in_array((string) $booking->status, ['confirmed', 'paid', 'active'], true)) {
+            return false;
+        }
+
+        $now = $now->timezone(config('app.timezone'));
+        $booking = $this->healSkewedWindow($booking);
+        $wall = $this->wallClockWindow($booking);
+        $start = $wall['start'];
+        $end = $wall['end'];
+        $warmupMinutes = max(0, $warmupMinutes);
+
+        if ($now->lt($start->subMinutes($warmupMinutes))) {
+            return false;
+        }
+
+        if ((string) $booking->status === 'active' && $booking->actual_started_at) {
+            return $now->lt($this->effectiveEndsAt($booking));
+        }
+
+        if ($now->lt($start)) {
+            return true;
+        }
+
+        $paidMinutes = $this->paidDurationMinutes($booking, $start, $end);
+        if ($this->hasFollowingBookingConflict($booking, $start, $end, $paidMinutes)) {
+            return $now->lt($end);
+        }
+
+        return $this->softGraceRemainingSeconds($start, $paidMinutes, $now) > 0;
+    }
+
+    /**
      * Remaining session time for shell / UI.
      * Prefer wall-clock (date + start_time + duration) when starts_at/ends_at look
      * timezone-shifted vs the booking card the user paid for (naive PG timestamps).

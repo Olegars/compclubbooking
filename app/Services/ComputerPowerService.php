@@ -371,24 +371,36 @@ class ComputerPowerService
     {
         $warmup = $this->warmupMinutes();
         $horizon = $now->addMinutes($warmup);
-        $nowIso = $now->utc()->toIso8601String();
-        $horizonIso = $horizon->utc()->toIso8601String();
-
         $local = $now->timezone(config('app.timezone'));
         $today = $local->toDateString();
         $nowH = $local->hour + ($local->minute / 60);
         $horizonH = $nowH + ($warmup / 60);
+
+        $timing = app(BookingSessionTimingService::class);
+        $lookback = $now->subHours(16);
 
         $modern = Booking::query()
             ->whereIn('computer_id', $ids)
             ->whereIn('status', ['confirmed', 'paid', 'active'])
             ->whereNotNull('starts_at')
             ->whereNotNull('ends_at')
-            ->whereRaw('starts_at <= ?::timestamptz', [$horizonIso])
-            ->whereRaw('ends_at > ?::timestamptz', [$nowIso])
-            ->pluck('computer_id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
+            ->where('starts_at', '<=', $horizon)
+            ->where(function ($q) use ($now, $lookback) {
+                $q->where('ends_at', '>', $now)
+                    ->orWhere(function ($unstarted) use ($lookback) {
+                        $unstarted->whereIn('status', ['confirmed', 'paid'])
+                            ->whereNull('actual_started_at')
+                            ->where('starts_at', '>=', $lookback);
+                    });
+            })
+            ->get();
+
+        $need = [];
+        foreach ($modern as $booking) {
+            if ($timing->computerNeedsPowerForBooking($booking, $now, $warmup)) {
+                $need[(int) $booking->computer_id] = true;
+            }
+        }
 
         $legacy = Booking::query()
             ->whereIn('computer_id', $ids)
@@ -401,7 +413,11 @@ class ComputerPowerService
             ->map(fn ($id) => (int) $id)
             ->all();
 
-        return array_values(array_unique(array_merge($modern, $legacy)));
+        foreach ($legacy as $id) {
+            $need[$id] = true;
+        }
+
+        return array_values(array_keys($need));
     }
 
     /**
