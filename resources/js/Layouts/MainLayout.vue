@@ -381,12 +381,13 @@ onUnmounted(() => {
                             </div>
                             <span class="masthead-title">
                                 <span>компьютерный клуб</span>
-                                <svg class="masthead-arrow" viewBox="0 0 78 32" aria-hidden="true">
+                                <svg class="masthead-arrow" viewBox="0 0 90 32" aria-hidden="true">
                                     <g transform="skewX(-18)" fill="#000" stroke="#22c55e" stroke-width="1.6" stroke-linejoin="round">
                                         <polygon points="2,16 18,3 18,29" />
                                         <rect x="24" y="7" width="10" height="18" rx="1" />
-                                        <rect x="39" y="7" width="10" height="18" rx="1" />
-                                        <rect x="54" y="7" width="10" height="18" rx="1" />
+                                        <rect x="38.5" y="7" width="9" height="18" rx="1" />
+                                        <rect x="52" y="7" width="8.1" height="18" rx="1" />
+                                        <rect x="64.6" y="7" width="7.3" height="18" rx="1" />
                                     </g>
                                 </svg>
                             </span>
