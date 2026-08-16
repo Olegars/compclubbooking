@@ -360,9 +360,9 @@ onUnmounted(() => {
 
         <div class="fixed inset-0 pointer-events-none z-[100] opacity-[0.02] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,0,0.06))] bg-[length:100%_4px,3px_100%]"></div>
 
-        <header class="sticky top-0 z-50 flex-shrink-0 bg-[#050505]/30 pt-3 sm:pt-4 pb-2 sm:pb-3">
+        <header class="sticky top-0 z-50 flex-shrink-0 pt-3 sm:pt-4 pb-2 sm:pb-3">
             <div class="w-full px-4 sm:px-4 lg:px-6">
-            <div class="max-w-7xl mx-auto">
+            <div class="masthead-bar max-w-7xl mx-auto">
                 <div class="masthead">
                     <div class="masthead-row">
                         <Link href="/" class="masthead-brand">
@@ -574,6 +574,15 @@ onUnmounted(() => {
 }
 @media (min-width: 640px) { .masthead { --brand: 3.6rem; } }
 @media (min-width: 1024px) { .masthead { --brand: 4.5rem; } }
+.masthead-bar {
+    background: rgba(5, 5, 5, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 0.875rem;
+    padding: 0.55rem 0.9rem;
+}
+@media (min-width: 640px) {
+    .masthead-bar { padding: 0.65rem 1.15rem; }
+}
 .masthead-row {
     display: flex;
     align-items: center;
@@ -693,8 +702,8 @@ onUnmounted(() => {
     white-space: nowrap;
     color: #000;
     -webkit-text-fill-color: #000;
-    -webkit-text-stroke: 0.8px #22c55e;
-    text-shadow: none;
+    -webkit-text-stroke: 1.6px #22c55e;
+    text-shadow: 0 0 5px rgba(34, 197, 94, 0.8), 0 0 20px rgba(34, 197, 94, 0.4);
     paint-order: fill stroke;
 }
 .masthead-tools {
