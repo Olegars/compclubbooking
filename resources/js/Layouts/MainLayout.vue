@@ -360,7 +360,7 @@ onUnmounted(() => {
 
         <div class="fixed inset-0 pointer-events-none z-[100] opacity-[0.02] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,0,0.06))] bg-[length:100%_4px,3px_100%]"></div>
 
-        <header class="sticky top-0 z-50 flex-shrink-0 bg-[#050505]/92 backdrop-blur-xl pt-3 sm:pt-4 pb-2 sm:pb-3">
+        <header class="sticky top-0 z-50 flex-shrink-0 bg-transparent pt-3 sm:pt-4 pb-2 sm:pb-3">
             <div class="w-full px-4 sm:px-4 lg:px-6">
             <div class="max-w-7xl mx-auto">
                 <div class="masthead">
@@ -582,7 +582,7 @@ onUnmounted(() => {
 }
 .masthead-brand {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 0.7rem;
     flex-shrink: 0;
     text-decoration: none;
@@ -680,8 +680,8 @@ onUnmounted(() => {
 }
 .masthead-title {
     display: flex;
-    align-items: center;
-    height: var(--brand);
+    align-items: flex-end;
+    height: auto;
     flex-shrink: 0;
     font-family: 'BomberEscort', Arial, Helvetica, sans-serif;
     font-weight: 900;
