@@ -381,7 +381,7 @@ onUnmounted(() => {
                             </div>
                             <span class="masthead-title">
                                 <span>компьютерный клуб</span>
-                                <svg class="masthead-arrow" viewBox="0 0 90 32" aria-hidden="true">
+                                <svg class="masthead-arrow" :class="{ 'is-spring': isRolling }" viewBox="0 0 90 32" aria-hidden="true">
                                     <g transform="skewX(-18)" fill="#000" stroke="#22c55e" stroke-width="1.6" stroke-linejoin="round">
                                         <polygon points="2,16 18,3 18,29" />
                                         <rect x="24" y="7" width="10" height="18" rx="1" />
@@ -713,7 +713,21 @@ onUnmounted(() => {
     width: auto;
     flex-shrink: 0;
     overflow: visible;
+    transform-origin: 8% 50%;
     filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.8));
+}
+.masthead-arrow.is-spring {
+    animation: arrow-spring 2.05s both;
+}
+@keyframes arrow-spring {
+    0%   { transform: rotate(0deg); }
+    11%  { transform: rotate(102deg); }
+    22%  { transform: rotate(-26deg); }
+    35%  { transform: rotate(15deg); }
+    50%  { transform: rotate(-8deg); }
+    66%  { transform: rotate(3.5deg); }
+    82%  { transform: rotate(-1.2deg); }
+    100% { transform: rotate(0deg); }
 }
 .masthead-tools {
     display: flex;
@@ -824,5 +838,6 @@ onUnmounted(() => {
     .order-live-title,
     .order-live-dot { animation: none !important; opacity: 1; }
     .roll-active { animation: none !important; }
+    .masthead-arrow.is-spring { animation: none !important; }
 }
 </style>
