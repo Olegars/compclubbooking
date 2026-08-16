@@ -5,6 +5,7 @@ import Toast from '@/Components/Toast.vue'
 import { useAdminAlerts } from '@/Composables/useAdminAlerts'
 import { useAdminBarcodeScanner } from '@/Composables/useAdminBarcodeScanner'
 import { useClubName } from '@/Composables/useClubName'
+import AvatarWatermarkBg from '@/Components/AvatarWatermarkBg.vue'
 
 useAdminBarcodeScanner().attachGlobalListener()
 
@@ -65,9 +66,10 @@ const switchLocation = (clubId: string | number) => {
 </script>
 
 <template>
-    <div class="admin-ui min-h-screen bg-[#050505] flex font-sans text-white selection:bg-cyan-500 selection:text-black">
+    <div class="admin-ui min-h-screen bg-[#050505] flex font-sans text-white selection:bg-cyan-500 selection:text-black relative">
+        <AvatarWatermarkBg />
 
-        <aside class="w-[320px] bg-[#020202] border-r border-white/5 flex flex-col shrink-0 min-h-screen select-none">
+        <aside class="relative z-10 w-[320px] bg-[#020202]/92 backdrop-blur-md border-r border-white/5 flex flex-col shrink-0 min-h-screen select-none">
 
             <div class="p-8 border-b border-white/5">
                 <div class="flex items-center gap-3">
@@ -324,7 +326,7 @@ const switchLocation = (clubId: string | number) => {
             </div>
         </aside>
 
-        <div class="flex-1 flex flex-col min-h-screen overflow-hidden">
+        <div class="relative z-10 flex-1 flex flex-col min-h-screen overflow-hidden">
 
             <header class="h-24 border-b border-white/5 flex items-center justify-between px-10 select-none bg-[#020202]/50 backdrop-blur-md shrink-0">
                 <div class="flex items-center gap-4 text-xs uppercase font-semibold tracking-wider text-white/50">
@@ -363,7 +365,7 @@ const switchLocation = (clubId: string | number) => {
                 </div>
             </header>
 
-            <main class="flex-1 overflow-y-auto custom-scrollbar bg-[#050505]">
+            <main class="flex-1 overflow-y-auto custom-scrollbar bg-transparent">
                 <slot />
             </main>
 

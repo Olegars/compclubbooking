@@ -1,6 +1,7 @@
 <script setup>
 import { Head, useForm } from '@inertiajs/vue3';
 import { useClubName } from '@/Composables/useClubName';
+import AvatarWatermarkBg from '@/Components/AvatarWatermarkBg.vue';
 
 const clubName = useClubName();
 
@@ -20,9 +21,10 @@ const submit = () => {
 
 <template>
     <Head :title="`${clubName} | Вход в систему`" />
-    <div class="admin-ui min-h-screen bg-[#020202] flex flex-col justify-center items-center p-6 font-sans text-white selection:bg-[#22c55e] selection:text-black">
+    <div class="admin-ui min-h-screen bg-[#020202] flex flex-col justify-center items-center p-6 font-sans text-white selection:bg-[#22c55e] selection:text-black relative">
+        <AvatarWatermarkBg />
 
-        <div class="w-full max-w-md bg-[#050505] border border-white/5 rounded-[1rem] p-10 shadow-[0_0_80px_rgba(34,197,94,0.05)] animate-in">
+        <div class="relative z-10 w-full max-w-md bg-[#050505]/90 border border-white/5 rounded-[1rem] p-10 shadow-[0_0_80px_rgba(34,197,94,0.05)] animate-in">
 
             <div class="flex items-center gap-3 mb-2">
                 <div class="w-3 h-3 bg-[#22c55e] rounded-full animate-pulse shadow-[0_0_10px_#22c55e]"></div>
@@ -72,7 +74,7 @@ const submit = () => {
             </form>
         </div>
 
-        <div class="text-[11px] text-white/25 uppercase font-semibold tracking-[0.18em] mt-8">
+        <div class="relative z-10 text-[11px] text-white/25 uppercase font-semibold tracking-[0.18em] mt-8">
             Terminal Node // v2.6
         </div>
     </div>

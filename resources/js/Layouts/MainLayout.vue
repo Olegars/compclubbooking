@@ -10,6 +10,7 @@ import YooKassaWidgetModal from '@/Components/YooKassaWidgetModal.vue'
 import PaymentReceiptConsent from '@/Components/PaymentReceiptConsent.vue'
 import FiscalReceiptModal from '@/Components/FiscalReceiptModal.vue'
 import QrScannerModal from '@/Components/QrScannerModal.vue'
+import AvatarWatermarkBg from '@/Components/AvatarWatermarkBg.vue'
 
 import { useClubName } from '@/Composables/useClubName'
 
@@ -355,6 +356,7 @@ onUnmounted(() => {
 
 <template>
     <main class="min-h-screen bg-[#050505] text-slate-200 font-mono overflow-x-hidden relative flex flex-col">
+        <AvatarWatermarkBg />
 
         <div class="fixed inset-0 pointer-events-none z-[100] opacity-[0.02] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,0,0.06))] bg-[length:100%_4px,3px_100%]"></div>
 
@@ -398,7 +400,7 @@ onUnmounted(() => {
             </div>
         </header>
 
-        <div class="w-full px-4 sm:px-4 lg:px-6 pb-3 sm:pb-4">
+        <div class="relative z-10 w-full px-4 sm:px-4 lg:px-6 pb-3 sm:pb-4">
             <nav class="site-nav max-w-7xl mx-auto">
                 <div class="site-nav-links">
                     <Link href="/" class="nav-btn" :class="{ 'active': $page.url === '/' }">Главная</Link>
@@ -456,7 +458,7 @@ onUnmounted(() => {
         </div>
 
         <div
-            class="flex-grow w-full flex flex-col items-center"
+            class="relative z-10 flex-grow w-full flex flex-col items-center"
             :class="contentPadClass"
         >
             <div
