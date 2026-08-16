@@ -384,9 +384,9 @@ onUnmounted(() => {
                                 <svg class="masthead-arrow" viewBox="0 0 78 32" aria-hidden="true">
                                     <g transform="skewX(-18)" fill="#000" stroke="#22c55e" stroke-width="1.6" stroke-linejoin="round">
                                         <polygon points="2,16 18,3 18,29" />
-                                        <rect x="24" y="5" width="11" height="22" rx="1" />
-                                        <rect x="40" y="5" width="11" height="22" rx="1" />
-                                        <rect x="56" y="5" width="11" height="22" rx="1" />
+                                        <rect x="24" y="7" width="10" height="18" rx="1" />
+                                        <rect x="39" y="7" width="10" height="18" rx="1" />
+                                        <rect x="54" y="7" width="10" height="18" rx="1" />
                                     </g>
                                 </svg>
                             </span>
@@ -708,7 +708,7 @@ onUnmounted(() => {
     paint-order: stroke fill;
 }
 .masthead-arrow {
-    height: 0.92em;
+    height: 0.7em;
     width: auto;
     flex-shrink: 0;
     overflow: visible;
