@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import axios from 'axios' // <--- Прямой импорт (решает проблему с window.axios)
 
@@ -11,6 +11,7 @@ import PaymentReceiptConsent from '@/Components/PaymentReceiptConsent.vue'
 import FiscalReceiptModal from '@/Components/FiscalReceiptModal.vue'
 import QrScannerModal from '@/Components/QrScannerModal.vue'
 import AvatarWatermarkBg from '@/Components/AvatarWatermarkBg.vue'
+import FlipDigit from '@/Components/FlipDigit.vue'
 
 import { useClubName } from '@/Composables/useClubName'
 
@@ -286,10 +287,10 @@ const handleSmsVerify = (code: string) => {
 
 const BRAND_DIGITS = [0, 4, 5, 1] as const
 const FLIP_EVERY_MS = 20_000
-const isRolling = ref(false)
+const digitRefs = ref<{ play: () => void }[]>([])
 
 let flipTimer: ReturnType<typeof setInterval> | null = null
-let flipKick: ReturnType<typeof setTimeout> | null = null
+let flipKick: ReturnType<typeof setTimeout>[] = []
 
 const prefersReducedMotion = () => {
     try {
@@ -299,22 +300,27 @@ const prefersReducedMotion = () => {
     }
 }
 
-const triggerRoll = async () => {
+const setDigitRef = (el: unknown, index: number) => {
+    if (el && typeof el === 'object' && 'play' in el) {
+        digitRefs.value[index] = el as { play: () => void }
+    }
+}
+
+const triggerFlip = () => {
     if (prefersReducedMotion()) return
-    isRolling.value = false
-    await nextTick()
-    if (flipKick) clearTimeout(flipKick)
-    flipKick = setTimeout(() => {
-        isRolling.value = true
-        flipKick = null
-    }, 30)
+    flipKick.forEach(clearTimeout)
+    flipKick = []
+    digitRefs.value.forEach((digit, index) => {
+        const id = setTimeout(() => digit?.play(), index * 90)
+        flipKick.push(id)
+    })
 }
 
 const startFlipClock = () => {
     stopFlipClock()
     if (prefersReducedMotion()) return
-    void triggerRoll()
-    flipTimer = setInterval(() => { void triggerRoll() }, FLIP_EVERY_MS)
+    triggerFlip()
+    flipTimer = setInterval(() => { triggerFlip() }, FLIP_EVERY_MS)
 }
 
 const stopFlipClock = () => {
@@ -322,11 +328,8 @@ const stopFlipClock = () => {
         clearInterval(flipTimer)
         flipTimer = null
     }
-    if (flipKick) {
-        clearTimeout(flipKick)
-        flipKick = null
-    }
-    isRolling.value = false
+    flipKick.forEach(clearTimeout)
+    flipKick = []
 }
 
 onMounted(() => {
@@ -366,20 +369,13 @@ onUnmounted(() => {
                 <div class="masthead">
                     <div class="masthead-row">
                         <Link href="/" class="masthead-brand">
-                            <div class="masthead-digits" aria-hidden="true">
-                                <div
+                            <div class="masthead-digits" aria-hidden="true" @click.prevent="triggerFlip">
+                                <FlipDigit
                                     v-for="(digit, index) in BRAND_DIGITS"
                                     :key="index"
-                                    class="flip-unit"
-                                >
-                                    <div
-                                        class="digit-strip"
-                                        :class="[`strip-${digit}`, { 'roll-active': isRolling }]"
-                                        :style="{ animationDelay: isRolling ? `${index * 160}ms` : '0ms' }"
-                                    >
-                                        <span v-for="n in 20" :key="n" class="d-cell">{{ (n - 1) % 10 }}</span>
-                                    </div>
-                                </div>
+                                    :ref="(el) => setDigitRef(el, index)"
+                                    :value="digit"
+                                />
                             </div>
                             <span class="masthead-title">компьютерный клуб</span>
                         </Link>
@@ -609,83 +605,7 @@ onUnmounted(() => {
     gap: 3px;
     height: var(--brand);
     flex-shrink: 0;
-}
-.flip-unit {
-    position: relative;
-    width: calc(var(--brand) * 0.72);
-    height: var(--brand);
-    border: 1px solid rgba(34, 197, 94, 0.38);
-    border-radius: 0.4rem;
-    background:
-        linear-gradient(180deg, rgba(34, 197, 94, 0.16) 0%, rgba(10, 10, 10, 0.9) 55%),
-        #050505;
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.08),
-        0 0 12px rgba(34, 197, 94, 0.08);
-    overflow: hidden;
-}
-.flip-unit::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    height: 1px;
-    background: rgba(0, 0, 0, 0.72);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
-    z-index: 6;
-    pointer-events: none;
-}
-.digit-strip {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    will-change: transform;
-}
-.d-cell {
-    height: var(--brand);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #000;
-    -webkit-text-stroke: calc(var(--brand) * 0.028) #22c55e;
-    paint-order: stroke fill;
-    font-family: Arial, Helvetica, sans-serif;
-    font-weight: 900;
-    font-style: italic;
-    font-size: calc(var(--brand) * 0.62);
-    line-height: 1;
-    text-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
-    flex-shrink: 0;
-}
-.strip-0 { transform: translateY(0); }
-.strip-1 { transform: translateY(calc(var(--brand) * -1)); }
-.strip-4 { transform: translateY(calc(var(--brand) * -4)); }
-.strip-5 { transform: translateY(calc(var(--brand) * -5)); }
-.roll-active {
-    animation-duration: 2.6s;
-    animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 0.95);
-    animation-fill-mode: both;
-}
-.strip-0.roll-active { animation-name: roll-0; }
-.strip-1.roll-active { animation-name: roll-1; }
-.strip-4.roll-active { animation-name: roll-4; }
-.strip-5.roll-active { animation-name: roll-5; }
-@keyframes roll-0 {
-    from { transform: translateY(0); }
-    to { transform: translateY(calc(var(--brand) * -10)); }
-}
-@keyframes roll-1 {
-    from { transform: translateY(calc(var(--brand) * -1)); }
-    to { transform: translateY(calc(var(--brand) * -11)); }
-}
-@keyframes roll-4 {
-    from { transform: translateY(calc(var(--brand) * -4)); }
-    to { transform: translateY(calc(var(--brand) * -14)); }
-}
-@keyframes roll-5 {
-    from { transform: translateY(calc(var(--brand) * -5)); }
-    to { transform: translateY(calc(var(--brand) * -15)); }
+    cursor: pointer;
 }
 .masthead-title {
     display: flex;
@@ -814,6 +734,5 @@ onUnmounted(() => {
     .order-live-bar,
     .order-live-title,
     .order-live-dot { animation: none !important; opacity: 1; }
-    .roll-active { animation: none !important; }
 }
 </style>
