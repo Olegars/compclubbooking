@@ -174,14 +174,22 @@ onUnmounted(() => {
     align-items: center;
     justify-content: center;
     color: #000;
-    -webkit-text-stroke: calc(var(--brand, 4.5rem) * 0.028 + 1px) #22c55e;
-    paint-order: stroke fill;
+    -webkit-text-fill-color: #000;
+    -webkit-text-stroke: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: geometricPrecision;
     font-family: Arial, Helvetica, sans-serif;
     font-weight: 900;
     font-style: normal;
     font-size: calc(var(--brand, 4.5rem) * 0.62);
     line-height: 1;
-    text-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
+    /* Контур через text-shadow: Blink рвёт -webkit-text-stroke в зубцы. */
+    text-shadow:
+        -2px -2px 0 #22c55e, 0 -2px 0 #22c55e, 2px -2px 0 #22c55e,
+        2px 0 0 #22c55e, 2px 2px 0 #22c55e, 0 2px 0 #22c55e,
+        -2px 2px 0 #22c55e, -2px 0 0 #22c55e,
+        0 0 8px rgba(34, 197, 94, 0.55);
 }
 .top .glyph { top: 0; }
 .bottom .glyph { top: -100%; }

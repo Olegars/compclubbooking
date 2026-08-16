@@ -596,9 +596,17 @@ onUnmounted(() => {
     white-space: nowrap;
     color: #000;
     -webkit-text-fill-color: #000;
-    -webkit-text-stroke: 1.6px #22c55e;
-    text-shadow: 0 0 5px rgba(34, 197, 94, 0.8), 0 0 20px rgba(34, 197, 94, 0.4);
-    paint-order: fill stroke;
+    -webkit-text-stroke: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: geometricPrecision;
+    paint-order: normal;
+    text-shadow:
+        -1.5px -1.5px 0 #22c55e, 0 -1.5px 0 #22c55e, 1.5px -1.5px 0 #22c55e,
+        1.5px 0 0 #22c55e, 1.5px 1.5px 0 #22c55e, 0 1.5px 0 #22c55e,
+        -1.5px 1.5px 0 #22c55e, -1.5px 0 0 #22c55e,
+        0 0 6px rgba(34, 197, 94, 0.85),
+        0 0 18px rgba(34, 197, 94, 0.45);
 }
 .masthead-tools {
     display: flex;
@@ -633,6 +641,8 @@ onUnmounted(() => {
     @apply px-4 py-2.5 sm:px-6 sm:py-3 border border-white/10 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer uppercase tracking-widest italic;
     font-family: Arial, Helvetica, sans-serif;
     white-space: nowrap;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 .nav-btn.active { @apply bg-[#22c55e] text-black border-transparent shadow-[0_0_20px_rgba(34,197,94,0.4)]; }
 .nav-btn-exit { @apply !text-red-500 !border-red-500/20 hover:!bg-red-500 hover:!text-white; }
@@ -652,6 +662,8 @@ onUnmounted(() => {
     @apply inline-flex items-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-2.5 border border-white/10 rounded-xl
            text-[10px] sm:text-[11px] font-black uppercase tracking-widest italic text-white/70 bg-white/[0.03] box-border;
     font-family: Arial, Helvetica, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 .nav-meta-name {
     @apply truncate max-w-[6rem] lg:max-w-[10rem];
