@@ -379,7 +379,7 @@ onUnmounted(() => {
                                     </div>
                                 </div>
                             </div>
-                            <span class="masthead-title">компьютерный клуб</span>
+                            <span class="masthead-title">компьютерный клуб/магазин</span>
                         </Link>
                     </div>
                 </div>
