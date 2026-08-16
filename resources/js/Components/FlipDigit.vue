@@ -178,7 +178,7 @@ onUnmounted(() => {
     paint-order: stroke fill;
     font-family: Arial, Helvetica, sans-serif;
     font-weight: 900;
-    font-style: italic;
+    font-style: normal;
     font-size: calc(var(--brand, 4.5rem) * 0.62);
     line-height: 1;
     text-shadow: 0 0 8px rgba(34, 197, 94, 0.55);

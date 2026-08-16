@@ -547,9 +547,7 @@ onUnmounted(() => {
 @media (min-width: 640px) { .masthead { --brand: 3.6rem; } }
 @media (min-width: 1024px) { .masthead { --brand: 4.5rem; } }
 .masthead-bar {
-    background: rgba(5, 5, 5, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 0.875rem;
+    @apply bg-white/5 border border-white/10 rounded-xl;
     padding: 0.55rem 0.9rem;
 }
 @media (min-width: 640px) {
