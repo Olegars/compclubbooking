@@ -569,11 +569,6 @@ onUnmounted(() => {
 
 .masthead {
     --brand: 2.85rem;
-    background: #0a0a0a;
-    border: 1px solid rgba(34, 197, 94, 0.2);
-    border-radius: 1.125rem;
-    overflow: hidden;
-    box-shadow: 0 20px 50px -20px rgba(34, 197, 94, 0.12);
 }
 @media (min-width: 640px) { .masthead { --brand: 3.6rem; } }
 @media (min-width: 1024px) { .masthead { --brand: 4.5rem; } }
@@ -581,20 +576,19 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     gap: 0.75rem 1rem;
-    padding: 0.7rem 0.85rem;
     flex-wrap: nowrap;
-}
-@media (min-width: 640px) {
-    .masthead-row { padding: 0.85rem 1.15rem; gap: 1rem 1.25rem; }
 }
 .masthead-brand {
     display: flex;
     align-items: center;
     gap: 0.7rem;
-    min-width: 0;
-    flex-shrink: 1;
+    flex-shrink: 0;
     text-decoration: none;
     height: var(--brand);
+    overflow: visible;
+}
+@media (min-width: 640px) {
+    .masthead-brand { gap: 0.9rem; }
 }
 @media (min-width: 640px) {
     .masthead-brand { gap: 0.9rem; }
@@ -686,8 +680,9 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     height: var(--brand);
-    min-width: 0;
-    overflow: hidden;
+    flex-shrink: 0;
+    overflow: visible;
+    padding-right: 0.35em;
     font-family: 'BomberEscort', Arial, Helvetica, sans-serif;
     font-weight: 900;
     font-style: italic;
@@ -699,7 +694,6 @@ onUnmounted(() => {
     color: #000;
     -webkit-text-stroke: 1.2px #22c55e;
     text-shadow: 0 0 5px rgba(34, 197, 94, 0.8), 0 0 20px rgba(34, 197, 94, 0.4);
-    filter: brightness(1.2);
     paint-order: stroke fill;
 }
 .masthead-tools {
