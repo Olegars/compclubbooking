@@ -717,23 +717,23 @@ onUnmounted(() => {
     filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.8));
 }
 .masthead-arrow.is-spring {
-    animation: arrow-spring 2.7s both;
+    animation: arrow-spring 3.6s both;
 }
 @keyframes arrow-spring {
-    0%   { transform: translateX(0); }
-    7%   { transform: translateX(1.35em); }
-    14%  { transform: translateX(0); }
-    21%  { transform: translateX(0.95em); }
-    28%  { transform: translateX(0); }
-    36%  { transform: translateX(0.66em); }
-    43%  { transform: translateX(0); }
-    51%  { transform: translateX(0.44em); }
-    58%  { transform: translateX(0); }
-    66%  { transform: translateX(0.28em); }
-    73%  { transform: translateX(0); }
-    81%  { transform: translateX(0.16em); }
-    88%  { transform: translateX(0); }
-    94%  { transform: translateX(0.07em); }
+    0%   { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    7%   { transform: translateX(1.35em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    14%  { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    21%  { transform: translateX(0.95em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    28%  { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    36%  { transform: translateX(0.66em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    43%  { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    51%  { transform: translateX(0.44em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    58%  { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    66%  { transform: translateX(0.28em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    73%  { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    81%  { transform: translateX(0.16em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    88%  { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+    94%  { transform: translateX(0.07em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
     100% { transform: translateX(0); }
 }
 .masthead-tools {
