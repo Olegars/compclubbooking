@@ -11,6 +11,7 @@ class ComputerThermal extends Model
         'club_id',
         'computer_id',
         'cpu_c',
+        'ssd_c',
         'is_hot',
         'reported_at',
     ];
@@ -19,6 +20,7 @@ class ComputerThermal extends Model
         'club_id' => 'integer',
         'computer_id' => 'integer',
         'cpu_c' => 'float',
+        'ssd_c' => 'float',
         'is_hot' => 'boolean',
         'reported_at' => 'datetime',
     ];

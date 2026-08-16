@@ -188,7 +188,8 @@ class ComputerPowerService
      *     cache_ok?: bool|null,
      *     cache_free_gb?: float|int|string|null,
      *     data_root?: string|null,
-     *     volume_letter?: string|null
+     *     volume_letter?: string|null,
+     *     ssd_temp_c?: float|int|string|null
      * }  $extras
      * @return array{power_desired: string, power_state: string, power_action: string, session_active: bool, maintenance: bool, cache_ok: bool|null}
      */
@@ -321,7 +322,7 @@ class ComputerPowerService
         $stale = $this->staleSeconds();
 
         $sql = "SELECT id, name, status, power_desired, last_seen_at, space_id, club_id,
-                       cache_ok, cache_free_gb, data_root, volume_letter, maintenance,
+                       cache_ok, cache_free_gb, data_root, volume_letter, ssd_temp_c, maintenance,
                        CASE
                            WHEN last_seen_at IS NOT NULL
                                 AND last_seen_at >= NOW() - (? * INTERVAL '1 second')
@@ -535,6 +536,9 @@ class ComputerPowerService
         }
         if (! empty($extras['volume_letter'])) {
             $patch['volume_letter'] = mb_substr((string) $extras['volume_letter'], 0, 8);
+        }
+        if (array_key_exists('ssd_temp_c', $extras) && $extras['ssd_temp_c'] !== null && $extras['ssd_temp_c'] !== '') {
+            $patch['ssd_temp_c'] = round((float) $extras['ssd_temp_c'], 1);
         }
 
         if (array_key_exists('maintenance', $extras) && $extras['maintenance'] !== null) {

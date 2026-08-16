@@ -14,7 +14,7 @@ class Computer extends Model
         'mac_address', 'power_desired', 'power_state',
         'power_state_updated_at', 'last_seen_at', 'wol_sent_at',
         'maintenance', 'maintenance_until',
-        'cache_ok', 'cache_free_gb', 'data_root', 'volume_letter',
+        'cache_ok', 'cache_free_gb', 'data_root', 'volume_letter', 'ssd_temp_c',
     ];
 
     protected $casts = [
@@ -25,6 +25,7 @@ class Computer extends Model
         'maintenance' => 'boolean',
         'cache_ok' => 'boolean',
         'cache_free_gb' => 'float',
+        'ssd_temp_c' => 'float',
     ];
 
     public const KIND_PC = 'pc';

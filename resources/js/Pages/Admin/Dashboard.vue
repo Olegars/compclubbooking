@@ -40,6 +40,8 @@ const powerTileClass = (pc: any) => {
     if (pc.status === 'maintenance' || pc.maintenance) return 'bg-orange-500/15 border-orange-500/40'
     if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'bg-fuchsia-500/15 border-fuchsia-500/40'
+    if (Number(pc.ssd_temp_c) >= 80 && (pc.power_state === 'on' || pc.status === 'busy'))
+        return 'bg-red-500/15 border-red-500/40'
     if (pc.status === 'busy') return 'bg-cyan-500/10 border-cyan-500/40'
     const state = pc.power_state || 'off'
     if (state === 'on') return 'bg-emerald-500/15 border-emerald-500/40'
@@ -52,6 +54,10 @@ const powerLabelClass = (pc: any) => {
     if (pc.status === 'maintenance' || pc.maintenance) return 'text-orange-400'
     if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'text-fuchsia-300'
+    if (Number(pc.ssd_temp_c) >= 80 && (pc.power_state === 'on' || pc.status === 'busy'))
+        return 'text-red-300'
+    if (Number(pc.ssd_temp_c) >= 70 && (pc.power_state === 'on' || pc.status === 'busy'))
+        return 'text-amber-300'
     if (pc.status === 'busy') return 'text-cyan-400'
     const state = pc.power_state || 'off'
     if (state === 'on') return 'text-emerald-400'
@@ -64,6 +70,8 @@ const powerLabel = (pc: any) => {
     if (pc.status === 'maintenance' || pc.maintenance) return 'сервис'
     if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'кэш'
+    if (Number(pc.ssd_temp_c) >= 80 && (pc.power_state === 'on' || pc.status === 'busy'))
+        return `ssd ${Math.round(Number(pc.ssd_temp_c))}°`
     if (pc.status === 'busy') return 'сессия'
     const state = pc.power_state || 'off'
     if (state === 'on') return 'онлайн'
@@ -103,6 +111,7 @@ const refreshStatuses = async () => {
                 cache_free_gb: updated.cache_free_gb,
                 data_root: updated.data_root,
                 maintenance: updated.maintenance,
+                ssd_temp_c: updated.ssd_temp_c,
             }
         })
 
@@ -339,6 +348,7 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Сессия</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-orange-400"></span> Обслуживание</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-fuchsia-400"></span> Кэш SSD мёртв</span>
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red-400"></span> SSD перегрев</span>
                     </div>
                     <div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
                         <div v-for="pc in localComputers" :key="pc.id" @click="selectedPc = pc"
@@ -352,6 +362,11 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                             <span class="text-[11px] font-black" :class="powerLabelClass(pc)">{{ pc.name }}</span>
                             <span class="text-[8px] font-black uppercase tracking-wider mt-1 opacity-60" :class="powerLabelClass(pc)">
                                 {{ powerLabel(pc) }}
+                            </span>
+                            <span v-if="pc.ssd_temp_c > 0 && Number(pc.ssd_temp_c) < 80"
+                                  class="text-[8px] font-mono mt-0.5 opacity-50"
+                                  :class="Number(pc.ssd_temp_c) >= 70 ? 'text-amber-300' : 'text-white/40'">
+                                SSD {{ Math.round(Number(pc.ssd_temp_c)) }}°
                             </span>
                         </div>
                     </div>

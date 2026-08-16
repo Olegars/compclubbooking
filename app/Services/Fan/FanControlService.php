@@ -159,7 +159,7 @@ class FanControlService
         return $result;
     }
 
-    public function reportThermal(int $computerId, float $cpuC): ?SpaceFan
+    public function reportThermal(int $computerId, float $cpuC, ?float $ssdC = null): ?SpaceFan
     {
         $computer = Computer::query()->find($computerId);
         if (! $computer) {
@@ -182,14 +182,19 @@ class FanControlService
             ? $cpuC > $offC
             : $cpuC >= $onC;
 
+        $payload = [
+            'club_id' => $computer->club_id,
+            'cpu_c' => $cpuC,
+            'is_hot' => $isHot,
+            'reported_at' => now(),
+        ];
+        if ($ssdC !== null) {
+            $payload['ssd_c'] = round($ssdC, 1);
+        }
+
         ComputerThermal::query()->updateOrCreate(
             ['computer_id' => $computer->id],
-            [
-                'club_id' => $computer->club_id,
-                'cpu_c' => $cpuC,
-                'is_hot' => $isHot,
-                'reported_at' => now(),
-            ]
+            $payload
         );
 
         if (! $computer->space_id) {

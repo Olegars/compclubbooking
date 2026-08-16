@@ -65,6 +65,7 @@ class ShellHybridHeartbeatTest extends TestCase
             'cache_free_gb' => 12.5,
             'data_root' => 'D:/ShellData',
             'volume_letter' => 'D',
+            'ssd_temp_c' => 41.2,
         ]);
 
         $response->assertOk()
@@ -79,6 +80,7 @@ class ShellHybridHeartbeatTest extends TestCase
         $this->assertSame('maintenance', $this->computer->status);
         $this->assertFalse($this->computer->cache_ok);
         $this->assertEquals(12.5, (float) $this->computer->cache_free_gb);
+        $this->assertEquals(41.2, (float) $this->computer->ssd_temp_c);
         $this->assertSame('D:/ShellData', $this->computer->data_root);
         $this->assertSame('AA:BB:CC:DD:EE:01', $this->computer->mac_address);
     }

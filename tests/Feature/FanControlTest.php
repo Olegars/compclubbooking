@@ -205,11 +205,14 @@ class FanControlTest extends TestCase
         $this->postJson('/api/shell/thermal', [
             'terminal_id' => $this->pcA->id,
             'cpu_c' => 80,
+            'ssd_c' => 46.5,
         ])->assertOk()
             ->assertJsonPath('status', 'success')
             ->assertJsonPath('fan.desired_power', SpaceFan::SPEED_MID)
             ->assertJsonPath('fan.relay.host', '192.168.1.4')
             ->assertJsonPath('fan.relay.channel2', 4);
+
+        $this->assertEquals(46.5, (float) ComputerThermal::where('computer_id', $this->pcA->id)->first()->ssd_c);
 
         $this->postJson('/api/shell/fan', [
             'terminal_id' => $this->pcB->id,

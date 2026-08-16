@@ -756,12 +756,14 @@ class ShellApiController extends Controller
         $request->validate([
             'terminal_id' => 'required|integer|exists:computers,id',
             'cpu_c' => 'required|numeric|min:0|max:150',
+            'ssd_c' => 'nullable|numeric|min:0|max:150',
         ]);
 
         try {
             app(FanControlService::class)->reportThermal(
                 (int) $request->terminal_id,
-                (float) $request->cpu_c
+                (float) $request->cpu_c,
+                $request->filled('ssd_c') ? (float) $request->input('ssd_c') : null
             );
 
             try {
@@ -2335,6 +2337,7 @@ class ShellApiController extends Controller
                 'cache_free_gb' => 'nullable|numeric',
                 'data_root' => 'nullable|string|max:260',
                 'volume_letter' => 'nullable|string|max:8',
+                'ssd_temp_c' => 'nullable|numeric|min:0|max:150',
             ]);
 
             $computer = null;
@@ -2369,6 +2372,7 @@ class ShellApiController extends Controller
                     'cache_free_gb' => $request->input('cache_free_gb'),
                     'data_root' => $request->input('data_root'),
                     'volume_letter' => $request->input('volume_letter'),
+                    'ssd_temp_c' => $request->input('ssd_temp_c'),
                 ]
             );
 
