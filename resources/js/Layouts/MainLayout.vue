@@ -379,7 +379,17 @@ onUnmounted(() => {
                                     </div>
                                 </div>
                             </div>
-                            <span class="masthead-title">компьютерный клуб</span>
+                            <span class="masthead-title">
+                                <span>компьютерный клуб</span>
+                                <svg class="masthead-arrow" viewBox="0 0 78 32" aria-hidden="true">
+                                    <g transform="skewX(-18)" fill="#000" stroke="#22c55e" stroke-width="1.6" stroke-linejoin="round">
+                                        <polygon points="2,16 18,3 18,29" />
+                                        <rect x="24" y="5" width="11" height="22" rx="1" />
+                                        <rect x="40" y="5" width="11" height="22" rx="1" />
+                                        <rect x="56" y="5" width="11" height="22" rx="1" />
+                                    </g>
+                                </svg>
+                            </span>
                         </Link>
                     </div>
                 </div>
@@ -679,10 +689,11 @@ onUnmounted(() => {
 .masthead-title {
     display: flex;
     align-items: center;
+    gap: 0.28em;
     height: var(--brand);
     flex-shrink: 0;
     overflow: visible;
-    padding-right: 0.35em;
+    padding-right: 0.15em;
     font-family: 'BomberEscort', Arial, Helvetica, sans-serif;
     font-weight: 900;
     font-style: italic;
@@ -695,6 +706,13 @@ onUnmounted(() => {
     -webkit-text-stroke: 1.2px #22c55e;
     text-shadow: 0 0 5px rgba(34, 197, 94, 0.8), 0 0 20px rgba(34, 197, 94, 0.4);
     paint-order: stroke fill;
+}
+.masthead-arrow {
+    height: 0.92em;
+    width: auto;
+    flex-shrink: 0;
+    overflow: visible;
+    filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.8));
 }
 .masthead-tools {
     display: flex;
