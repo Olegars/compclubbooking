@@ -717,16 +717,23 @@ onUnmounted(() => {
     filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.8));
 }
 .masthead-arrow.is-spring {
-    animation: arrow-spring 2.05s both;
+    animation: arrow-spring 2.7s both;
 }
 @keyframes arrow-spring {
     0%   { transform: translateX(0); }
-    11%  { transform: translateX(1.35em); }
-    22%  { transform: translateX(-0.28em); }
-    35%  { transform: translateX(0.18em); }
-    50%  { transform: translateX(-0.1em); }
-    66%  { transform: translateX(0.05em); }
-    82%  { transform: translateX(-0.015em); }
+    7%   { transform: translateX(1.35em); }
+    14%  { transform: translateX(0); }
+    21%  { transform: translateX(0.95em); }
+    28%  { transform: translateX(0); }
+    36%  { transform: translateX(0.66em); }
+    43%  { transform: translateX(0); }
+    51%  { transform: translateX(0.44em); }
+    58%  { transform: translateX(0); }
+    66%  { transform: translateX(0.28em); }
+    73%  { transform: translateX(0); }
+    81%  { transform: translateX(0.16em); }
+    88%  { transform: translateX(0); }
+    94%  { transform: translateX(0.07em); }
     100% { transform: translateX(0); }
 }
 .masthead-tools {
