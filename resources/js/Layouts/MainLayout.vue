@@ -720,14 +720,14 @@ onUnmounted(() => {
     animation: arrow-spring 2.05s both;
 }
 @keyframes arrow-spring {
-    0%   { transform: rotate(0deg); }
-    11%  { transform: rotate(102deg); }
-    22%  { transform: rotate(-26deg); }
-    35%  { transform: rotate(15deg); }
-    50%  { transform: rotate(-8deg); }
-    66%  { transform: rotate(3.5deg); }
-    82%  { transform: rotate(-1.2deg); }
-    100% { transform: rotate(0deg); }
+    0%   { transform: translateX(0); }
+    11%  { transform: translateX(1.35em); }
+    22%  { transform: translateX(-0.28em); }
+    35%  { transform: translateX(0.18em); }
+    50%  { transform: translateX(-0.1em); }
+    66%  { transform: translateX(0.05em); }
+    82%  { transform: translateX(-0.015em); }
+    100% { transform: translateX(0); }
 }
 .masthead-tools {
     display: flex;
