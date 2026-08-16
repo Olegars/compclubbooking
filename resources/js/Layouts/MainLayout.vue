@@ -287,40 +287,17 @@ const handleSmsVerify = (code: string) => {
 
 const BRAND_DIGITS = [0, 4, 5, 1] as const
 const FLIP_EVERY_MS = 20_000
-const digitRefs = ref<{ play: () => void }[]>([])
+const flipTick = ref(0)
 
 let flipTimer: ReturnType<typeof setInterval> | null = null
-let flipKick: ReturnType<typeof setTimeout>[] = []
-
-const prefersReducedMotion = () => {
-    try {
-        return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    } catch {
-        return false
-    }
-}
-
-const setDigitRef = (el: unknown, index: number) => {
-    if (el && typeof el === 'object' && 'play' in el) {
-        digitRefs.value[index] = el as { play: () => void }
-    }
-}
 
 const triggerFlip = () => {
-    if (prefersReducedMotion()) return
-    flipKick.forEach(clearTimeout)
-    flipKick = []
-    digitRefs.value.forEach((digit, index) => {
-        const id = setTimeout(() => digit?.play(), index * 90)
-        flipKick.push(id)
-    })
+    flipTick.value += 1
 }
 
 const startFlipClock = () => {
     stopFlipClock()
-    if (prefersReducedMotion()) return
-    triggerFlip()
-    flipTimer = setInterval(() => { triggerFlip() }, FLIP_EVERY_MS)
+    flipTimer = setInterval(triggerFlip, FLIP_EVERY_MS)
 }
 
 const stopFlipClock = () => {
@@ -328,8 +305,6 @@ const stopFlipClock = () => {
         clearInterval(flipTimer)
         flipTimer = null
     }
-    flipKick.forEach(clearTimeout)
-    flipKick = []
 }
 
 onMounted(() => {
@@ -373,8 +348,9 @@ onUnmounted(() => {
                                 <FlipDigit
                                     v-for="(digit, index) in BRAND_DIGITS"
                                     :key="index"
-                                    :ref="(el) => setDigitRef(el, index)"
                                     :value="digit"
+                                    :delay="index * 90"
+                                    :tick="flipTick"
                                 />
                             </div>
                             <span class="masthead-title">компьютерный клуб</span>

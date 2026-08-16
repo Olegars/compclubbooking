@@ -1,83 +1,115 @@
 <script setup lang="ts">
-import { nextTick, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
     value: number
-}>()
+    delay?: number
+    tick?: number
+}>(), {
+    delay: 0,
+    tick: 0,
+})
 
-const FLIP_MS = 300
+const HALF_MS = 180
+const FLIP_MS = HALF_MS * 2 + 30
 
 const current = ref(props.value)
-const next = ref(props.value)
-const flipping = ref(false)
+const incoming = ref(props.value)
+const animating = ref(false)
 
-let running = false
-let flipTimer: ReturnType<typeof setTimeout> | null = null
+let cycleId = 0
+let timers: ReturnType<typeof setTimeout>[] = []
 
-function clearFlipTimer() {
-    if (flipTimer) {
-        clearTimeout(flipTimer)
-        flipTimer = null
-    }
-}
-
-function flipOnce(to: number): Promise<void> {
-    return new Promise((resolve) => {
-        next.value = to
-        flipping.value = true
-        clearFlipTimer()
-        flipTimer = setTimeout(() => {
-            current.value = to
-            flipping.value = false
-            flipTimer = null
-            resolve()
-        }, FLIP_MS)
+function wait(ms: number) {
+    return new Promise<void>((resolve) => {
+        const id = setTimeout(resolve, ms)
+        timers.push(id)
     })
 }
 
-async function play() {
-    if (running) return
-    running = true
-    const start = current.value
-    for (let i = 1; i <= 10; i++) {
-        flipping.value = false
-        await nextTick()
-        await flipOnce((start + i) % 10)
-    }
-    running = false
+function clearTimers() {
+    timers.forEach(clearTimeout)
+    timers = []
 }
 
-onUnmounted(() => {
-    running = false
-    clearFlipTimer()
+async function flipTo(n: number, my: number) {
+    if (my !== cycleId) return
+    incoming.value = n
+    animating.value = false
+    await wait(20)
+    if (my !== cycleId) return
+    animating.value = true
+    await wait(FLIP_MS)
+    if (my !== cycleId) return
+    current.value = n
+    animating.value = false
+}
+
+async function runCycle() {
+    const my = ++cycleId
+    clearTimers()
+    animating.value = false
+    const start = current.value
+    for (let i = 1; i <= 10; i++) {
+        if (my !== cycleId) return
+        await flipTo((start + i) % 10, my)
+    }
+}
+
+function schedule() {
+    const id = setTimeout(() => { void runCycle() }, props.delay)
+    timers.push(id)
+}
+
+onMounted(() => {
+    schedule()
 })
 
-defineExpose({ play })
+watch(() => props.tick, (now, prev) => {
+    if (now !== prev) {
+        clearTimers()
+        cycleId++
+        schedule()
+    }
+})
+
+onUnmounted(() => {
+    cycleId++
+    clearTimers()
+})
 </script>
 
 <template>
-    <div class="flip-unit">
-        <div class="leaf leaf-top leaf-static">
-            <span class="glyph">{{ next }}</span>
+    <div class="flip-stage">
+        <div class="flip-unit" :class="{ 'is-animating': animating }">
+            <div class="panel top static">
+                <span class="glyph">{{ incoming }}</span>
+            </div>
+            <div class="panel bottom static">
+                <span class="glyph">{{ current }}</span>
+            </div>
+            <div class="panel top card card-top">
+                <span class="glyph">{{ current }}</span>
+            </div>
+            <div class="panel bottom card card-bottom">
+                <span class="glyph">{{ incoming }}</span>
+            </div>
+            <span class="seam" />
         </div>
-        <div class="leaf leaf-bottom leaf-static">
-            <span class="glyph">{{ current }}</span>
-        </div>
-        <div class="leaf leaf-top leaf-flap flap-front" :class="{ 'is-flip': flipping }">
-            <span class="glyph">{{ current }}</span>
-        </div>
-        <div class="leaf leaf-bottom leaf-flap flap-back" :class="{ 'is-flip': flipping }">
-            <span class="glyph">{{ next }}</span>
-        </div>
-        <span class="seam" />
     </div>
 </template>
 
 <style scoped>
+.flip-stage {
+    width: calc(var(--brand, 4.5rem) * 0.72);
+    height: var(--brand, 4.5rem);
+    perspective: 280px;
+    flex-shrink: 0;
+}
 .flip-unit {
     position: relative;
-    width: calc(var(--brand) * 0.72);
-    height: var(--brand);
+    width: 100%;
+    height: 100%;
     border: 1px solid rgba(34, 197, 94, 0.38);
     border-radius: 0.4rem;
     background: #050505;
@@ -85,54 +117,51 @@ defineExpose({ play })
         inset 0 1px 0 rgba(255, 255, 255, 0.08),
         0 0 12px rgba(34, 197, 94, 0.08);
     overflow: hidden;
-    perspective: calc(var(--brand) * 3.2);
-    transform-style: preserve-3d;
-    flex-shrink: 0;
 }
-.leaf {
+.panel {
     position: absolute;
     left: 0;
     width: 100%;
     height: 50%;
     overflow: hidden;
 }
-.leaf-top { top: 0; }
-.leaf-bottom { bottom: 0; }
-.leaf-static.leaf-top {
+.top { top: 0; }
+.bottom { bottom: 0; }
+.static.top {
     background: linear-gradient(180deg, rgba(34, 197, 94, 0.16) 0%, rgba(10, 10, 10, 0.92) 100%);
     z-index: 1;
 }
-.leaf-static.leaf-bottom {
+.static.bottom {
     background: linear-gradient(180deg, rgba(8, 8, 8, 0.98) 0%, #000 100%);
     z-index: 1;
 }
-.leaf-flap {
+.card {
     z-index: 3;
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
 }
-.flap-front {
-    background: linear-gradient(180deg, rgba(34, 197, 94, 0.18) 0%, rgba(10, 10, 10, 0.95) 100%);
+.card-top {
+    background: linear-gradient(180deg, rgba(34, 197, 94, 0.2) 0%, rgba(10, 10, 10, 0.95) 100%);
     transform-origin: 50% 100%;
     z-index: 4;
 }
-.flap-back {
+.card-bottom {
     background: linear-gradient(180deg, rgba(8, 8, 8, 0.98) 0%, #000 100%);
     transform-origin: 50% 0%;
     transform: rotateX(90deg);
     z-index: 3;
 }
-.flap-front.is-flip {
-    animation: flap-front 150ms ease-in forwards;
+.flip-unit.is-animating .card-top {
+    animation: card-top-flip 180ms ease-in forwards;
 }
-.flap-back.is-flip {
-    animation: flap-back 150ms ease-out 150ms forwards;
+.flip-unit.is-animating .card-bottom {
+    animation: card-bottom-flip 180ms ease-out 180ms forwards;
 }
-@keyframes flap-front {
+@keyframes card-top-flip {
     from { transform: rotateX(0deg); }
     to { transform: rotateX(-90deg); }
 }
-@keyframes flap-back {
+@keyframes card-bottom-flip {
     from { transform: rotateX(90deg); }
     to { transform: rotateX(0deg); }
 }
@@ -140,22 +169,22 @@ defineExpose({ play })
     position: absolute;
     left: 0;
     width: 100%;
-    height: var(--brand);
+    height: var(--brand, 4.5rem);
     display: flex;
     align-items: center;
     justify-content: center;
     color: #000;
-    -webkit-text-stroke: calc(var(--brand) * 0.028) #22c55e;
+    -webkit-text-stroke: calc(var(--brand, 4.5rem) * 0.028) #22c55e;
     paint-order: stroke fill;
     font-family: Arial, Helvetica, sans-serif;
     font-weight: 900;
     font-style: italic;
-    font-size: calc(var(--brand) * 0.62);
+    font-size: calc(var(--brand, 4.5rem) * 0.62);
     line-height: 1;
     text-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
 }
-.leaf-top .glyph { top: 0; }
-.leaf-bottom .glyph { top: -100%; }
+.top .glyph { top: 0; }
+.bottom .glyph { top: -100%; }
 .seam {
     position: absolute;
     left: 0;
