@@ -174,7 +174,7 @@ onUnmounted(() => {
     align-items: center;
     justify-content: center;
     color: #000;
-    -webkit-text-stroke: calc(var(--brand, 4.5rem) * 0.028) #22c55e;
+    -webkit-text-stroke: calc(var(--brand, 4.5rem) * 0.028 + 1px) #22c55e;
     paint-order: stroke fill;
     font-family: Arial, Helvetica, sans-serif;
     font-weight: 900;
