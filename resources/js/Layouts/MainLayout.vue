@@ -381,18 +381,7 @@ onUnmounted(() => {
                                     </div>
                                 </div>
                             </div>
-                            <span class="masthead-title">
-                                <span>компьютерный клуб</span>
-                                <svg class="masthead-arrow" :class="{ 'is-spring': isRolling }" viewBox="0 0 90 32" aria-hidden="true">
-                                    <g transform="skewX(-18)" fill="#000" stroke="#22c55e" stroke-width="1.6" stroke-linejoin="round">
-                                        <polygon points="2,16 18,3 18,29" />
-                                        <rect x="24" y="7" width="10" height="18" rx="1" />
-                                        <rect x="38.5" y="7" width="9" height="18" rx="1" />
-                                        <rect x="52" y="7" width="8.1" height="18" rx="1" />
-                                        <rect x="64.6" y="7" width="7.3" height="18" rx="1" />
-                                    </g>
-                                </svg>
-                            </span>
+                            <span class="masthead-title">компьютерный клуб</span>
                         </Link>
                     </div>
                 </div>
@@ -692,51 +681,20 @@ onUnmounted(() => {
 .masthead-title {
     display: flex;
     align-items: center;
-    gap: 0.28em;
     height: var(--brand);
     flex-shrink: 0;
-    overflow: visible;
-    padding-right: 0.15em;
     font-family: 'BomberEscort', Arial, Helvetica, sans-serif;
     font-weight: 900;
     font-style: italic;
-    font-size: calc(var(--brand) * 0.78);
+    font-size: calc(var(--brand) * 0.5);
     line-height: 1;
     text-transform: uppercase;
     letter-spacing: -0.05em;
     white-space: nowrap;
     color: #000;
-    -webkit-text-stroke: 1.2px #22c55e;
-    text-shadow: 0 0 5px rgba(34, 197, 94, 0.8), 0 0 20px rgba(34, 197, 94, 0.4);
+    -webkit-text-stroke: 0.8px #22c55e;
+    text-shadow: 0 0 4px rgba(34, 197, 94, 0.8), 0 0 12px rgba(34, 197, 94, 0.35);
     paint-order: stroke fill;
-}
-.masthead-arrow {
-    height: 0.7em;
-    width: auto;
-    flex-shrink: 0;
-    overflow: visible;
-    transform-origin: 8% 50%;
-    filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.8));
-}
-.masthead-arrow.is-spring {
-    animation: arrow-spring 3.6s both;
-}
-@keyframes arrow-spring {
-    0%   { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    7%   { transform: translateX(1.35em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    14%  { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    21%  { transform: translateX(0.95em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    28%  { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    36%  { transform: translateX(0.66em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    43%  { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    51%  { transform: translateX(0.44em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    58%  { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    66%  { transform: translateX(0.28em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    73%  { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    81%  { transform: translateX(0.16em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    88%  { transform: translateX(0); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    94%  { transform: translateX(0.07em); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-    100% { transform: translateX(0); }
 }
 .masthead-tools {
     display: flex;
@@ -847,6 +805,5 @@ onUnmounted(() => {
     .order-live-title,
     .order-live-dot { animation: none !important; opacity: 1; }
     .roll-active { animation: none !important; }
-    .masthead-arrow.is-spring { animation: none !important; }
 }
 </style>
