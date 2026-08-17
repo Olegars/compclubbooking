@@ -173,6 +173,7 @@ PROMPT;
                     ->orWhere('name', 'ilike', '% case %');
             });
         }
+        $search->restrictToDesktopPcCases($base);
 
         $total = (clone $base)->count();
 

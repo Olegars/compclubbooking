@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Cache;
 
 class StoreSupplierCatalogSearchService
 {
-    private const CACHE_PREFIX = 'store.quickfox.cat_ids.v6.';
+    private const CACHE_PREFIX = 'store.quickfox.cat_ids.v7.';
 
     /**
      * Правила типа: категории ITP + жёсткий фильтр по названию товара.
@@ -73,11 +73,14 @@ class StoreSupplierCatalogSearchService
                 'name_include' => ['блок питания', 'бп ', ' psu', 'psu ', 'power supply', 'atx'],
             ],
             'case' => [
-                // «корпус» в категории + жёсткий exclude «корпусн*» (иначе лотки SIM / крышки телефонов)
-                'cat' => ['корпус', 'midi-tower', 'mid-tower', 'mid tower', 'full tower'],
+                // ПК-корпуса (tower). Не: корпусные части телефонов, боксы HDD, щитки EKF, Raspberry.
+                'cat' => ['компьютерн корпус', 'корпуса систем', 'midi-tower', 'mid-tower', 'full tower', 'корпус'],
                 'cat_exclude' => [
                     'корпусн', 'части', 'блок питания',
                     'телефон', 'смартфон', 'чехол', 'sim', 'мобильн',
+                    'жестк', 'жёстк', 'hdd', 'док-стан', 'док стан',
+                    'рубильник', 'переключател', 'разъедин', 'кнопочн',
+                    'щит', 'электрощит', 'модульн',
                 ],
                 'name_exclude' => [
                     'лоток', 'sim-карт', 'sim карт', 'sim card',
@@ -85,6 +88,16 @@ class StoreSupplierCatalogSearchService
                     'чехол', 'защитн стекл', 'стекло защит',
                     'huawei', 'xiaomi', 'honor', 'redmi', 'iphone', 'samsung galaxy',
                     'для телеф', 'смартфон', 'мобильн',
+                    // боксы / док под накопители
+                    'для жестк', 'для жёстк', 'для hdd', 'для ssd', 'внешний корпус',
+                    'док-стан', 'док стан', 'контейнер для', 'карман для',
+                    'amperin', 'agestar',
+                    // одноплатники
+                    'raspberry', 'orange pi', 'banana pi', 'rock pi', 'orange pi',
+                    'raspberry pi', 'одноплат', 'sbc ',
+                    // электрощитки / кнопочные посты EKF
+                    'кнопк', ' ekf', 'ekf ', 'iek ', ' рубильник',
+                    'пустой корпус щит', 'щит учет',
                 ],
                 'name_include' => ['корпус'],
             ],
@@ -227,6 +240,10 @@ class StoreSupplierCatalogSearchService
             $this->applyNameTypeFilters($builder, $rule, $requireNameInclude);
         }
 
+        if ($type === 'case') {
+            $this->applyDesktopPcCaseFilters($builder);
+        }
+
         // Вентиляторы: только 120 мм + намёк на CPU/cooler
         if ($type === 'fan') {
             $this->applyFanCpu120Filters($builder);
@@ -267,6 +284,9 @@ class StoreSupplierCatalogSearchService
             // Для корпусов всегда требуем «корпус» в названии — иначе всплывают «корпусные части» телефонов
             $requireNameInclude = $categoryIds === null || $categoryIds === [] || $type === 'case';
             if (is_array($rule) && ! $this->passesNameTypeRule((string) $p->name, $rule, $requireNameInclude)) {
+                return null;
+            }
+            if ($type === 'case' && ! $this->passesDesktopPcCaseName((string) $p->name)) {
                 return null;
             }
             if ($type === 'fan' && ! $this->passesFanCpu120((string) $p->name)) {
@@ -336,6 +356,80 @@ class StoreSupplierCatalogSearchService
         })->values()->take($limit)->all();
 
         return array_values($scored);
+    }
+
+    /**
+     * Сузить query до десктопных ПК-корпусов (общий хелпер для поиска и DeepSeek-разметки).
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\StoreSupplierCatalogProduct>  $query
+     */
+    public function restrictToDesktopPcCases($query): void
+    {
+        $rule = $this->typeRules()['case'] ?? null;
+        if (is_array($rule)) {
+            $this->applyNameTypeFilters($query, $rule, true);
+        }
+        $this->applyDesktopPcCaseFilters($query);
+    }
+
+    /**
+     * Только корпуса для десктопной сборки ПК (не щитки, не боксы HDD, не Raspberry).
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\StoreSupplierCatalogProduct>  $query
+     */
+    private function applyDesktopPcCaseFilters($query): void
+    {
+        foreach ($this->desktopPcCaseNameExcludePatterns() as $pattern) {
+            $query->whereRaw("coalesce(name, '') || ' ' || coalesce(part, '') !~* ?", [$pattern]);
+        }
+    }
+
+    private function passesDesktopPcCaseName(string $name): bool
+    {
+        $hay = mb_strtolower($name);
+        foreach ($this->desktopPcCaseNameExcludePatterns() as $pattern) {
+            if (preg_match('/'.$pattern.'/ui', $hay)) {
+                return false;
+            }
+        }
+
+        // Отсечь кнопочные посты «Корпус КП 101…»
+        if (preg_match('/корпус\s+кп\s*\d/ui', $hay)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function desktopPcCaseNameExcludePatterns(): array
+    {
+        return [
+            'raspberry',
+            'orange\\s*pi',
+            'banana\\s*pi',
+            'rock\\s*pi',
+            'одноплат',
+            'для\\s+жестк',
+            'для\\s+жёстк',
+            'для\\s+hdd',
+            'для\\s+ssd',
+            'внешн\\w{0,8}\\s+корпус',
+            'док[\\s-]*стан',
+            'контейнер\\s+для',
+            'карман\\s+для',
+            'agestar',
+            'amperin',
+            'корпус\\s+кп\\s*\\d',
+            '\\bekf\\b',
+            '\\biek\\b',
+            'рубильник',
+            'кнопочн',
+            'sim[\\s-]*карт',
+            'лоток',
+        ];
     }
 
     private function applyFanCpu120Filters($query): void
