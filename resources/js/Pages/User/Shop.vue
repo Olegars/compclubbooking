@@ -236,7 +236,7 @@ onMounted(fetchProducts)
 
             <div v-if="filteredProducts.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div v-for="item in filteredProducts" :key="item.id"
-                     class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-6 transition-all relative overflow-hidden flex flex-col shadow-xl"
+                     class="bg-white/5 md:bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-6 transition-all relative overflow-hidden flex flex-col shadow-xl"
                      :class="{'opacity-40 grayscale': item.stock <= 0, 'hover:border-[#22c55e]/40 group': item.stock > 0}">
 
                     <div v-if="item.stock <= 0" class="absolute top-4 left-0 right-0 z-10 flex justify-center">

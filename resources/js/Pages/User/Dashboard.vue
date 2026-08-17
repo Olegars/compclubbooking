@@ -479,9 +479,9 @@ onMounted(() => {
         <div class="cabinet max-w-7xl mx-auto w-full font-mono pb-16 sm:pb-20 text-white animate-in fade-in duration-700">
             <div class="grid grid-cols-1 md:grid-cols-3 md:gap-6 lg:gap-8 md:px-0">
 
-            <div class="md:col-span-2 flex flex-col gap-px md:gap-6 bg-white/[0.06] md:bg-transparent">
+            <div class="md:col-span-2 flex flex-col gap-3 md:gap-6 px-4 md:px-0 bg-transparent">
 
-                <div class="cabinet-block bg-[#0a0a0a] border-0 md:border md:border-[#22c55e]/20 rounded-none md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 relative md:shadow-2xl md:shadow-[#22c55e]/5">
+                <div class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-[#22c55e]/20 rounded-xl md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 relative md:shadow-2xl md:shadow-[#22c55e]/5">
 
                     <span class="text-[10px] uppercase text-[#22c55e] tracking-[0.35em] font-black italic relative z-10">Баланс {{ userName }}</span>
                     <div class="mt-2 sm:mt-4 flex items-baseline gap-2 sm:gap-4 relative z-10">
@@ -506,7 +506,7 @@ onMounted(() => {
                 <div
                     v-for="b in activeBookings"
                     :key="b.id"
-                    class="cabinet-block bg-[#0a0a0a] border-0 md:border rounded-none md:rounded-[1rem] p-4 sm:p-6 md:p-8 relative overflow-hidden group transition-colors"
+                    class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border rounded-xl md:rounded-[1rem] p-4 sm:p-6 md:p-8 relative overflow-hidden group transition-colors"
                     :class="resolveBookingPhase(b) === 'late_waiting'
                         ? 'md:border-red-500/40 hover:md:border-red-500/70'
                         : 'md:border-[#3b82f6]/40 hover:md:border-[#3b82f6]'"
@@ -594,7 +594,7 @@ onMounted(() => {
                     {{ cancelError }}
                 </div>
 
-                <div class="cabinet-block bg-[#0a0a0a] border-0 md:border md:border-white/5 rounded-none md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 md:shadow-xl">
+                <div class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-white/5 rounded-xl md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 md:shadow-xl">
                     <span class="text-[10px] uppercase text-white/40 tracking-[0.35em] font-black italic block mb-5 sm:mb-8">Лог транзакций</span>
                     <div v-if="transactions.length > 0" class="space-y-4 sm:space-y-6">
                         <div v-for="tx in transactions" :key="tx.id" class="flex items-center justify-between group transition-all gap-3 sm:gap-4">
@@ -637,8 +637,8 @@ onMounted(() => {
                 </div>
             </div>
 
-            <div class="flex flex-col gap-px md:gap-6 md:space-y-0 bg-white/[0.06] md:bg-transparent md:sticky md:top-28 md:self-start mt-px md:mt-0">
-                <div class="cabinet-block bg-[#0a0a0a] border-0 md:border md:border-white/5 rounded-none md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 flex flex-row md:flex-col items-center gap-4 md:gap-0 md:shadow-xl">
+            <div class="flex flex-col gap-3 md:gap-6 md:space-y-0 bg-transparent md:sticky md:top-28 md:self-start mt-3 md:mt-0 px-4 md:px-0">
+                <div class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-white/5 rounded-xl md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 flex flex-row md:flex-col items-center gap-4 md:gap-0 md:shadow-xl">
                     <div class="w-16 h-16 md:w-32 md:h-32 rounded-full bg-black flex items-center justify-center text-2xl md:text-5xl font-black text-[#22c55e] italic border-2 border-[#22c55e]/30 md:mb-6 overflow-hidden shadow-[0_0_40px_rgba(34,197,94,0.1)] shrink-0">
                         <img v-if="page.props.user?.avatar" :src="`/images/avatars/${page.props.user.avatar}`" class="w-full h-full object-cover" />
                         <span v-else>{{ (page.props.user?.name || 'S')[0] }}</span>
@@ -649,7 +649,7 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <div v-if="achievements.length > 0" class="cabinet-block bg-[#0a0a0a] border-0 md:border md:border-purple-500/20 rounded-none md:rounded-[1.125rem] p-4 sm:p-6 md:p-8 md:shadow-xl">
+                <div v-if="achievements.length > 0" class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-purple-500/20 rounded-xl md:rounded-[1.125rem] p-4 sm:p-6 md:p-8 md:shadow-xl">
                     <span class="text-[10px] uppercase text-purple-400 tracking-[0.35em] font-black italic block mb-4 sm:mb-6">Достижения и трофеи</span>
                     <div class="space-y-3 sm:space-y-4">
                         <div v-for="a in achievements" :key="a.id"
@@ -681,12 +681,12 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <nav class="flex flex-col gap-px md:gap-3 bg-white/[0.06] md:bg-transparent">
-                    <Link href="/account/profile" class="p-4 sm:p-5 md:p-6 bg-[#0a0a0a] border-0 md:border md:border-white/5 rounded-none md:rounded-[0.875rem] flex items-center justify-between hover:bg-white/5 transition-all group">
+                <nav class="flex flex-col gap-3 bg-transparent">
+                    <Link href="/account/profile" class="p-4 sm:p-5 md:p-6 bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-white/5 rounded-xl md:rounded-[0.875rem] flex items-center justify-between hover:bg-white/5 transition-all group">
                         <span class="text-[10px] font-black uppercase text-white/40 group-hover:text-white transition-colors italic tracking-widest">Настройки профиля</span>
                         <svg class="w-5 h-5 sm:w-6 sm:h-6 text-[#22c55e] transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
                     </Link>
-                    <button @click="router.post('/logout')" class="p-4 sm:p-5 md:p-6 bg-[#0a0a0a] border-0 md:border md:border-white/5 rounded-none md:rounded-[0.875rem] flex items-center justify-between hover:bg-red-500/10 transition-all group">
+                    <button @click="router.post('/logout')" class="p-4 sm:p-5 md:p-6 bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-white/5 rounded-xl md:rounded-[0.875rem] flex items-center justify-between hover:bg-red-500/10 transition-all group">
                         <span class="text-[10px] font-black uppercase text-white/40 group-hover:text-red-500 transition-colors italic tracking-widest">Завершить рейд</span>
                         <svg class="w-5 h-5 sm:w-6 sm:h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M17 16l4-4m0 0l-4-4m4 4H7"/></svg>
                     </button>

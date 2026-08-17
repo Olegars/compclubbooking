@@ -217,7 +217,7 @@ const steps = [
                 </div>
 
                 <div v-if="hasSeats"
-                     class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-7 flex flex-col justify-center">
+                     class="bg-white/5 md:bg-[#0a0a0a] border border-white/10 rounded-3xl p-7 flex flex-col justify-center">
                     <div class="flex items-center gap-2 mb-5">
                         <span class="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse"></span>
                         <span class="label !mb-0">Свободно прямо сейчас</span>
@@ -266,7 +266,7 @@ const steps = [
 
                 <div v-if="tariffMode === 'hourly'" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <div v-for="zone in zones" :key="zone.slug"
-                         class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-6 flex flex-col hover:border-white/25 transition-colors">
+                         class="bg-white/5 md:bg-[#0a0a0a] border border-white/10 rounded-3xl p-6 flex flex-col hover:border-white/25 transition-colors">
                         <div class="flex items-center gap-2.5 mb-4">
                             <span class="w-2.5 h-2.5 rounded-sm shrink-0" :style="{ backgroundColor: zone.color }"></span>
                             <h4 class="text-base font-black italic uppercase tracking-tight text-white">{{ zone.name }}</h4>
@@ -308,7 +308,7 @@ const steps = [
 
                 <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <div v-for="pkg in allPackages" :key="`${pkg.zoneSlug}-${pkg.id}`"
-                         class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-6 flex flex-col hover:border-white/25 transition-colors">
+                         class="bg-white/5 md:bg-[#0a0a0a] border border-white/10 rounded-3xl p-6 flex flex-col hover:border-white/25 transition-colors">
                         <div class="flex items-start justify-between gap-3 mb-4">
                             <div class="flex items-center gap-2.5">
                                 <span class="w-2.5 h-2.5 rounded-sm shrink-0" :style="{ backgroundColor: pkg.zoneColor }"></span>
@@ -387,7 +387,7 @@ const steps = [
 
                 <div v-if="paidGames.length" class="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 mb-8">
                     <Link v-for="game in paidGames" :key="game.id" :href="bookingUrl()"
-                          class="group bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden hover:border-[#22c55e]/40 transition-colors">
+                          class="group bg-white/5 md:bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden hover:border-[#22c55e]/40 transition-colors">
                         <div class="aspect-[3/4] bg-white/5 overflow-hidden">
                             <img v-if="posterUrl(game.poster)" :src="posterUrl(game.poster) || ''" :alt="game.title"
                                  loading="lazy" decoding="async"
@@ -431,7 +431,7 @@ const steps = [
                 </div>
                 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <article v-for="review in reviews" :key="review.id"
-                             class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-6 flex flex-col">
+                             class="bg-white/5 md:bg-[#0a0a0a] border border-white/10 rounded-3xl p-6 flex flex-col">
                         <div class="flex items-center justify-between gap-3 mb-4">
                             <div class="text-sm font-black uppercase italic text-white tracking-tight truncate">{{ review.author }}</div>
                             <div class="text-yellow-500 text-xs font-black shrink-0">{{ '★'.repeat(Math.min(5, Math.round(review.rating || 0))) }}</div>
@@ -448,7 +448,7 @@ const steps = [
                 </h3>
                 <div class="grid gap-4 sm:grid-cols-3">
                     <div v-for="step in steps" :key="step.num"
-                         class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-6">
+                         class="bg-white/5 md:bg-[#0a0a0a] border border-white/10 rounded-3xl p-6">
                         <div class="text-[#22c55e] font-black italic text-lg mb-3">{{ step.num }}</div>
                         <h4 class="text-white font-bold text-sm mb-2">{{ step.title }}</h4>
                         <p class="text-[13px] text-white/50 leading-relaxed">{{ step.text }}</p>
