@@ -112,18 +112,31 @@ class StoreCaseCatalogEnrichmentService
     private function systemPrompt(): string
     {
         return <<<'PROMPT'
-Ты классификатор корпусов ПК по названию из прайса.
+Ты классификатор корпусов ПК по названию/артикулу из прайса.
 Верни ТОЛЬКО JSON-массив объектов без markdown:
 [{"sku":123,"color":"white|black|other","glass":"none|side|front_side","form":"atx|matx|itx|eatx|other"}]
 
-Правила:
-- color: white/black если явно указан цвет корпуса; иначе other.
-- glass:
-  - side = только боковое стекло/окно (в т.ч. «боковое окно (панорама)», tempered side).
-  - front_side = стекло И спереди, И сбоку (передняя стеклянная панель + бок, dual/full glass, «передняя и боковая»).
-  - none = нет стекла / только сетка / неясно.
-  Важно: одно боковое «панорамное» окно = side, НЕ front_side.
-- form: atx только полноценный ATX (не mATX/MicroATX/Mini-ITX). mATX→matx, ITX→itx, E-ATX→eatx.
+Правила color:
+- white/black — только если цвет корпуса явно указан; иначе other.
+
+Правила glass (важно — ошибаться в сторону front_side, если есть признаки переднего стекла):
+- side = стекло/окно ТОЛЬКО сбоку; перед — сетка/металл/пластик.
+  Примеры side: «с боковым окном», «боковое стекло», «side window», «TG side», одно окно в боковой стенке.
+- front_side = стекло и СПЕРЕДИ, и СБОКУ (две панели или одна панорамная «без стойки» угол фронт+бок).
+  Примеры front_side:
+  • панорамное / panoramic / fishbowl / seamless corner glass
+  • dual glass / double glass / full glass / dual TG
+  • передняя стеклянная + боковая, «спереди и сбоку»
+  • корпуса Ocypus/Lian Li/Hyte и т.п. с панорамным углом
+  • «панорама» / «панорамное стекло» в названии современного корпуса → почти всегда front_side
+- none = нет стекла / только mesh / неясно по названию.
+
+НЕ путай: «панорамное стекло» ≠ обычное одно боковое окно. Панорама = front_side.
+«Боковое окно» без слов про перед/панораму/dual → side.
+
+Правила form:
+- atx только полноценный ATX (не mATX/MicroATX/Mini-ITX).
+- mATX→matx, Mini-ITX→itx, E-ATX→eatx, иначе other.
 PROMPT;
     }
 
@@ -353,11 +366,14 @@ PROMPT;
     private function normalizeGlass(mixed $v): ?string
     {
         $v = mb_strtolower(trim((string) $v));
+        $v = str_replace(['-', ' ', '+'], '_', $v);
 
         return match ($v) {
-            'none', 'нет', 'no' => 'none',
-            'side', 'бок', 'боковое' => 'side',
-            'front_side', 'front-side', 'frontside', 'спереди', 'front' => 'front_side',
+            'none', 'нет', 'no', 'mesh' => 'none',
+            'side', 'бок', 'боковое', 'side_only', 'side_window' => 'side',
+            'front_side', 'frontside', 'front_and_side', 'frontandside',
+            'спереди', 'front', 'dual', 'dual_glass', 'double_glass', 'full_glass',
+            'panoramic', 'панорама', 'панорамное', 'fishbowl' => 'front_side',
             default => null,
         };
     }

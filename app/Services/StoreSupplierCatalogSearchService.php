@@ -910,7 +910,7 @@ class StoreSupplierCatalogSearchService
      */
     private function frontSideGlassPatterns(): array
     {
-        // Нужен признак ПЕРЕДНЕГО стекла/окна + намёк на бок, либо явная «передняя и боковая» / dual glass
+        // Переднее+боковое / панорама / dual — не путать с одним боковым окном
         return [
             'передн\\w{0,12}.{0,50}(стекл|окн|glass|tg)',
             '(стекл|окн|glass).{0,50}передн\\w{0,12}',
@@ -927,6 +927,11 @@ class StoreSupplierCatalogSearchService
             'сбоку.{0,25}(и\\s+)?спереди',
             'передн\\w{0,12}\\s+и\\s+боков',
             'стеклянн\\w{0,8}\\s+передн',
+            'панорам',
+            'panoram',
+            'fishbowl',
+            'seamless',
+            'без\\s+стойк',
         ];
     }
 
