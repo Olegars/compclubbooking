@@ -69,9 +69,11 @@ const displayBalance = computed(() => {
 const isAuthenticated = computed(() => !!(page.props.auth?.user || page.props.user))
 const isBookingPage = computed(() => String(page.url || '').startsWith('/booking'))
 const isAccountPage = computed(() => String(page.url || '').startsWith('/account'))
+const isShopPage = computed(() => String(page.url || '').startsWith('/shop'))
 const contentPadClass = computed(() => {
     if (isAccountPage.value) return 'py-0 sm:py-6 lg:py-10 px-0 sm:px-4 lg:px-6'
     if (isBookingPage.value) return 'py-2 sm:py-6 lg:py-10 px-1 sm:px-4 lg:px-6'
+    if (isShopPage.value) return 'py-2 sm:py-6 lg:py-10 px-[3px] sm:px-4 lg:px-6'
     return 'py-6 sm:py-10 px-4 sm:px-6'
 })
 

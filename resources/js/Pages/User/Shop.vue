@@ -206,7 +206,7 @@ onMounted(fetchProducts)
 
 <template>
     <MainLayout>
-        <div class="max-w-6xl mx-auto p-6 space-y-8 animate-in zoom-in duration-500 pb-28">
+        <div class="max-w-6xl mx-auto px-0 py-3 sm:p-6 space-y-4 sm:space-y-8 animate-in zoom-in duration-500 pb-28">
 
             <div class="space-y-5">
                 <div>
@@ -234,9 +234,9 @@ onMounted(fetchProducts)
                 </div>
             </div>
 
-            <div v-if="filteredProducts.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div v-if="filteredProducts.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-6">
                 <div v-for="item in filteredProducts" :key="item.id"
-                     class="bg-white/5 md:bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-6 transition-all relative overflow-hidden flex flex-col shadow-xl"
+                     class="bg-white/5 md:bg-[#0a0a0a] border border-white/5 rounded-xl sm:rounded-[1rem] p-4 sm:p-6 transition-all relative overflow-hidden flex flex-col shadow-xl"
                      :class="{'opacity-40 grayscale': item.stock <= 0, 'hover:border-[#22c55e]/40 group': item.stock > 0}">
 
                     <div v-if="item.stock <= 0" class="absolute top-4 left-0 right-0 z-10 flex justify-center">
@@ -282,7 +282,7 @@ onMounted(fetchProducts)
 
         <!-- Floating cart bar -->
         <div v-if="cartCount > 0 && !cartOpen"
-             class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-[calc(100%-2rem)] max-w-md">
+             class="fixed bottom-3 left-[3px] right-[3px] sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-[100] sm:w-[calc(100%-2rem)] sm:max-w-md">
             <button type="button" @click="cartOpen = true"
                     class="w-full flex items-center justify-between gap-4 px-6 py-4 rounded-2xl bg-[#22c55e] text-black font-black uppercase tracking-widest shadow-[0_0_40px_rgba(34,197,94,0.45)] cursor-pointer">
                 <span class="text-xs">Корзина · {{ cartCount }} шт</span>
