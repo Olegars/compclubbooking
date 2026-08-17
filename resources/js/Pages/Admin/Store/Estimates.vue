@@ -256,6 +256,8 @@ const filledNumber = (index: number) => {
     }
     return n
 }
+
+const formSaleTotal = computed(() =>
     form.items.reduce((sum, line) => {
         if (!lineFilled(line) || line.sale_price == null) return sum
         return sum + Number(line.sale_price) * Math.max(1, Number(line.qty) || 1)
