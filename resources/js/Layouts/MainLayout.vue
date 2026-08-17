@@ -549,10 +549,10 @@ onUnmounted(() => {
 .masthead-bar {
     @apply bg-white/5 border border-white/10 rounded-xl;
     padding: 0.45rem 0.65rem;
-    overflow: hidden;
+    overflow: visible;
 }
 @media (min-width: 640px) {
-    .masthead-bar { padding: 0.65rem 1.15rem; overflow: visible; }
+    .masthead-bar { padding: 0.65rem 1.15rem; }
 }
 .masthead-row {
     display: flex;
@@ -571,14 +571,13 @@ onUnmounted(() => {
     max-width: 100%;
     text-decoration: none;
     height: var(--brand);
-    overflow: hidden;
+    overflow: visible;
 }
 @media (min-width: 640px) {
     .masthead-brand {
         align-items: flex-end;
         gap: 0.9rem;
         flex-shrink: 0;
-        overflow: visible;
     }
 }
 .masthead-digits {
@@ -601,7 +600,11 @@ onUnmounted(() => {
     text-transform: uppercase;
     letter-spacing: -0.05em;
     white-space: nowrap;
-    overflow: hidden;
+    overflow: visible;
+    padding-left: 0.28em;
+    padding-right: 0.42em;
+    margin-left: -0.12em;
+    margin-right: -0.12em;
     color: #000;
     -webkit-text-fill-color: #000;
     -webkit-text-stroke: 0;
@@ -620,7 +623,6 @@ onUnmounted(() => {
     .masthead-title {
         align-items: flex-end;
         flex: 0 0 auto;
-        overflow: visible;
         font-size: calc(var(--brand) * 0.5);
     }
 }
