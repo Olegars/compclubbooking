@@ -117,7 +117,10 @@ class StoreCaseCatalogEnrichmentService
 [{"sku":123,"color":"white|black|other","glass":"none|side|front_side","form":"atx|matx|itx|eatx|other"}]
 
 Правила color:
-- white/black — только если цвет корпуса явно указан; иначе other.
+- white — только если в названии/артикуле явно белый (White, WH, белый, белая).
+- black — только если явно чёрный (Black, BK, чёрный, черный).
+- other — цвет не указан, серый/серебро/другой, или неоднозначно.
+НЕ ставь black «по умолчанию» для безымянного цвета — это other.
 
 Правила glass (важно — ошибаться в сторону front_side, если есть признаки переднего стекла):
 - side = стекло/окно ТОЛЬКО сбоку; перед — сетка/металл/пластик.

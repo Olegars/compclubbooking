@@ -219,51 +219,20 @@ class StoreSupplierCatalogSearchService
             $this->applyFanCpu120Filters($builder);
         }
 
-        // Корпуса: цвет / стекло / форм-фактор через DeepSeek (кэш в БД)
+        // Корпуса: цвет / стекло / форм-фактор — только по кэшу DeepSeek (case_*), без «широких» ilike
         if ($type === 'case' && $caseFilters !== []) {
-            $pre = clone $builder;
-            if (! empty($caseFilters['color'])) {
-                if ($caseFilters['color'] === 'white') {
-                    $pre->where(function ($q) {
-                        $q->where('name', 'ilike', '%бел%')
-                            ->orWhere('name', 'ilike', '%white%')
-                            ->orWhere('case_color', 'white');
-                    });
-                } else {
-                    $pre->where(function ($q) {
-                        $q->where('name', 'ilike', '%черн%')
-                            ->orWhere('name', 'ilike', '%чёрн%')
-                            ->orWhere('name', 'ilike', '%black%')
-                            ->orWhere('case_color', 'black');
-                    });
-                }
-            }
-            if (! empty($caseFilters['glass'])) {
-                $pre->where(function ($q) {
-                    $q->where('name', 'ilike', '%стекл%')
-                        ->orWhere('name', 'ilike', '%окн%')
-                        ->orWhere('name', 'ilike', '%glass%')
-                        ->orWhere('name', 'ilike', '%панорам%')
-                        ->orWhere('name', 'ilike', '%tempered%')
-                        ->orWhere('name', 'ilike', '%перед%')
-                        ->orWhereNotNull('case_glass');
-                });
-            }
-            if (! empty($caseFilters['form']) && $caseFilters['form'] === 'atx') {
-                $pre->where(function ($q) {
-                    $q->where('name', 'ilike', '%atx%')
-                        ->orWhere('case_form', 'atx');
-                });
+            // Доразметить порцию ещё пустых, чтобы фильтр по атрибуту работал
+            $pendingSkus = (clone $builder)
+                ->whereNull('case_attrs_at')
+                ->orderBy('sku')
+                ->limit(250)
+                ->pluck('sku')
+                ->map(fn ($s) => (int) $s)
+                ->all();
+            if ($pendingSkus !== []) {
+                app(StoreCaseCatalogEnrichmentService::class)->ensureClassified($pendingSkus);
             }
 
-            $candidateSkus = $pre->limit(400)->pluck('sku')->all();
-            if ($candidateSkus === []) {
-                return [];
-            }
-            app(StoreCaseCatalogEnrichmentService::class)->ensureClassified(
-                array_map('intval', $candidateSkus)
-            );
-            $builder->whereIn('sku', $candidateSkus);
             if (! empty($caseFilters['color'])) {
                 $builder->where('case_color', $caseFilters['color']);
             }
@@ -277,7 +246,7 @@ class StoreSupplierCatalogSearchService
 
         $rows = $builder
             ->limit(min(400, max($limit * 10, 100)))
-            ->get(['sku', 'name', 'part', 'vendor', 'rrp', 'price', 'stock_qty', 'category_external_id', 'has_image', 'image_path']);
+            ->get(['sku', 'name', 'part', 'vendor', 'rrp', 'price', 'stock_qty', 'category_external_id', 'has_image', 'image_path', 'case_color', 'case_glass', 'case_form']);
 
         $catNames = $this->categoryNames($rows->pluck('category_external_id')->filter()->unique()->all());
 
