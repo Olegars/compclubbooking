@@ -247,7 +247,15 @@ const filterStatus = computed({
     set: (v: string) => router.get('/admin/store/estimates', v ? { status: v } : {}, { preserveState: true }),
 })
 
-const formSaleTotal = computed(() =>
+const formFilledCount = computed(() => form.items.filter(lineFilled).length)
+
+const filledNumber = (index: number) => {
+    let n = 0
+    for (let k = 0; k <= index; k++) {
+        if (lineFilled(form.items[k])) n++
+    }
+    return n
+}
     form.items.reduce((sum, line) => {
         if (!lineFilled(line) || line.sale_price == null) return sum
         return sum + Number(line.sale_price) * Math.max(1, Number(line.qty) || 1)
@@ -733,8 +741,11 @@ const stockOptionsFor = (item: any) => {
 
                     <div v-show="isOpen(est.id)" class="px-5 pb-5 space-y-4 border-t border-white/5 pt-4">
                         <div class="space-y-2">
-                            <div v-for="item in est.items" :key="item.id"
-                                 class="grid grid-cols-1 md:grid-cols-[auto_1fr_auto] gap-3 text-xs text-white/50 border border-white/5 rounded-xl p-3">
+                            <div v-for="(item, itemIdx) in est.items" :key="item.id"
+                                 class="grid grid-cols-1 md:grid-cols-[auto_auto_1fr_auto] gap-3 text-xs text-white/50 border border-white/5 rounded-xl p-3">
+                                <span class="w-7 h-7 shrink-0 rounded-lg bg-amber-500/15 border border-amber-500/30 text-[11px] font-black text-amber-400 flex items-center justify-center tabular-nums self-start mt-3.5">
+                                    {{ itemIdx + 1 }}
+                                </span>
                                 <button v-if="item.supplier_image_url" type="button"
                                         class="w-14 h-14 shrink-0 rounded-xl bg-black/60 border border-white/10 overflow-hidden hover:border-amber-500/40"
                                         title="Увеличить"
@@ -859,10 +870,17 @@ const stockOptionsFor = (item: any) => {
                     <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }} · {{ c.phone }}</option>
                 </select>
 
-                <div class="text-[10px] uppercase font-black text-white/30 tracking-widest">Комплектация</div>
+                <div class="flex items-baseline justify-between gap-3">
+                    <div class="text-[10px] uppercase font-black text-white/30 tracking-widest">Комплектация</div>
+                    <div class="text-[10px] uppercase font-black tracking-widest"
+                         :class="formFilledCount ? 'text-amber-400' : 'text-white/25'">
+                        {{ formFilledCount }} добавлено
+                    </div>
+                </div>
                 <div v-for="(line, i) in form.items" :key="i" class="border border-white/5 rounded-2xl p-3 space-y-3">
                     <!-- пустая строка -->
                     <div v-if="!lineFilled(line)" class="flex flex-wrap items-center gap-2">
+                        <span class="w-7 h-7 shrink-0 rounded-lg border border-white/10 text-[10px] font-black text-white/25 flex items-center justify-center">+</span>
                         <button type="button"
                                 class="flex-1 min-w-[120px] px-4 py-3 rounded-xl border border-cyan-500/30 text-[10px] uppercase font-black tracking-widest text-cyan-400 hover:bg-cyan-500/10 disabled:opacity-40"
                                 :disabled="lineLocked(line) || !catalogStats.products"
@@ -882,6 +900,9 @@ const stockOptionsFor = (item: any) => {
 
                     <!-- заполненная строка (только просмотр) -->
                     <div v-else class="flex gap-3 items-start">
+                        <span class="w-7 h-7 shrink-0 rounded-lg bg-amber-500/15 border border-amber-500/30 text-[11px] font-black text-amber-400 flex items-center justify-center tabular-nums mt-3.5">
+                            {{ filledNumber(i) }}
+                        </span>
                         <button v-if="line.image_url" type="button"
                                 class="w-14 h-14 shrink-0 rounded-xl bg-black/60 border border-white/10 overflow-hidden hover:border-amber-500/40"
                                 title="Увеличить"
