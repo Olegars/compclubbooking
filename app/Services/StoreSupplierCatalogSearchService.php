@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Cache;
 
 class StoreSupplierCatalogSearchService
 {
-    private const CACHE_PREFIX = 'store.quickfox.cat_ids.v5.';
+    private const CACHE_PREFIX = 'store.quickfox.cat_ids.v6.';
 
     /**
      * Правила типа: категории ITP + жёсткий фильтр по названию товара.
@@ -73,8 +73,19 @@ class StoreSupplierCatalogSearchService
                 'name_include' => ['блок питания', 'бп ', ' psu', 'psu ', 'power supply', 'atx'],
             ],
             'case' => [
-                'cat' => ['корпус'],
-                'cat_exclude' => ['блок питания'],
+                // «корпус» в категории + жёсткий exclude «корпусн*» (иначе лотки SIM / крышки телефонов)
+                'cat' => ['корпус', 'midi-tower', 'mid-tower', 'mid tower', 'full tower'],
+                'cat_exclude' => [
+                    'корпусн', 'части', 'блок питания',
+                    'телефон', 'смартфон', 'чехол', 'sim', 'мобильн',
+                ],
+                'name_exclude' => [
+                    'лоток', 'sim-карт', 'sim карт', 'sim card',
+                    'задняя крыш', 'задней крыш', 'крышка для',
+                    'чехол', 'защитн стекл', 'стекло защит',
+                    'huawei', 'xiaomi', 'honor', 'redmi', 'iphone', 'samsung galaxy',
+                    'для телеф', 'смартфон', 'мобильн',
+                ],
                 'name_include' => ['корпус'],
             ],
             'cooler' => [
@@ -119,12 +130,14 @@ class StoreSupplierCatalogSearchService
     /**
      * @return list<array{sku:int,name:string,part:?string,vendor:?string,rrp:mixed,price:?float,stock_qty:?int,in_stock:bool,category_external_id:?int,score:int,category_name:?string}>
      */
-    public function search(string $q, ?string $type = null, ?int $categoryId = null, int $limit = 40, bool $inStockOnly = true): array
+    public function search(string $q, ?string $type = null, ?int $categoryId = null, int $limit = 80, bool $inStockOnly = true): array
     {
         $q = trim($q);
         if (mb_strlen($q) < 2) {
             return [];
         }
+
+        $limit = max(20, min(120, $limit));
 
         $type = $type ? strtolower(trim($type)) : null;
         $rule = $type ? ($this->typeRules()[$type] ?? null) : null;
@@ -210,7 +223,7 @@ class StoreSupplierCatalogSearchService
 
         // Жёсткий фильтр по типу — даже если категории ITP не сматчились
         if (is_array($rule)) {
-            $requireNameInclude = $categoryIds === null || $categoryIds === [];
+            $requireNameInclude = $categoryIds === null || $categoryIds === [] || $type === 'case';
             $this->applyNameTypeFilters($builder, $rule, $requireNameInclude);
         }
 
@@ -225,7 +238,7 @@ class StoreSupplierCatalogSearchService
             $pendingSkus = (clone $builder)
                 ->whereNull('case_attrs_at')
                 ->orderBy('sku')
-                ->limit(250)
+                ->limit(400)
                 ->pluck('sku')
                 ->map(fn ($s) => (int) $s)
                 ->all();
@@ -245,13 +258,14 @@ class StoreSupplierCatalogSearchService
         }
 
         $rows = $builder
-            ->limit(min(400, max($limit * 10, 100)))
+            ->limit(min(800, max($limit * 12, 200)))
             ->get(['sku', 'name', 'part', 'vendor', 'rrp', 'price', 'stock_qty', 'category_external_id', 'has_image', 'image_path', 'case_color', 'case_glass', 'case_form']);
 
         $catNames = $this->categoryNames($rows->pluck('category_external_id')->filter()->unique()->all());
 
         $scored = $rows->map(function (StoreSupplierCatalogProduct $p) use ($qLower, $catNames, $rule, $tokens, $categoryIds, $type, $caseFilters) {
-            $requireNameInclude = $categoryIds === null || $categoryIds === [];
+            // Для корпусов всегда требуем «корпус» в названии — иначе всплывают «корпусные части» телефонов
+            $requireNameInclude = $categoryIds === null || $categoryIds === [] || $type === 'case';
             if (is_array($rule) && ! $this->passesNameTypeRule((string) $p->name, $rule, $requireNameInclude)) {
                 return null;
             }

@@ -218,7 +218,7 @@ class EstimateController extends StoreController
         $categoryId = $request->integer('category_id') ?: null;
         $inStockOnly = ! $request->boolean('include_oos');
 
-        $products = $search->search($q, $type, $categoryId, 40, $inStockOnly);
+        $products = $search->search($q, $type, $categoryId, 80, $inStockOnly);
         $products = $images->attachToSearchResults($products);
 
         $typeFilterEmpty = false;
