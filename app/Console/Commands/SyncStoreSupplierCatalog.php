@@ -30,7 +30,7 @@ class SyncStoreSupplierCatalog extends Command
             if (! $this->option('skip-cases')) {
                 $enrichment = app(\App\Services\StoreCaseCatalogEnrichmentService::class);
                 if (! $enrichment->isConfigured()) {
-                    $this->warn('DEEPSEEK_API_KEY не задан — корпуса не размечены (поля пустые).');
+                    $this->warn('LLM API-ключ не задан (админка/.env) — корпуса не размечены.');
                 } else {
                     $this->info('Разметка корпусов (DeepSeek)…');
                     $cases = $enrichment->classifyAllCases(force: false);

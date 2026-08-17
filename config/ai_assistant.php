@@ -11,7 +11,7 @@ return [
     'deepseek' => [
         'api_key' => env('DEEPSEEK_API_KEY'),
         'base_url' => rtrim((string) env('DEEPSEEK_BASE_URL', 'https://api.deepseek.com'), '/'),
-        'model' => env('DEEPSEEK_MODEL', 'deepseek-chat'),
+        'model' => env('DEEPSEEK_MODEL', 'deepseek-v4-flash'),
     ],
 
     // Whisper STT + OpenAI TTS (можно тот же ключ)

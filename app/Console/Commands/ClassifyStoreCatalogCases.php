@@ -15,7 +15,7 @@ class ClassifyStoreCatalogCases extends Command
     public function handle(StoreCaseCatalogEnrichmentService $enrichment): int
     {
         if (! $enrichment->isConfigured()) {
-            $this->error('DEEPSEEK_API_KEY не задан — разметка не выполняется, поля остаются пустыми.');
+            $this->error('LLM API-ключ не задан (админка AI или DEEPSEEK_API_KEY) — разметка не выполняется.');
 
             return self::FAILURE;
         }

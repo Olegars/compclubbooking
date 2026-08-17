@@ -65,7 +65,9 @@ class AiAssistantSettingsController extends Controller
         $payload = [
             'is_enabled' => (bool) $data['is_enabled'],
             'llm_provider' => $data['llm_provider'],
-            'llm_base_url' => filled($data['llm_base_url'] ?? null) ? rtrim(trim($data['llm_base_url']), '/') : null,
+            'llm_base_url' => filled($data['llm_base_url'] ?? null)
+                ? AiAssistantSetting::normalizeLlmBaseUrl((string) $data['llm_base_url']) ?: null
+                : null,
             'llm_model' => filled($data['llm_model'] ?? null) ? trim($data['llm_model']) : null,
             'openai_base_url' => filled($data['openai_base_url'] ?? null) ? rtrim(trim($data['openai_base_url']), '/') : null,
             'stt_model' => filled($data['stt_model'] ?? null) ? trim($data['stt_model']) : null,

@@ -27,15 +27,15 @@ class DeepSeekChat
         $response = Http::timeout($timeout)
             ->withToken($key)
             ->acceptJson()
-            ->post($base.'/chat/completions', [
-                'model' => $model,
-                'temperature' => 0.7,
-                'max_tokens' => 220,
-                'messages' => [
+            ->post($base.'/chat/completions', $this->chatPayload(
+                $model,
+                [
                     ['role' => 'system', 'content' => $settings->resolveCompanionPrompt($context, $maxChars)],
                     ['role' => 'user', 'content' => $userText],
                 ],
-            ]);
+                temperature: 0.7,
+                maxTokens: 220,
+            ));
 
         if (! $response->successful()) {
             throw new RuntimeException(
@@ -43,7 +43,7 @@ class DeepSeekChat
             );
         }
 
-        $text = trim((string) data_get($response->json(), 'choices.0.message.content', ''));
+        $text = $this->extractMessageText($response->json());
         if ($text === '') {
             throw new RuntimeException('LLM вернул пустой ответ.');
         }
@@ -75,15 +75,15 @@ class DeepSeekChat
         $response = Http::timeout($timeout)
             ->withToken($key)
             ->acceptJson()
-            ->post($base.'/chat/completions', [
-                'model' => $model,
-                'temperature' => 0,
-                'max_tokens' => 16,
-                'messages' => [
+            ->post($base.'/chat/completions', $this->chatPayload(
+                $model,
+                [
                     ['role' => 'system', 'content' => 'Ответь одним словом: ок'],
                     ['role' => 'user', 'content' => 'пинг'],
                 ],
-            ]);
+                temperature: 0,
+                maxTokens: 64,
+            ));
 
         if (! $response->successful()) {
             $body = trim($response->body());
@@ -94,7 +94,7 @@ class DeepSeekChat
             throw new RuntimeException('LLM failed: HTTP '.$response->status().' '.$body);
         }
 
-        $text = trim((string) data_get($response->json(), 'choices.0.message.content', ''));
+        $text = $this->extractMessageText($response->json());
         if ($text === '') {
             throw new RuntimeException('LLM вернул пустой ответ.');
         }
@@ -138,15 +138,15 @@ class DeepSeekChat
         $response = Http::timeout($timeout)
             ->withToken($key)
             ->acceptJson()
-            ->post($base.'/chat/completions', [
-                'model' => $model,
-                'temperature' => 0.8,
-                'max_tokens' => 160,
-                'messages' => [
+            ->post($base.'/chat/completions', $this->chatPayload(
+                $model,
+                [
                     ['role' => 'system', 'content' => $settings->resolveGreetingPrompt($context, $maxChars)],
                     ['role' => 'user', 'content' => 'Сгенерируй короткое голосовое приветствие для этого игрока прямо сейчас.'],
                 ],
-            ]);
+                temperature: 0.8,
+                maxTokens: 160,
+            ));
 
         if (! $response->successful()) {
             throw new RuntimeException(
@@ -154,7 +154,7 @@ class DeepSeekChat
             );
         }
 
-        $text = trim((string) data_get($response->json(), 'choices.0.message.content', ''));
+        $text = $this->extractMessageText($response->json());
         if ($text === '') {
             throw new RuntimeException('LLM вернул пустое приветствие.');
         }
@@ -164,5 +164,52 @@ class DeepSeekChat
         }
 
         return $text;
+    }
+
+    /**
+     * @param  list<array{role:string,content:string}>  $messages
+     * @return array<string, mixed>
+     */
+    private function chatPayload(string $model, array $messages, float $temperature, int $maxTokens): array
+    {
+        $payload = [
+            'model' => $model,
+            'temperature' => $temperature,
+            'max_tokens' => $maxTokens,
+            'messages' => $messages,
+        ];
+
+        // DeepSeek V4: thinking включён по умолчанию и съедает max_tokens → content пустой
+        if ($this->isDeepSeekModel($model)) {
+            $payload['thinking'] = ['type' => 'disabled'];
+        }
+
+        return $payload;
+    }
+
+    private function isDeepSeekModel(string $model): bool
+    {
+        $m = strtolower($model);
+
+        return str_contains($m, 'deepseek') || str_starts_with($m, 'deepseek-');
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $json
+     */
+    private function extractMessageText(?array $json): string
+    {
+        $message = data_get($json, 'choices.0.message', []);
+        if (! is_array($message)) {
+            return '';
+        }
+
+        $content = trim((string) ($message['content'] ?? ''));
+        if ($content !== '') {
+            return $content;
+        }
+
+        // fallback если thinking всё же включён и ответ только в reasoning
+        return trim((string) ($message['reasoning_content'] ?? ''));
     }
 }

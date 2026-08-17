@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AiAssistantSetting;
 use App\Models\StoreSupplierCatalogProduct;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
@@ -10,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Классификация корпусов (цвет / стекло / форм-фактор) через DeepSeek.
  * Результат кэшируется в store_supplier_catalog_products.case_*.
+ * Ключ/URL/модель — те же, что в админке AI (AiAssistantSetting) с fallback на .env.
  */
 class StoreCaseCatalogEnrichmentService
 {
@@ -17,7 +19,7 @@ class StoreCaseCatalogEnrichmentService
 
     public function isConfigured(): bool
     {
-        return trim((string) config('ai_assistant.deepseek.api_key', '')) !== '';
+        return AiAssistantSetting::forClub(null)->resolvedLlmApiKey() !== '';
     }
 
     /**
@@ -54,7 +56,6 @@ class StoreCaseCatalogEnrichmentService
             ]);
         }
 
-        // Только незаполненные — к API не ходим, если разметка уже есть
         $pendingSkus = (clone $base)
             ->whereNull('case_attrs_at')
             ->orderBy('sku')
@@ -85,7 +86,6 @@ class StoreCaseCatalogEnrichmentService
             return 0;
         }
 
-        // Ключевая проверка: заполнен case_attrs_at → DeepSeek не вызываем
         $pending = StoreSupplierCatalogProduct::query()
             ->whereIn('sku', $skus)
             ->whereNull('case_attrs_at')
@@ -96,9 +96,8 @@ class StoreCaseCatalogEnrichmentService
             return 0;
         }
 
-        // Без ключа ничего не пишем — поля остаются пустыми, разметка дождётся DeepSeek
         if (! $this->isConfigured()) {
-            Log::info('Case attrs: DEEPSEEK_API_KEY не задан, разметка пропущена ('. $pending->count().' корпусов).');
+            Log::info('Case attrs: LLM API-ключ не задан (админка/.env), разметка пропущена ('.$pending->count().' корпусов).');
 
             return 0;
         }
@@ -146,7 +145,7 @@ PROMPT;
             $parsed = $this->askJson($system, $user);
         } catch (\Throwable $e) {
             Log::warning('Case attrs DeepSeek: '.$e->getMessage());
-            // Не заполняем эвристикой — оставим пустым для повторной попытки
+
             return 0;
         }
 
@@ -163,7 +162,6 @@ PROMPT;
         foreach ($chunk as $p) {
             $row = $bySku[(int) $p->sku] ?? null;
             if ($row === null) {
-                // Ответа по sku нет — не трогаем, попробуем в следующий раз
                 continue;
             }
             $color = $this->normalizeColor($row['color'] ?? null);
@@ -191,31 +189,42 @@ PROMPT;
      */
     private function askJson(string $system, string $user): array
     {
-        $key = trim((string) config('ai_assistant.deepseek.api_key', ''));
-        $base = rtrim((string) config('ai_assistant.deepseek.base_url', 'https://api.deepseek.com'), '/');
-        $model = (string) config('ai_assistant.deepseek.model', 'deepseek-chat');
+        $settings = AiAssistantSetting::forClub(null);
+        $key = $settings->resolvedLlmApiKey();
+        $base = $settings->resolvedLlmBaseUrl();
+        $model = $settings->resolvedLlmModel();
         $timeout = (float) config('ai_assistant.http_timeout', 60);
+
+        $payload = [
+            'model' => $model,
+            'temperature' => 0.1,
+            'max_tokens' => 3500,
+            'messages' => [
+                ['role' => 'system', 'content' => $system],
+                ['role' => 'user', 'content' => $user],
+            ],
+        ];
+        // V4 thinking по умолчанию съедает бюджет токенов → content пустой, в БД ничего не пишется
+        if (str_contains(strtolower($model), 'deepseek')) {
+            $payload['thinking'] = ['type' => 'disabled'];
+        }
 
         $response = Http::timeout(max(60.0, $timeout))
             ->withToken($key)
             ->acceptJson()
-            ->post($base.'/chat/completions', [
-                'model' => $model,
-                'temperature' => 0.1,
-                'max_tokens' => 3500,
-                'messages' => [
-                    ['role' => 'system', 'content' => $system],
-                    ['role' => 'user', 'content' => $user],
-                ],
-            ]);
+            ->post($base.'/chat/completions', $payload);
 
         if (! $response->successful()) {
             throw new \RuntimeException('HTTP '.$response->status().' '.$response->body());
         }
 
-        $text = trim((string) data_get($response->json(), 'choices.0.message.content', ''));
+        $message = data_get($response->json(), 'choices.0.message', []);
+        $text = trim((string) (is_array($message) ? ($message['content'] ?? '') : ''));
+        if ($text === '' && is_array($message)) {
+            $text = trim((string) ($message['reasoning_content'] ?? ''));
+        }
         if ($text === '') {
-            throw new \RuntimeException('empty LLM content');
+            throw new \RuntimeException('empty LLM content (model='.$model.', base='.$base.')');
         }
 
         if (preg_match('/\[[\s\S]*\]/u', $text, $m)) {

@@ -53,7 +53,7 @@ class AiAssistantSetting extends Model
     public const LLM_PRESETS = [
         'deepseek' => [
             'base_url' => 'https://api.deepseek.com',
-            'model' => 'deepseek-chat',
+            'model' => 'deepseek-v4-flash',
         ],
         'openai' => [
             'base_url' => 'https://api.openai.com/v1',
@@ -111,25 +111,38 @@ class AiAssistantSetting extends Model
 
     public function resolvedLlmBaseUrl(): string
     {
-        $fromDb = rtrim(trim((string) ($this->llm_base_url ?? '')), '/');
+        $fromDb = self::normalizeLlmBaseUrl((string) ($this->llm_base_url ?? ''));
         if ($fromDb !== '') {
             return $fromDb;
         }
 
         $provider = $this->resolvedLlmProvider();
         if ($provider === 'openai') {
-            $env = rtrim(trim((string) config('ai_assistant.openai.base_url', '')), '/');
+            $env = self::normalizeLlmBaseUrl((string) config('ai_assistant.openai.base_url', ''));
             if ($env !== '') {
                 return $env;
             }
         } else {
-            $env = rtrim(trim((string) config('ai_assistant.deepseek.base_url', '')), '/');
+            $env = self::normalizeLlmBaseUrl((string) config('ai_assistant.deepseek.base_url', ''));
             if ($env !== '') {
                 return $env;
             }
         }
 
         return self::LLM_PRESETS[$provider]['base_url'] ?? self::LLM_PRESETS['deepseek']['base_url'];
+    }
+
+    /** Убрать пробелы, хвостовые слэши и опечатки вроде https://api.deepseek.com. */
+    public static function normalizeLlmBaseUrl(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '') {
+            return '';
+        }
+        // Точка перед концом хоста / после TLD — частая опечатка
+        $url = preg_replace('#(https?://[^/\s]+)\.+(?=/|$)#', '$1', $url) ?? $url;
+
+        return rtrim($url, '/');
     }
 
     public function resolvedLlmModel(): string
