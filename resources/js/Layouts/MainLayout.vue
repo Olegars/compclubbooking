@@ -542,37 +542,44 @@ onUnmounted(() => {
 @reference "../../css/app.css";
 
 .masthead {
-    --brand: 2.85rem;
+    --brand: 2.15rem;
 }
 @media (min-width: 640px) { .masthead { --brand: 3.6rem; } }
 @media (min-width: 1024px) { .masthead { --brand: 4.5rem; } }
 .masthead-bar {
     @apply bg-white/5 border border-white/10 rounded-xl;
-    padding: 0.55rem 0.9rem;
+    padding: 0.45rem 0.65rem;
+    overflow: hidden;
 }
 @media (min-width: 640px) {
-    .masthead-bar { padding: 0.65rem 1.15rem; }
+    .masthead-bar { padding: 0.65rem 1.15rem; overflow: visible; }
 }
 .masthead-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem 1rem;
-    flex-wrap: nowrap;
+    gap: 0.45rem;
+    min-width: 0;
+}
+@media (min-width: 640px) {
+    .masthead-row { gap: 0.75rem 1rem; }
 }
 .masthead-brand {
     display: flex;
-    align-items: flex-end;
-    gap: 0.7rem;
-    flex-shrink: 0;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    max-width: 100%;
     text-decoration: none;
     height: var(--brand);
-    overflow: visible;
+    overflow: hidden;
 }
 @media (min-width: 640px) {
-    .masthead-brand { gap: 0.9rem; }
-}
-@media (min-width: 640px) {
-    .masthead-brand { gap: 0.9rem; }
+    .masthead-brand {
+        align-items: flex-end;
+        gap: 0.9rem;
+        flex-shrink: 0;
+        overflow: visible;
+    }
 }
 .masthead-digits {
     display: flex;
@@ -583,17 +590,18 @@ onUnmounted(() => {
 }
 .masthead-title {
     display: flex;
-    align-items: flex-end;
-    height: auto;
-    flex-shrink: 0;
+    align-items: center;
+    min-width: 0;
+    flex: 1 1 auto;
     font-family: 'BomberEscort', Arial, Helvetica, sans-serif;
     font-weight: 900;
     font-style: italic;
-    font-size: calc(var(--brand) * 0.5);
+    font-size: clamp(0.72rem, 4.1vw, calc(var(--brand) * 0.5));
     line-height: 1;
     text-transform: uppercase;
     letter-spacing: -0.05em;
     white-space: nowrap;
+    overflow: hidden;
     color: #000;
     -webkit-text-fill-color: #000;
     -webkit-text-stroke: 0;
@@ -608,25 +616,42 @@ onUnmounted(() => {
         0 0 6px rgba(34, 197, 94, 0.85),
         0 0 18px rgba(34, 197, 94, 0.45);
 }
+@media (min-width: 640px) {
+    .masthead-title {
+        align-items: flex-end;
+        flex: 0 0 auto;
+        overflow: visible;
+        font-size: calc(var(--brand) * 0.5);
+    }
+}
 .masthead-tools {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 0.4rem;
-    flex-shrink: 0;
+    min-width: 0;
+    flex: 1 1 100%;
 }
 @media (min-width: 640px) {
-    .masthead-tools { gap: 0.5rem; }
+    .masthead-tools { align-items: center; gap: 0.5rem; flex-shrink: 0; }
 }
 .site-nav {
     display: flex;
+    flex-wrap: wrap;
     align-items: stretch;
     gap: 0.5rem;
 }
 .site-nav-links {
     display: flex;
-    flex: 1 1 auto;
+    flex: 1 1 100%;
     min-width: 0;
-    gap: 0.5rem;
+    gap: 0.4rem;
+}
+@media (min-width: 640px) {
+    .site-nav-links {
+        flex: 1 1 auto;
+        gap: 0.5rem;
+    }
+    .masthead-tools { flex: 0 0 auto; }
 }
 .site-nav-links .nav-btn {
     flex: 1 1 0;
@@ -638,7 +663,7 @@ onUnmounted(() => {
 }
 
 .nav-btn {
-    @apply px-4 py-2.5 sm:px-6 sm:py-3 border border-white/10 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer uppercase tracking-widest italic;
+    @apply px-2 py-2.5 sm:px-6 sm:py-3 border border-white/10 rounded-xl text-[9px] sm:text-[11px] font-black transition-all cursor-pointer uppercase tracking-widest italic;
     font-family: Arial, Helvetica, sans-serif;
     white-space: nowrap;
     -webkit-font-smoothing: antialiased;
@@ -659,14 +684,14 @@ onUnmounted(() => {
 }
 
 .nav-meta {
-    @apply inline-flex items-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-2.5 border border-white/10 rounded-xl
-           text-[10px] sm:text-[11px] font-black uppercase tracking-widest italic text-white/70 bg-white/[0.03] box-border;
+    @apply inline-flex items-center gap-1.5 sm:gap-3 px-2.5 py-2 sm:px-4 sm:py-2.5 border border-white/10 rounded-xl
+           text-[9px] sm:text-[11px] font-black uppercase tracking-widest italic text-white/70 bg-white/[0.03] box-border min-w-0 flex-1 sm:flex-none;
     font-family: Arial, Helvetica, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
 .nav-meta-name {
-    @apply truncate max-w-[6rem] lg:max-w-[10rem];
+    @apply truncate max-w-[4.5rem] sm:max-w-[6rem] lg:max-w-[10rem];
     font-family: inherit;
 }
 .nav-meta-balance {
