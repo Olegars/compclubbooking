@@ -72,7 +72,8 @@ watch(cart, persistCart, { deep: true })
 const fetchProducts = async () => {
     try {
         const { data } = await axios.get('/api/shop/products')
-        products.value = Array.isArray(data) ? data : (data.products || [])
+        products.value = (Array.isArray(data) ? data : (data.products || []))
+            .filter((p: Product) => Number(p.stock) > 0)
         syncCartWithStock()
     } catch (e) {
         showError('Не удалось загрузить список товаров')
@@ -100,8 +101,9 @@ const syncCartWithStock = () => {
 }
 
 const filteredProducts = computed(() => {
-    if (activeCategory.value === 'Все') return products.value
-    return products.value.filter(p => p.category === activeCategory.value)
+    const inStock = products.value.filter(p => Number(p.stock) > 0)
+    if (activeCategory.value === 'Все') return inStock
+    return inStock.filter(p => p.category === activeCategory.value)
 })
 
 const cartCount = computed(() => cart.value.reduce((s, l) => s + l.qty, 0))

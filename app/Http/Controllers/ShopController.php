@@ -65,8 +65,8 @@ class ShopController extends Controller
      */
     public function index()
     {
-        // Берем все товары каталога, включая нулевой остаток — иначе позиция «пропадает» с витрины
         $products = Product::select('id', 'name', 'price', 'category', 'image', 'stock')
+            ->where('stock', '>', 0)
             ->orderBy('name')
             ->get();
 
@@ -105,7 +105,10 @@ class ShopController extends Controller
         }
 
         // 2. Берем сам список товаров
-        $products = Product::select('id', 'name', 'price', 'category', 'image', 'stock')->get();
+        $products = Product::select('id', 'name', 'price', 'category', 'image', 'stock')
+            ->where('stock', '>', 0)
+            ->orderBy('name')
+            ->get();
 
         // 3. Отдаем объединенный объект
         return response()->json([
