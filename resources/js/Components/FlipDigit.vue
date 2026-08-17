@@ -20,6 +20,10 @@ const animating = ref(false)
 let cycleId = 0
 let timers: ReturnType<typeof setTimeout>[] = []
 
+function pageHidden() {
+    return typeof document !== 'undefined' && document.visibilityState === 'hidden'
+}
+
 function wait(ms: number) {
     return new Promise<void>((resolve) => {
         const id = setTimeout(resolve, ms)
@@ -32,50 +36,81 @@ function clearTimers() {
     timers = []
 }
 
+function snapToTarget() {
+    current.value = props.value
+    incoming.value = props.value
+    animating.value = false
+}
+
+function abortCycle() {
+    cycleId++
+    clearTimers()
+    snapToTarget()
+}
+
 async function flipTo(n: number, my: number) {
-    if (my !== cycleId) return
+    if (my !== cycleId || pageHidden()) return
     incoming.value = n
     animating.value = false
     await wait(20)
-    if (my !== cycleId) return
+    if (my !== cycleId || pageHidden()) return
     animating.value = true
     await wait(FLIP_MS)
-    if (my !== cycleId) return
+    if (my !== cycleId || pageHidden()) return
     current.value = n
     animating.value = false
 }
 
 async function runCycle() {
+    if (pageHidden()) {
+        snapToTarget()
+        return
+    }
     const my = ++cycleId
     clearTimers()
-    animating.value = false
-    const start = current.value
+    snapToTarget()
+    const start = props.value
     for (let i = 1; i <= 10; i++) {
-        if (my !== cycleId) return
+        if (my !== cycleId || pageHidden()) {
+            snapToTarget()
+            return
+        }
         await flipTo((start + i) % 10, my)
     }
+    if (my === cycleId) snapToTarget()
 }
 
 function schedule() {
+    if (pageHidden()) {
+        snapToTarget()
+        return
+    }
     const id = setTimeout(() => { void runCycle() }, props.delay)
     timers.push(id)
 }
 
+function onVisibility() {
+    if (pageHidden()) abortCycle()
+    else snapToTarget()
+}
+
 onMounted(() => {
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pageshow', snapToTarget)
     schedule()
 })
 
 watch(() => props.tick, (now, prev) => {
     if (now !== prev) {
-        clearTimers()
-        cycleId++
+        abortCycle()
         schedule()
     }
 })
 
 onUnmounted(() => {
-    cycleId++
-    clearTimers()
+    document.removeEventListener('visibilitychange', onVisibility)
+    window.removeEventListener('pageshow', snapToTarget)
+    abortCycle()
 })
 </script>
 
