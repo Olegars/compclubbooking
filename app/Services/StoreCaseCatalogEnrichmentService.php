@@ -23,6 +23,119 @@ class StoreCaseCatalogEnrichmentService
     }
 
     /**
+     * Пробная классификация одного названия (админка «Проверить LLM»).
+     *
+     * @return array{
+     *   ok: true,
+     *   name: string,
+     *   part: string,
+     *   raw: array<string, mixed>|null,
+     *   color: ?string,
+     *   glass: ?string,
+     *   form: ?string,
+     *   labels: array{color: string, glass: string, form: string},
+     *   model: string,
+     *   base_url: string,
+     *   reply: string
+     * }
+     */
+    public function classifyProbe(string $name, string $part = ''): array
+    {
+        $name = trim($name);
+        if ($name === '') {
+            throw new \InvalidArgumentException('Укажите название корпуса.');
+        }
+        if (! $this->isConfigured()) {
+            throw new \RuntimeException('LLM API-ключ не задан (админка или .env).');
+        }
+
+        $settings = AiAssistantSetting::forClub(null);
+        $lines = [['sku' => 1, 'name' => $name, 'part' => trim($part)]];
+        $parsed = $this->askJson($this->systemPrompt(), $this->userPrompt($lines));
+        $raw = null;
+        foreach ($parsed as $row) {
+            if (is_array($row) && (int) ($row['sku'] ?? 0) === 1) {
+                $raw = $row;
+                break;
+            }
+        }
+        if ($raw === null && isset($parsed[0]) && is_array($parsed[0])) {
+            $raw = $parsed[0];
+        }
+
+        $color = $this->normalizeColor($raw['color'] ?? null);
+        $glass = $this->normalizeGlass($raw['glass'] ?? null);
+        $form = $this->normalizeForm($raw['form'] ?? null);
+
+        $labels = [
+            'color' => match ($color) {
+                'white' => 'белый',
+                'black' => 'чёрный',
+                'other' => 'другой',
+                default => '— (не распознан: '.($raw['color'] ?? '?').')',
+            },
+            'glass' => match ($glass) {
+                'none' => 'без стекла',
+                'side' => 'стекло сбоку',
+                'front_side' => 'стекло спереди и сбоку',
+                default => '— (не распознан: '.($raw['glass'] ?? '?').')',
+            },
+            'form' => match ($form) {
+                'atx' => 'ATX',
+                'matx' => 'mATX',
+                'itx' => 'ITX',
+                'eatx' => 'E-ATX',
+                'other' => 'другой',
+                default => '— (не распознан: '.($raw['form'] ?? '?').')',
+            },
+        ];
+
+        $reply = 'цвет: '.$labels['color']
+            .' · стекло: '.$labels['glass']
+            .' · форм-фактор: '.$labels['form'];
+
+        return [
+            'ok' => true,
+            'name' => $name,
+            'part' => trim($part),
+            'raw' => $raw,
+            'color' => $color,
+            'glass' => $glass,
+            'form' => $form,
+            'labels' => $labels,
+            'model' => $settings->resolvedLlmModel(),
+            'base_url' => $settings->resolvedLlmBaseUrl(),
+            'reply' => $reply,
+        ];
+    }
+
+    private function systemPrompt(): string
+    {
+        return <<<'PROMPT'
+Ты классификатор корпусов ПК по названию из прайса.
+Верни ТОЛЬКО JSON-массив объектов без markdown:
+[{"sku":123,"color":"white|black|other","glass":"none|side|front_side","form":"atx|matx|itx|eatx|other"}]
+
+Правила:
+- color: white/black если явно указан цвет корпуса; иначе other.
+- glass:
+  - side = только боковое стекло/окно (в т.ч. «боковое окно (панорама)», tempered side).
+  - front_side = стекло И спереди, И сбоку (передняя стеклянная панель + бок, dual/full glass, «передняя и боковая»).
+  - none = нет стекла / только сетка / неясно.
+  Важно: одно боковое «панорамное» окно = side, НЕ front_side.
+- form: atx только полноценный ATX (не mATX/MicroATX/Mini-ITX). mATX→matx, ITX→itx, E-ATX→eatx.
+PROMPT;
+    }
+
+    /**
+     * @param  list<array{sku:int,name:string,part:string}>  $lines
+     */
+    private function userPrompt(array $lines): string
+    {
+        return "Классифицируй корпуса:\n".json_encode($lines, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
      * Прогнать корпуса каталога.
      * По умолчанию — только с пустой разметкой (case_attrs_at IS NULL).
      * DeepSeek/эвристика для уже размеченных не вызываются.
@@ -124,22 +237,8 @@ class StoreCaseCatalogEnrichmentService
             ];
         }
 
-        $system = <<<'PROMPT'
-Ты классификатор корпусов ПК по названию из прайса.
-Верни ТОЛЬКО JSON-массив объектов без markdown:
-[{"sku":123,"color":"white|black|other","glass":"none|side|front_side","form":"atx|matx|itx|eatx|other"}]
-
-Правила:
-- color: white/black если явно указан цвет корпуса; иначе other.
-- glass:
-  - side = только боковое стекло/окно (в т.ч. «боковое окно (панорама)», tempered side).
-  - front_side = стекло И спереди, И сбоку (передняя стеклянная панель + бок, dual/full glass, «передняя и боковая»).
-  - none = нет стекла / только сетка / неясно.
-  Важно: одно боковое «панорамное» окно = side, НЕ front_side.
-- form: atx только полноценный ATX (не mATX/MicroATX/Mini-ITX). mATX→matx, ITX→itx, E-ATX→eatx.
-PROMPT;
-
-        $user = "Классифицируй корпуса:\n".json_encode($lines, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $system = $this->systemPrompt();
+        $user = $this->userPrompt($lines);
 
         try {
             $parsed = $this->askJson($system, $user);

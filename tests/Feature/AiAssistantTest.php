@@ -386,8 +386,41 @@ class AiAssistantTest extends TestCase
         Http::assertSent(function ($request) {
             return str_contains($request->url(), 'chat/completions')
                 && $request->hasHeader('Authorization', 'Bearer sk-deepseek-test')
-                && ($request['max_tokens'] ?? null) === 16;
+                && ($request['max_tokens'] ?? null) === 64
+                && data_get($request, 'thinking.type') === 'disabled';
         });
+    }
+
+    public function test_admin_llm_case_probe_returns_classification(): void
+    {
+        $admin = Admin::create([
+            'name' => 'AI Admin 2',
+            'email' => 'ai-admin2@example.test',
+            'password' => 'password',
+            'role' => 'owner',
+        ]);
+
+        Http::fake([
+            'api.deepseek.com/chat/completions' => Http::response([
+                'choices' => [[
+                    'message' => [
+                        'content' => '[{"sku":1,"color":"white","glass":"front_side","form":"atx"}]',
+                    ],
+                ]],
+            ], 200),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class)
+            ->postJson('/admin/ai-assistant/test-llm', [
+                'club_id' => $this->club->id,
+                'case_name' => 'Корпус DeepCool CH560 Digital WH White TG',
+            ])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('color', 'white')
+            ->assertJsonPath('glass', 'front_side')
+            ->assertJsonPath('form', 'atx');
     }
 
     private function createActiveBooking(): void

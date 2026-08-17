@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AiAssistantSetting;
 use App\Models\Club;
 use App\Services\AiAssistant\DeepSeekChat;
+use App\Services\StoreCaseCatalogEnrichmentService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -115,15 +116,25 @@ class AiAssistantSettingsController extends Controller
         return back()->with('success', 'Промпты сброшены к значениям по умолчанию');
     }
 
-    public function testLlm(Request $request, DeepSeekChat $llm)
+    public function testLlm(Request $request, DeepSeekChat $llm, StoreCaseCatalogEnrichmentService $cases)
     {
         $data = $request->validate([
             'club_id' => 'nullable|integer|exists:clubs,id',
+            'case_name' => 'nullable|string|max:500',
+            'case_part' => 'nullable|string|max:200',
         ]);
 
         $clubId = (int) ($data['club_id'] ?? Club::query()->value('id'));
+        $caseName = trim((string) ($data['case_name'] ?? ''));
 
         try {
+            if ($caseName !== '') {
+                $result = $cases->classifyProbe($caseName, (string) ($data['case_part'] ?? ''));
+                $result['provider'] = AiAssistantSetting::forClub($clubId)->resolvedLlmProvider();
+
+                return response()->json($result);
+            }
+
             return response()->json($llm->probe($clubId));
         } catch (\Throwable $e) {
             return response()->json([

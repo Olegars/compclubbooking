@@ -132,15 +132,35 @@ const resetPrompts = () => {
 }
 
 const testBusy = ref(false)
-const testResult = ref<{ ok: boolean, reply?: string, message?: string, model?: string, base_url?: string, provider?: string } | null>(null)
+const testCaseName = ref('')
+const testCasePart = ref('')
+const testResult = ref<{
+    ok: boolean
+    reply?: string
+    message?: string
+    model?: string
+    base_url?: string
+    provider?: string
+    name?: string
+    part?: string
+    color?: string | null
+    glass?: string | null
+    form?: string | null
+    labels?: { color: string, glass: string, form: string }
+    raw?: Record<string, unknown> | null
+} | null>(null)
 
 const testLlm = async () => {
     testBusy.value = true
     testResult.value = null
     try {
-        const { data } = await axios.post('/admin/ai-assistant/test-llm', {
-            club_id: form.club_id,
-        })
+        const payload: Record<string, unknown> = { club_id: form.club_id }
+        const caseName = testCaseName.value.trim()
+        if (caseName) {
+            payload.case_name = caseName
+            payload.case_part = testCasePart.value.trim() || undefined
+        }
+        const { data } = await axios.post('/admin/ai-assistant/test-llm', payload)
         testResult.value = data
     } catch (e: any) {
         testResult.value = {
@@ -292,7 +312,27 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                         </div>
                     </div>
 
-                    <div class="rounded-xl border border-white/10 bg-black/30 px-5 py-4 space-y-3">
+                    <div class="rounded-xl border border-white/10 bg-black/30 px-5 py-4 space-y-4">
+                        <div class="space-y-3">
+                            <div>
+                                <label :class="labelClass">Название корпуса (опционально)</label>
+                                <input
+                                    v-model="testCaseName"
+                                    type="text"
+                                    :class="inputClass"
+                                    placeholder="Напр. Корпус DeepCool CH560 Digital WH White"
+                                />
+                            </div>
+                            <div>
+                                <label :class="labelClass">Партномер (опционально)</label>
+                                <input
+                                    v-model="testCasePart"
+                                    type="text"
+                                    :class="inputClass"
+                                    placeholder="R-CH560-WHAPE4-G-1"
+                                />
+                            </div>
+                        </div>
                         <div class="flex flex-wrap items-center gap-3">
                             <button
                                 type="button"
@@ -300,16 +340,22 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                                 :disabled="testBusy"
                                 @click="testLlm"
                             >
-                                {{ testBusy ? 'Проверка…' : 'Проверить LLM' }}
+                                {{ testBusy ? 'Проверка…' : (testCaseName.trim() ? 'Проверить корпус' : 'Проверить LLM') }}
                             </button>
-                            <p class="text-[10px] text-white/30 italic">
-                                Короткий ping к сохранённому ключу. Без брони, без голоса. Сначала сохраните ключ.
+                            <p class="text-[10px] text-white/30 italic max-w-md">
+                                Пустое название — короткий ping. С названием — тот же промпт, что размечает каталог (цвет / стекло / форм-фактор).
                             </p>
                         </div>
-                        <p v-if="testResult?.ok" class="text-xs text-[#22c55e] leading-relaxed">
-                            OK · {{ testResult.provider }} · {{ testResult.model }}
-                            <span class="block mt-1 text-white/70 normal-case tracking-normal not-italic">{{ testResult.reply }}</span>
-                        </p>
+                        <div v-if="testResult?.ok" class="text-xs text-[#22c55e] leading-relaxed space-y-2">
+                            <p>
+                                OK · {{ testResult.provider || 'llm' }} · {{ testResult.model }}
+                            </p>
+                            <p class="text-white/80 normal-case tracking-normal not-italic font-black">
+                                {{ testResult.reply }}
+                            </p>
+                            <pre v-if="testResult.raw"
+                                 class="mt-2 p-3 rounded-lg bg-black/50 border border-white/10 text-[11px] text-cyan-300/90 overflow-x-auto normal-case tracking-normal not-italic font-mono">{{ JSON.stringify(testResult.raw, null, 2) }}</pre>
+                        </div>
                         <p v-else-if="testResult && !testResult.ok" class="text-xs text-red-400 leading-relaxed break-words">
                             {{ testResult.message }}
                         </p>
