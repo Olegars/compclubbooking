@@ -178,16 +178,40 @@ const isProcessing = ref(false)
 // --- ВРЕМЯ И ТАРИФЫ ---
 const mod24 = (n: number) => ((n % 24) + 24) % 24
 
-// Ближайший слот кратный 15 минутам. После 23:45 он попадает уже на следующие сутки.
-const nextQuarterSlot = () => {
-    const now = new Date()
-    const m = now.getMinutes()
-    const step = m < 15 ? 0.25 : m < 30 ? 0.5 : m < 45 ? 0.75 : 1
-    const raw = now.getHours() + step
-    return { time: mod24(raw), rollsOverMidnight: raw >= 24 }
+const SLOT_MINUTES = 15
+const SLOTS_PER_DAY = (24 * 60) / SLOT_MINUTES
+const TIME_STEP_HOURS = SLOT_MINUTES / 60
+/** Если до выбранного старта меньше этого окна — колесо само переходит на следующий слот. */
+const MIN_LEAD_MINUTES = 5
+const clockTick = ref(0)
+
+const snapHours = (hours: number) => {
+    const minutes = Math.round(mod24(hours) * 60)
+    const snapped = Math.round(minutes / SLOT_MINUTES) * SLOT_MINUTES
+    return (snapped % (24 * 60)) / 60
 }
 
-const initialSlot = nextQuarterSlot()
+const hoursFromDate = (date: Date) => date.getHours() + date.getMinutes() / 60
+
+/** Ближайший слот ≥ now+5 мин, кратный 15 минутам. После 23:45 — уже следующие сутки. */
+const nextAllowedSlot = () => {
+    void clockTick.value
+    const now = new Date()
+    const minStart = new Date(now.getTime() + MIN_LEAD_MINUTES * 60_000)
+    const slot = new Date(minStart)
+    if (slot.getSeconds() > 0 || slot.getMilliseconds() > 0) {
+        slot.setMinutes(slot.getMinutes() + 1)
+        slot.setSeconds(0, 0)
+    }
+    const rem = slot.getMinutes() % SLOT_MINUTES
+    if (rem !== 0) slot.setMinutes(slot.getMinutes() + (SLOT_MINUTES - rem))
+    return {
+        time: snapHours(hoursFromDate(slot)),
+        rollsOverMidnight: slot.toDateString() !== now.toDateString(),
+    }
+}
+
+const initialSlot = nextAllowedSlot()
 const initialDate = new Date()
 if (initialSlot.rollsOverMidnight) initialDate.setDate(initialDate.getDate() + 1)
 
@@ -200,7 +224,7 @@ const zoneCategory = ref<string | null>(null)
 const tariffGridError = ref('')
 let tariffGridRequestId = 0
 
-const timeSteps = Array.from({ length: 96 }, (_, i) => i * 0.25)
+const timeSteps = Array.from({ length: SLOTS_PER_DAY }, (_, i) => i * TIME_STEP_HOURS)
 const TIME_CELL_PX = 48
 const formatTimeLabel = (h: number) => {
     const hours = Math.floor(h).toString().padStart(2, '0')
@@ -208,21 +232,20 @@ const formatTimeLabel = (h: number) => {
     return `${hours}:${mins}`
 }
 const getIndexByTime = (time: number) => {
-    const val = Math.round(time * 4) / 4
-    const idx = timeSteps.indexOf(val)
-    return idx === -1 ? 0 : idx
+    const idx = Math.round(mod24(time) / TIME_STEP_HOURS)
+    return Math.max(0, Math.min(timeSteps.length - 1, idx % SLOTS_PER_DAY))
 }
 // Возврат после входа по SMS: восстанавливаем время, если оно ещё не прошло.
 const parseTimeParam = (value?: string | null) => {
     const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(value || '')
     if (!match) return null
-    const restored = Number(match[1]) + Number(match[2]) / 60
-    if (!initialSlot.rollsOverMidnight && restored < initialSlot.time) return null
+    const restored = snapHours(Number(match[1]) + Number(match[2]) / 60)
+    if (!initialSlot.rollsOverMidnight && restored < initialSlot.time - 1e-9) return null
     return restored
 }
 
 const startH = ref(parseTimeParam(props.preselectStart) ?? initialSlot.time)
-const endH = ref(mod24(startH.value + (props.preselectDuration || 1)))
+const endH = ref(snapHours(startH.value + (props.preselectDuration || 1)))
 
 const duration = computed(() => {
     if (bookingMode.value === 'packages' && selectedPackage.value) return selectedPackage.value.hours
@@ -600,6 +623,8 @@ watch([availableGames, selectedIds, isGamesLoading, gamesError], async () => {
     updatePanelScrollState()
 }, { deep: true })
 
+let startNudgeTimer: ReturnType<typeof setInterval> | null = null
+
 onMounted(async () => {
     updatePanelScrollState()
     window.addEventListener('resize', updatePanelScrollState)
@@ -607,6 +632,11 @@ onMounted(async () => {
     await nextTick()
     syncMapPanHints()
     requestAnimationFrame(syncMapPanHints)
+    nudgeStartIfTooSoon()
+    startNudgeTimer = setInterval(() => {
+        clockTick.value++
+        nudgeStartIfTooSoon()
+    }, 5000)
 })
 
 watch([() => props.clubData.id, selectedDate, startH, duration], fetchOccupiedSeats, {
@@ -904,25 +934,46 @@ const handleFinalClose = () => {
     if (!props.isTerminal) router.visit('/account/dashboard');
 }
 
+const applyStart = (nextHours: number) => {
+    const next = snapHours(nextHours)
+    startH.value = next
+    if (bookingMode.value === 'packages' && selectedPackage.value) {
+        endH.value = snapHours(next + selectedPackage.value.hours)
+    } else if (mod24(endH.value - next) < 1) {
+        endH.value = snapHours(next + 1)
+    }
+}
+
+/** Если до старта < 5 мин — прокрутить на следующий слот 15 мин (9:00 → 9:15). */
+const nudgeStartIfTooSoon = () => {
+    if (selectedDate.value !== new Date().toDateString()) return
+    const slot = nextAllowedSlot()
+    if (slot.rollsOverMidnight) {
+        const tomorrow = new Date()
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        selectedDate.value = tomorrow.toDateString()
+        return
+    }
+    if (startH.value + 1e-9 < slot.time) applyStart(slot.time)
+}
+
 /** Шаг 15 минут. Используется колесом мыши, свайпом и кнопками ±. */
 const stepTime = (type: 'start' | 'end', direction: 1 | -1) => {
     if (bookingMode.value === 'packages' && type === 'end') return
-    const delta = 0.25 * direction
+    const delta = TIME_STEP_HOURS * direction
 
     if (type === 'start') {
-        const next = mod24(startH.value + delta)
+        const next = snapHours(startH.value + delta)
         if (selectedDate.value === new Date().toDateString()) {
-            const slot = nextQuarterSlot()
-            if (slot.rollsOverMidnight || next < slot.time) return
+            const slot = nextAllowedSlot()
+            if (slot.rollsOverMidnight || next + 1e-9 < slot.time) return
         }
-        startH.value = next
-        if (bookingMode.value === 'packages' && selectedPackage.value) endH.value = mod24(next + selectedPackage.value.hours)
-        else if (mod24(endH.value - next) < 1) endH.value = mod24(next + 1)
+        applyStart(next)
         return
     }
 
     if (direction < 0 && (mod24(endH.value - startH.value) || 24) <= 1) return
-    endH.value = mod24(endH.value + delta)
+    endH.value = snapHours(endH.value + delta)
 }
 
 const handleWheel = (e: WheelEvent, type: 'start' | 'end') => {
@@ -988,7 +1039,7 @@ const formatDuration = (hours: number) => {
 
 const days = computed(() => {
     const today = new Date();
-    const todayExhausted = nextQuarterSlot().rollsOverMidnight
+    const todayExhausted = nextAllowedSlot().rollsOverMidnight
     return Array.from({ length: 14 }, (_, i) => {
         const d = new Date(); d.setDate(today.getDate() + i)
         return {
@@ -1017,6 +1068,7 @@ const adjustFont = (el: HTMLElement) => {
 onUnmounted(() => {
     closeAllModals()
     if (highlightTimer) clearTimeout(highlightTimer)
+    if (startNudgeTimer) clearInterval(startNudgeTimer)
     window.removeEventListener('resize', updatePanelScrollState)
     window.removeEventListener('resize', syncMapPanHints)
 })
