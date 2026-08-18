@@ -108,7 +108,7 @@ watch(
 )
 
 const liveHint = computed(() => {
-    if (!props.env_enabled) return 'F1 выключен в .env (AI_ASSISTANT_ENABLED=false). Кнопка «Проверить LLM» при этом может работать.'
+    if (!props.env_enabled) return 'Шел выключен: на сервере AI_ASSISTANT_ENABLED=false. «Проверить LLM / озвучку» при этом работают. Поставь true в .env и php artisan config:clear.'
     if (!props.settings.has_llm_credentials) return 'Нет LLM-ключа DeepSeek (админка или .env)'
     if (!props.settings.has_speech_credentials) {
         return form.speech_provider === 'openai'

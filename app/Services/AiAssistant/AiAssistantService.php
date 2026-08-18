@@ -22,13 +22,7 @@ class AiAssistantService
 
     public function isConfigured(?int $clubId = null): bool
     {
-        if (! config('ai_assistant.enabled')) {
-            return false;
-        }
-
-        $settings = AiAssistantSetting::forClub($clubId);
-
-        return $settings->is_enabled && $settings->hasCredentials();
+        return AiAssistantSetting::isReady($clubId);
     }
 
     /**
@@ -54,8 +48,8 @@ class AiAssistantService
         }
 
         $clubId = $computer->club_id ? (int) $computer->club_id : null;
-        if (! $this->isConfigured($clubId)) {
-            throw new RuntimeException('AI-ассистент выключен или не настроен (ключи / AI_ASSISTANT_ENABLED).');
+        if ($reason = AiAssistantSetting::denyReason($clubId)) {
+            throw new RuntimeException($reason);
         }
 
         $booking = $this->activeBookingForTerminal($terminalId);

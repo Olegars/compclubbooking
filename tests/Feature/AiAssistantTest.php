@@ -202,7 +202,8 @@ class AiAssistantTest extends TestCase
             'terminal_id' => $this->computer->id,
             'audio' => $audio,
         ])->assertStatus(422)
-            ->assertJsonPath('status', 'error');
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Выключен тумблером в админке');
     }
 
     public function test_disabled_when_not_configured(): void
@@ -228,7 +229,8 @@ class AiAssistantTest extends TestCase
             'terminal_id' => $this->computer->id,
             'audio' => $audio,
         ])->assertStatus(422)
-            ->assertJsonPath('status', 'error');
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Выключен в .env сервера (AI_ASSISTANT_ENABLED=false)');
     }
 
     public function test_uses_api_keys_from_database(): void

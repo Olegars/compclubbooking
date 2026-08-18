@@ -271,6 +271,7 @@ class VoiceGreetingTest extends TestCase
         $this->postJson('/api/shell/voice-greeting', [
             'terminal_id' => $this->computer->id,
         ])->assertStatus(422)
-            ->assertJsonPath('status', 'error');
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Выключен в .env сервера (AI_ASSISTANT_ENABLED=false)');
     }
 }

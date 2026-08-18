@@ -111,6 +111,40 @@ class AiAssistantSetting extends Model
         );
     }
 
+    /**
+     * Почему Shell/приветствие не стартуют. null = можно вызывать.
+     * Админские ping LLM / TTS этот метод не используют.
+     */
+    public static function denyReason(?int $clubId = null): ?string
+    {
+        if (! config('ai_assistant.enabled')) {
+            return 'Выключен в .env сервера (AI_ASSISTANT_ENABLED=false)';
+        }
+
+        $settings = static::forClub($clubId);
+
+        if (! $settings->is_enabled) {
+            return 'Выключен тумблером в админке';
+        }
+
+        if ($settings->resolvedLlmApiKey() === '') {
+            return 'Нет ключа LLM (DeepSeek/OpenAI)';
+        }
+
+        if (! $settings->hasSpeechCredentials()) {
+            return $settings->resolvedSpeechProvider() === 'openai'
+                ? 'Нет ключа OpenAI для речи'
+                : 'Нет ключа Yandex SpeechKit';
+        }
+
+        return null;
+    }
+
+    public static function isReady(?int $clubId = null): bool
+    {
+        return static::denyReason($clubId) === null;
+    }
+
     public function resolvedLlmProvider(): string
     {
         $provider = strtolower(trim((string) ($this->llm_provider ?: 'deepseek')));
