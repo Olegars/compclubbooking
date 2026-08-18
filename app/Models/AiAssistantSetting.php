@@ -282,6 +282,29 @@ class AiAssistantSetting extends Model
         return $provider === 'openai' ? self::OPENAI_VOICES : self::YANDEX_VOICES;
     }
 
+    public static function sanitizeTtsVoice(string $provider, ?string $voice): ?string
+    {
+        $voice = strtolower(trim((string) $voice));
+        if ($voice === '') {
+            return null;
+        }
+
+        return array_key_exists($voice, self::voicesFor($provider)) ? $voice : null;
+    }
+
+    /**
+     * @return list<array{id:string,label:string}>
+     */
+    public static function voiceList(string $provider): array
+    {
+        $out = [];
+        foreach (self::voicesFor($provider) as $id => $label) {
+            $out[] = ['id' => $id, 'label' => $label];
+        }
+
+        return $out;
+    }
+
     public function resolvedYandexApiKey(): string
     {
         $fromDb = trim((string) ($this->yandex_api_key ?? ''));

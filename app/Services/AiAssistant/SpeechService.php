@@ -34,9 +34,10 @@ class SpeechService
     /**
      * @return array{mime:string,binary:string}
      */
-    public function synthesize(string $text, AiAssistantSetting $settings): array
+    public function synthesize(string $text, AiAssistantSetting $settings, ?string $voice = null): array
     {
-        $voice = $settings->resolvedTtsVoice();
+        $voice = AiAssistantSetting::sanitizeTtsVoice($settings->resolvedSpeechProvider(), $voice)
+            ?? $settings->resolvedTtsVoice();
 
         if ($settings->resolvedSpeechProvider() === 'openai') {
             return $this->openaiTts->synthesize($text, $voice, [

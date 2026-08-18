@@ -26,6 +26,8 @@ Route::prefix('shell')->group(function () {
     Route::post('/fan/bind', [ShellApiController::class, 'bindFan']);
     Route::post('/fan/unbind', [ShellApiController::class, 'unbindFan']);
     Route::post('/ai-assistant', [ShellApiController::class, 'aiAssistant']);
+    Route::get('/ai-voices', [ShellApiController::class, 'aiVoices']);
+    Route::post('/ai-voice', [ShellApiController::class, 'setAiVoice']);
     Route::post('/voice-greeting', [ShellApiController::class, 'voiceGreeting']);
     Route::post('/ui-state', [ShellApiController::class, 'reportUiState']);
 });

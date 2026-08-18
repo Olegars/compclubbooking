@@ -22,7 +22,9 @@ use App\Models\ComputerInputDevice;
 use App\Models\ComputerInputAlert;
 use App\Models\ComputerSosAlert;
 use App\Services\AchievementService;
+use App\Models\AiAssistantSetting;
 use App\Services\AiAssistant\AiAssistantService;
+use App\Services\AiAssistant\SpeechService;
 use App\Services\AiAssistant\VoiceGreetingService;
 use App\Services\BookingSeatTransferService;
 use App\Services\BookingSessionExtendService;
@@ -965,6 +967,7 @@ class ShellApiController extends Controller
         $request->validate([
             'terminal_id' => 'required|integer|exists:computers,id',
             'booking_id' => 'nullable|integer|exists:bookings,id',
+            'tts_voice' => 'nullable|string|max:32',
         ]);
 
         $terminalId = (int) $request->terminal_id;
@@ -982,7 +985,8 @@ class ShellApiController extends Controller
         try {
             $result = app(VoiceGreetingService::class)->greet(
                 $terminalId,
-                $request->filled('booking_id') ? (int) $request->booking_id : null
+                $request->filled('booking_id') ? (int) $request->booking_id : null,
+                $request->input('tts_voice')
             );
 
             return response()->json([
@@ -1023,6 +1027,7 @@ class ShellApiController extends Controller
             'audio' => 'required|file|max:'.$maxKb,
             'game_id' => 'nullable|integer|exists:games,id',
             'game_title' => 'nullable|string|max:255',
+            'tts_voice' => 'nullable|string|max:32',
         ]);
 
         $terminalId = (int) $request->terminal_id;
@@ -1042,7 +1047,8 @@ class ShellApiController extends Controller
                 $terminalId,
                 $request->file('audio'),
                 $request->filled('game_id') ? (int) $request->game_id : null,
-                $request->input('game_title')
+                $request->input('game_title'),
+                $request->input('tts_voice')
             );
 
             return response()->json([
@@ -1068,6 +1074,104 @@ class ShellApiController extends Controller
                 'message' => 'Не удалось обработать запрос ассистента.',
             ], 500);
         }
+    }
+
+    public function aiVoices(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+        ]);
+
+        [$settings, $enabled] = $this->aiVoiceContext((int) $request->terminal_id);
+
+        return response()->json([
+            'status' => 'success',
+            'enabled' => $enabled,
+            ...$this->aiVoicePayload($settings),
+        ]);
+    }
+
+    public function setAiVoice(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'tts_voice' => 'required|string|max:32',
+            'preview' => 'nullable|boolean',
+        ]);
+
+        $terminalId = (int) $request->terminal_id;
+        [$settings, $enabled] = $this->aiVoiceContext($terminalId);
+        $voice = AiAssistantSetting::sanitizeTtsVoice(
+            $settings->resolvedSpeechProvider(),
+            (string) $request->input('tts_voice')
+        );
+        if ($voice === null) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Неизвестный голос.',
+            ], 422);
+        }
+
+        $settings->tts_voice = $voice;
+        $settings->save();
+
+        $payload = [
+            'status' => 'success',
+            'enabled' => $enabled,
+            ...$this->aiVoicePayload($settings->fresh()),
+        ];
+
+        $wantPreview = filter_var($request->input('preview', true), FILTER_VALIDATE_BOOLEAN);
+        if ($wantPreview && $enabled) {
+            $rateKey = 'shell-ai-voice:'.$terminalId;
+            $limit = max(1, (int) config('ai_assistant.rate_limit_per_minute', 8));
+            if (RateLimiter::tooManyAttempts($rateKey, $limit)) {
+                $payload['preview_error'] = 'Слишком много запросов. Подожди немного.';
+            } else {
+                RateLimiter::hit($rateKey, 60);
+                try {
+                    $label = AiAssistantSetting::voicesFor($settings->resolvedSpeechProvider())[$voice] ?? $voice;
+                    $speech = app(SpeechService::class)
+                        ->synthesize('Привет, это голос '.$label.'.', $settings, $voice);
+                    $payload['audio_mime'] = $speech['mime'];
+                    $payload['audio_base64'] = base64_encode($speech['binary']);
+                } catch (\Throwable $e) {
+                    Log::warning('Shell AI voice preview: '.$e->getMessage(), [
+                        'terminal_id' => $terminalId,
+                        'tts_voice' => $voice,
+                    ]);
+                    $payload['preview_error'] = $e->getMessage();
+                }
+            }
+        }
+
+        return response()->json($payload);
+    }
+
+    /**
+     * @return array{0: AiAssistantSetting, 1: bool}
+     */
+    private function aiVoiceContext(int $terminalId): array
+    {
+        $computer = Computer::query()->find($terminalId);
+        $clubId = $computer && $computer->club_id ? (int) $computer->club_id : null;
+        $settings = AiAssistantSetting::forClub($clubId);
+
+        return [$settings, AiAssistantSetting::denyReason($clubId) === null];
+    }
+
+    /**
+     * @return array{provider:string,tts_voice:string,voices:list<array{id:string,label:string}>}
+     */
+    private function aiVoicePayload(AiAssistantSetting $settings): array
+    {
+        $provider = $settings->resolvedSpeechProvider();
+
+        return [
+            'provider' => $provider,
+            'tts_voice' => $settings->resolvedTtsVoice(),
+            'voices' => AiAssistantSetting::voiceList($provider),
+        ];
     }
 
     private function mapGamePayload(Game $game): array

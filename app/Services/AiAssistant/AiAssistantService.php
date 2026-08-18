@@ -41,6 +41,7 @@ class AiAssistantService
         UploadedFile $audio,
         ?int $gameId = null,
         ?string $gameTitle = null,
+        ?string $ttsVoice = null,
     ): array {
         $computer = Computer::query()->find($terminalId);
         if (! $computer) {
@@ -70,7 +71,7 @@ class AiAssistantService
             'club_name' => $club?->name,
             'club_id' => $clubId,
         ]);
-        $speech = $this->speech->synthesize($reply, $settings);
+        $speech = $this->speech->synthesize($reply, $settings, $ttsVoice);
 
         Log::info('[AI-ASSISTANT]', [
             'terminal_id' => $terminalId,

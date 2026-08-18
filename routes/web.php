@@ -544,6 +544,8 @@ Route::prefix('api/shell')->group(function () {
 
     // --- F1 AI-компаньон (голос → ответ в наушники) ---
     Route::post('/ai-assistant', [ShellApiController::class, 'aiAssistant']);
+    Route::get('/ai-voices', [ShellApiController::class, 'aiVoices']);
+    Route::post('/ai-voice', [ShellApiController::class, 'setAiVoice']);
 
     // --- Голосовое приветствие после login (колонки) ---
     Route::post('/voice-greeting', [ShellApiController::class, 'voiceGreeting']);

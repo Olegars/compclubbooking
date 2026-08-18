@@ -37,7 +37,7 @@ class VoiceGreetingService
      *   context:array{player_name:?string,club_name:?string,pc_name:?string,time_remaining:?string}
      * }
      */
-    public function greet(int $terminalId, ?int $bookingId = null): array
+    public function greet(int $terminalId, ?int $bookingId = null, ?string $ttsVoice = null): array
     {
         $computer = Computer::query()->find($terminalId);
         if (! $computer) {
@@ -82,7 +82,7 @@ class VoiceGreetingService
         ];
 
         $reply = $this->llm->greet($context);
-        $speech = $this->speech->synthesize($reply, $settings);
+        $speech = $this->speech->synthesize($reply, $settings, $ttsVoice);
 
         Log::info('[AI-GREETING]', [
             'terminal_id' => $terminalId,
