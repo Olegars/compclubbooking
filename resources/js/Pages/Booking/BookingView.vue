@@ -146,7 +146,9 @@ const fetchOccupiedSeats = async () => {
             ? response.data.occupied_pc_ids.map((id: number | string) => id.toString())
             : []
         bookedOccupiedIds.value = ids
-        selectedIds.value = selectedIds.value.filter(id => !ids.includes(id))
+        if (!showSuccessModal.value && !isProcessing.value) {
+            selectedIds.value = selectedIds.value.filter(id => !ids.includes(id))
+        }
     } catch (e) {
         if (requestId !== seatsRequestId) return
         console.error('Ошибка загрузки занятости мест', e)
@@ -838,6 +840,17 @@ const bookingDataForModal = computed(() => ({
         .map(game => ({ id: game.id, title: game.title }))
 }))
 
+/** Снимок чека: после reserve выбранные места становятся occupied и live-computed обнуляется. */
+const successReceipt = ref<typeof bookingDataForModal.value | null>(null)
+
+const snapshotReceipt = () => {
+    const current = bookingDataForModal.value
+    successReceipt.value = {
+        ...current,
+        games: [...(current.games || [])],
+    }
+}
+
 // --- ВХОД ГОСТЯ ПЕРЕД БРОНИРОВАНИЕМ ---
 // Цену и занятость гость видит без входа, но саму бронь оформляем только после SMS.
 const showGuestPhoneModal = ref(false)
@@ -883,6 +896,7 @@ const handleGuestPhone = async (payload: any) => {
 const handleSmsVerify = (code: string) => {
     if (!isGuestAuthFlow.value) {
         // Терминал: подтверждение по SMS без входа в аккаунт.
+        if (!successReceipt.value) snapshotReceipt()
         showSmsModal.value = false
         showSuccessModal.value = true
         return
@@ -900,10 +914,12 @@ const handleConfirmBooking = async (payload: any) => {
     showConfirmModal.value = false
     if (props.isTerminal) {
         userPhone.value = payload.phone || payload || ''
+        snapshotReceipt()
         setTimeout(() => { showSmsModal.value = true }, 200)
     } else {
         isProcessing.value = true
         try {
+            snapshotReceipt()
             await axios.post('/api/booking/reserve', bookingPayload.value)
             showSuccessModal.value = true
         } catch (error: any) {
@@ -927,10 +943,11 @@ const closeAllModals = () => {
     showGamesModal.value = false; showGuestPhoneModal.value = false;
     isGuestAuthFlow.value = false;
     showOverlay.value = false;
+    successReceipt.value = null
 }
 
 const handleFinalClose = () => {
-    closeAllModals(); selectedIds.value = [];
+    closeAllModals(); selectedIds.value = []; successReceipt.value = null;
     if (!props.isTerminal) router.visit('/account/dashboard');
 }
 
@@ -1328,8 +1345,8 @@ onUnmounted(() => {
                 />
 
                 <ConfirmModal v-if="showConfirmModal" :isOpen="showConfirmModal" :mode="isTerminal ? 'auth' : 'booking'" :data="bookingDataForModal" @close="closeAllModals" @confirm="handleConfirmBooking" />
-                <SmsModal v-if="showSmsModal" :is-open="showSmsModal" :phone="userPhone" :is-terminal="isTerminal" @close="showSmsModal = false" @verify="() => { showSmsModal = false; showSuccessModal = true }" />
-                <PaymentModal v-if="showSuccessModal" :isOpen="showSuccessModal" mode="booking" :data="bookingDataForModal" @close="handleFinalClose" />
+                <SmsModal v-if="showSmsModal" :is-open="showSmsModal" :phone="userPhone" :is-terminal="isTerminal" @close="showSmsModal = false" @verify="handleSmsVerify" />
+                <PaymentModal v-if="showSuccessModal" :isOpen="showSuccessModal" mode="booking" :data="successReceipt || bookingDataForModal" @close="handleFinalClose" />
                 <ZoneInfoModal v-if="showInfoModal" :isOpen="showInfoModal" :room="selectedRoomInfo" @close="closeAllModals" />
                 <TariffsModal v-if="showTariffsModal" :isOpen="showTariffsModal" :showcase="tariffShowcase" @close="closeAllModals" />
                 <GamesBookingModal

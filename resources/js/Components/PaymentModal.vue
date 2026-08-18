@@ -94,6 +94,13 @@ watch(() => props.isOpen, (val) => {
                   <span class="text-white font-black text-sm">{{ data?.date }}</span>
                 </div>
 
+                <div v-if="mode === 'booking' && (data?.startTime || data?.endTime)" class="flex justify-between items-center border-b border-white/5 pb-3">
+                  <span class="text-[9px] text-slate-600 uppercase tracking-widest font-black">ВРЕМЯ</span>
+                  <span class="text-white font-black text-sm uppercase">
+                    с {{ data?.startTime }} до {{ data?.endTime }}
+                  </span>
+                </div>
+
                 <div class="flex justify-between items-center">
                   <span class="text-[9px] text-slate-600 uppercase tracking-widest font-black italic">
                     {{ mode === 'view' ? 'ТЕКУЩИЙ ОСТАТОК' : 'СУММА ОПЕРАЦИИ' }}
