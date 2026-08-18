@@ -11,6 +11,15 @@ const props = defineProps<{
     sharedFans?: any[]
     linkedPersonalIds?: number[]
     spaces: any[]
+    computers?: Array<{
+        id: number
+        name: string
+        space_id: number | null
+        space_name?: string | null
+        type?: string
+        x: number
+        y: number
+    }>
     mapPreview?: { viewbox?: string | null, walls?: any[], labels?: any[] }
     defaults: {
         port: number
@@ -27,11 +36,14 @@ const sharedFans = computed(() => props.sharedFans || [])
 const linkedPersonalIds = computed(() => new Set(props.linkedPersonalIds || []))
 const selectedClubId = ref(props.clubId || props.clubs[0]?.id || 0)
 const selectedSpaceId = ref<number | null>(null)
+const selectedComputerId = ref<number | null>(null)
 const expandedSharedId = ref<number | null>(null)
 
 watch(selectedClubId, (id) => {
     selectedSpaceId.value = null
+    selectedComputerId.value = null
     fanForm.space_id = null
+    fanForm.computer_id = null
     router.get('/admin/fans', { club_id: id }, { preserveState: true, replace: true })
 })
 
@@ -51,6 +63,7 @@ watch(() => props.clubId, (id) => {
 
 const fanForm = useForm({
     club_id: props.clubId,
+    computer_id: null as number | null,
     space_id: null as number | null,
     relay_board_id: null as number | null,
     channel: 1,
@@ -99,12 +112,30 @@ const kindLabel = (k: string) => (k === 'exhaust' ? 'Вытяжка' : 'Прит
 const spaceFanCount = (s: any) => Number(s.fans_count ?? (s.has_fan ? 1 : 0))
 const spaceCanAddFan = (s: any) => spaceFanCount(s) < maxPerSpace.value
 
+const computers = computed(() => props.computers || [])
+
+const pickComputer = (computerId: number) => {
+    const pc = computers.value.find((c) => Number(c.id) === Number(computerId))
+    if (!pc) return
+    selectedComputerId.value = pc.id
+    fanForm.computer_id = pc.id
+    selectedSpaceId.value = pc.space_id
+    fanForm.space_id = pc.space_id
+}
+
 const pickSpace = (spaceId: number, allowTaken = false) => {
     const space = props.spaces.find((s: any) => Number(s.id) === Number(spaceId))
     if (!space) return
     if (!spaceCanAddFan(space) && !allowTaken) return
+    const inRoom = computers.value.filter((c) => Number(c.space_id) === Number(spaceId))
+    if (inRoom.length) {
+        pickComputer(inRoom[0].id)
+        return
+    }
     selectedSpaceId.value = spaceId
     fanForm.space_id = spaceId
+    selectedComputerId.value = null
+    fanForm.computer_id = null
 }
 
 const submitBoard = () => {
@@ -116,6 +147,9 @@ const submitBoard = () => {
 
 const submitFan = () => {
     fanForm.club_id = selectedClubId.value
+    if (!fanForm.computer_id) {
+        fanForm.computer_id = selectedComputerId.value
+    }
     if (!fanForm.space_id) {
         fanForm.space_id = selectedSpaceId.value
     }
@@ -129,7 +163,9 @@ const submitFan = () => {
             fanForm.channel = 1
             fanForm.channel2 = 2
             selectedSpaceId.value = null
+            selectedComputerId.value = null
             fanForm.space_id = null
+            fanForm.computer_id = null
         },
     })
 }
@@ -194,6 +230,20 @@ const freeSpaces = computed(() =>
 const selectedSpace = computed(() =>
     props.spaces.find((s: any) => Number(s.id) === Number(selectedSpaceId.value)) || null
 )
+
+const selectedComputer = computed(() =>
+    computers.value.find((c) => Number(c.id) === Number(selectedComputerId.value)) || null
+)
+
+const computerMarkers = computed(() => {
+    return computers.value.map((pc) => {
+        const space = props.spaces.find((s: any) => Number(s.id) === Number(pc.space_id))
+        const hasPoint = Number(pc.x) !== 0 || Number(pc.y) !== 0
+        const x = hasPoint ? Number(pc.x) : (space ? Number(space.x) + Number(space.w) / 2 : 0)
+        const y = hasPoint ? Number(pc.y) : (space ? Number(space.y) + Number(space.h) / 2 : 0)
+        return { ...pc, mx: x, my: y }
+    }).filter((pc) => pc.mx !== 0 || pc.my !== 0)
+})
 
 /** Плотный viewBox по комнатам — не берём высокий viewbox редактора, иначе пустота снизу. */
 const mapViewBox = computed(() => {
@@ -295,7 +345,7 @@ const spaceStroke = (s: any) => {
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 space-y-4">
                     <h3 class="text-lg font-black uppercase italic">Привязать вентилятор</h3>
                     <p class="text-[10px] text-white/30 uppercase tracking-wider">
-                        До {{ maxPerSpace }} на комнату · клик по карте · каналы K1/K2
+                        Комната берётся из setup шелла · до {{ maxPerSpace }} на комнату · каналы K1/K2
                     </p>
                     <form @submit.prevent="submitFan" class="space-y-3">
                         <select v-model.number="fanForm.relay_board_id"
@@ -317,19 +367,34 @@ const spaceStroke = (s: any) => {
                             <input v-model.number="fanForm.thermal_off_c" type="number" placeholder="OFF °C"
                                    class="bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" />
                         </div>
+                        <select v-model.number="fanForm.computer_id"
+                                class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500"
+                                required
+                                @change="fanForm.computer_id && pickComputer(fanForm.computer_id)">
+                            <option :value="null" disabled>ПК (зона из setup шелла)</option>
+                            <option v-for="pc in computers" :key="'pc'+pc.id" :value="pc.id">
+                                {{ pc.name }} · {{ pc.space_name || (pc.space_id ? ('space #' + pc.space_id) : (pc.type || 'без комнаты')) }}
+                            </option>
+                        </select>
                         <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4 text-[10px] uppercase tracking-wider">
                             Комната:
                             <span class="text-cyan-400 font-black ml-2">
-                                <template v-if="selectedSpace">
+                                <template v-if="selectedComputer">
+                                    {{ selectedComputer.name }}
+                                    <span class="text-white/40 font-bold normal-case tracking-normal ml-2">
+                                        {{ selectedComputer.space_name || selectedSpace?.name || selectedComputer.type || 'подтянется из setup' }}
+                                    </span>
+                                </template>
+                                <template v-else-if="selectedSpace">
                                     space #{{ selectedSpace.id }}
                                     <span class="text-white/40 font-bold normal-case tracking-normal ml-2">
                                         {{ selectedSpace.name }} · {{ selectedSpace.zone_name || 'zone' }}
                                     </span>
                                 </template>
-                                <template v-else>кликните на карте</template>
+                                <template v-else>выберите ПК</template>
                             </span>
                         </div>
-                        <button type="submit" :disabled="!fanForm.space_id && !selectedSpaceId"
+                        <button type="submit" :disabled="!fanForm.computer_id && !selectedComputerId && !fanForm.space_id && !selectedSpaceId"
                                 class="w-full py-4 bg-[#22c55e] text-black font-black uppercase text-[10px] rounded-xl tracking-widest disabled:opacity-30">
                             Завести вентилятор
                         </button>
@@ -337,7 +402,7 @@ const spaceStroke = (s: any) => {
 
                     <div class="pt-2 space-y-2">
                         <div class="flex flex-wrap gap-3 text-[9px] font-black uppercase tracking-widest text-white/40">
-                            <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-cyan-400/80"></span> Выбрана</span>
+                            <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-cyan-400/80"></span> Выбран ПК</span>
                             <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-[#22c55e]/50"></span> С вентилятором</span>
                             <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-white/20"></span> Свободна</span>
                         </div>
@@ -390,6 +455,28 @@ const spaceStroke = (s: any) => {
                                             class="pointer-events-none select-none uppercase"
                                             style="font-family: ui-monospace, monospace;"
                                         >{{ spaceFanCount(s) > 0 ? ('fan×' + spaceFanCount(s)) : (s.zone_name || s.name) }}</text>
+                                    </g>
+                                </g>
+                                <g class="computers">
+                                    <g v-for="pc in computerMarkers" :key="'c'+pc.id"
+                                       class="cursor-pointer"
+                                       @click.stop="pickComputer(pc.id)">
+                                        <circle
+                                            :cx="pc.mx" :cy="pc.my" r="1.15"
+                                            :fill="selectedComputerId === pc.id ? '#22d3ee' : '#e2e8f0'"
+                                            :stroke="selectedComputerId === pc.id ? '#22d3ee' : '#0f172a'"
+                                            stroke-width="0.35"
+                                        />
+                                        <text
+                                            :x="pc.mx"
+                                            :y="pc.my - 1.6"
+                                            text-anchor="middle"
+                                            fill="white"
+                                            font-size="1.35"
+                                            font-weight="800"
+                                            class="pointer-events-none select-none"
+                                            style="font-family: ui-monospace, monospace;"
+                                        >{{ pc.name }}</text>
                                     </g>
                                 </g>
                             </svg>

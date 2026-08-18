@@ -1895,6 +1895,12 @@ class ShellApiController extends Controller
                     'kind' => $zoneType === 'tv' ? Computer::KIND_TV : ($computer->kind ?: Computer::KIND_PC),
                 ]);
                 $computer->refresh();
+                try {
+                    app(FanControlService::class)->ensureSpaceForComputer($computer);
+                    $computer->refresh();
+                } catch (\Throwable $e) {
+                    Log::warning('Shell registerTerminal: space ensure failed: '.$e->getMessage());
+                }
 
                 Log::info('Shell registerTerminal: bound existing map seat', [
                     'computer_id' => $computer->id,
@@ -1921,6 +1927,12 @@ class ShellApiController extends Controller
                 'status' => 'available',
             ]);
             $this->adoptShellIdentity($newComputer, $hwid, is_string($mac) ? $mac : null);
+            try {
+                app(FanControlService::class)->ensureSpaceForComputer($newComputer);
+                $newComputer->refresh();
+            } catch (\Throwable $e) {
+                Log::warning('Shell registerTerminal: space ensure failed: '.$e->getMessage());
+            }
 
             if ($kind === Computer::KIND_PC) {
                 Game::query()->pluck('id')->each(fn ($gameId) =>

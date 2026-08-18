@@ -308,4 +308,35 @@ class FanControlTest extends TestCase
         $this->assertFalse($bad['ok']);
         $this->assertStringContainsString('парные', $bad['message']);
     }
+
+    public function test_bind_assigns_space_from_shell_zone(): void
+    {
+        $this->zone->update(['slug' => 'bootcamp']);
+
+        $pc = Computer::create([
+            'club_id' => $this->club->id,
+            'space_id' => null,
+            'name' => 'PC-SETUP',
+            'type' => 'bootcamp',
+            'status' => 'available',
+        ]);
+
+        $this->assertNull($pc->fresh()->space_id);
+        $this->assertSame($this->space->id, $this->fans->ensureSpaceForComputer($pc));
+        $this->assertSame($this->space->id, (int) $pc->fresh()->space_id);
+
+        $pc2 = Computer::create([
+            'club_id' => $this->club->id,
+            'space_id' => null,
+            'name' => 'PC-SETUP-2',
+            'type' => 'bootcamp',
+            'status' => 'available',
+        ]);
+        $result = $this->fans->bindForComputer($pc2->id, $this->board->id, 3, 4);
+        $this->assertTrue($result['ok'], $result['message'] ?? '');
+        $this->assertSame($this->space->id, (int) $pc2->fresh()->space_id);
+        $this->assertTrue(
+            SpaceFan::query()->where('space_id', $this->space->id)->where('channel', 3)->exists()
+        );
+    }
 }

@@ -6,8 +6,10 @@ use App\Models\Booking;
 use App\Models\Computer;
 use App\Models\ComputerThermal;
 use App\Models\RelayBoard;
+use App\Models\Space;
 use App\Models\SpaceFan;
 use App\Services\ComputerPowerService;
+use App\Support\ZoneSlug;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -19,11 +21,75 @@ class FanControlService
     public function reconcileForComputer(int $computerId): ?SpaceFan
     {
         $computer = Computer::query()->find($computerId);
-        if (! $computer || ! $computer->space_id) {
+        if (! $computer || ! $this->ensureSpaceForComputer($computer)) {
             return null;
         }
 
         return $this->reconcileForSpace((int) $computer->space_id, (int) $computer->club_id);
+    }
+
+    /**
+     * Комната ПК задаётся в setup шелла (зона) и/или картой. Без space_id вентилятор не привязать.
+     */
+    public function ensureSpaceForComputer(Computer $computer): ?int
+    {
+        if ($computer->space_id) {
+            return (int) $computer->space_id;
+        }
+        if (! $computer->club_id) {
+            return null;
+        }
+
+        $spaces = Space::query()
+            ->where('club_id', $computer->club_id)
+            ->with('zone:id,slug,name')
+            ->orderBy('id')
+            ->get();
+
+        if ($spaces->isEmpty()) {
+            return null;
+        }
+
+        $x = (float) ($computer->x ?? 0);
+        $y = (float) ($computer->y ?? 0);
+        if ($x != 0.0 || $y != 0.0) {
+            foreach ($spaces as $space) {
+                $w = (float) $space->w;
+                $h = (float) $space->h;
+                if ($w <= 0 || $h <= 0) {
+                    continue;
+                }
+                if ($x >= (float) $space->x && $x <= (float) $space->x + $w
+                    && $y >= (float) $space->y && $y <= (float) $space->y + $h) {
+                    $computer->space_id = (int) $space->id;
+                    $computer->save();
+
+                    return (int) $space->id;
+                }
+            }
+        }
+
+        $want = ZoneSlug::normalize((string) ($computer->type ?? ''));
+        if ($want === '') {
+            return null;
+        }
+
+        $matched = $spaces->filter(function (Space $space) use ($want) {
+            return ZoneSlug::normalize((string) ($space->zone?->slug ?? '')) === $want;
+        });
+
+        if ($matched->isEmpty()) {
+            return null;
+        }
+
+        $byName = $matched->first(function (Space $space) use ($computer) {
+            return strcasecmp((string) $space->name, (string) $computer->name) === 0;
+        });
+        $space = $byName ?: $matched->first();
+        $computer->space_id = (int) $space->id;
+        $computer->save();
+
+        return (int) $space->id;
     }
 
     /**
@@ -80,7 +146,7 @@ class FanControlService
     public function setManualModeForComputer(int $computerId, string $action): array
     {
         $computer = Computer::query()->find($computerId);
-        if (! $computer || ! $computer->space_id) {
+        if (! $computer || ! $this->ensureSpaceForComputer($computer)) {
             return ['fan' => null, 'locked' => false, 'remaining_sec' => 0];
         }
 
@@ -165,6 +231,7 @@ class FanControlService
         if (! $computer) {
             return null;
         }
+        $this->ensureSpaceForComputer($computer);
 
         $fan = $computer->space_id
             ? SpaceFan::query()
@@ -217,7 +284,7 @@ class FanControlService
         string $source = 'command',
     ): array {
         $computer = Computer::query()->find($computerId);
-        if (! $computer || ! $computer->space_id) {
+        if (! $computer || ! $this->ensureSpaceForComputer($computer)) {
             return ['fan' => null, 'locked' => false, 'remaining_sec' => 0];
         }
 
@@ -306,7 +373,7 @@ class FanControlService
     public function stateForComputer(int $computerId): array
     {
         $computer = Computer::query()->find($computerId);
-        if (! $computer || ! $computer->space_id) {
+        if (! $computer || ! $this->ensureSpaceForComputer($computer)) {
             return [
                 'available' => false,
                 'reason' => 'no_space',
@@ -651,7 +718,7 @@ class FanControlService
         if (! $computer || ! $computer->club_id) {
             return ['available' => false, 'reason' => 'no_computer', 'boards' => [], 'bound' => [], 'slots_used' => 0, 'slots_max' => 2];
         }
-        if (! $computer->space_id) {
+        if (! $this->ensureSpaceForComputer($computer)) {
             return [
                 'available' => false,
                 'reason' => 'no_space',
@@ -662,6 +729,7 @@ class FanControlService
                 'slots_max' => (int) config('fan.max_per_space', 2),
             ];
         }
+        $computer->loadMissing('space:id,name');
 
         $clubId = (int) $computer->club_id;
         $spaceId = (int) $computer->space_id;
@@ -794,8 +862,11 @@ class FanControlService
     public function bindForComputer(int $computerId, int $boardId, int $channel, int $channel2): array
     {
         $computer = Computer::query()->find($computerId);
-        if (! $computer || ! $computer->club_id || ! $computer->space_id) {
-            return ['ok' => false, 'message' => 'ПК без клуба/комнаты', 'fan' => null];
+        if (! $computer || ! $computer->club_id) {
+            return ['ok' => false, 'message' => 'ПК без клуба', 'fan' => null];
+        }
+        if (! $this->ensureSpaceForComputer($computer)) {
+            return ['ok' => false, 'message' => 'ПК без комнаты: зона задаётся в setup шелла', 'fan' => null];
         }
         if ($channel < 1 || $channel > 16 || $channel2 < 1 || $channel2 > 16 || $channel === $channel2) {
             return ['ok' => false, 'message' => 'Некорректные каналы K1/K2', 'fan' => null];

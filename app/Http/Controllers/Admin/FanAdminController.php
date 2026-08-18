@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Club;
+use App\Models\Computer;
 use App\Models\RelayBoard;
 use App\Models\SharedFan;
 use App\Models\SharedFanLink;
@@ -100,6 +101,21 @@ class FanAdminController extends Controller
                 'fans_count' => $fans->where('space_id', $s->id)->count(),
             ]);
 
+        $computers = Computer::query()
+            ->with('space:id,name')
+            ->when($clubId, fn ($q) => $q->where('club_id', $clubId))
+            ->orderBy('name')
+            ->get(['id', 'club_id', 'name', 'space_id', 'type', 'x', 'y'])
+            ->map(fn (Computer $pc) => [
+                'id' => (int) $pc->id,
+                'name' => (string) $pc->name,
+                'space_id' => $pc->space_id ? (int) $pc->space_id : null,
+                'space_name' => $pc->space?->name,
+                'type' => (string) ($pc->type ?? ''),
+                'x' => (float) $pc->x,
+                'y' => (float) $pc->y,
+            ]);
+
         $club = $clubId ? Club::query()->find($clubId) : null;
         $mapConfig = is_array($club?->map_config) ? $club->map_config : [];
 
@@ -123,6 +139,7 @@ class FanAdminController extends Controller
             'sharedFans' => $sharedFans,
             'linkedPersonalIds' => $linkedPersonalIds,
             'spaces' => $spaces,
+            'computers' => $computers,
             'mapPreview' => $mapPreview,
             'defaults' => [
                 'port' => (int) config('fan.w5100_default_port', 30000),
@@ -188,8 +205,13 @@ class FanAdminController extends Controller
     {
         $data = $request->validate([
             'club_id' => 'required|integer|exists:clubs,id',
+            'computer_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('computers', 'id')->where(fn ($q) => $q->where('club_id', $request->integer('club_id'))),
+            ],
             'space_id' => [
-                'required',
+                'nullable',
                 'integer',
                 Rule::exists('spaces', 'id')->where(fn ($q) => $q->where('club_id', $request->integer('club_id'))),
             ],
@@ -203,6 +225,24 @@ class FanAdminController extends Controller
             'thermal_on_c' => 'nullable|integer|min:40|max:120',
             'thermal_off_c' => 'nullable|integer|min:30|max:110',
         ]);
+
+        $spaceId = (int) ($data['space_id'] ?? 0);
+        if (! empty($data['computer_id'])) {
+            $computer = Computer::query()
+                ->where('club_id', $data['club_id'])
+                ->find((int) $data['computer_id']);
+            if (! $computer) {
+                return back()->withErrors(['computer_id' => 'ПК не найден в этом клубе']);
+            }
+            $spaceId = (int) (app(FanControlService::class)->ensureSpaceForComputer($computer) ?? 0);
+            if ($spaceId <= 0) {
+                return back()->withErrors(['computer_id' => 'У ПК нет комнаты. Зона задаётся в setup шелла.']);
+            }
+        }
+        if ($spaceId <= 0) {
+            return back()->withErrors(['computer_id' => 'Выберите ПК — комната берётся из setup шелла']);
+        }
+        $data['space_id'] = $spaceId;
 
         if (! SpaceFan::isCascadePair((int) $data['channel'], (int) $data['channel2'])) {
             return back()->withErrors(['channel' => 'Только парные реле: 1+2, 3+4, … 15+16']);
@@ -239,7 +279,7 @@ class FanAdminController extends Controller
 
         $shared->recomputeAfterPersonalChange((int) $fan->club_id, [(int) $fan->id]);
 
-        return back()->with('success', 'Вентилятор привязан к комнате (K1+K2)');
+        return back()->with('success', 'Вентилятор привязан к комнате ПК (K1+K2)');
     }
 
     public function updateFan(Request $request, SpaceFan $fan)
