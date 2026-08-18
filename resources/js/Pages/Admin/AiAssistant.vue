@@ -572,6 +572,10 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                                     {{ label }} ({{ key }})
                                 </option>
                             </select>
+                            <p class="mt-2 text-[10px] text-white/25 italic leading-relaxed">
+                                Алёна / Филипп / Джейн / Захар — классика SpeechKit.
+                                Марина, Даша, Александр и остальные идут через API v3; раньше на них был Bad Request.
+                            </p>
                             <p v-if="form.errors.tts_voice" class="mt-2 text-red-400 text-xs">{{ form.errors.tts_voice }}</p>
                         </div>
                         <div>

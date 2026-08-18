@@ -22,6 +22,7 @@ return [
         'folder_id' => env('YANDEX_SPEECHKIT_FOLDER_ID'),
         'stt_url' => rtrim((string) env('YANDEX_STT_URL', 'https://stt.api.cloud.yandex.net/speech/v1/stt:recognize'), '/'),
         'tts_url' => rtrim((string) env('YANDEX_TTS_URL', 'https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize'), '/'),
+        'tts_v3_url' => rtrim((string) env('YANDEX_TTS_V3_URL', 'https://tts.api.cloud.yandex.net/tts/v3/utteranceSynthesis'), '/'),
         'tts_voice' => env('YANDEX_TTS_VOICE', 'alena'),
         'lang' => env('YANDEX_SPEECH_LANG', 'ru-RU'),
     ],

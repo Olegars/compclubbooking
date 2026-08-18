@@ -166,6 +166,15 @@ class VoiceGreetingTest extends TestCase
                     ],
                 ], 200);
             }
+            if (str_contains($url, '/tts/v3/utteranceSynthesis')) {
+                return Http::response([
+                    'result' => [
+                        'audioChunk' => [
+                            'data' => base64_encode('ID3greet-mp3'),
+                        ],
+                    ],
+                ], 200);
+            }
             if (str_contains($url, 'tts.api.cloud.yandex.net')) {
                 return Http::response('ID3greet-mp3', 200);
             }
@@ -191,8 +200,12 @@ class VoiceGreetingTest extends TestCase
         });
 
         Http::assertSent(function ($request) {
-            return str_contains($request->url(), 'tts.api.cloud.yandex.net')
-                && ($request['voice'] ?? null) === 'marina';
+            if (! str_contains($request->url(), '/tts/v3/utteranceSynthesis')) {
+                return false;
+            }
+            $hints = $request['hints'] ?? [];
+
+            return ($hints[0]['voice'] ?? null) === 'marina';
         });
     }
 
