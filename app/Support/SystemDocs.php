@@ -277,7 +277,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'ИИ-ассистент',
-                        'description' => "Голосовой компаньон Shell (F1) и персональное приветствие при логине. Настройки на клуб: вкл/выкл, LLM (DeepSeek или OpenAI), ключи LLM и OpenAI (STT Whisper + TTS), base URL и модели, голос TTS (alloy/echo/fable/onyx/nova/shimmer), макс. длина ответа, системные промпты F1 и приветствия с плейсхолдерами {{club}}, {{player}}, {{game}}, {{pc}}, {{time}}, {{visit_line}}, {{games}}, {{max_chars}}.\n\nКлючи в админке шифруются в БД; пустое поле при сохранении не затирает; «очистить» возвращает fallback на .env. Аварийный выключатель: AI_ASSISTANT_ENABLED в .env (должен быть true вместе с тумблером в админке). Без ключей (ни БД, ни .env) пайплайн не стартует.\n\nShell: POST /api/shell/ai-assistant (аудио → STT → LLM → TTS), POST /api/shell/voice-greeting (контекст игрока → LLM → TTS в колонки лобби).",
+                        'description' => "Голосовой компаньон Shell (Grave/Ё) и персональное приветствие при логине. Настройки на клуб: вкл/выкл, LLM (DeepSeek или OpenAI), речь — Yandex SpeechKit (по умолчанию, из РФ) или OpenAI Whisper+TTS. Ключи LLM / SpeechKit / OpenAI, Folder ID, голос TTS (Алёна/Филипп/… или nova/alloy), макс. длина ответа, системные промпты F1 и приветствия с плейсхолдерами {{club}}, {{player}}, {{game}}, {{pc}}, {{time}}, {{visit_line}}, {{games}}, {{max_chars}}.\n\nКлючи в админке шифруются в БД; пустое поле при сохранении не затирает; «очистить» возвращает fallback на .env. Аварийный выключатель: AI_ASSISTANT_ENABLED в .env (должен быть true вместе с тумблером в админке). Без ключей (ни БД, ни .env) пайплайн не стартует.\n\nShell: POST /api/shell/ai-assistant (аудио → STT → LLM → TTS), POST /api/shell/voice-greeting (контекст игрока → LLM → TTS в колонки лобби).",
                         'path' => '/admin/ai-assistant',
                         'audience' => 'Supervisor+ / Shell',
                     ],
@@ -619,7 +619,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Голосовой ИИ (F1 и приветствие)',
-                        'description' => "F1 во время сессии: запись с микрофона → POST /api/shell/ai-assistant → Whisper STT → LLM (DeepSeek/OpenAI из админки) → OpenAI TTS в наушники. Нужна активная бронь на ПК.\n\nПосле логина: POST /api/shell/voice-greeting — короткое персональное приветствие в колонки лобби (имя, первый визит / любимые игры). Промпты, голос и ключи — /admin/ai-assistant; Shell только шлёт аудио/terminal_id и воспроизводит ответ.",
+                        'description' => "Hold-to-talk во время сессии: запись с микрофона → POST /api/shell/ai-assistant → SpeechKit STT (или Whisper) → LLM (DeepSeek/OpenAI из админки) → SpeechKit/OpenAI TTS в наушники. Нужна активная бронь на ПК.\n\nПосле логина: POST /api/shell/voice-greeting — короткое персональное приветствие в колонки лобби (имя, первый визит / любимые игры). Промпты, голос и ключи — /admin/ai-assistant; Shell только шлёт аудио/terminal_id и воспроизводит ответ.",
                         'path' => '/admin/ai-assistant',
                         'audience' => 'Shell / Supervisor+',
                     ],

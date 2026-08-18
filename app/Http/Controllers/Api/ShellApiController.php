@@ -957,7 +957,7 @@ class ShellApiController extends Controller
     }
 
     /**
-     * Personalized spoken greeting after Shell login: context → DeepSeek → TTS.
+     * Personalized spoken greeting after Shell login: context → DeepSeek → SpeechKit TTS.
      * Qt Shell only; requires active booking on terminal.
      */
     public function voiceGreeting(Request $request)
@@ -1011,7 +1011,7 @@ class ShellApiController extends Controller
     }
 
     /**
-     * F1 voice companion: audio in → STT → DeepSeek → TTS → audio+text out.
+     * F1 voice companion: audio in → STT (SpeechKit) → DeepSeek → TTS → audio+text out.
      * Qt Shell only; requires active booking on terminal.
      */
     public function aiAssistant(Request $request)

@@ -14,6 +14,9 @@ class AiAssistantSetting extends Model
         'llm_api_key',
         'llm_base_url',
         'llm_model',
+        'speech_provider',
+        'yandex_api_key',
+        'yandex_folder_id',
         'openai_api_key',
         'openai_base_url',
         'stt_model',
@@ -27,22 +30,47 @@ class AiAssistantSetting extends Model
     protected $casts = [
         'is_enabled' => 'boolean',
         'llm_api_key' => 'encrypted',
+        'yandex_api_key' => 'encrypted',
         'openai_api_key' => 'encrypted',
         'max_reply_chars' => 'integer',
     ];
 
     protected $hidden = [
         'llm_api_key',
+        'yandex_api_key',
         'openai_api_key',
     ];
 
-    public const VOICES = [
+    public const OPENAI_VOICES = [
         'alloy' => 'Alloy',
         'echo' => 'Echo',
         'fable' => 'Fable',
         'onyx' => 'Onyx',
         'nova' => 'Nova',
         'shimmer' => 'Shimmer',
+    ];
+
+    /** @deprecated use OPENAI_VOICES / voicesFor() */
+    public const VOICES = self::OPENAI_VOICES;
+
+    public const YANDEX_VOICES = [
+        'alena' => 'Алёна',
+        'filipp' => 'Филипп',
+        'marina' => 'Марина',
+        'alexander' => 'Александр',
+        'jane' => 'Джейн',
+        'zahar' => 'Захар',
+        'dasha' => 'Даша',
+        'julia' => 'Юлия',
+        'lera' => 'Лера',
+        'masha' => 'Маша',
+        'kirill' => 'Кирилл',
+        'anton' => 'Антон',
+    ];
+
+    public const SPEECH_PROVIDERS = [
+        'yandex' => 'Yandex SpeechKit',
+        'openai' => 'OpenAI (Whisper + TTS)',
     ];
 
     public const LLM_PROVIDERS = [
@@ -75,7 +103,8 @@ class AiAssistantSetting extends Model
             [
                 'is_enabled' => true,
                 'llm_provider' => 'deepseek',
-                'tts_voice' => (string) config('ai_assistant.openai.tts_voice', 'nova'),
+                'speech_provider' => 'yandex',
+                'tts_voice' => (string) config('ai_assistant.yandex.tts_voice', 'alena'),
                 'companion_prompt' => null,
                 'greeting_prompt' => null,
             ]
@@ -208,14 +237,63 @@ class AiAssistantSetting extends Model
         return (string) config('ai_assistant.openai.tts_model', 'tts-1');
     }
 
-    public function resolvedTtsVoice(): string
+    public function resolvedSpeechProvider(): string
     {
-        $voice = strtolower(trim((string) $this->tts_voice));
-        if ($voice === '' || ! array_key_exists($voice, self::VOICES)) {
-            return (string) config('ai_assistant.openai.tts_voice', 'nova');
+        $provider = strtolower(trim((string) ($this->speech_provider ?: config('ai_assistant.speech_provider', 'yandex'))));
+
+        return array_key_exists($provider, self::SPEECH_PROVIDERS) ? $provider : 'yandex';
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function voicesFor(string $provider): array
+    {
+        return $provider === 'openai' ? self::OPENAI_VOICES : self::YANDEX_VOICES;
+    }
+
+    public function resolvedYandexApiKey(): string
+    {
+        $fromDb = trim((string) ($this->yandex_api_key ?? ''));
+        if ($fromDb !== '') {
+            return $fromDb;
         }
 
-        return $voice;
+        return trim((string) config('ai_assistant.yandex.api_key', ''));
+    }
+
+    public function resolvedYandexFolderId(): string
+    {
+        $fromDb = trim((string) ($this->yandex_folder_id ?? ''));
+        if ($fromDb !== '') {
+            return $fromDb;
+        }
+
+        return trim((string) config('ai_assistant.yandex.folder_id', ''));
+    }
+
+    public function yandexKeySource(): string
+    {
+        return trim((string) ($this->yandex_api_key ?? '')) !== '' ? 'db' : 'env';
+    }
+
+    public function resolvedTtsVoice(): string
+    {
+        $voices = self::voicesFor($this->resolvedSpeechProvider());
+        $voice = strtolower(trim((string) $this->tts_voice));
+        if ($voice !== '' && array_key_exists($voice, $voices)) {
+            return $voice;
+        }
+
+        if ($this->resolvedSpeechProvider() === 'openai') {
+            $fallback = strtolower(trim((string) config('ai_assistant.openai.tts_voice', 'nova')));
+
+            return array_key_exists($fallback, $voices) ? $fallback : 'nova';
+        }
+
+        $fallback = strtolower(trim((string) config('ai_assistant.yandex.tts_voice', 'alena')));
+
+        return array_key_exists($fallback, $voices) ? $fallback : 'alena';
     }
 
     public function resolvedMaxReplyChars(): int
@@ -227,10 +305,19 @@ class AiAssistantSetting extends Model
         return max(80, (int) config('ai_assistant.max_reply_chars', 420));
     }
 
+    public function hasSpeechCredentials(): bool
+    {
+        if ($this->resolvedSpeechProvider() === 'openai') {
+            return $this->resolvedOpenAiApiKey() !== '';
+        }
+
+        return $this->resolvedYandexApiKey() !== '';
+    }
+
     public function hasCredentials(): bool
     {
         return $this->resolvedLlmApiKey() !== ''
-            && $this->resolvedOpenAiApiKey() !== '';
+            && $this->hasSpeechCredentials();
     }
 
     public function llmKeySource(): string
@@ -312,7 +399,7 @@ class AiAssistantSetting extends Model
             '{{pc}}' => $pc,
             '{{time}}' => $time,
             '{{visit_line}}' => $visitLine,
-            '{{games}}' => $gameText,
+            '{{games}}' => $gamesText,
             '{{max_chars}}' => (string) $maxChars,
         ]);
     }
@@ -378,6 +465,13 @@ PROMPT;
             'tts_model' => $this->tts_model ?: '',
             'has_openai_api_key' => trim((string) ($this->openai_api_key ?? '')) !== '',
             'openai_key_source' => $this->openAiKeySource(),
+            'speech_provider' => $this->resolvedSpeechProvider(),
+            'yandex_folder_id' => $this->yandex_folder_id ?: '',
+            'has_yandex_api_key' => trim((string) ($this->yandex_api_key ?? '')) !== '',
+            'yandex_key_source' => $this->yandexKeySource(),
+            'has_llm_credentials' => $this->resolvedLlmApiKey() !== '',
+            'has_openai_credentials' => $this->resolvedOpenAiApiKey() !== '',
+            'has_speech_credentials' => $this->hasSpeechCredentials(),
             'tts_voice' => $this->resolvedTtsVoice(),
             'max_reply_chars' => $this->max_reply_chars ?: (int) config('ai_assistant.max_reply_chars', 420),
             'companion_prompt' => $this->companion_prompt ?: self::defaultCompanionPromptTemplate(),

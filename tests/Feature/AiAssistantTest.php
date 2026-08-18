@@ -32,9 +32,13 @@ class AiAssistantTest extends TestCase
 
         config([
             'ai_assistant.enabled' => true,
+            'ai_assistant.speech_provider' => 'yandex',
             'ai_assistant.deepseek.api_key' => 'sk-deepseek-test',
             'ai_assistant.deepseek.base_url' => 'https://api.deepseek.com',
             'ai_assistant.deepseek.model' => 'deepseek-chat',
+            'ai_assistant.yandex.api_key' => 'yandex-key-test',
+            'ai_assistant.yandex.folder_id' => 'folder-test',
+            'ai_assistant.yandex.tts_voice' => 'alena',
             'ai_assistant.openai.api_key' => 'sk-openai-test',
             'ai_assistant.openai.base_url' => 'https://api.openai.com/v1',
             'ai_assistant.openai.stt_model' => 'whisper-1',
@@ -95,19 +99,11 @@ class AiAssistantTest extends TestCase
             'ends_at' => now()->addHour(),
         ]);
 
-        Http::fake([
-            'api.openai.com/v1/audio/transcriptions' => Http::response([
-                'text' => 'Как кинуть смок на мид?',
-            ], 200),
-            'api.deepseek.com/chat/completions' => Http::response([
-                'choices' => [
-                    ['message' => ['content' => 'Кидай с тетриса в щель у контейнеров.']],
-                ],
-            ], 200),
-            'api.openai.com/v1/audio/speech' => Http::response('ID3fake-mp3-bytes', 200, [
-                'Content-Type' => 'audio/mpeg',
-            ]),
-        ]);
+        $this->fakeVoiceStack(
+            transcript: 'Как кинуть смок на мид?',
+            reply: 'Кидай с тетриса в щель у контейнеров.',
+            mp3: 'ID3fake-mp3-bytes',
+        );
 
         $audio = UploadedFile::fake()->create('ask.webm', 20, 'audio/webm');
 
@@ -148,23 +144,11 @@ class AiAssistantTest extends TestCase
 
         AiAssistantSetting::forClub($this->club->id)->update([
             'is_enabled' => true,
-            'tts_voice' => 'onyx',
+            'tts_voice' => 'filipp',
             'companion_prompt' => 'CUSTOM_COMPANION for {{player}} in {{game}} club {{club}} max {{max_chars}}',
         ]);
 
-        Http::fake([
-            'api.openai.com/v1/audio/transcriptions' => Http::response([
-                'text' => 'Привет',
-            ], 200),
-            'api.deepseek.com/chat/completions' => Http::response([
-                'choices' => [
-                    ['message' => ['content' => 'Привет!']],
-                ],
-            ], 200),
-            'api.openai.com/v1/audio/speech' => Http::response('ID3voice', 200, [
-                'Content-Type' => 'audio/mpeg',
-            ]),
-        ]);
+        $this->fakeVoiceStack(transcript: 'Привет', reply: 'Привет!', mp3: 'ID3voice');
 
         $audio = UploadedFile::fake()->create('ask.webm', 20, 'audio/webm');
 
@@ -188,11 +172,8 @@ class AiAssistantTest extends TestCase
         });
 
         Http::assertSent(function ($request) {
-            if (! str_contains($request->url(), 'audio/speech')) {
-                return false;
-            }
-
-            return ($request['voice'] ?? null) === 'onyx';
+            return str_contains($request->url(), 'tts.api.cloud.yandex.net')
+                && ($request['voice'] ?? null) === 'filipp';
         });
     }
 
@@ -256,17 +237,12 @@ class AiAssistantTest extends TestCase
 
         AiAssistantSetting::forClub($this->club->id)->update([
             'llm_api_key' => 'sk-db-llm',
-            'openai_api_key' => 'sk-db-openai',
+            'yandex_api_key' => 'yk-db',
+            'yandex_folder_id' => 'folder-db',
             'llm_provider' => 'deepseek',
         ]);
 
-        Http::fake([
-            'api.openai.com/v1/audio/transcriptions' => Http::response(['text' => 'тест'], 200),
-            'api.deepseek.com/chat/completions' => Http::response([
-                'choices' => [['message' => ['content' => 'ок']]],
-            ], 200),
-            'api.openai.com/v1/audio/speech' => Http::response('ID3', 200),
-        ]);
+        $this->fakeVoiceStack();
 
         $this->post('/api/shell/ai-assistant', [
             'terminal_id' => $this->computer->id,
@@ -280,13 +256,13 @@ class AiAssistantTest extends TestCase
         });
 
         Http::assertSent(function ($request) {
-            return str_contains($request->url(), 'audio/transcriptions')
-                && $request->hasHeader('Authorization', 'Bearer sk-db-openai');
+            return str_contains($request->url(), 'stt.api.cloud.yandex.net')
+                && $request->hasHeader('Authorization', 'Api-Key yk-db');
         });
 
         Http::assertSent(function ($request) {
-            return str_contains($request->url(), 'audio/speech')
-                && $request->hasHeader('Authorization', 'Bearer sk-db-openai');
+            return str_contains($request->url(), 'tts.api.cloud.yandex.net')
+                && $request->hasHeader('Authorization', 'Api-Key yk-db');
         });
     }
 
@@ -297,24 +273,21 @@ class AiAssistantTest extends TestCase
         $settings = AiAssistantSetting::forClub($this->club->id);
         $settings->update([
             'llm_api_key' => 'sk-db-llm',
+            'yandex_api_key' => 'yk-db',
             'openai_api_key' => 'sk-db-openai',
         ]);
         $settings->update([
             'llm_api_key' => null,
+            'yandex_api_key' => null,
             'openai_api_key' => null,
         ]);
 
         $this->assertSame('env', $settings->fresh()->llmKeySource());
         $this->assertSame('sk-deepseek-test', $settings->fresh()->resolvedLlmApiKey());
+        $this->assertSame('yandex-key-test', $settings->fresh()->resolvedYandexApiKey());
         $this->assertSame('sk-openai-test', $settings->fresh()->resolvedOpenAiApiKey());
 
-        Http::fake([
-            'api.openai.com/v1/audio/transcriptions' => Http::response(['text' => 'тест'], 200),
-            'api.deepseek.com/chat/completions' => Http::response([
-                'choices' => [['message' => ['content' => 'ок']]],
-            ], 200),
-            'api.openai.com/v1/audio/speech' => Http::response('ID3', 200),
-        ]);
+        $this->fakeVoiceStack();
 
         $this->post('/api/shell/ai-assistant', [
             'terminal_id' => $this->computer->id,
@@ -339,13 +312,7 @@ class AiAssistantTest extends TestCase
             'openai_api_key' => 'sk-db-openai',
         ]);
 
-        Http::fake([
-            'api.openai.com/v1/audio/transcriptions' => Http::response(['text' => 'тест'], 200),
-            'api.openai.com/v1/chat/completions' => Http::response([
-                'choices' => [['message' => ['content' => 'ответ openai']]],
-            ], 200),
-            'api.openai.com/v1/audio/speech' => Http::response('ID3', 200),
-        ]);
+        $this->fakeVoiceStack(transcript: 'тест', reply: 'ответ openai');
 
         $this->post('/api/shell/ai-assistant', [
             'terminal_id' => $this->computer->id,
@@ -421,6 +388,147 @@ class AiAssistantTest extends TestCase
             ->assertJsonPath('color', 'white')
             ->assertJsonPath('glass', 'front_side')
             ->assertJsonPath('form', 'atx');
+    }
+
+    public function test_admin_question_probe_uses_companion_prompt(): void
+    {
+        $admin = Admin::create([
+            'name' => 'AI Question Admin',
+            'email' => 'ai-q@example.test',
+            'password' => 'password',
+            'role' => 'owner',
+        ]);
+
+        Http::fake([
+            'api.deepseek.com/chat/completions' => Http::response([
+                'choices' => [['message' => ['content' => 'Зайди через меню в лобби.']]],
+            ], 200),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class)
+            ->postJson('/admin/ai-assistant/test-question', [
+                'club_id' => $this->club->id,
+                'question' => 'Как зайти в игру?',
+            ])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('reply', 'Зайди через меню в лобби.')
+            ->assertJsonPath('provider', 'deepseek');
+
+        Http::assertSent(function ($request) {
+            $messages = $request['messages'] ?? [];
+            $system = (string) data_get($messages, '0.content', '');
+            $user = (string) data_get($messages, '1.content', '');
+
+            return str_contains($request->url(), 'chat/completions')
+                && $user === 'Как зайти в игру?'
+                && str_contains($system, 'голосовой компаньон')
+                && data_get($request, 'thinking.type') === 'disabled';
+        });
+    }
+
+    public function test_admin_tts_probe_returns_audio(): void
+    {
+        $admin = Admin::create([
+            'name' => 'AI TTS Admin',
+            'email' => 'ai-tts@example.test',
+            'password' => 'password',
+            'role' => 'owner',
+        ]);
+
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'tts.api.cloud.yandex.net')) {
+                return Http::response('ID3tts-bytes', 200, [
+                    'Content-Type' => 'audio/mpeg',
+                ]);
+            }
+
+            return Http::response('unexpected', 599);
+        });
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class)
+            ->postJson('/admin/ai-assistant/test-tts', [
+                'club_id' => $this->club->id,
+                'text' => 'Проверка',
+            ])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('provider', 'yandex')
+            ->assertJsonPath('voice', 'alena')
+            ->assertJsonPath('audio_base64', base64_encode('ID3tts-bytes'));
+    }
+
+    public function test_greeting_prompt_includes_favorite_games(): void
+    {
+        $settings = AiAssistantSetting::forClub($this->club->id);
+        $prompt = $settings->resolveGreetingPrompt([
+            'player_name' => 'Иван',
+            'club_name' => 'Club',
+            'pc_name' => 'PC-1',
+            'time_remaining' => '01:00:00',
+            'is_first_visit' => false,
+            'visit_count_completed' => 3,
+            'favorite_games' => [['id' => 1, 'title' => 'CS2', 'launch_count' => 9]],
+        ], 200);
+
+        $this->assertStringContainsString('CS2 (9)', $prompt);
+    }
+
+    public function test_openai_speech_provider_uses_whisper_and_tts(): void
+    {
+        $this->createActiveBooking();
+
+        AiAssistantSetting::forClub($this->club->id)->update([
+            'speech_provider' => 'openai',
+            'tts_voice' => 'nova',
+        ]);
+
+        Http::fake([
+            'api.openai.com/v1/audio/transcriptions' => Http::response(['text' => 'привет'], 200),
+            'api.deepseek.com/chat/completions' => Http::response([
+                'choices' => [['message' => ['content' => 'хай']]],
+            ], 200),
+            'api.openai.com/v1/audio/speech' => Http::response('ID3oa', 200),
+        ]);
+
+        $this->post('/api/shell/ai-assistant', [
+            'terminal_id' => $this->computer->id,
+            'audio' => UploadedFile::fake()->create('ask.webm', 20, 'audio/webm'),
+        ])->assertOk()
+            ->assertJsonPath('transcript', 'привет');
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'audio/transcriptions');
+        });
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'audio/speech')
+                && ($request['voice'] ?? null) === 'nova';
+        });
+    }
+
+    /**
+     * @param  mixed  $request
+     */
+    private function fakeVoiceStack(string $transcript = 'тест', string $reply = 'ок', string $mp3 = 'ID3'): void
+    {
+        Http::fake(function ($request) use ($transcript, $reply, $mp3) {
+            $url = $request->url();
+            if (str_contains($url, 'stt.api.cloud.yandex.net')) {
+                return Http::response(['result' => $transcript], 200);
+            }
+            if (str_contains($url, 'tts.api.cloud.yandex.net')) {
+                return Http::response($mp3, 200, ['Content-Type' => 'audio/mpeg']);
+            }
+            if (str_contains($url, 'chat/completions')) {
+                return Http::response([
+                    'choices' => [['message' => ['content' => $reply]]],
+                ], 200);
+            }
+
+            return Http::response('unexpected '.$url, 599);
+        });
     }
 
     private function createActiveBooking(): void

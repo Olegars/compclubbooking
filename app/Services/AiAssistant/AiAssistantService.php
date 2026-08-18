@@ -15,9 +15,8 @@ use RuntimeException;
 class AiAssistantService
 {
     public function __construct(
-        private readonly WhisperSpeechToText $stt,
+        private readonly SpeechService $speech,
         private readonly DeepSeekChat $llm,
-        private readonly OpenAiTextToSpeech $tts,
     ) {
     }
 
@@ -70,24 +69,14 @@ class AiAssistantService
 
         $resolvedGame = $this->resolveGame($gameId, $gameTitle);
 
-        $openAiCreds = [
-            'api_key' => $settings->resolvedOpenAiApiKey(),
-            'base_url' => $settings->resolvedOpenAiBaseUrl(),
-            'model' => $settings->resolvedSttModel(),
-        ];
-
-        $transcript = $this->stt->transcribe($audio, $openAiCreds);
+        $transcript = $this->speech->transcribe($audio, $settings);
         $reply = $this->llm->reply($transcript, [
             'game_title' => $resolvedGame['title'],
             'player_name' => $user?->name,
             'club_name' => $club?->name,
             'club_id' => $clubId,
         ]);
-        $speech = $this->tts->synthesize($reply, $settings->resolvedTtsVoice(), [
-            'api_key' => $settings->resolvedOpenAiApiKey(),
-            'base_url' => $settings->resolvedOpenAiBaseUrl(),
-            'model' => $settings->resolvedTtsModel(),
-        ]);
+        $speech = $this->speech->synthesize($reply, $settings);
 
         Log::info('[AI-ASSISTANT]', [
             'terminal_id' => $terminalId,

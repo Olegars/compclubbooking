@@ -17,6 +17,10 @@ const props = defineProps<{
         llm_model: string
         has_llm_api_key: boolean
         llm_key_source: 'db' | 'env'
+        speech_provider: string
+        yandex_folder_id: string
+        has_yandex_api_key: boolean
+        yandex_key_source: 'db' | 'env'
         openai_base_url: string
         stt_model: string
         tts_model: string
@@ -29,11 +33,17 @@ const props = defineProps<{
         using_default_companion: boolean
         using_default_greeting: boolean
         credentials_ok: boolean
+        has_llm_credentials: boolean
+        has_openai_credentials: boolean
+        has_speech_credentials: boolean
         llm_preset_base_url: string
         llm_preset_model: string
     }
     voices: Record<string, string>
+    openaiVoices: Record<string, string>
+    yandexVoices: Record<string, string>
     llmProviders: Record<string, string>
+    speechProviders: Record<string, string>
     llmPresets: Record<string, { base_url: string; model: string }>
     clubs: Array<{ id: number; name: string }>
     env_enabled: boolean
@@ -54,6 +64,10 @@ const form = useForm({
     clear_llm_api_key: false,
     llm_base_url: props.settings.llm_base_url,
     llm_model: props.settings.llm_model,
+    speech_provider: props.settings.speech_provider,
+    yandex_api_key: '',
+    clear_yandex_api_key: false,
+    yandex_folder_id: props.settings.yandex_folder_id,
     openai_api_key: '',
     clear_openai_api_key: false,
     openai_base_url: props.settings.openai_base_url,
@@ -75,6 +89,10 @@ watch(
         form.clear_llm_api_key = false
         form.llm_base_url = s.llm_base_url
         form.llm_model = s.llm_model
+        form.speech_provider = s.speech_provider
+        form.yandex_api_key = ''
+        form.clear_yandex_api_key = false
+        form.yandex_folder_id = s.yandex_folder_id
         form.openai_api_key = ''
         form.clear_openai_api_key = false
         form.openai_base_url = s.openai_base_url
@@ -90,10 +108,26 @@ watch(
 )
 
 const liveHint = computed(() => {
-    if (!props.env_enabled) return 'Выключено в .env (AI_ASSISTANT_ENABLED=false)'
-    if (!props.settings.credentials_ok) return 'Нет LLM / OpenAI ключей (админка или .env)'
-    if (!form.is_enabled) return 'Выключено в админке'
-    return 'Активен'
+    if (!props.env_enabled) return 'F1 выключен в .env (AI_ASSISTANT_ENABLED=false). Кнопка «Проверить LLM» при этом может работать.'
+    if (!props.settings.has_llm_credentials) return 'Нет LLM-ключа DeepSeek (админка или .env)'
+    if (!props.settings.has_speech_credentials) {
+        return form.speech_provider === 'openai'
+            ? 'DeepSeek есть, но нет OpenAI ключа — без него нет распознавания и озвучки'
+            : 'DeepSeek есть, но нет ключа Yandex SpeechKit — без него нет распознавания и озвучки'
+    }
+    if (!form.is_enabled) return 'Выключено тумблером в админке'
+    return 'Голосовой вопрос готов (нужна активная сессия на ПК)'
+})
+
+const voiceOptions = computed(() =>
+    form.speech_provider === 'openai' ? props.openaiVoices : props.yandexVoices
+)
+
+watch(() => form.speech_provider, (provider) => {
+    const options = provider === 'openai' ? props.openaiVoices : props.yandexVoices
+    if (!Object.keys(options).includes(form.tts_voice)) {
+        form.tts_voice = provider === 'openai' ? 'nova' : 'alena'
+    }
 })
 
 const liveOk = computed(() => props.env_enabled && props.settings.credentials_ok && form.is_enabled)
@@ -119,8 +153,10 @@ const save = () => {
         preserveScroll: true,
         onSuccess: () => {
             form.llm_api_key = ''
+            form.yandex_api_key = ''
             form.openai_api_key = ''
             form.clear_llm_api_key = false
+            form.clear_yandex_api_key = false
             form.clear_openai_api_key = false
         },
     })
@@ -134,6 +170,9 @@ const resetPrompts = () => {
 const testBusy = ref(false)
 const testCaseName = ref('')
 const testCasePart = ref('')
+const testQuestionText = ref('Как зайти в игру?')
+const testTtsBusy = ref(false)
+let testAudio: HTMLAudioElement | null = null
 const testResult = ref<{
     ok: boolean
     reply?: string
@@ -148,7 +187,13 @@ const testResult = ref<{
     form?: string | null
     labels?: { color: string, glass: string, form: string }
     raw?: Record<string, unknown> | null
+    voice?: string
 } | null>(null)
+
+const testError = (e: any, fallback: string) => ({
+    ok: false as const,
+    message: e?.response?.data?.message || e?.message || fallback,
+})
 
 const testLlm = async () => {
     testBusy.value = true
@@ -163,12 +208,51 @@ const testLlm = async () => {
         const { data } = await axios.post('/admin/ai-assistant/test-llm', payload)
         testResult.value = data
     } catch (e: any) {
-        testResult.value = {
-            ok: false,
-            message: e?.response?.data?.message || e?.message || 'Тест не прошёл',
-        }
+        testResult.value = testError(e, 'Тест LLM не прошёл')
     } finally {
         testBusy.value = false
+    }
+}
+
+const testQuestion = async () => {
+    const question = testQuestionText.value.trim()
+    if (!question) {
+        testResult.value = { ok: false, message: 'Введите вопрос' }
+        return
+    }
+    testBusy.value = true
+    testResult.value = null
+    try {
+        const { data } = await axios.post('/admin/ai-assistant/test-question', {
+            club_id: form.club_id,
+            question,
+        })
+        testResult.value = data
+    } catch (e: any) {
+        testResult.value = testError(e, 'Вопрос к ИИ не прошёл')
+    } finally {
+        testBusy.value = false
+    }
+}
+
+const testTts = async () => {
+    testTtsBusy.value = true
+    testResult.value = null
+    try {
+        const { data } = await axios.post('/admin/ai-assistant/test-tts', {
+            club_id: form.club_id,
+            text: testQuestionText.value.trim() || undefined,
+        })
+        testResult.value = data
+        if (data?.ok && data.audio_base64) {
+            testAudio?.pause()
+            testAudio = new Audio(`data:${data.audio_mime || 'audio/mpeg'};base64,${data.audio_base64}`)
+            await testAudio.play()
+        }
+    } catch (e: any) {
+        testResult.value = testError(e, 'Озвучка не прошла')
+    } finally {
+        testTtsBusy.value = false
     }
 }
 
@@ -190,6 +274,25 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                 <p class="mt-4 text-[11px] italic"
                    :class="liveOk ? 'text-cyan-400/70' : 'text-amber-400/70'">
                     Статус: {{ liveHint }}
+                </p>
+                <ul class="mt-4 grid sm:grid-cols-2 gap-2 text-[11px] text-white/50">
+                    <li :class="env_enabled ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
+                        {{ env_enabled ? '✓' : '✗' }} AI_ASSISTANT_ENABLED в .env сервера
+                    </li>
+                    <li :class="form.is_enabled ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
+                        {{ form.is_enabled ? '✓' : '✗' }} Тумблер в админке
+                    </li>
+                    <li :class="settings.has_llm_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
+                        {{ settings.has_llm_credentials ? '✓' : '✗' }} DeepSeek (текст ответа)
+                    </li>
+                    <li :class="settings.has_speech_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
+                        {{ settings.has_speech_credentials ? '✓' : '✗' }}
+                        {{ form.speech_provider === 'openai' ? 'OpenAI (Whisper + TTS)' : 'Yandex SpeechKit (речь)' }}
+                    </li>
+                </ul>
+                <p class="mt-3 text-[10px] text-white/25 italic leading-relaxed">
+                    Вопрос в Shell: микрофон → SpeechKit/Whisper → DeepSeek → озвучка в наушники. Нужна активная бронь.
+                    Хоткей в config.ini сейчас Grave (Ё / ~), не F1.
                 </p>
             </div>
 
@@ -262,28 +365,91 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                             </label>
                             <p v-if="form.errors.llm_api_key" class="mt-2 text-red-400 text-xs">{{ form.errors.llm_api_key }}</p>
                         </div>
+                    </div>
+
+                    <div class="border-t border-white/5 pt-8 space-y-6">
+                        <h2 class="text-sm font-black uppercase italic tracking-wider text-white/70">
+                            Речь (распознавание и озвучка)
+                        </h2>
+                        <p class="text-[10px] text-white/30 italic">
+                            Из РФ OpenAI часто недоступен. По умолчанию — Yandex SpeechKit.
+                        </p>
 
                         <div>
-                            <label :class="labelClass">
-                                OpenAI ключ (STT + TTS)
-                                <span v-if="settings.has_openai_api_key" class="text-cyan-500/70 normal-case tracking-normal">(сохранён в БД)</span>
-                                <span v-else-if="settings.openai_key_source === 'env'" class="text-white/25 normal-case tracking-normal">(из .env)</span>
-                            </label>
-                            <input
-                                v-model="form.openai_api_key"
-                                type="password"
-                                autocomplete="new-password"
-                                placeholder="••••••"
-                                :class="inputClass"
-                            />
-                            <label
-                                v-if="settings.has_openai_api_key"
-                                class="flex items-center gap-2 mt-2 text-[10px] text-white/40 cursor-pointer"
-                            >
-                                <input v-model="form.clear_openai_api_key" type="checkbox" class="accent-red-500" />
-                                Очистить ключ в БД (останется .env)
-                            </label>
-                            <p v-if="form.errors.openai_api_key" class="mt-2 text-red-400 text-xs">{{ form.errors.openai_api_key }}</p>
+                            <label :class="labelClass">Провайдер речи</label>
+                            <select v-model="form.speech_provider" :class="inputClass + ' max-w-xs'">
+                                <option v-for="(label, key) in speechProviders" :key="key" :value="key">
+                                    {{ label }}
+                                </option>
+                            </select>
+                        </div>
+
+                        <div v-if="form.speech_provider === 'yandex'" class="grid md:grid-cols-2 gap-6">
+                            <div>
+                                <label :class="labelClass">
+                                    SpeechKit API-ключ
+                                    <span v-if="settings.has_yandex_api_key" class="text-cyan-500/70 normal-case tracking-normal">(сохранён в БД)</span>
+                                    <span v-else-if="settings.yandex_key_source === 'env'" class="text-white/25 normal-case tracking-normal">(из .env)</span>
+                                </label>
+                                <input
+                                    v-model="form.yandex_api_key"
+                                    type="password"
+                                    autocomplete="new-password"
+                                    placeholder="••••••"
+                                    :class="inputClass"
+                                />
+                                <label
+                                    v-if="settings.has_yandex_api_key"
+                                    class="flex items-center gap-2 mt-2 text-[10px] text-white/40 cursor-pointer"
+                                >
+                                    <input v-model="form.clear_yandex_api_key" type="checkbox" class="accent-red-500" />
+                                    Очистить ключ в БД (останется .env)
+                                </label>
+                                <p class="mt-2 text-[10px] text-white/25 italic">Сервисный аккаунт → API-ключ. Роли ai.speechkit-stt.user и ai.speechkit-tts.user</p>
+                            </div>
+                            <div>
+                                <label :class="labelClass">Folder ID каталога</label>
+                                <input
+                                    v-model="form.yandex_folder_id"
+                                    type="text"
+                                    placeholder="b1g…"
+                                    :class="inputClass"
+                                />
+                                <p class="mt-2 text-[10px] text-white/25 italic">Нужен, если ключ не от сервисного аккаунта. Для SA можно оставить пустым.</p>
+                            </div>
+                        </div>
+
+                        <div v-else class="grid md:grid-cols-2 gap-6">
+                            <div>
+                                <label :class="labelClass">
+                                    OpenAI ключ (STT + TTS)
+                                    <span v-if="settings.has_openai_api_key" class="text-cyan-500/70 normal-case tracking-normal">(сохранён в БД)</span>
+                                    <span v-else-if="settings.openai_key_source === 'env'" class="text-white/25 normal-case tracking-normal">(из .env)</span>
+                                </label>
+                                <input
+                                    v-model="form.openai_api_key"
+                                    type="password"
+                                    autocomplete="new-password"
+                                    placeholder="••••••"
+                                    :class="inputClass"
+                                />
+                                <label
+                                    v-if="settings.has_openai_api_key"
+                                    class="flex items-center gap-2 mt-2 text-[10px] text-white/40 cursor-pointer"
+                                >
+                                    <input v-model="form.clear_openai_api_key" type="checkbox" class="accent-red-500" />
+                                    Очистить ключ в БД (останется .env)
+                                </label>
+                            </div>
+                            <div>
+                                <label :class="labelClass">OpenAI Base URL</label>
+                                <input
+                                    v-model="form.openai_base_url"
+                                    type="text"
+                                    placeholder="https://api.openai.com/v1"
+                                    :class="inputClass"
+                                />
+                            </div>
                         </div>
                     </div>
 
@@ -313,6 +479,15 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                     </div>
 
                     <div class="rounded-xl border border-white/10 bg-black/30 px-5 py-4 space-y-4">
+                        <div>
+                            <label :class="labelClass">Вопрос игрока (проверка F1 без микрофона)</label>
+                            <textarea
+                                v-model="testQuestionText"
+                                rows="3"
+                                :class="inputClass + ' min-h-[72px] resize-y'"
+                                placeholder="Как зайти в игру?"
+                            />
+                        </div>
                         <div class="space-y-3">
                             <div>
                                 <label :class="labelClass">Название корпуса (опционально)</label>
@@ -338,20 +513,39 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                                 type="button"
                                 class="px-6 py-3 rounded-xl border border-cyan-500/40 text-cyan-400 font-black uppercase tracking-widest text-[10px] hover:bg-cyan-500/10 transition-all disabled:opacity-50"
                                 :disabled="testBusy"
+                                @click="testQuestion"
+                            >
+                                {{ testBusy ? 'Спрашиваю…' : 'Спросить ИИ' }}
+                            </button>
+                            <button
+                                type="button"
+                                class="px-6 py-3 rounded-xl border border-white/20 text-white/70 font-black uppercase tracking-widest text-[10px] hover:bg-white/5 transition-all disabled:opacity-50"
+                                :disabled="testBusy"
                                 @click="testLlm"
                             >
-                                {{ testBusy ? 'Проверка…' : (testCaseName.trim() ? 'Проверить корпус' : 'Проверить LLM') }}
+                                {{ testBusy ? 'Проверка…' : (testCaseName.trim() ? 'Проверить корпус' : 'Пинг LLM') }}
+                            </button>
+                            <button
+                                type="button"
+                                class="px-6 py-3 rounded-xl border border-amber-500/40 text-amber-300 font-black uppercase tracking-widest text-[10px] hover:bg-amber-500/10 transition-all disabled:opacity-50"
+                                :disabled="testTtsBusy"
+                                @click="testTts"
+                            >
+                                {{ testTtsBusy ? 'Озвучка…' : 'Проверить озвучку' }}
                             </button>
                             <p class="text-[10px] text-white/30 italic max-w-md">
-                                Пустое название — короткий ping. С названием — тот же промпт, что размечает каталог (цвет / стекло / форм-фактор).
+                                «Спросить» — тот же промпт, что F1, без микрофона. «Озвучка» проверяет SpeechKit / OpenAI TTS.
                             </p>
                         </div>
                         <div v-if="testResult?.ok" class="text-xs text-[#22c55e] leading-relaxed space-y-2">
                             <p>
-                                OK · {{ testResult.provider || 'llm' }} · {{ testResult.model }}
+                                OK · {{ testResult.provider || testResult.voice || 'llm' }} · {{ testResult.model }}
                             </p>
-                            <p class="text-white/80 normal-case tracking-normal not-italic font-black">
+                            <p v-if="testResult.reply" class="text-white/80 normal-case tracking-normal not-italic font-black">
                                 {{ testResult.reply }}
+                            </p>
+                            <p v-else-if="testResult.voice" class="text-white/70 normal-case tracking-normal not-italic">
+                                Озвучка проиграна голосом {{ testResult.voice }}
                             </p>
                             <pre v-if="testResult.raw"
                                  class="mt-2 p-3 rounded-lg bg-black/50 border border-white/10 text-[11px] text-cyan-300/90 overflow-x-auto normal-case tracking-normal not-italic font-mono">{{ JSON.stringify(testResult.raw, null, 2) }}</pre>
@@ -361,16 +555,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                         </p>
                     </div>
 
-                    <div class="grid md:grid-cols-3 gap-6">
-                        <div>
-                            <label :class="labelClass">OpenAI Base URL</label>
-                            <input
-                                v-model="form.openai_base_url"
-                                type="text"
-                                placeholder="https://api.openai.com/v1"
-                                :class="inputClass"
-                            />
-                        </div>
+                    <div v-if="form.speech_provider === 'openai'" class="grid md:grid-cols-2 gap-6">
                         <div>
                             <label :class="labelClass">STT модель</label>
                             <input v-model="form.stt_model" type="text" placeholder="whisper-1" :class="inputClass" />
@@ -383,9 +568,12 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
 
                     <div class="grid md:grid-cols-2 gap-6">
                         <div>
-                            <label :class="labelClass">Голос озвучки (OpenAI TTS)</label>
+                            <label :class="labelClass">
+                                Голос озвучки
+                                {{ form.speech_provider === 'yandex' ? '(Yandex)' : '(OpenAI)' }}
+                            </label>
                             <select v-model="form.tts_voice" :class="inputClass">
-                                <option v-for="(label, key) in voices" :key="key" :value="key">
+                                <option v-for="(label, key) in voiceOptions" :key="key" :value="key">
                                     {{ label }} ({{ key }})
                                 </option>
                             </select>

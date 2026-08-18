@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\AiAssistantSetting;
 use App\Models\Club;
 use App\Services\AiAssistant\DeepSeekChat;
+use App\Services\AiAssistant\SpeechService;
 use App\Services\StoreCaseCatalogEnrichmentService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class AiAssistantSettingsController extends Controller
@@ -19,8 +21,11 @@ class AiAssistantSettingsController extends Controller
 
         return Inertia::render('Admin/AiAssistant', [
             'settings' => $settings->toAdminArray(),
-            'voices' => AiAssistantSetting::VOICES,
+            'voices' => AiAssistantSetting::voicesFor($settings->resolvedSpeechProvider()),
+            'openaiVoices' => AiAssistantSetting::OPENAI_VOICES,
+            'yandexVoices' => AiAssistantSetting::YANDEX_VOICES,
             'llmProviders' => AiAssistantSetting::LLM_PROVIDERS,
+            'speechProviders' => AiAssistantSetting::SPEECH_PROVIDERS,
             'llmPresets' => AiAssistantSetting::LLM_PRESETS,
             'clubs' => Club::query()->select('id', 'name')->orderBy('name')->get(),
             'env_enabled' => (bool) config('ai_assistant.enabled'),
@@ -41,12 +46,20 @@ class AiAssistantSettingsController extends Controller
             'clear_llm_api_key' => 'nullable|boolean',
             'llm_base_url' => 'nullable|string|max:512',
             'llm_model' => 'nullable|string|max:128',
+            'speech_provider' => 'required|string|in:'.implode(',', array_keys(AiAssistantSetting::SPEECH_PROVIDERS)),
+            'yandex_api_key' => 'nullable|string|max:2000',
+            'clear_yandex_api_key' => 'nullable|boolean',
+            'yandex_folder_id' => 'nullable|string|max:64',
             'openai_api_key' => 'nullable|string|max:2000',
             'clear_openai_api_key' => 'nullable|boolean',
             'openai_base_url' => 'nullable|string|max:512',
             'stt_model' => 'nullable|string|max:64',
             'tts_model' => 'nullable|string|max:64',
-            'tts_voice' => 'required|string|in:'.implode(',', array_keys(AiAssistantSetting::VOICES)),
+            'tts_voice' => [
+                'required',
+                'string',
+                Rule::in(array_keys(AiAssistantSetting::voicesFor((string) $request->input('speech_provider', 'yandex')))),
+            ],
             'max_reply_chars' => 'required|integer|min:80|max:2000',
             'companion_prompt' => 'required|string|max:20000',
             'greeting_prompt' => 'required|string|max:20000',
@@ -66,6 +79,8 @@ class AiAssistantSettingsController extends Controller
         $payload = [
             'is_enabled' => (bool) $data['is_enabled'],
             'llm_provider' => $data['llm_provider'],
+            'speech_provider' => $data['speech_provider'],
+            'yandex_folder_id' => filled($data['yandex_folder_id'] ?? null) ? trim($data['yandex_folder_id']) : null,
             'llm_base_url' => filled($data['llm_base_url'] ?? null)
                 ? AiAssistantSetting::normalizeLlmBaseUrl((string) $data['llm_base_url']) ?: null
                 : null,
@@ -87,6 +102,12 @@ class AiAssistantSettingsController extends Controller
             $payload['llm_api_key'] = null;
         } elseif (array_key_exists('llm_api_key', $data) && filled($data['llm_api_key'])) {
             $payload['llm_api_key'] = trim($data['llm_api_key']);
+        }
+
+        if (! empty($data['clear_yandex_api_key'])) {
+            $payload['yandex_api_key'] = null;
+        } elseif (array_key_exists('yandex_api_key', $data) && filled($data['yandex_api_key'])) {
+            $payload['yandex_api_key'] = trim($data['yandex_api_key']);
         }
 
         if (! empty($data['clear_openai_api_key'])) {
@@ -136,6 +157,75 @@ class AiAssistantSettingsController extends Controller
             }
 
             return response()->json($llm->probe($clubId));
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function testQuestion(Request $request, DeepSeekChat $llm)
+    {
+        $data = $request->validate([
+            'club_id' => 'nullable|integer|exists:clubs,id',
+            'question' => 'required|string|max:1000',
+        ]);
+
+        $clubId = (int) ($data['club_id'] ?? Club::query()->value('id'));
+        $club = Club::query()->find($clubId);
+
+        try {
+            $reply = $llm->reply(trim($data['question']), [
+                'game_title' => 'проверка из админки',
+                'player_name' => 'админ',
+                'club_name' => $club?->name,
+                'club_id' => $clubId,
+            ]);
+
+            $settings = AiAssistantSetting::forClub($clubId);
+
+            return response()->json([
+                'ok' => true,
+                'reply' => $reply,
+                'provider' => $settings->resolvedLlmProvider(),
+                'model' => $settings->resolvedLlmModel(),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function testTts(Request $request, SpeechService $speech)
+    {
+        $data = $request->validate([
+            'club_id' => 'nullable|integer|exists:clubs,id',
+            'text' => 'nullable|string|max:400',
+        ]);
+
+        $clubId = (int) ($data['club_id'] ?? Club::query()->value('id'));
+        $settings = AiAssistantSetting::forClub($clubId);
+        $text = trim((string) ($data['text'] ?? ''));
+        if ($text === '') {
+            $text = 'Проверка озвучки. Если слышите это, SpeechKit работает.';
+        }
+
+        try {
+            $result = $speech->synthesize($text, $settings);
+
+            return response()->json([
+                'ok' => true,
+                'provider' => $settings->resolvedSpeechProvider(),
+                'voice' => $settings->resolvedTtsVoice(),
+                'model' => $settings->resolvedSpeechProvider() === 'openai'
+                    ? $settings->resolvedTtsModel()
+                    : 'speechkit',
+                'audio_mime' => $result['mime'],
+                'audio_base64' => base64_encode($result['binary']),
+            ]);
         } catch (\Throwable $e) {
             return response()->json([
                 'ok' => false,

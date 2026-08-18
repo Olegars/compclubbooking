@@ -16,7 +16,7 @@ class VoiceGreetingService
 {
     public function __construct(
         private readonly DeepSeekChat $llm,
-        private readonly OpenAiTextToSpeech $tts,
+        private readonly SpeechService $speech,
     ) {
     }
 
@@ -88,11 +88,7 @@ class VoiceGreetingService
         ];
 
         $reply = $this->llm->greet($context);
-        $speech = $this->tts->synthesize($reply, $settings->resolvedTtsVoice(), [
-            'api_key' => $settings->resolvedOpenAiApiKey(),
-            'base_url' => $settings->resolvedOpenAiBaseUrl(),
-            'model' => $settings->resolvedTtsModel(),
-        ]);
+        $speech = $this->speech->synthesize($reply, $settings);
 
         Log::info('[AI-GREETING]', [
             'terminal_id' => $terminalId,

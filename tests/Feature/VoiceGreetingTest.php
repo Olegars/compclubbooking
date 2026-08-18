@@ -30,9 +30,13 @@ class VoiceGreetingTest extends TestCase
 
         config([
             'ai_assistant.enabled' => true,
+            'ai_assistant.speech_provider' => 'yandex',
             'ai_assistant.deepseek.api_key' => 'sk-deepseek-test',
             'ai_assistant.deepseek.base_url' => 'https://api.deepseek.com',
             'ai_assistant.deepseek.model' => 'deepseek-chat',
+            'ai_assistant.yandex.api_key' => 'yandex-key-test',
+            'ai_assistant.yandex.folder_id' => 'folder-test',
+            'ai_assistant.yandex.tts_voice' => 'alena',
             'ai_assistant.openai.api_key' => 'sk-openai-test',
             'ai_assistant.openai.base_url' => 'https://api.openai.com/v1',
             'ai_assistant.openai.tts_model' => 'tts-1',
@@ -96,16 +100,21 @@ class VoiceGreetingTest extends TestCase
             'last_launched_at' => now()->subDay(),
         ]);
 
-        Http::fake([
-            'api.deepseek.com/chat/completions' => Http::response([
-                'choices' => [
-                    ['message' => ['content' => 'Привет, Alex! Рады видеть тебя в Sector Test.']],
-                ],
-            ], 200),
-            'api.openai.com/v1/audio/speech' => Http::response('ID3greet-mp3', 200, [
-                'Content-Type' => 'audio/mpeg',
-            ]),
-        ]);
+        Http::fake(function ($request) {
+            $url = $request->url();
+            if (str_contains($url, 'chat/completions')) {
+                return Http::response([
+                    'choices' => [
+                        ['message' => ['content' => 'Привет, Alex! Рады видеть тебя в Sector Test.']],
+                    ],
+                ], 200);
+            }
+            if (str_contains($url, 'tts.api.cloud.yandex.net')) {
+                return Http::response('ID3greet-mp3', 200, ['Content-Type' => 'audio/mpeg']);
+            }
+
+            return Http::response('unexpected '.$url, 599);
+        });
 
         $response = $this->postJson('/api/shell/voice-greeting', [
             'terminal_id' => $this->computer->id,
@@ -144,18 +153,25 @@ class VoiceGreetingTest extends TestCase
         ]);
 
         \App\Models\AiAssistantSetting::forClub($this->club->id)->update([
-            'tts_voice' => 'shimmer',
+            'tts_voice' => 'marina',
             'greeting_prompt' => 'CUSTOM_GREET {{player}} on {{pc}} at {{club}} games {{games}} {{visit_line}} time {{time}} max {{max_chars}}',
         ]);
 
-        Http::fake([
-            'api.deepseek.com/chat/completions' => Http::response([
-                'choices' => [
-                    ['message' => ['content' => 'Кастомное приветствие.']],
-                ],
-            ], 200),
-            'api.openai.com/v1/audio/speech' => Http::response('ID3greet-mp3', 200),
-        ]);
+        Http::fake(function ($request) {
+            $url = $request->url();
+            if (str_contains($url, 'chat/completions')) {
+                return Http::response([
+                    'choices' => [
+                        ['message' => ['content' => 'Кастомное приветствие.']],
+                    ],
+                ], 200);
+            }
+            if (str_contains($url, 'tts.api.cloud.yandex.net')) {
+                return Http::response('ID3greet-mp3', 200);
+            }
+
+            return Http::response('unexpected '.$url, 599);
+        });
 
         $this->postJson('/api/shell/voice-greeting', [
             'terminal_id' => $this->computer->id,
@@ -175,8 +191,8 @@ class VoiceGreetingTest extends TestCase
         });
 
         Http::assertSent(function ($request) {
-            return str_contains($request->url(), 'audio/speech')
-                && ($request['voice'] ?? null) === 'shimmer';
+            return str_contains($request->url(), 'tts.api.cloud.yandex.net')
+                && ($request['voice'] ?? null) === 'marina';
         });
     }
 
@@ -211,14 +227,21 @@ class VoiceGreetingTest extends TestCase
             'actual_started_at' => now()->subMinute(),
         ]);
 
-        Http::fake([
-            'api.deepseek.com/chat/completions' => Http::response([
-                'choices' => [
-                    ['message' => ['content' => 'С возвращением, Alex!']],
-                ],
-            ], 200),
-            'api.openai.com/v1/audio/speech' => Http::response('ID3greet-mp3', 200),
-        ]);
+        Http::fake(function ($request) {
+            $url = $request->url();
+            if (str_contains($url, 'chat/completions')) {
+                return Http::response([
+                    'choices' => [
+                        ['message' => ['content' => 'С возвращением, Alex!']],
+                    ],
+                ], 200);
+            }
+            if (str_contains($url, 'tts.api.cloud.yandex.net')) {
+                return Http::response('ID3greet-mp3', 200);
+            }
+
+            return Http::response('unexpected '.$url, 599);
+        });
 
         $this->postJson('/api/shell/voice-greeting', [
             'terminal_id' => $this->computer->id,
