@@ -200,6 +200,24 @@ class FanControlTest extends TestCase
         $this->assertSame($this->pcA->id, $this->fan->last_applied_by_computer_id);
     }
 
+    public function test_stale_manual_timestamp_does_not_lock_buttons(): void
+    {
+        $this->fan->update([
+            'last_manual_at' => now()->subMinutes(5),
+            'last_applied_at' => now()->subMinutes(5),
+        ]);
+
+        $state = $this->fans->stateForComputer($this->pcA->id);
+        $this->assertSame(0, $state['manual_lock']['remaining_sec']);
+        $this->assertSame(0, $state['auto_lock']['remaining_sec']);
+        $this->assertFalse($state['manual_lock']['locked']);
+        $this->assertFalse($state['auto_lock']['locked']);
+
+        $result = $this->fans->setManualModeForComputer($this->pcA->id, 'on');
+        $this->assertFalse($result['locked']);
+        $this->assertSame(0, $result['remaining_sec']);
+    }
+
     public function test_shell_thermal_and_fan_endpoints(): void
     {
         $this->postJson('/api/shell/thermal', [

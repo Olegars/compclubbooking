@@ -522,9 +522,7 @@ class FanControlService
             return 0;
         }
 
-        $elapsed = $fan->last_manual_at->diffInSeconds(now());
-
-        return max(0, $cooldown - (int) $elapsed);
+        return max(0, $cooldown - $this->secondsSince($fan->last_manual_at));
     }
 
     private function autoLockRemainingSec(SpaceFan $fan, int $cooldown): int
@@ -533,9 +531,16 @@ class FanControlService
             return 0;
         }
 
-        $elapsed = $fan->last_applied_at->diffInSeconds(now());
+        return max(0, $cooldown - $this->secondsSince($fan->last_applied_at));
+    }
 
-        return max(0, $cooldown - (int) $elapsed);
+    /**
+     * Секунды с метки. Не diffInSeconds(): в Carbon 3 знак инвертирован,
+     * и кулдаун превращается в часы — кнопки в shell вечно серые, реле не жмётся.
+     */
+    private function secondsSince(\DateTimeInterface $at): int
+    {
+        return max(0, now()->getTimestamp() - $at->getTimestamp());
     }
 
     private function spaceHasActiveSession(SpaceFan $fan): bool
