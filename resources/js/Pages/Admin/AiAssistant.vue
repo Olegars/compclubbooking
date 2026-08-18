@@ -46,7 +46,6 @@ const props = defineProps<{
     speechProviders: Record<string, string>
     llmPresets: Record<string, { base_url: string; model: string }>
     clubs: Array<{ id: number; name: string }>
-    env_enabled: boolean
     placeholders: {
         companion: string[]
         greeting: string[]
@@ -108,7 +107,6 @@ watch(
 )
 
 const liveHint = computed(() => {
-    if (!props.env_enabled) return 'Шел выключен: на сервере AI_ASSISTANT_ENABLED=false. «Проверить LLM / озвучку» при этом работают. Поставь true в .env и php artisan config:clear.'
     if (!props.settings.has_llm_credentials) return 'Нет LLM-ключа DeepSeek (админка или .env)'
     if (!props.settings.has_speech_credentials) {
         return form.speech_provider === 'openai'
@@ -130,7 +128,7 @@ watch(() => form.speech_provider, (provider) => {
     }
 })
 
-const liveOk = computed(() => props.env_enabled && props.settings.credentials_ok && form.is_enabled)
+const liveOk = computed(() => props.settings.credentials_ok && form.is_enabled)
 
 const switchClub = (clubId: number) => {
     router.get('/admin/ai-assistant', { club_id: clubId }, { preserveState: false })
@@ -276,9 +274,6 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                     Статус: {{ liveHint }}
                 </p>
                 <ul class="mt-4 grid sm:grid-cols-2 gap-2 text-[11px] text-white/50">
-                    <li :class="env_enabled ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
-                        {{ env_enabled ? '✓' : '✗' }} AI_ASSISTANT_ENABLED в .env сервера
-                    </li>
                     <li :class="form.is_enabled ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
                         {{ form.is_enabled ? '✓' : '✗' }} Тумблер в админке
                     </li>

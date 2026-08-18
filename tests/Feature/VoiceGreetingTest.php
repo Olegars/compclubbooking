@@ -251,9 +251,18 @@ class VoiceGreetingTest extends TestCase
             ->assertJsonPath('visit_count_completed', 1);
     }
 
-    public function test_disabled_when_not_configured(): void
+    public function test_disabled_when_missing_credentials(): void
     {
-        config(['ai_assistant.enabled' => false]);
+        config([
+            'ai_assistant.deepseek.api_key' => '',
+            'ai_assistant.yandex.api_key' => '',
+            'ai_assistant.openai.api_key' => '',
+        ]);
+        AiAssistantSetting::forClub($this->club->id)->update([
+            'llm_api_key' => null,
+            'yandex_api_key' => null,
+            'openai_api_key' => null,
+        ]);
 
         Booking::create([
             'user_id' => $this->user->id,
@@ -272,6 +281,6 @@ class VoiceGreetingTest extends TestCase
             'terminal_id' => $this->computer->id,
         ])->assertStatus(422)
             ->assertJsonPath('status', 'error')
-            ->assertJsonPath('message', 'Выключен в .env сервера (AI_ASSISTANT_ENABLED=false)');
+            ->assertJsonPath('message', 'Нет ключа LLM (DeepSeek/OpenAI)');
     }
 }

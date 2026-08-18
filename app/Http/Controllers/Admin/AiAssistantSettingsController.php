@@ -28,7 +28,6 @@ class AiAssistantSettingsController extends Controller
             'speechProviders' => AiAssistantSetting::SPEECH_PROVIDERS,
             'llmPresets' => AiAssistantSetting::LLM_PRESETS,
             'clubs' => Club::query()->select('id', 'name')->orderBy('name')->get(),
-            'env_enabled' => (bool) config('ai_assistant.enabled'),
             'placeholders' => [
                 'companion' => ['{{club}}', '{{player}}', '{{game}}', '{{max_chars}}'],
                 'greeting' => ['{{club}}', '{{player}}', '{{pc}}', '{{time}}', '{{visit_line}}', '{{games}}', '{{max_chars}}'],

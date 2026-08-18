@@ -117,10 +117,6 @@ class AiAssistantSetting extends Model
      */
     public static function denyReason(?int $clubId = null): ?string
     {
-        if (! config('ai_assistant.enabled')) {
-            return 'Выключен в .env сервера (AI_ASSISTANT_ENABLED=false)';
-        }
-
         $settings = static::forClub($clubId);
 
         if (! $settings->is_enabled) {
