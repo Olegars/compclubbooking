@@ -30,18 +30,19 @@ class BookingController extends Controller
         ]);
 
         [$startsAt, $endsAt] = $this->resolvePeriod($validated);
-        $computerIds = Computer::query()
+        $computers = Computer::query()
             ->where('club_id', (int) $validated['club_id'])
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
+            ->get();
+        $computerIds = $computers
+            ->map(fn (Computer $computer) => (int) $computer->id)
             ->all();
 
         $bookedIds = $this->bookings->occupiedComputerIds($computerIds, $startsAt, $endsAt);
-        $offlineIds = Computer::query()
-            ->where('club_id', (int) $validated['club_id'])
-            ->where('status', '!=', 'available')
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
+        // busy — это «сессия прямо сейчас», а не запрет на любой будущий слот.
+        // Пересечение по времени уже в bookedIds; на карте навсегда серые только ПК в ремонте.
+        $offlineIds = $computers
+            ->filter(fn (Computer $computer) => $computer->isInMaintenance())
+            ->map(fn (Computer $computer) => (int) $computer->id)
             ->all();
 
         return response()->json([

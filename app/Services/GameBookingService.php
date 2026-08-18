@@ -22,6 +22,18 @@ use Illuminate\Validation\ValidationException;
 
 class GameBookingService
 {
+    /** Статусы, которые держат место и не должны отдаваться в новую бронь. */
+    private const OCCUPYING_STATUSES = [
+        'held',
+        'confirmed',
+        'active',
+        'paid',
+        'pending',
+        'pending_payment',
+        'waiting',
+        'new',
+    ];
+
     public function __construct(
         private readonly TariffService $tariffs,
     ) {
@@ -555,10 +567,6 @@ class GameBookingService
 
     /**
      * @param  array<int, int>  $computerIds
-     * @return array<int, int>
-     */
-    /**
-     * @param  array<int, int>  $computerIds
      * @param  array<int, int>  $exceptBookingIds
      * @return array<int, int>
      */
@@ -633,40 +641,107 @@ class GameBookingService
             return $ids;
         }
 
+        $except = array_values(array_unique(array_map('intval', $exceptBookingIds)));
+        $fromModern = $this->timestamptzOccupiedComputerIds($ids, $startsAt, $endsAt, $except);
+        $fromWall = $this->wallClockOccupiedComputerIds($ids, $startsAt, $endsAt, $except);
+
+        return array_values(array_unique([...$fromModern, ...$fromWall]));
+    }
+
+    /**
+     * Пересечение по starts_at/ends_at. На PG naive timestamp часто сдвинут на TZ,
+     * поэтому это только быстрый путь — источник истины у карточки (date+start_time).
+     *
+     * @param  array<int, int>  $ids
+     * @param  array<int, int>  $except
+     * @return array<int, int>
+     */
+    private function timestamptzOccupiedComputerIds(
+        array $ids,
+        CarbonImmutable $startsAt,
+        CarbonImmutable $endsAt,
+        array $except
+    ): array {
         $startsAtUtc = $startsAt->utc()->toIso8601String();
         $endsAtUtc = $endsAt->utc()->toIso8601String();
-        $local = $startsAt->timezone(config('app.timezone'));
-        $startHour = $local->hour + ($local->minute / 60);
-        $endHour = $startHour + ($startsAt->diffInMinutes($endsAt) / 60);
-        $except = array_values(array_unique(array_map('intval', $exceptBookingIds)));
 
         return Booking::query()
             ->whereIn('computer_id', $ids)
-            ->whereIn('status', ['confirmed', 'active', 'paid'])
+            ->whereIn('status', self::OCCUPYING_STATUSES)
             ->when($except !== [], fn ($query) => $query->whereNotIn('id', $except))
-            ->where(function ($query) use ($startsAt, $endsAt, $startsAtUtc, $endsAtUtc, $local, $startHour, $endHour) {
-                $query
-                    ->where(function ($modern) use ($startsAt, $endsAt, $startsAtUtc, $endsAtUtc) {
-                        $modern->whereNotNull('starts_at');
-                        if (DB::connection()->getDriverName() === 'pgsql') {
-                            $modern->whereRaw('starts_at < ?::timestamptz', [$endsAtUtc])
-                                ->whereRaw('ends_at > ?::timestamptz', [$startsAtUtc]);
-                        } else {
-                            $modern->where('starts_at', '<', $endsAt)
-                                ->where('ends_at', '>', $startsAt);
-                        }
-                    })
-                    ->orWhere(function ($legacy) use ($local, $startHour, $endHour) {
-                        $legacy->whereNull('starts_at')
-                            ->whereDate('date', $local->toDateString())
-                            ->whereRaw('start_time < ? AND (start_time + duration) > ?', [$endHour, $startHour]);
-                    });
+            ->whereNotNull('starts_at')
+            ->where(function ($modern) use ($startsAt, $endsAt, $startsAtUtc, $endsAtUtc) {
+                if (DB::connection()->getDriverName() === 'pgsql') {
+                    $modern->whereRaw('starts_at < ?::timestamptz', [$endsAtUtc])
+                        ->whereRaw('ends_at > ?::timestamptz', [$startsAtUtc]);
+                } else {
+                    $modern->where('starts_at', '<', $endsAt)
+                        ->where('ends_at', '>', $startsAt);
+                }
             })
             ->pluck('computer_id')
             ->map(fn ($id) => (int) $id)
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * Пересечение по wall-clock карточки. Нужно, когда PG/timestamptz сдвинут
+     * на несколько часов и modern-сравнение «не видит» уже оплаченную бронь.
+     *
+     * @param  array<int, int>  $ids
+     * @param  array<int, int>  $except
+     * @return array<int, int>
+     */
+    private function wallClockOccupiedComputerIds(
+        array $ids,
+        CarbonImmutable $startsAt,
+        CarbonImmutable $endsAt,
+        array $except
+    ): array {
+        $tz = (string) config('app.timezone');
+        $reqStart = $startsAt->timezone($tz);
+        $reqEnd = $endsAt->timezone($tz);
+        $fromDate = $reqStart->subDay()->toDateString();
+        $toDate = $reqEnd->toDateString();
+
+        $rows = Booking::query()
+            ->whereIn('computer_id', $ids)
+            ->whereIn('status', self::OCCUPYING_STATUSES)
+            ->when($except !== [], fn ($query) => $query->whereNotIn('id', $except))
+            ->whereNotNull('date')
+            ->whereDate('date', '>=', $fromDate)
+            ->whereDate('date', '<=', $toDate)
+            ->get(['computer_id', 'date', 'start_time', 'duration']);
+
+        $occupied = [];
+        foreach ($rows as $booking) {
+            $window = $this->bookingWallWindow($booking);
+            if ($window['start']->lt($reqEnd) && $window['end']->gt($reqStart)) {
+                $occupied[(int) $booking->computer_id] = (int) $booking->computer_id;
+            }
+        }
+
+        return array_values($occupied);
+    }
+
+    /**
+     * @return array{start: CarbonImmutable, end: CarbonImmutable}
+     */
+    private function bookingWallWindow(Booking $booking): array
+    {
+        $tz = (string) config('app.timezone');
+        $dateString = $booking->date instanceof \DateTimeInterface
+            ? $booking->date->format('Y-m-d')
+            : CarbonImmutable::parse((string) $booking->date, $tz)->format('Y-m-d');
+
+        $start = CarbonImmutable::parse($dateString, $tz)
+            ->startOfDay()
+            ->addSeconds((int) round(((float) $booking->start_time) * 3600));
+        $end = $start->addSeconds((int) round(max(0.0, (float) $booking->duration) * 3600));
+
+        return ['start' => $start, 'end' => $end];
     }
 
     private function assertBoothSelectionValid(Collection $computers): void
@@ -689,6 +764,12 @@ class GameBookingService
         CarbonImmutable $endsAt
     ): void {
         $related = $this->expandBoothSiblings($computerIds);
+        $computers = Computer::query()->whereIn('id', $related)->get();
+        if ($computers->contains(fn (Computer $computer) => $computer->isInMaintenance())) {
+            throw ValidationException::withMessages([
+                'pc_ids' => 'Один из выбранных компьютеров на обслуживании.',
+            ]);
+        }
         if ($this->occupiedComputerIds($related, $startsAt, $endsAt) !== []) {
             throw ValidationException::withMessages([
                 'pc_ids' => 'Один из выбранных компьютеров или кабина ТВ/PS уже заняты на это время.',

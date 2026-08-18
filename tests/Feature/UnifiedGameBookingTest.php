@@ -513,6 +513,130 @@ class UnifiedGameBookingTest extends TestCase
         ]);
     }
 
+    public function test_confirmed_booking_blocks_overlapping_slot_on_the_same_computer(): void
+    {
+        $computer = $this->createComputer();
+        $this->fundWallet(500);
+
+        $this->actingAs($this->user)
+            ->postJson('/api/booking/reserve', [
+                'club_id' => $this->club->id,
+                'pc_ids' => [$computer->id],
+                'starts_at' => $this->startsAt->toIso8601String(),
+                'ends_at' => $this->endsAt->toIso8601String(),
+            ])
+            ->assertCreated();
+
+        $availability = $this->postJson('/api/booking/computers/availability', [
+            'club_id' => $this->club->id,
+            'starts_at' => $this->startsAt->toIso8601String(),
+            'ends_at' => $this->endsAt->toIso8601String(),
+        ])->assertOk();
+
+        $bookedIds = array_map('intval', $availability->json('booked_pc_ids') ?? []);
+        $occupiedIds = array_map('intval', $availability->json('occupied_pc_ids') ?? []);
+        $this->assertContains((int) $computer->id, $bookedIds);
+        $this->assertContains((int) $computer->id, $occupiedIds);
+
+        $other = User::create([
+            'name' => 'Other Guest',
+            'phone' => '+79990000002',
+            'email' => 'other-booking@example.test',
+            'password' => 'password',
+        ]);
+        Wallet::create([
+            'user_id' => $other->id,
+            'deposit_balance' => 500,
+            'bonus_balance' => 0,
+            'total_spent' => 0,
+        ]);
+
+        $this->actingAs($other)
+            ->postJson('/api/booking/reserve', [
+                'club_id' => $this->club->id,
+                'pc_ids' => [$computer->id],
+                'starts_at' => $this->startsAt->addMinutes(30)->toIso8601String(),
+                'ends_at' => $this->endsAt->addMinutes(30)->toIso8601String(),
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('pc_ids');
+    }
+
+    public function test_availability_uses_wall_clock_when_starts_at_is_timezone_skewed(): void
+    {
+        $computer = $this->createComputer();
+        $startHour = $this->startsAt->timezone(config('app.timezone'))->hour
+            + ($this->startsAt->timezone(config('app.timezone'))->minute / 60);
+
+        Booking::create([
+            'user_id' => $this->user->id,
+            'computer_id' => $computer->id,
+            'pc_ids' => [$computer->id],
+            'date' => $this->startsAt->timezone(config('app.timezone'))->toDateString(),
+            'start_time' => $startHour,
+            'duration' => 1,
+            'price' => 100,
+            'price_minor' => 10000,
+            'starts_at' => $this->startsAt->addHours(3),
+            'ends_at' => $this->endsAt->addHours(3),
+            'status' => 'confirmed',
+        ]);
+
+        $availability = $this->postJson('/api/booking/computers/availability', [
+            'club_id' => $this->club->id,
+            'starts_at' => $this->startsAt->toIso8601String(),
+            'ends_at' => $this->endsAt->toIso8601String(),
+        ])->assertOk();
+
+        $bookedIds = array_map('intval', $availability->json('booked_pc_ids') ?? []);
+        $this->assertContains((int) $computer->id, $bookedIds);
+
+        $this->fundWallet(500);
+        $this->actingAs($this->user)
+            ->postJson('/api/booking/reserve', [
+                'club_id' => $this->club->id,
+                'pc_ids' => [$computer->id],
+                'starts_at' => $this->startsAt->toIso8601String(),
+                'ends_at' => $this->endsAt->toIso8601String(),
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('pc_ids');
+    }
+
+    public function test_adjacent_slot_after_booking_stays_free(): void
+    {
+        $computer = $this->createComputer();
+        $this->fundWallet(500);
+
+        $this->actingAs($this->user)
+            ->postJson('/api/booking/reserve', [
+                'club_id' => $this->club->id,
+                'pc_ids' => [$computer->id],
+                'starts_at' => $this->startsAt->toIso8601String(),
+                'ends_at' => $this->endsAt->toIso8601String(),
+            ])
+            ->assertCreated();
+
+        $nextStart = $this->endsAt;
+        $nextEnd = $nextStart->addHour();
+
+        $availability = $this->postJson('/api/booking/computers/availability', [
+            'club_id' => $this->club->id,
+            'starts_at' => $nextStart->toIso8601String(),
+            'ends_at' => $nextEnd->toIso8601String(),
+        ])->assertOk();
+
+        $bookedIds = array_map('intval', $availability->json('booked_pc_ids') ?? []);
+        $this->assertNotContains((int) $computer->id, $bookedIds);
+
+        $this->postJson('/api/booking/reserve', [
+            'club_id' => $this->club->id,
+            'pc_ids' => [$computer->id],
+            'starts_at' => $nextStart->toIso8601String(),
+            'ends_at' => $nextEnd->toIso8601String(),
+        ])->assertCreated();
+    }
+
     private function createComputer(string $name = 'PC-1', ?Club $club = null): Computer
     {
         return Computer::create([

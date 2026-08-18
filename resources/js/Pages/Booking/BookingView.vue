@@ -710,6 +710,10 @@ const clearAddonsForSeats = (seatIds: string[]) => {
 
 const toggleSeatSelection = (id: string) => {
     const index = selectedIds.value.indexOf(id)
+    if (index === -1 && occupiedIds.value.includes(id)) {
+        handleSeatError()
+        return
+    }
     if (index !== -1) {
         selectedIds.value.splice(index, 1)
         // Сняли комнату → доп этой комнаты тоже убираем
