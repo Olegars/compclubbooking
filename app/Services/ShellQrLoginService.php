@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AiAssistantSetting;
 use App\Models\Booking;
 use App\Models\Computer;
 use App\Models\ShellQrChallenge;
@@ -403,6 +404,12 @@ class ShellQrLoginService
         $primaryReceipt = collect($fiscalReceipts)
             ->first(fn ($r) => filled($r['fiscal_receipt_url'] ?? null));
 
+        $clubId = $booking->computer_id
+            ? Computer::query()->whereKey($booking->computer_id)->value('club_id')
+            : null;
+        $ttsVoice = AiAssistantSetting::forClub($clubId ? (int) $clubId : null)
+            ->resolveVoiceForPlayer($user);
+
         return [
             'message' => 'Авторизация успешна.',
             'booking_id' => $booking->id,
@@ -415,6 +422,7 @@ class ShellQrLoginService
                 'deposit_balance' => $balance,
                 'total_balance' => $balance,
                 'time_remaining' => $formattedTime,
+                'tts_voice' => $ttsVoice,
             ],
             'settings_pack' => $cloud['payload'],
             'settings_updated_at' => $cloud['updated_at'],

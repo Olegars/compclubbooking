@@ -82,7 +82,11 @@ class VoiceGreetingService
         ];
 
         $reply = $this->llm->greet($context);
-        $speech = $this->speech->synthesize($reply, $settings, $ttsVoice);
+        $speech = $this->speech->synthesize(
+            $reply,
+            $settings,
+            $settings->resolveVoiceForPlayer($user, $ttsVoice)
+        );
 
         Log::info('[AI-GREETING]', [
             'terminal_id' => $terminalId,

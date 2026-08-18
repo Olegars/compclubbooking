@@ -10,6 +10,7 @@ class UserSetting extends Model
     protected $fillable = [
         'user_id',
         'payload',
+        'tts_voice',
     ];
 
     protected $casts = [

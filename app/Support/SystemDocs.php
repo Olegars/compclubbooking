@@ -619,7 +619,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Голосовой ИИ (F1 и приветствие)',
-                        'description' => "Hold-to-talk во время сессии: запись с микрофона → POST /api/shell/ai-assistant → SpeechKit STT (или Whisper) → LLM (DeepSeek/OpenAI из админки) → SpeechKit/OpenAI TTS в наушники. Нужна активная бронь на ПК.\n\nПосле логина: POST /api/shell/voice-greeting — короткое персональное приветствие в колонки лобби (имя, первый визит / любимые игры). Промпты и ключи — /admin/ai-assistant. Голос TTS можно сменить в Shell (дашборд) или в админке: GET /api/shell/ai-voices, POST /api/shell/ai-voice.",
+                        'description' => "Hold-to-talk во время сессии: запись с микрофона → POST /api/shell/ai-assistant → SpeechKit STT (или Whisper) → LLM (DeepSeek/OpenAI из админки) → SpeechKit/OpenAI TTS в наушники. Нужна активная бронь на ПК.\n\nПосле логина: POST /api/shell/voice-greeting — короткое персональное приветствие в колонки лобби. Промпты и ключи — /admin/ai-assistant. Голос TTS выбирается в Shell и пишется в user_settings.tts_voice игрока (логин возвращает его, приветствие/Q&A берут сохранённый голос).",
                         'path' => '/admin/ai-assistant',
                         'audience' => 'Shell / Supervisor+',
                     ],

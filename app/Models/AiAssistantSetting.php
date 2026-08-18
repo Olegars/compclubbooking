@@ -349,6 +349,19 @@ class AiAssistantSetting extends Model
         return array_key_exists($fallback, $voices) ? $fallback : 'alena';
     }
 
+    public function resolveVoiceForPlayer(?User $user, ?string $override = null): string
+    {
+        $provider = $this->resolvedSpeechProvider();
+        foreach ([$override, $user?->ttsVoice()] as $candidate) {
+            $ok = self::sanitizeTtsVoice($provider, $candidate);
+            if ($ok !== null) {
+                return $ok;
+            }
+        }
+
+        return $this->resolvedTtsVoice();
+    }
+
     public function resolvedMaxReplyChars(): int
     {
         if ($this->max_reply_chars !== null && (int) $this->max_reply_chars > 0) {

@@ -51,6 +51,22 @@ class User extends Authenticatable
         return $this->hasOne(UserSetting::class);
     }
 
+    public function ttsVoice(): ?string
+    {
+        $voice = strtolower(trim((string) ($this->settings?->tts_voice ?? '')));
+
+        return $voice !== '' ? $voice : null;
+    }
+
+    public function saveTtsVoice(string $voice): void
+    {
+        UserSetting::query()->updateOrCreate(
+            ['user_id' => $this->id],
+            ['tts_voice' => strtolower(trim($voice))]
+        );
+        $this->unsetRelation('settings');
+    }
+
     public function gameStats()
     {
         return $this->hasMany(UserGameStat::class);

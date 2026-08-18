@@ -71,7 +71,11 @@ class AiAssistantService
             'club_name' => $club?->name,
             'club_id' => $clubId,
         ]);
-        $speech = $this->speech->synthesize($reply, $settings, $ttsVoice);
+        $speech = $this->speech->synthesize(
+            $reply,
+            $settings,
+            $settings->resolveVoiceForPlayer($user, $ttsVoice)
+        );
 
         Log::info('[AI-ASSISTANT]', [
             'terminal_id' => $terminalId,

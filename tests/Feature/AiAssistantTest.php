@@ -202,13 +202,47 @@ class AiAssistantTest extends TestCase
         $this->postJson('/api/shell/ai-voice', [
             'terminal_id' => $this->computer->id,
             'tts_voice' => 'marina',
+        ])->assertStatus(422);
+
+        $this->createActiveBooking();
+
+        $this->postJson('/api/shell/ai-voice', [
+            'terminal_id' => $this->computer->id,
+            'tts_voice' => 'marina',
         ])
             ->assertOk()
             ->assertJsonPath('status', 'success')
             ->assertJsonPath('tts_voice', 'marina')
             ->assertJsonPath('audio_base64', base64_encode('ID3marina'));
 
-        $this->assertSame('marina', AiAssistantSetting::forClub($this->club->id)->tts_voice);
+        $this->assertSame('alena', AiAssistantSetting::forClub($this->club->id)->tts_voice);
+        $this->assertSame('marina', $this->user->fresh()->ttsVoice());
+
+        $this->getJson('/api/shell/ai-voices?terminal_id='.$this->computer->id)
+            ->assertOk()
+            ->assertJsonPath('tts_voice', 'marina');
+    }
+
+    public function test_ai_assistant_uses_saved_player_voice(): void
+    {
+        $this->createActiveBooking();
+        AiAssistantSetting::forClub($this->club->id)->update([
+            'is_enabled' => true,
+            'tts_voice' => 'alena',
+        ]);
+        $this->user->saveTtsVoice('zahar');
+        $this->fakeVoiceStack(transcript: 'Привет', reply: 'Привет!', mp3: 'ID3voice');
+
+        $audio = UploadedFile::fake()->create('ask.webm', 20, 'audio/webm');
+        $this->post('/api/shell/ai-assistant', [
+            'terminal_id' => $this->computer->id,
+            'audio' => $audio,
+        ])->assertOk();
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'tts.api.cloud.yandex.net')
+                && ($request['voice'] ?? null) === 'zahar';
+        });
     }
 
     public function test_ai_assistant_accepts_tts_voice_override(): void

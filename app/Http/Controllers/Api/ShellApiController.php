@@ -241,7 +241,8 @@ class ShellApiController extends Controller
                     'balance' => $balance,
                     'deposit_balance' => $balance,
                     'total_balance' => $balance,
-                    'time_remaining' => $formattedTime
+                    'time_remaining' => $formattedTime,
+                    'tts_voice' => AiAssistantSetting::forClub($loginComputer?->club_id)->resolveVoiceForPlayer($user),
                 ],
                 'settings_pack' => $cloud['payload'],
                 'settings_updated_at' => $cloud['updated_at'],
@@ -1082,12 +1083,14 @@ class ShellApiController extends Controller
             'terminal_id' => 'required|integer|exists:computers,id',
         ]);
 
-        [$settings, $enabled] = $this->aiVoiceContext((int) $request->terminal_id);
+        $terminalId = (int) $request->terminal_id;
+        [$settings, $enabled] = $this->aiVoiceContext($terminalId);
+        $user = $this->resolveShellSessionUser($terminalId);
 
         return response()->json([
             'status' => 'success',
             'enabled' => $enabled,
-            ...$this->aiVoicePayload($settings),
+            ...$this->aiVoicePayload($settings, $settings->resolveVoiceForPlayer($user)),
         ]);
     }
 
@@ -1101,6 +1104,14 @@ class ShellApiController extends Controller
 
         $terminalId = (int) $request->terminal_id;
         [$settings, $enabled] = $this->aiVoiceContext($terminalId);
+        $user = $this->resolveShellSessionUser($terminalId);
+        if (! $user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Нужна активная сессия, чтобы сохранить голос.',
+            ], 422);
+        }
+
         $voice = AiAssistantSetting::sanitizeTtsVoice(
             $settings->resolvedSpeechProvider(),
             (string) $request->input('tts_voice')
@@ -1112,13 +1123,12 @@ class ShellApiController extends Controller
             ], 422);
         }
 
-        $settings->tts_voice = $voice;
-        $settings->save();
+        $user->saveTtsVoice($voice);
 
         $payload = [
             'status' => 'success',
             'enabled' => $enabled,
-            ...$this->aiVoicePayload($settings->fresh()),
+            ...$this->aiVoicePayload($settings, $voice),
         ];
 
         $wantPreview = filter_var($request->input('preview', true), FILTER_VALIDATE_BOOLEAN);
@@ -1163,13 +1173,15 @@ class ShellApiController extends Controller
     /**
      * @return array{provider:string,tts_voice:string,voices:list<array{id:string,label:string}>}
      */
-    private function aiVoicePayload(AiAssistantSetting $settings): array
+    private function aiVoicePayload(AiAssistantSetting $settings, ?string $currentVoice = null): array
     {
         $provider = $settings->resolvedSpeechProvider();
+        $voice = AiAssistantSetting::sanitizeTtsVoice($provider, $currentVoice)
+            ?? $settings->resolvedTtsVoice();
 
         return [
             'provider' => $provider,
-            'tts_voice' => $settings->resolvedTtsVoice(),
+            'tts_voice' => $voice,
             'voices' => AiAssistantSetting::voiceList($provider),
         ];
     }
