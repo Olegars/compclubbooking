@@ -234,6 +234,8 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 
         Route::prefix('api')->group(function () {
             Route::get('/pc-statuses', [AdminController::class, 'getPcStatuses']);
+            Route::post('/computers/release', [AdminController::class, 'releaseComputer'])
+                ->middleware('role:owner');
             Route::get('/check-orders', [AdminController::class, 'checkNewOrders']);
             Route::get('/sos-alerts', [AdminController::class, 'sosAlerts']);
             Route::post('/sos-alerts/{id}/ack', [AdminController::class, 'ackSosAlert']);

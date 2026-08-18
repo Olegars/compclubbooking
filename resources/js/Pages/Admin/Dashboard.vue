@@ -14,6 +14,7 @@ const props = defineProps<{
 
 const page = usePage()
 const adminRole = computed(() => (page.props.admin_user as any)?.role || null)
+const isOwner = computed(() => adminRole.value === 'owner')
 const isSupervisorPlus = computed(() => adminRole.value === 'supervisor' || adminRole.value === 'owner')
 
 const { success, error, warning } = useToast()
@@ -27,6 +28,7 @@ const activeCalls = ref<any[]>([])
 const sosAlerts = ref<any[]>([])
 const inputAlerts = ref<any[]>([])
 const forceOffBusy = ref<number | null>(null)
+const releasingPc = ref(false)
 
 const orphanFans = computed(() => fanOrphans.value.filter((f: any) => f.fan_orphan_on))
 
@@ -144,6 +146,28 @@ const refreshStatuses = async () => {
         }
         isFirstPoll.value = false
     } catch (e) { console.error('Link Error', e) }
+}
+
+const releaseComputer = async () => {
+    const pc = selectedPc.value
+    if (!pc || releasingPc.value) return
+    if (!confirm(`Освободить ${pc.name}? Активная сессия будет закрыта, место станет свободным.`)) {
+        return
+    }
+    releasingPc.value = true
+    try {
+        const { data } = await axios.post('/admin/api/computers/release', {
+            computer_id: pc.id,
+        })
+        success(data?.message || 'Компьютер освобождён')
+        await refreshStatuses()
+        const updated = localComputers.value.find((p: any) => Number(p.id) === Number(pc.id))
+        if (updated) selectedPc.value = updated
+    } catch (e: any) {
+        error(e?.response?.data?.message || 'Не удалось освободить компьютер')
+    } finally {
+        releasingPc.value = false
+    }
 }
 
 const forceOffFan = async (fanId: number) => {
@@ -369,6 +393,24 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                                 SSD {{ Math.round(Number(pc.ssd_temp_c)) }}°
                             </span>
                         </div>
+                    </div>
+
+                    <div v-if="isOwner && selectedPc"
+                         class="mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-black/40 border border-amber-500/20 rounded-2xl p-5">
+                        <div>
+                            <div class="text-sm font-black uppercase italic text-white">ПК {{ selectedPc.name }}</div>
+                            <div class="text-[9px] text-white/30 uppercase font-black tracking-widest mt-1">
+                                {{ selectedPc.status === 'busy' ? 'есть сессия' : powerLabel(selectedPc) }}
+                                · закрыть, если шелл убили без logout
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            @click="releaseComputer"
+                            :disabled="releasingPc"
+                            class="shrink-0 px-6 py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
+                            Освободить компьютер
+                        </button>
                     </div>
                 </div>
 

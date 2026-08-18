@@ -16,7 +16,10 @@ use App\Models\ProductUnit;
 use App\Models\ComputerSosAlert;
 use App\Models\ComputerInputAlert;
 use App\Support\AdminAlerts;
+use App\Support\AdminLocation;
+use App\Services\BookingSessionTimingService;
 use App\Services\ProductStockService;
+use App\Models\Computer;
 // Если у тебя есть модель BonusLog, раскомментируй:
 // use App\Models\BonusLog;
 
@@ -831,6 +834,42 @@ class AdminController extends Controller
         return response()->json([
             'computers' => $computers,
             'fan_orphans' => $fanOrphans,
+        ]);
+    }
+
+    /**
+     * Owner: закрыть залипшую сессию, если шелл убили без logout.
+     */
+    public function releaseComputer(Request $request, BookingSessionTimingService $timing)
+    {
+        $data = $request->validate([
+            'computer_id' => 'required|integer|exists:computers,id',
+        ]);
+
+        $admin = Auth::guard('admin')->user();
+        $computer = Computer::query()->findOrFail((int) $data['computer_id']);
+        $clubId = AdminLocation::id($admin);
+        if ($clubId && $computer->club_id && (int) $computer->club_id !== (int) $clubId) {
+            abort(403, 'Этот ПК в другой локации.');
+        }
+
+        $result = $timing->forceReleaseComputer((int) $computer->id);
+
+        Log::warning('[ADMIN] force-release computer', [
+            'admin_id' => $admin?->id,
+            'computer_id' => $computer->id,
+            'computer_name' => $computer->name,
+            'booking_id' => $result['booking_id'],
+            'had_session' => $result['had_session'],
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'had_session' => $result['had_session'],
+            'booking_id' => $result['booking_id'],
+            'message' => $result['had_session']
+                ? 'Сессия закрыта, компьютер освобождён.'
+                : 'Активной сессии не было, статус ПК пересчитан.',
         ]);
     }
     public function checkNewOrders()

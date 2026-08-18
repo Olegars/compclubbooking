@@ -556,6 +556,99 @@ class BookingSessionTimingService
     }
 
     /**
+     * Принудительно закрыть активную сессию на ПК (шелл убит без logout).
+     * Если сессии нет — всё равно пересчитывает status/power, чтобы снять залипший busy.
+     *
+     * @return array{had_session: bool, booking_id: ?int}
+     */
+    public function forceReleaseComputer(int $computerId): array
+    {
+        $computerId = (int) $computerId;
+        $termId = (string) $computerId;
+
+        $booking = Booking::query()
+            ->where('status', 'active')
+            ->where(function ($query) use ($termId, $computerId) {
+                $query->where('computer_id', $computerId)
+                    ->orWhereJsonContains('pc_ids', $termId);
+            })
+            ->latest('id')
+            ->first();
+
+        if ($booking) {
+            DB::transaction(function () use ($booking, $computerId) {
+                $booking->update([
+                    'status' => 'completed',
+                    'actual_ended_at' => now(),
+                ]);
+
+                GameAccount::query()
+                    ->where('current_pc_id', $computerId)
+                    ->update(['status' => 'free', 'current_pc_id' => null]);
+
+                $booking->gameReservations()
+                    ->whereIn('status', ['held', 'confirmed', 'active'])
+                    ->update([
+                        'status' => 'completed',
+                        'released_at' => now(),
+                    ]);
+
+                if ($booking->group && ! $booking->group->bookings()
+                    ->whereNotIn('status', ['completed', 'cancelled'])
+                    ->exists()) {
+                    $booking->group->update(['status' => 'completed']);
+                }
+            });
+            $booking->refresh();
+        }
+
+        $this->computerStatuses->syncFor($computerId);
+
+        try {
+            app(ComputerPowerService::class)->syncFor($computerId);
+        } catch (\Throwable $e) {
+            Log::warning('Power sync after force-release failed: '.$e->getMessage(), [
+                'computer_id' => $computerId,
+            ]);
+        }
+
+        try {
+            app(FanControlService::class)->reconcileForComputer($computerId);
+        } catch (\Throwable $e) {
+            Log::warning('Fan reconcile after force-release failed: '.$e->getMessage(), [
+                'computer_id' => $computerId,
+            ]);
+        }
+
+        try {
+            $pc = \App\Models\Computer::query()->find($computerId);
+            if ($pc && $pc->kind === \App\Models\Computer::KIND_TV) {
+                \App\Http\Controllers\Api\ShellIsolateRelayController::queueIsolate(
+                    $computerId,
+                    ['reason' => 'session_idle']
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::warning('TV isolate after force-release failed: '.$e->getMessage(), [
+                'computer_id' => $computerId,
+            ]);
+        }
+
+        if ($booking) {
+            try {
+                app(AchievementService::class)->evaluateForBookings([$booking]);
+            } catch (\Throwable $e) {
+                Log::warning('Achievement evaluate after force-release failed: '.$e->getMessage());
+            }
+        }
+
+        return [
+            'had_session' => (bool) $booking,
+            'booking_id' => $booking?->id,
+        ];
+    }
+
+    /**
      * @return array{booking: Booking, time_remaining_minutes: int}
      */
     private function activateEarly(
