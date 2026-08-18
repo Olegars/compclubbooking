@@ -45,13 +45,6 @@ class YandexSpeechToText
             'sampleRateHertz' => (string) $wav['sample_rate'],
             'topic' => 'general',
         ];
-        $folder = YandexCloudAuth::folderIdForRequest(
-            $key,
-            (string) ($credentials['folder_id'] ?? config('ai_assistant.yandex.folder_id', ''))
-        );
-        if ($folder !== '') {
-            $query['folderId'] = $folder;
-        }
 
         $url = rtrim(trim((string) ($credentials['url'] ?? config('ai_assistant.yandex.stt_url', 'https://stt.api.cloud.yandex.net/speech/v1/stt:recognize'))), '/');
         $timeout = (float) config('ai_assistant.http_timeout', 60);

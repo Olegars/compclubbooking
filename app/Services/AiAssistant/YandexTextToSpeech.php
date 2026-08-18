@@ -49,23 +49,17 @@ class YandexTextToSpeech
             'voice' => $voice,
             'format' => 'mp3',
         ];
-        $folder = YandexCloudAuth::folderIdForRequest(
-            $key,
-            (string) ($credentials['folder_id'] ?? config('ai_assistant.yandex.folder_id', ''))
-        );
-        if ($folder !== '') {
-            $payload['folderId'] = $folder;
-        }
         if (in_array($voice, self::V1_EMOTION_VOICES, true)) {
             $payload['emotion'] = 'good';
         }
 
         $url = rtrim(trim((string) ($credentials['url'] ?? config('ai_assistant.yandex.tts_url', 'https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize'))), '/');
         $timeout = (float) config('ai_assistant.http_timeout', 60);
+        $auth = ['Authorization' => YandexCloudAuth::authorizationHeader($key)];
 
         $response = Http::timeout($timeout)
             ->asForm()
-            ->withHeaders(['Authorization' => YandexCloudAuth::authorizationHeader($key)])
+            ->withHeaders($auth)
             ->post($url, $payload);
 
         if (! $response->successful()) {
@@ -91,15 +85,7 @@ class YandexTextToSpeech
     {
         $url = rtrim(trim((string) ($credentials['v3_url'] ?? config('ai_assistant.yandex.tts_v3_url', 'https://tts.api.cloud.yandex.net/tts/v3/utteranceSynthesis'))), '/');
         $timeout = (float) config('ai_assistant.http_timeout', 60);
-        $folder = YandexCloudAuth::folderIdForRequest(
-            $key,
-            (string) ($credentials['folder_id'] ?? config('ai_assistant.yandex.folder_id', ''))
-        );
-
         $headers = ['Authorization' => YandexCloudAuth::authorizationHeader($key)];
-        if ($folder !== '') {
-            $headers['x-folder-id'] = $folder;
-        }
 
         $payload = [
             'text' => $text,

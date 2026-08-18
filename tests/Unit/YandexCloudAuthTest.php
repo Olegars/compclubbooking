@@ -47,7 +47,7 @@ class YandexCloudAuthTest extends TestCase
         ]);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('оставьте Folder ID в админке пустым');
+        $this->expectExceptionMessage('нет роли SpeechKit на каталог b1gxxx');
 
         (new YandexTextToSpeech())->synthesize('Привет', 'alena', [
             'api_key' => 'AQVNtest',

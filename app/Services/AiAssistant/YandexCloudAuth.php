@@ -52,15 +52,28 @@ class YandexCloudAuth
     {
         $body = $response->body();
         $lower = mb_strtolower($body);
-        if (str_contains($lower, 'resource-manager.folder')
-            || str_contains($lower, 'permissiondenied')
-            || str_contains($lower, 'permission to')) {
-            return $label.': нет доступа к каталогу Folder ID. Для ключа сервисного аккаунта оставьте Folder ID в админке пустым — Яндекс берёт каталог ключа.';
+        if (preg_match('/resource-manager\.folder\s+([a-z0-9]+)/i', $body, $match) === 1) {
+            $folder = $match[1];
+
+            return $label.': у API-ключа нет роли SpeechKit на каталог '.$folder
+                .'. В Yandex Cloud откройте этот каталог → права доступа → сервисный аккаунт ключа → роли ai.speechkit-tts.user и ai.speechkit-stt.user.';
+        }
+        if (str_contains($lower, 'permissiondenied') || str_contains($lower, 'permission to')) {
+            return $label.': у API-ключа нет роли SpeechKit. Выдайте сервисному аккаунту ai.speechkit-tts.user и ai.speechkit-stt.user на каталог ключа.';
         }
         if ($response->status() === 401 || str_contains($lower, 'unauthor') || str_contains($lower, 'не авторизован')) {
             return $label.': Яндекс не принял ключ. Проверьте API-ключ SpeechKit и роли ai.speechkit-stt.user / ai.speechkit-tts.user.';
         }
 
         return $label.': HTTP '.$response->status().' '.$body;
+    }
+
+    public static function shouldRetryWithFolder(Response $response): bool
+    {
+        $body = mb_strtolower($response->body());
+
+        return str_contains($body, 'specify folder')
+            || str_contains($body, 'you have to specify folder')
+            || (str_contains($body, 'x-folder-id') && $response->status() === 401);
     }
 }
