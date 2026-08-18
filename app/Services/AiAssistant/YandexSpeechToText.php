@@ -14,7 +14,9 @@ class YandexSpeechToText
      */
     public function transcribe(UploadedFile $audio, ?array $credentials = null): string
     {
-        $key = trim((string) ($credentials['api_key'] ?? config('ai_assistant.yandex.api_key', '')));
+        $key = YandexCloudAuth::normalizeKey(
+            (string) ($credentials['api_key'] ?? config('ai_assistant.yandex.api_key', ''))
+        );
         if ($key === '') {
             throw new RuntimeException('Yandex SpeechKit ключ не задан (нужен для распознавания речи).');
         }
@@ -43,7 +45,10 @@ class YandexSpeechToText
             'sampleRateHertz' => (string) $wav['sample_rate'],
             'topic' => 'general',
         ];
-        $folder = trim((string) ($credentials['folder_id'] ?? config('ai_assistant.yandex.folder_id', '')));
+        $folder = YandexCloudAuth::folderIdForRequest(
+            $key,
+            (string) ($credentials['folder_id'] ?? config('ai_assistant.yandex.folder_id', ''))
+        );
         if ($folder !== '') {
             $query['folderId'] = $folder;
         }
@@ -52,14 +57,12 @@ class YandexSpeechToText
         $timeout = (float) config('ai_assistant.http_timeout', 60);
 
         $response = Http::timeout($timeout)
-            ->withHeaders(['Authorization' => 'Api-Key '.$key])
+            ->withHeaders(['Authorization' => YandexCloudAuth::authorizationHeader($key)])
             ->withBody($wav['pcm'], 'application/octet-stream')
             ->post($url.'?'.http_build_query($query));
 
         if (! $response->successful()) {
-            throw new RuntimeException(
-                'Yandex STT failed: HTTP '.$response->status().' '.$response->body()
-            );
+            throw new RuntimeException(YandexCloudAuth::httpError('Yandex STT', $response));
         }
 
         $text = trim((string) ($response->json('result') ?? ''));

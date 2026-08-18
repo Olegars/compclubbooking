@@ -19,7 +19,9 @@ class YandexTextToSpeech
      */
     public function synthesize(string $text, ?string $voice = null, ?array $credentials = null): array
     {
-        $key = trim((string) ($credentials['api_key'] ?? config('ai_assistant.yandex.api_key', '')));
+        $key = YandexCloudAuth::normalizeKey(
+            (string) ($credentials['api_key'] ?? config('ai_assistant.yandex.api_key', ''))
+        );
         if ($key === '') {
             throw new RuntimeException('Yandex SpeechKit ключ не задан (нужен для озвучки).');
         }
@@ -47,7 +49,10 @@ class YandexTextToSpeech
             'voice' => $voice,
             'format' => 'mp3',
         ];
-        $folder = trim((string) ($credentials['folder_id'] ?? config('ai_assistant.yandex.folder_id', '')));
+        $folder = YandexCloudAuth::folderIdForRequest(
+            $key,
+            (string) ($credentials['folder_id'] ?? config('ai_assistant.yandex.folder_id', ''))
+        );
         if ($folder !== '') {
             $payload['folderId'] = $folder;
         }
@@ -60,13 +65,11 @@ class YandexTextToSpeech
 
         $response = Http::timeout($timeout)
             ->asForm()
-            ->withHeaders(['Authorization' => 'Api-Key '.$key])
+            ->withHeaders(['Authorization' => YandexCloudAuth::authorizationHeader($key)])
             ->post($url, $payload);
 
         if (! $response->successful()) {
-            throw new RuntimeException(
-                'Yandex TTS failed: HTTP '.$response->status().' '.$response->body()
-            );
+            throw new RuntimeException(YandexCloudAuth::httpError('Yandex TTS', $response));
         }
 
         $binary = $response->body();
@@ -88,9 +91,12 @@ class YandexTextToSpeech
     {
         $url = rtrim(trim((string) ($credentials['v3_url'] ?? config('ai_assistant.yandex.tts_v3_url', 'https://tts.api.cloud.yandex.net/tts/v3/utteranceSynthesis'))), '/');
         $timeout = (float) config('ai_assistant.http_timeout', 60);
-        $folder = trim((string) ($credentials['folder_id'] ?? config('ai_assistant.yandex.folder_id', '')));
+        $folder = YandexCloudAuth::folderIdForRequest(
+            $key,
+            (string) ($credentials['folder_id'] ?? config('ai_assistant.yandex.folder_id', ''))
+        );
 
-        $headers = ['Authorization' => 'Api-Key '.$key];
+        $headers = ['Authorization' => YandexCloudAuth::authorizationHeader($key)];
         if ($folder !== '') {
             $headers['x-folder-id'] = $folder;
         }
@@ -114,9 +120,7 @@ class YandexTextToSpeech
             ->post($url, $payload);
 
         if (! $response->successful()) {
-            throw new RuntimeException(
-                'Yandex TTS v3 failed: HTTP '.$response->status().' '.$response->body()
-            );
+            throw new RuntimeException(YandexCloudAuth::httpError('Yandex TTS', $response));
         }
 
         $binary = self::decodeV3Audio($response->body());

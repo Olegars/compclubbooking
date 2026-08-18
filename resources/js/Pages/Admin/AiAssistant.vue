@@ -410,7 +410,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                                     placeholder="b1g…"
                                     :class="inputClass"
                                 />
-                                <p class="mt-2 text-[10px] text-white/25 italic">Нужен, если ключ не от сервисного аккаунта. Для SA можно оставить пустым.</p>
+                                <p class="mt-2 text-[10px] text-white/25 italic">Для API-ключа сервисного аккаунта оставьте пустым. Иначе Яндекс проверяет доступ к этому каталогу и даёт 401.</p>
                             </div>
                         </div>
 
