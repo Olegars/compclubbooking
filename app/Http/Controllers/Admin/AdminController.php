@@ -622,6 +622,7 @@ class AdminController extends Controller
                     'pc_name' => $order->pc_name,
                     'status' => $order->status,
                     'status_label' => $labels[$order->status] ?? $order->status,
+                    'is_preorder' => ! empty($order->fulfill_at),
                     'marking_progress' => $marking,
                     'marking_complete' => $stock->orderMarkingFullyScanned((int) $order->id, $items),
                     'user' => [

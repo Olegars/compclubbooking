@@ -168,6 +168,10 @@ onUnmounted(() => {
                                 <div class="inline-flex items-center px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest bg-amber-500/10 border-amber-500/30 text-amber-300">
                                     {{ order.status_label || 'В очереди' }}
                                 </div>
+                                <div v-if="order.is_preorder"
+                                     class="inline-flex items-center px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest bg-[#eab308]/15 border-[#eab308]/40 text-[#eab308]">
+                                    Предзаказ
+                                </div>
                             </div>
                         </div>
 

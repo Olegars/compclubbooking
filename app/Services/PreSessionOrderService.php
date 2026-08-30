@@ -111,13 +111,15 @@ class PreSessionOrderService
     {
         $booking = $resolved['booking'] ?? null;
         $immediate = (bool) ($resolved['immediate'] ?? true);
+        $isPreorder = ($resolved['mode'] ?? '') === 'booking';
+        $startsAt = $resolved['session_starts_at'] ?? null;
         $attrs = [
             'pc_name' => $pcName,
             'status' => $immediate ? Order::STATUS_PENDING : Order::STATUS_SCHEDULED,
             'booking_id' => $booking?->id,
-            'fulfill_at' => $immediate ? null : $resolved['fulfill_at'],
+            'fulfill_at' => $isPreorder ? ($resolved['fulfill_at'] ?? $this->fulfillAtFor($startsAt)) : null,
             'released_at' => $immediate ? now() : null,
-            'session_starts_at' => $resolved['session_starts_at'] ?? null,
+            'session_starts_at' => $startsAt,
         ];
 
         return $attrs;
