@@ -128,6 +128,10 @@ const shopOrderLabel = (b: any) => {
     return orders.map((o: any) => o.product_name).filter(Boolean).join(' · ')
 }
 
+const transactions = computed(() => {
+    return (page.props.transactions as any[]) || [];
+})
+
 // Фильтруем брони: скрываем, когда эффективное время истекло
 const activeBookings = computed(() => {
     const raw = (page.props.active_bookings as any[]) || [];
