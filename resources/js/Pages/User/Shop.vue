@@ -221,7 +221,6 @@ const executeCheckout = async () => {
         cart.value = []
         persistCart()
         cartOpen.value = false
-        window.dispatchEvent(new Event('shop-order-placed'))
         if (!props.embedded) {
             router.reload({ only: ['auth', 'transactions', 'orders'] })
         }

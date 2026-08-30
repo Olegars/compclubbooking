@@ -77,69 +77,6 @@ const contentPadClass = computed(() => {
     return 'py-6 sm:py-10 px-4 sm:px-6'
 })
 
-type ActiveOrder = {
-    id: number
-    status: string
-    status_label: string
-    product_name?: string
-    pc_name?: string
-}
-
-const activeOrders = ref<ActiveOrder[]>([])
-const hasActiveOrder = computed(() => activeOrders.value.length > 0)
-const activeOrderLabel = computed(() => {
-    if (!activeOrders.value.length) return ''
-    if (activeOrders.value.length > 1) {
-        return `Заказ в работе · ${activeOrders.value.length}`
-    }
-    return 'Заказ в работе'
-})
-const activeOrderHint = computed(() => {
-    const first = activeOrders.value[0]
-    if (!first) return ''
-    const name = first.product_name || ''
-    const pc = first.pc_name ? ` → ${first.pc_name}` : ''
-    return `${name}${pc}`.trim()
-})
-
-let orderPollTimer: ReturnType<typeof setInterval> | null = null
-
-const fetchActiveOrders = async () => {
-    if (!isAuthenticated.value) {
-        activeOrders.value = []
-        return
-    }
-    try {
-        const { data } = await axios.get('/api/shop/active-orders')
-        activeOrders.value = Array.isArray(data?.orders) ? data.orders : []
-    } catch {
-        // тихо — индикатор не критичен
-    }
-}
-
-const startOrderPolling = () => {
-    stopOrderPolling()
-    fetchActiveOrders()
-    orderPollTimer = setInterval(fetchActiveOrders, 5000)
-    window.addEventListener('shop-order-placed', fetchActiveOrders)
-}
-
-const stopOrderPolling = () => {
-    if (orderPollTimer) {
-        clearInterval(orderPollTimer)
-        orderPollTimer = null
-    }
-    window.removeEventListener('shop-order-placed', fetchActiveOrders)
-}
-
-watch(isAuthenticated, (ok) => {
-    if (ok) startOrderPolling()
-    else {
-        stopOrderPolling()
-        activeOrders.value = []
-    }
-}, { immediate: true })
-
 const openTopUp = (suggestedAmount?: number) => {
     if (!isAuthenticated.value) {
         isPhoneModalOpen.value = true
@@ -329,7 +266,6 @@ watch(() => page.url, () => {
 })
 
 onUnmounted(() => {
-    stopOrderPolling()
     stopFlipClock()
 })
 </script>
@@ -424,20 +360,6 @@ onUnmounted(() => {
             class="relative z-10 flex-grow w-full flex flex-col items-center"
             :class="contentPadClass"
         >
-            <div
-                v-if="isAuthenticated && hasActiveOrder"
-                class="order-live-bar w-full max-w-xl mb-6 rounded-2xl overflow-hidden"
-            >
-                <div class="order-live-inner px-4 sm:px-6 py-3 flex items-center justify-center gap-3 sm:gap-4">
-                    <span class="order-live-dot" aria-hidden="true"></span>
-                    <div class="text-center min-w-0">
-                        <div class="order-live-title">{{ activeOrderLabel }}</div>
-                        <div v-if="activeOrderHint" class="order-live-hint truncate">{{ activeOrderHint }}</div>
-                    </div>
-                    <span class="order-live-dot" aria-hidden="true"></span>
-                </div>
-            </div>
-
             <slot />
         </div>
 
@@ -707,47 +629,5 @@ onUnmounted(() => {
            text-base leading-none font-black flex items-center justify-center shrink-0
            hover:bg-[#22c55e] hover:text-black transition-all cursor-pointer not-italic;
     font-family: Arial, Helvetica, sans-serif;
-}
-
-.order-live-bar {
-    background: linear-gradient(90deg, rgba(34, 197, 94, 0.08), rgba(34, 197, 94, 0.22), rgba(34, 197, 94, 0.08));
-    border: 1px solid rgba(34, 197, 94, 0.35);
-    animation: order-live-glow 2.8s ease-in-out infinite;
-}
-.order-live-inner {
-    font-family: Arial, Helvetica, sans-serif;
-}
-.order-live-title {
-    @apply text-[11px] sm:text-sm font-black uppercase tracking-[0.25em] text-[#22c55e];
-    animation: order-live-pulse 2.8s ease-in-out infinite;
-}
-.order-live-hint {
-    @apply text-[10px] sm:text-xs text-white/55 mt-0.5 font-semibold tracking-wide;
-}
-.order-live-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 9999px;
-    background: #22c55e;
-    box-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
-    animation: order-live-dot 2.8s ease-in-out infinite;
-    flex-shrink: 0;
-}
-@keyframes order-live-glow {
-    0%, 100% { background-color: rgba(34, 197, 94, 0.06); }
-    50% { background-color: rgba(34, 197, 94, 0.16); }
-}
-@keyframes order-live-pulse {
-    0%, 100% { opacity: 0.55; }
-    50% { opacity: 1; }
-}
-@keyframes order-live-dot {
-    0%, 100% { opacity: 0.35; transform: scale(0.85); }
-    50% { opacity: 1; transform: scale(1.15); }
-}
-@media (prefers-reduced-motion: reduce) {
-    .order-live-bar,
-    .order-live-title,
-    .order-live-dot { animation: none !important; opacity: 1; }
 }
 </style>
