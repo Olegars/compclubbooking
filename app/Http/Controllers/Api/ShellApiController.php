@@ -32,6 +32,7 @@ use App\Services\BookingSessionTimingService;
 use App\Services\ComputerPowerService;
 use App\Services\ComputerStatusService;
 use App\Services\Fan\FanControlService;
+use App\Services\Light\LightControlService;
 use App\Services\GameRequestService;
 use App\Services\ProductStockService;
 use App\Services\UserCloudSettingsService;
@@ -216,6 +217,14 @@ class ShellApiController extends Controller
                 Log::warning('Fan state after login failed: '.$e->getMessage());
             }
 
+            $lightState = ['available' => false];
+            try {
+                app(LightControlService::class)->reconcileForComputer($terminalId);
+                $lightState = app(LightControlService::class)->stateForComputer($terminalId);
+            } catch (\Throwable $e) {
+                Log::warning('Light state after login failed: '.$e->getMessage());
+            }
+
             try {
                 app(ComputerPowerService::class)->touchOnline($terminalId);
             } catch (\Throwable $e) {
@@ -235,6 +244,7 @@ class ShellApiController extends Controller
                 'booking_id' => $booking->id,
                 'club_name' => $this->clubNameForComputer($loginComputer),
                 'fan' => $fanState,
+                'light' => $lightState,
                 'user' => [
                     'id' => $user->id,
                     'name' => $user->name ?? 'Игрок',
@@ -957,6 +967,91 @@ class ShellApiController extends Controller
 
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
+    }
+
+    public function controlLight(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'color' => 'nullable|string|in:white,red,blue,green,yellow,purple,rainbow',
+            'brightness' => 'nullable|integer|min:0|max:100',
+            'effect' => 'nullable|string|in:none,rainbow',
+        ]);
+
+        if ($request->input('color') === null && $request->input('brightness') === null && $request->input('effect') === null) {
+            return response()->json(['status' => 'error', 'message' => 'color, brightness or effect required'], 422);
+        }
+
+        try {
+            $result = app(LightControlService::class)->setSceneForComputer(
+                (int) $request->terminal_id,
+                $request->has('color') ? (string) $request->input('color') : null,
+                $request->has('brightness') ? (int) $request->input('brightness') : null,
+                $request->has('effect') ? (string) $request->input('effect') : null,
+            );
+
+            $status = $result['locked'] ? 'locked' : 'success';
+            $code = $result['locked'] ? 423 : 200;
+
+            return response()->json([
+                'status' => $status,
+                'light' => app(LightControlService::class)->stateForComputer((int) $request->terminal_id),
+                'locked' => $result['locked'],
+                'remaining_sec' => $result['remaining_sec'],
+                'applied' => (bool) $result['light'] && ! $result['locked'],
+            ], $code);
+        } catch (\Throwable $e) {
+            Log::error('Shell API controlLight: '.$e->getMessage());
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function acknowledgeLightApplied(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'applied_color' => 'required|string|max:16',
+            'applied_brightness' => 'required|integer|min:0|max:100',
+            'applied_effect' => 'nullable|string|in:none,rainbow',
+            'last_error' => 'nullable|string|max:2000',
+        ]);
+
+        try {
+            $result = app(LightControlService::class)->acknowledgeApplied(
+                (int) $request->terminal_id,
+                (string) $request->input('applied_color'),
+                (int) $request->input('applied_brightness'),
+                (string) $request->input('applied_effect', 'none'),
+                $request->input('last_error'),
+            );
+
+            $status = $result['locked'] ? 'locked' : 'success';
+            $code = $result['locked'] ? 423 : 200;
+
+            return response()->json([
+                'status' => $status,
+                'light' => app(LightControlService::class)->stateForComputer((int) $request->terminal_id),
+                'locked' => $result['locked'],
+                'remaining_sec' => $result['remaining_sec'],
+            ], $code);
+        } catch (\Throwable $e) {
+            Log::error('Shell API acknowledgeLightApplied: '.$e->getMessage());
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getLightState(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'light' => app(LightControlService::class)->stateForComputer((int) $request->terminal_id),
+        ]);
     }
 
     /**
@@ -2412,6 +2507,14 @@ class ShellApiController extends Controller
                     Log::warning('Fan state after logout failed: '.$e->getMessage());
                 }
 
+                $lightState = ['available' => false];
+                try {
+                    app(LightControlService::class)->reconcileForComputer((int) $termId);
+                    $lightState = app(LightControlService::class)->stateForComputer((int) $termId);
+                } catch (\Throwable $e) {
+                    Log::warning('Light state after logout failed: '.$e->getMessage());
+                }
+
                 if ($booking->user_id) {
                     try {
                         $user = User::find($booking->user_id);
@@ -2431,6 +2534,7 @@ class ShellApiController extends Controller
                     'power_action' => $powerAction,
                     'power_desired' => $powerAction === 'reboot' ? 'on' : 'off',
                     'fan' => $fanState,
+                    'light' => $lightState,
                 ], 200);
             }
 

@@ -80,6 +80,11 @@ class Space extends Model
         return $this->hasOne(SpaceFan::class);
     }
 
+    public function light(): HasOne
+    {
+        return $this->hasOne(SpaceLight::class);
+    }
+
     public function addons(): BelongsToMany
     {
         return $this->belongsToMany(Addon::class, 'space_addon')->withTimestamps();

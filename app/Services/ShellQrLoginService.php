@@ -11,6 +11,7 @@ use App\Services\BookingSeatTransferService;
 use App\Services\BookingSessionTimingService;
 use App\Services\ComputerPowerService;
 use App\Services\Fan\FanControlService;
+use App\Services\Light\LightControlService;
 use App\Services\GameBookingService;
 use App\Services\UserCloudSettingsService;
 use Carbon\CarbonImmutable;
@@ -401,6 +402,14 @@ class ShellQrLoginService
             // ignore
         }
 
+        $lightState = ['available' => false];
+        try {
+            app(LightControlService::class)->reconcileForComputer((int) $booking->computer_id);
+            $lightState = app(LightControlService::class)->stateForComputer((int) $booking->computer_id);
+        } catch (\Throwable $e) {
+            // ignore
+        }
+
         $primaryReceipt = collect($fiscalReceipts)
             ->first(fn ($r) => filled($r['fiscal_receipt_url'] ?? null));
 
@@ -414,6 +423,7 @@ class ShellQrLoginService
             'message' => 'Авторизация успешна.',
             'booking_id' => $booking->id,
             'fan' => $fanState,
+            'light' => $lightState,
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name ?? 'Игрок',

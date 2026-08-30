@@ -34,6 +34,7 @@ use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\MapController;
 use App\Http\Controllers\Admin\FanAdminController;
+use App\Http\Controllers\Admin\LightAdminController;
 use App\Http\Controllers\Admin\ShiftController;
 use App\Http\Controllers\Admin\BonusController;
 use App\Http\Controllers\Admin\TaxController;
@@ -434,6 +435,14 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::post('/fans', [FanAdminController::class, 'storeFan']);
         Route::put('/fans/{fan}', [FanAdminController::class, 'updateFan']);
         Route::delete('/fans/{fan}', [FanAdminController::class, 'destroyFan']);
+
+        Route::get('/lights', [LightAdminController::class, 'index'])->name('admin.lights');
+        Route::post('/lights/nodes', [LightAdminController::class, 'storeNode']);
+        Route::put('/lights/nodes/{node}', [LightAdminController::class, 'updateNode']);
+        Route::delete('/lights/nodes/{node}', [LightAdminController::class, 'destroyNode']);
+        Route::post('/lights', [LightAdminController::class, 'storeLight']);
+        Route::put('/lights/{light}', [LightAdminController::class, 'updateLight']);
+        Route::delete('/lights/{light}', [LightAdminController::class, 'destroyLight']);
     });
 
     // УРОВЕНЬ: OWNER
@@ -541,6 +550,10 @@ Route::prefix('api/shell')->group(function () {
     Route::get('/fan/discover', [ShellApiController::class, 'discoverFan']);
     Route::post('/fan/bind', [ShellApiController::class, 'bindFan']);
     Route::post('/fan/unbind', [ShellApiController::class, 'unbindFan']);
+
+    Route::post('/light', [ShellApiController::class, 'controlLight']);
+    Route::post('/light/applied', [ShellApiController::class, 'acknowledgeLightApplied']);
+    Route::get('/light', [ShellApiController::class, 'getLightState']);
 
     // --- F1 AI-компаньон (голос → ответ в наушники) ---
     Route::post('/ai-assistant', [ShellApiController::class, 'aiAssistant']);

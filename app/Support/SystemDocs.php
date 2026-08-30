@@ -299,6 +299,18 @@ class SystemDocs
                         'path' => '/admin/fans',
                         'audience' => 'Supervisor+ / Система',
                     ],
+                    [
+                        'title' => 'Свет DMX: железо и Art-Net',
+                        'description' => "Свет комнаты (SpaceLight) сидит на Art-Net узле (DmxNode): host + UDP-порт (6454) + universe. Облако desired не шлёт в контроллер — пакеты ArtDmx шлёт PC Shell по LAN, как W5100 для вентиляторов.\n\nРаскладки прибора от start_channel (1-based):\n• rgb — R G B, яркость масштабирует RGB\n• dimmer_rgb — dimmer R G B\n• rgbw — R G B W (белый идёт в W)\n\nНесколько приборов подряд: fixture_count. На комнату один SpaceLight; все ПК комнаты видят одно состояние. Universe лучше разносить по комнатам; если один universe на узел — шелл собирает все приборы узла в один кадр, чтобы не гасить соседние комнаты нулями.",
+                        'path' => '/admin/lights',
+                        'audience' => 'Supervisor+ / Shell',
+                    ],
+                    [
+                        'title' => 'Свет DMX: кто шлёт пакеты',
+                        'description' => "Пресеты: белый / красный / синий / зелёный / жёлтый / фиолетовый / rainbow (HSV по wall-clock, период LIGHT_RAINBOW_PERIOD_MS). Ползунок яркости 0–100%.\n\nПустая комната → brightness 0; первый вход в сессию восстанавливает last_on. Ручной кулдаун LIGHT_MANUAL_COOLDOWN_SEC (2 с), чтобы ПК не дрались. API: GET/POST /api/shell/light, POST /api/shell/light/applied.",
+                        'path' => '/admin/lights',
+                        'audience' => 'Supervisor+ / Shell',
+                    ],
                 ],
             ],
             [
@@ -615,6 +627,12 @@ class SystemDocs
                         'title' => 'Климат на PC Shell',
                         'description' => 'Плитка климата: режимы auto / 50% / 75% / 100%. Сервер отдаёт desired; Shell пульсирует W5100 по LAN и шлёт fan/applied. Подробности железа — в «Вентиляция» (Конфигурация клуба).',
                         'path' => '/admin/fans',
+                        'audience' => 'Shell',
+                    ],
+                    [
+                        'title' => 'Свет на PC Shell',
+                        'description' => 'Плитка под климатом: кружки цвета + rainbow + ползунок яркости. Сервер отдаёт desired; Shell шлёт Art-Net UDP на DmxNode и ack /api/shell/light/applied. Узел и каналы — /admin/lights. Подробности — «Свет DMX» в Конфигурации клуба.',
+                        'path' => '/admin/lights',
                         'audience' => 'Shell',
                     ],
                     [

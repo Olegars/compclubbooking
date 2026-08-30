@@ -25,6 +25,9 @@ Route::prefix('shell')->group(function () {
     Route::get('/fan/discover', [ShellApiController::class, 'discoverFan']);
     Route::post('/fan/bind', [ShellApiController::class, 'bindFan']);
     Route::post('/fan/unbind', [ShellApiController::class, 'unbindFan']);
+    Route::post('/light', [ShellApiController::class, 'controlLight']);
+    Route::post('/light/applied', [ShellApiController::class, 'acknowledgeLightApplied']);
+    Route::get('/light', [ShellApiController::class, 'getLightState']);
     Route::post('/ai-assistant', [ShellApiController::class, 'aiAssistant']);
     Route::get('/ai-voices', [ShellApiController::class, 'aiVoices']);
     Route::post('/ai-voice', [ShellApiController::class, 'setAiVoice']);
