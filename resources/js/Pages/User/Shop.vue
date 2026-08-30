@@ -83,7 +83,7 @@ const cart = ref<CartLine[]>(loadCartFromStorage())
 const cartOpen = ref(false)
 const isProcessing = ref(false)
 const confirmCheckout = ref(false)
-const successData = ref({ show: false, message: '' })
+const successData = ref({ show: false, message: '', isPreorder: false })
 const errorData = ref({ show: false, text: '' })
 
 const persistCart = () => {
@@ -217,7 +217,11 @@ const executeCheckout = async () => {
                 payment_method: 'account',
             })
 
-        successData.value = { show: true, message: data.message || 'Заказ оформлен!' }
+        successData.value = {
+            show: true,
+            message: data.message || 'Заказ оформлен!',
+            isPreorder: deliveryContext.value?.mode === 'booking' || !!data.scheduled,
+        }
         cart.value = []
         persistCart()
         cartOpen.value = false
@@ -246,9 +250,14 @@ const handleImageError = (e: Event) => {
 }
 
 const closeSuccess = () => {
+    const goCabinet = !props.embedded && successData.value.isPreorder
     successData.value.show = false
     if (props.embedded) {
         emit('done')
+        return
+    }
+    if (goCabinet) {
+        router.visit('/account/dashboard')
     }
 }
 
@@ -446,8 +455,11 @@ onMounted(fetchProducts)
                         <svg class="w-10 h-10 text-[#22c55e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
                     </div>
                     <h2 class="text-2xl font-black text-white uppercase italic mb-2">Заказ Принят</h2>
-                    <p class="text-white/50 text-sm mb-8 italic">{{ successData.message }}</p>
-                    <button type="button" @click="closeSuccess" class="w-full py-5 bg-white/5 border border-white/10 text-white font-black uppercase rounded-2xl hover:bg-white/10 transition-all italic cursor-pointer">
+                    <p class="text-white/50 text-sm italic">{{ successData.message }}</p>
+                    <p v-if="successData.isPreorder" class="mt-4 text-[11px] text-white/35 font-mono italic leading-relaxed">
+                        Если придёте раньше — нажмите «Я на месте — несите заказ»
+                    </p>
+                    <button type="button" @click="closeSuccess" class="mt-8 w-full py-5 bg-white/5 border border-white/10 text-white font-black uppercase rounded-2xl hover:bg-white/10 transition-all italic cursor-pointer">
                         Отлично
                     </button>
                 </div>
