@@ -369,7 +369,7 @@ class ShopController extends Controller
             }
 
             $successMessage = $scheduled
-                ? PreSessionOrderService::BOOKING_ORDER_MESSAGE
+                ? PreSessionOrderService::bookingDeliveredMessage($pcName)
                 : "Заказ оформлен! Доставим к {$pcName}.";
 
             return response()->json([

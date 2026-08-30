@@ -1729,7 +1729,7 @@ class ShellApiController extends Controller
             ]);
 
             $message = $scheduled
-                ? PreSessionOrderService::BOOKING_ORDER_MESSAGE
+                ? PreSessionOrderService::bookingDeliveredMessage($pcName)
                 : 'Заказ оформлен!';
 
             return response()->json([

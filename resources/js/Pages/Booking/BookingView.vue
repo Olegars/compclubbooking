@@ -1386,7 +1386,7 @@ onUnmounted(() => {
                             Добавить напитки и перекус к вашему приходу?
                         </h3>
                         <p class="text-white/50 text-sm mb-8 leading-snug">
-                            Заказ привезут за 5 минут до начала сессии к забронированному компьютеру.
+                            Заказ привезут за 5 минут до начала к забронированному компьютеру.
                         </p>
                         <div class="grid grid-cols-2 gap-3">
                             <button type="button" @click="acceptSnacks"
@@ -1407,7 +1407,7 @@ onUnmounted(() => {
                       :kiosk-computer-id="Number(selectedIds[0] || 0)"
                       :delivery="{
                           mode: 'booking',
-                          message: 'На текущий момент активной сессии нет, но вы можете сделать заказ который будет доставлен за 5 минут до начала сессии к забронированному компьютеру'
+                          message: 'Заказ будет доставлен за 5 минут до начала к забронированному компьютеру.'
                       }"
                       @close="closeShopOverlay"
                       @done="closeShopOverlay" />

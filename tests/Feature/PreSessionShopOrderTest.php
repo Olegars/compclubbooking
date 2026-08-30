@@ -98,7 +98,7 @@ class PreSessionShopOrderTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('scheduled', true)
-            ->assertJsonPath('message', PreSessionOrderService::BOOKING_ORDER_MESSAGE);
+            ->assertJsonPath('message', PreSessionOrderService::bookingDeliveredMessage('PC-08'));
 
         $order = Order::query()->first();
         $this->assertNotNull($order);

@@ -123,9 +123,10 @@ const bookingTimeClass = (b: any) => {
     return 'text-[#22c55e]'
 }
 
-const transactions = computed(() => {
-    return (page.props.transactions as any[]) || [];
-})
+const shopOrderLabel = (b: any) => {
+    const orders = Array.isArray(b?.shop_orders) ? b.shop_orders : []
+    return orders.map((o: any) => o.product_name).filter(Boolean).join(' · ')
+}
 
 // Фильтруем брони: скрываем, когда эффективное время истекло
 const activeBookings = computed(() => {
@@ -563,6 +564,16 @@ onMounted(() => {
                         <div v-if="b.game_label" class="mt-4 sm:mt-6 pt-4 sm:pt-5 border-t border-white/5 relative z-10 flex flex-wrap items-center gap-x-3 gap-y-2">
                             <span class="text-[10px] text-white/30 uppercase font-bold italic tracking-widest">Игры</span>
                             <span class="text-sm font-black uppercase italic text-white/90 tracking-tight">{{ b.game_label }}</span>
+                        </div>
+
+                        <div v-if="shopOrderLabel(b)" class="mt-4 sm:mt-6 pt-4 sm:pt-5 border-t border-white/5 relative z-10">
+                            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                                <span class="text-[10px] text-[#eab308] uppercase font-bold italic tracking-widest">Заказ</span>
+                                <span class="text-sm font-black uppercase italic text-white/90 tracking-tight">{{ shopOrderLabel(b) }}</span>
+                            </div>
+                            <p class="mt-2 text-[10px] text-white/30 font-mono italic">
+                                Доставим за 5 минут до начала к этому ПК
+                            </p>
                         </div>
 
                         <div

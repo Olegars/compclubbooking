@@ -255,6 +255,45 @@ class ProfileController extends Controller
             ->filter(fn ($b) => ! $b->is_expired)
             ->values();
 
+        $shopOrders = Order::query()
+            ->where('user_id', $user->id)
+            ->whereIn('status', ['scheduled', 'pending', 'cooking'])
+            ->orderByDesc('id')
+            ->get();
+
+        $claimedOrderIds = [];
+        $activeBookings = $activeBookings->map(function ($booking) use ($shopOrders, &$claimedOrderIds) {
+            $matched = $shopOrders->filter(function (Order $order) use ($booking, $claimedOrderIds) {
+                if (in_array((int) $order->id, $claimedOrderIds, true)) {
+                    return false;
+                }
+                if ($order->booking_id) {
+                    return (int) $order->booking_id === (int) $booking->id;
+                }
+                $pc = (string) ($booking->formatted_pc ?? '');
+                $computerId = (int) ($booking->computer_id ?? 0);
+
+                return ($pc !== '' && (string) $order->pc_name === $pc)
+                    || ($computerId > 0 && (string) $order->pc_name === 'ПК №'.$computerId);
+            })->values();
+
+            foreach ($matched as $order) {
+                $claimedOrderIds[] = (int) $order->id;
+            }
+
+            $booking->shop_orders = $matched->map(function (Order $order) {
+                return [
+                    'id' => $order->id,
+                    'product_name' => $order->product_name,
+                    'items' => $order->lineItems(),
+                    'price' => (float) $order->price,
+                    'status' => $order->status,
+                ];
+            })->values()->all();
+
+            return $booking;
+        });
+
         // 5. Бонусы за отзыв (pending имеет приоритет для статуса в UI)
         $latestReview = ReviewClaim::where('user_id', $user->id)
             ->where('status', ReviewClaim::STATUS_PENDING)

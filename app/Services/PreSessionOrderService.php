@@ -21,7 +21,14 @@ class PreSessionOrderService
 
     public const CLIENT_DELIVERY_MINUTES = 5;
 
-    public const BOOKING_ORDER_MESSAGE = 'На текущий момент активной сессии нет, но вы можете сделать заказ который будет доставлен за 5 минут до начала сессии к забронированному компьютеру';
+    public const BOOKING_ORDER_MESSAGE = 'Заказ будет доставлен за 5 минут до начала к забронированному компьютеру.';
+
+    public static function bookingDeliveredMessage(?string $pcName = null): string
+    {
+        $target = filled($pcName) ? $pcName : 'забронированному компьютеру';
+
+        return "Заказ будет доставлен за 5 минут до начала к {$target}.";
+    }
 
     /**
      * @return array{
