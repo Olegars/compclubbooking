@@ -11,10 +11,14 @@ class UserSetting extends Model
         'user_id',
         'payload',
         'tts_voice',
+        'light_color',
+        'light_brightness',
+        'light_effect',
     ];
 
     protected $casts = [
         'payload' => 'array',
+        'light_brightness' => 'integer',
     ];
 
     public function user(): BelongsTo

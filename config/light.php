@@ -15,9 +15,9 @@ return [
     |   dimmer_rgb — dimmer R G B (dimmer = brightness)
     |   rgbw       — R G B W (white preset uses W)
     |
-    | Rainbow effect is clock-synced HSV in the shell (all PCs send the same
-    | hue from wall clock). Empty room → brightness 0; next session restores
-    | last_on_*.
+    | Rainbow is clock-synced HSV in the shell. Lights follow PC power, not
+    | empty sessions: all PCs off → off; any PC on without a session → white;
+    | login fades to the player's last color (green on first visit).
     |
     */
     'artnet_port' => (int) env('LIGHT_ARTNET_PORT', 6454),
@@ -26,4 +26,8 @@ return [
     'default_brightness' => (int) env('LIGHT_DEFAULT_BRIGHTNESS', 80),
     'default_color' => (string) env('LIGHT_DEFAULT_COLOR', 'white'),
     'rainbow_period_ms' => (int) env('LIGHT_RAINBOW_PERIOD_MS', 8000),
+    'fade_login_ms' => (int) env('LIGHT_FADE_LOGIN_MS', 2500),
+    'fade_idle_ms' => (int) env('LIGHT_FADE_IDLE_MS', 1200),
+    'fade_off_ms' => (int) env('LIGHT_FADE_OFF_MS', 800),
+    'fade_manual_ms' => (int) env('LIGHT_FADE_MANUAL_MS', 300),
 ];

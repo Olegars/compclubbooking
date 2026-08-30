@@ -219,8 +219,11 @@ class ShellApiController extends Controller
 
             $lightState = ['available' => false];
             try {
-                app(LightControlService::class)->reconcileForComputer($terminalId);
-                $lightState = app(LightControlService::class)->stateForComputer($terminalId);
+                $lights = app(LightControlService::class);
+                $loginLight = $lights->applyLoginScene($terminalId, $user, (int) $booking->id);
+                $lightState = $loginLight['light']
+                    ? $lights->statePayload($loginLight['light'], $terminalId)
+                    : $lights->stateForComputer($terminalId);
             } catch (\Throwable $e) {
                 Log::warning('Light state after login failed: '.$e->getMessage());
             }
@@ -2608,7 +2611,14 @@ class ShellApiController extends Controller
                 ]
             );
 
-            return response()->json(array_merge(['status' => 'success'], $result), 200);
+            $lightState = ['available' => false];
+            try {
+                $lightState = app(LightControlService::class)->stateForComputer((int) $computer->id);
+            } catch (\Throwable $e) {
+                Log::warning('Light state after heartbeat failed: '.$e->getMessage());
+            }
+
+            return response()->json(array_merge(['status' => 'success', 'light' => $lightState], $result), 200);
         } catch (\Throwable $e) {
             Log::error('Shell API Power Heartbeat Error: '.$e->getMessage());
 
@@ -2650,9 +2660,17 @@ class ShellApiController extends Controller
 
             app(ComputerPowerService::class)->markOffline((int) $computer->id);
 
+            $lightState = ['available' => false];
+            try {
+                $lightState = app(LightControlService::class)->stateForComputer((int) $computer->id);
+            } catch (\Throwable $e) {
+                Log::warning('Light state after power offline failed: '.$e->getMessage());
+            }
+
             return response()->json([
                 'status' => 'success',
                 'power_state' => 'off',
+                'light' => $lightState,
             ], 200);
         } catch (\Throwable $e) {
             Log::error('Shell API Power Offline Error: '.$e->getMessage());

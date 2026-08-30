@@ -6,12 +6,15 @@ use App\Models\Booking;
 use App\Models\Computer;
 use App\Models\DmxNode;
 use App\Models\SpaceLight;
+use App\Models\User;
 use App\Services\Fan\FanControlService;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class LightControlService
 {
+    private int $nextFadeMs = 0;
+
     public function __construct(
         private FanControlService $fans,
     ) {}
@@ -39,11 +42,68 @@ class LightControlService
                 return null;
             }
 
-            $this->applyVacancy($light);
+            $this->applyPowerPolicy($light);
             $light->save();
 
             return $light;
         });
+    }
+
+    /**
+     * After PIN/QR login: fade from lobby white to this player's last color
+     * (green on first visit).
+     *
+     * @return array{light: ?SpaceLight, first_visit: bool}
+     */
+    public function applyLoginScene(int $computerId, User $user, ?int $bookingId = null): array
+    {
+        $computer = Computer::query()->find($computerId);
+        if (! $computer || ! $this->fans->ensureSpaceForComputer($computer)) {
+            return ['light' => null, 'first_visit' => false];
+        }
+
+        $first = $this->isFirstVisit((int) $user->id, $bookingId);
+        $saved = $user->lightScene();
+        $useGreen = $first || $saved === null;
+
+        $color = $useGreen ? 'green' : $saved['color'];
+        $brightness = $useGreen
+            ? SpaceLight::normalizeBrightness((int) config('light.default_brightness', 80))
+            : $saved['brightness'];
+        $effect = $useGreen ? SpaceLight::EFFECT_NONE : $saved['effect'];
+        if ($brightness <= 0) {
+            $brightness = SpaceLight::normalizeBrightness((int) config('light.default_brightness', 80));
+        }
+
+        $light = DB::transaction(function () use ($computer, $color, $brightness, $effect) {
+            $light = SpaceLight::query()
+                ->where('space_id', $computer->space_id)
+                ->where('club_id', $computer->club_id)
+                ->lockForUpdate()
+                ->first();
+            if (! $light) {
+                return null;
+            }
+
+            $light->desired_color = $color;
+            $light->desired_effect = $effect;
+            $light->desired_brightness = $brightness;
+            $light->vacant = false;
+            $light->last_on_color = $color;
+            $light->last_on_brightness = $brightness;
+            $light->last_on_effect = $effect;
+            $light->save();
+
+            return $light->fresh();
+        });
+
+        if ($useGreen) {
+            $user->saveLightScene('green', $brightness, SpaceLight::EFFECT_NONE);
+        }
+
+        $this->nextFadeMs = max(0, (int) config('light.fade_login_ms', 2500));
+
+        return ['light' => $light, 'first_visit' => $first];
     }
 
     /**
@@ -60,7 +120,7 @@ class LightControlService
             return ['light' => null, 'locked' => false, 'remaining_sec' => 0];
         }
 
-        return DB::transaction(function () use ($computer, $color, $brightness, $effect) {
+        $result = DB::transaction(function () use ($computer, $color, $brightness, $effect) {
             $light = SpaceLight::query()
                 ->where('space_id', $computer->space_id)
                 ->where('club_id', $computer->club_id)
@@ -96,7 +156,7 @@ class LightControlService
                 && $nextBrightness === SpaceLight::normalizeBrightness((int) $light->desired_brightness);
 
             if ($remaining > 0 && ! $unchanged) {
-                $this->applyVacancy($light);
+                $this->applyPowerPolicy($light);
                 $light->save();
 
                 return ['light' => $light->fresh(), 'locked' => true, 'remaining_sec' => $remaining];
@@ -117,6 +177,13 @@ class LightControlService
 
             return ['light' => $light->fresh(), 'locked' => false, 'remaining_sec' => 0];
         });
+
+        if (! ($result['locked'] ?? true) && $result['light']) {
+            $this->nextFadeMs = max(0, (int) config('light.fade_manual_ms', 300));
+            $this->persistSceneForActiveUser($computer, $result['light']);
+        }
+
+        return $result;
     }
 
     /**
@@ -191,6 +258,7 @@ class LightControlService
         $light->loadMissing('dmxNode');
         $node = $light->dmxNode;
         $occupied = $this->spaceHasActiveSession($light);
+        $allOff = $this->spaceAllComputersOffline($light);
         $manualCooldown = max(0, (int) config('light.manual_cooldown_sec', 2));
         $autoCooldown = max(0, (int) config('light.auto_apply_cooldown_sec', 5));
         $manualRemaining = $this->manualLockRemainingSec($light, $manualCooldown);
@@ -205,8 +273,11 @@ class LightControlService
 
         $nodes = [];
         if ($available) {
-            $nodes[] = $this->nodeUniversePayload($node, $light);
+            $nodes[] = $this->nodeUniversePayload($node);
         }
+
+        $fadeMs = $this->nextFadeMs;
+        $this->nextFadeMs = 0;
 
         return [
             'available' => $available,
@@ -216,6 +287,7 @@ class LightControlService
             'color' => $color,
             'brightness' => $brightness,
             'effect' => $effect,
+            'fade_ms' => $fadeMs,
             'applied_color' => SpaceLight::normalizeColor((string) $light->applied_color),
             'applied_brightness' => SpaceLight::normalizeBrightness((int) $light->applied_brightness),
             'applied_effect' => SpaceLight::normalizeEffect((string) $light->applied_effect, (string) $light->applied_color),
@@ -233,6 +305,7 @@ class LightControlService
             'facts' => [
                 'session' => $occupied,
                 'sessions_in_space' => $this->spaceActiveSessionCount($light),
+                'all_pcs_off' => $allOff,
             ],
             'manual_lock' => [
                 'locked' => $manualRemaining > 0,
@@ -248,12 +321,9 @@ class LightControlService
     }
 
     /**
-     * Full Art-Net universe for this node: every space light on the same host+universe
-     * so one PC does not black out other rooms sharing the controller.
-     *
      * @return array{host:string,port:int,universe:int,fixtures:list<array<string,mixed>>}
      */
-    private function nodeUniversePayload(DmxNode $node, SpaceLight $self): array
+    private function nodeUniversePayload(DmxNode $node): array
     {
         $siblings = SpaceLight::query()
             ->where('dmx_node_id', $node->id)
@@ -265,9 +335,6 @@ class LightControlService
             $color = SpaceLight::normalizeColor((string) $row->desired_color);
             $effect = SpaceLight::normalizeEffect((string) $row->desired_effect, $color);
             $brightness = SpaceLight::normalizeBrightness((int) $row->desired_brightness);
-            if ((int) $row->id !== (int) $self->id && (bool) $row->vacant) {
-                $brightness = 0;
-            }
             [$r, $g, $b] = SpaceLight::rgbForColor($color);
             $fixtures[] = [
                 'light_id' => (int) $row->id,
@@ -309,31 +376,123 @@ class LightControlService
         }
     }
 
-    private function applyVacancy(SpaceLight $light): void
+    /**
+     * Off only when every PC in the room is powered off (same heartbeat/state
+     * as ventilation orphan). Any PC on/booting → lobby white if no session.
+     */
+    private function applyPowerPolicy(SpaceLight $light): void
     {
-        $occupied = $this->spaceHasActiveSession($light);
-        if (! $occupied) {
+        $defaultBr = SpaceLight::normalizeBrightness((int) config('light.default_brightness', 80));
+        $allOff = $this->spaceAllComputersOffline($light);
+
+        if ($allOff) {
+            if ((int) $light->desired_brightness !== 0) {
+                $this->nextFadeMs = max($this->nextFadeMs, (int) config('light.fade_off_ms', 800));
+            }
             $light->desired_brightness = 0;
             $light->vacant = true;
 
             return;
         }
 
-        if ($light->vacant) {
-            $light->vacant = false;
-            $restore = SpaceLight::normalizeBrightness((int) $light->last_on_brightness);
-            if ($restore <= 0) {
-                $restore = SpaceLight::normalizeBrightness((int) config('light.default_brightness', 80));
+        $wasOff = (bool) $light->vacant || (int) $light->desired_brightness <= 0;
+        $light->vacant = false;
+
+        if ($this->spaceHasActiveSession($light)) {
+            if ($wasOff) {
+                $light->desired_color = SpaceLight::normalizeColor((string) ($light->last_on_color ?: 'white'));
+                $light->desired_effect = SpaceLight::normalizeEffect(
+                    (string) ($light->last_on_effect ?: SpaceLight::EFFECT_NONE),
+                    (string) $light->desired_color,
+                );
+                $restore = SpaceLight::normalizeBrightness((int) $light->last_on_brightness);
+                $light->desired_brightness = $restore > 0 ? $restore : $defaultBr;
+                $this->nextFadeMs = max($this->nextFadeMs, (int) config('light.fade_idle_ms', 1200));
             }
-            $light->desired_brightness = $restore;
-            $light->desired_color = SpaceLight::normalizeColor(
-                (string) ($light->last_on_color ?: config('light.default_color', 'white'))
-            );
-            $light->desired_effect = SpaceLight::normalizeEffect(
-                (string) ($light->last_on_effect ?: SpaceLight::EFFECT_NONE),
-                (string) $light->desired_color,
-            );
+
+            return;
         }
+
+        $idleColor = 'white';
+        $idleEffect = SpaceLight::EFFECT_NONE;
+        $changed = SpaceLight::normalizeColor((string) $light->desired_color) !== $idleColor
+            || SpaceLight::normalizeEffect((string) $light->desired_effect) !== $idleEffect
+            || SpaceLight::normalizeBrightness((int) $light->desired_brightness) !== $defaultBr;
+
+        $light->desired_color = $idleColor;
+        $light->desired_effect = $idleEffect;
+        $light->desired_brightness = $defaultBr;
+
+        if ($changed || $wasOff) {
+            $this->nextFadeMs = max($this->nextFadeMs, (int) config('light.fade_idle_ms', 1200));
+        }
+    }
+
+    private function persistSceneForActiveUser(Computer $computer, SpaceLight $light): void
+    {
+        $booking = Booking::query()
+            ->where('computer_id', $computer->id)
+            ->where('status', 'active')
+            ->orderByDesc('id')
+            ->first();
+        if (! $booking?->user_id) {
+            return;
+        }
+        $user = User::query()->find((int) $booking->user_id);
+        if (! $user) {
+            return;
+        }
+        $user->saveLightScene(
+            (string) $light->desired_color,
+            (int) $light->desired_brightness,
+            (string) $light->desired_effect,
+        );
+    }
+
+    private function isFirstVisit(int $userId, ?int $currentBookingId): bool
+    {
+        $prior = Booking::query()
+            ->where('user_id', $userId)
+            ->when($currentBookingId, fn ($q) => $q->where('id', '!=', $currentBookingId))
+            ->whereNotNull('actual_started_at')
+            ->exists();
+
+        if ($prior) {
+            return false;
+        }
+
+        return ! Booking::query()
+            ->where('user_id', $userId)
+            ->when($currentBookingId, fn ($q) => $q->where('id', '!=', $currentBookingId))
+            ->where('status', 'completed')
+            ->exists();
+    }
+
+    private function spaceAllComputersOffline(SpaceLight $light): bool
+    {
+        $computers = Computer::query()
+            ->where('space_id', $light->space_id)
+            ->where('club_id', $light->club_id)
+            ->get(['id', 'power_state', 'last_seen_at']);
+
+        if ($computers->isEmpty()) {
+            return true;
+        }
+
+        $staleSec = max(30, (int) config('club.power.heartbeat_stale_seconds', 180));
+        $cutoff = now()->subSeconds($staleSec);
+
+        foreach ($computers as $pc) {
+            $state = (string) ($pc->power_state ?? 'off');
+            if (in_array($state, ['on', 'booting'], true)) {
+                return false;
+            }
+            if ($pc->last_seen_at && $pc->last_seen_at->gte($cutoff)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function manualLockRemainingSec(SpaceLight $light, int $cooldown): int

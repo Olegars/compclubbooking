@@ -404,8 +404,15 @@ class ShellQrLoginService
 
         $lightState = ['available' => false];
         try {
-            app(LightControlService::class)->reconcileForComputer((int) $booking->computer_id);
-            $lightState = app(LightControlService::class)->stateForComputer((int) $booking->computer_id);
+            $lights = app(LightControlService::class);
+            $loginLight = $lights->applyLoginScene(
+                (int) $booking->computer_id,
+                $user,
+                (int) $booking->id,
+            );
+            $lightState = $loginLight['light']
+                ? $lights->statePayload($loginLight['light'], (int) $booking->computer_id)
+                : $lights->stateForComputer((int) $booking->computer_id);
         } catch (\Throwable $e) {
             // ignore
         }

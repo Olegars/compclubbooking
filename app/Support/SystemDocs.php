@@ -307,7 +307,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Свет DMX: кто шлёт пакеты',
-                        'description' => "Пресеты: белый / красный / синий / зелёный / жёлтый / фиолетовый / rainbow (HSV по wall-clock, период LIGHT_RAINBOW_PERIOD_MS). Ползунок яркости 0–100%.\n\nПустая комната → brightness 0; первый вход в сессию восстанавливает last_on. Ручной кулдаун LIGHT_MANUAL_COOLDOWN_SEC (2 с), чтобы ПК не дрались. API: GET/POST /api/shell/light, POST /api/shell/light/applied.",
+                        'description' => "Пресеты: белый / красный / синий / зелёный / жёлтый / фиолетовый / rainbow (HSV по wall-clock, период LIGHT_RAINBOW_PERIOD_MS). Ползунок яркости 0–100%.\n\nСвет живёт от питания ПК (как WOL/heartbeat), не от пустой сессии:\n• все ПК комнаты off (power_state + stale last_seen) → brightness 0\n• любой ПК on/booting без сессии → белый (лобби после старта образа)\n• логин в шелл → плавный fade в последний цвет игрока (user_settings); первый визит — зелёный\n• логаут при живых ПК → снова белый, не off\n\nРучной кулдаун LIGHT_MANUAL_COOLDOWN_SEC (2 с). API: GET/POST /api/shell/light, POST /api/shell/light/applied; heartbeat и power/offline тоже отдают light.",
                         'path' => '/admin/lights',
                         'audience' => 'Supervisor+ / Shell',
                     ],
@@ -631,7 +631,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Свет на PC Shell',
-                        'description' => 'Плитка под климатом: кружки цвета + rainbow + ползунок яркости. Сервер отдаёт desired; Shell шлёт Art-Net UDP на DmxNode и ack /api/shell/light/applied. Узел и каналы — /admin/lights. Подробности — «Свет DMX» в Конфигурации клуба.',
+                        'description' => 'Плитка под климатом: кружки цвета + rainbow + ползунок яркости. Старт ПК → белый; после логина шелл плавно (fade_ms) уводит в цвет игрока (первый визит — зелёный). Гаснет только когда все ПК комнаты выключены. Узел — /admin/lights.',
                         'path' => '/admin/lights',
                         'audience' => 'Shell',
                     ],

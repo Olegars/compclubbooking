@@ -67,6 +67,42 @@ class User extends Authenticatable
         $this->unsetRelation('settings');
     }
 
+    /**
+     * @return array{color:string,brightness:int,effect:string}|null
+     */
+    public function lightScene(): ?array
+    {
+        $this->loadMissing('settings');
+        $color = strtolower(trim((string) ($this->settings?->light_color ?? '')));
+        if ($color === '') {
+            return null;
+        }
+
+        return [
+            'color' => \App\Models\SpaceLight::normalizeColor($color),
+            'brightness' => \App\Models\SpaceLight::normalizeBrightness(
+                (int) ($this->settings->light_brightness ?? config('light.default_brightness', 80))
+            ),
+            'effect' => \App\Models\SpaceLight::normalizeEffect(
+                (string) ($this->settings->light_effect ?? 'none'),
+                $color,
+            ),
+        ];
+    }
+
+    public function saveLightScene(string $color, int $brightness, string $effect): void
+    {
+        \App\Models\UserSetting::query()->updateOrCreate(
+            ['user_id' => $this->id],
+            [
+                'light_color' => \App\Models\SpaceLight::normalizeColor($color),
+                'light_brightness' => \App\Models\SpaceLight::normalizeBrightness($brightness),
+                'light_effect' => \App\Models\SpaceLight::normalizeEffect($effect, $color),
+            ]
+        );
+        $this->unsetRelation('settings');
+    }
+
     public function gameStats()
     {
         return $this->hasMany(UserGameStat::class);
