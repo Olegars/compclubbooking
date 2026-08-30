@@ -137,7 +137,11 @@ Route::middleware(['auth:web,admin'])->prefix('api/shop')->group(function () {
     Route::get('/products', [ShopController::class, 'getProducts']);
     Route::post('/checkout', [ShopController::class, 'checkout']);
     Route::get('/active-orders', [ShopController::class, 'activeOrders']);
+    Route::get('/delivery-context', [ShopController::class, 'deliveryContext']);
 });
+
+Route::post('/api/terminal/shop/checkout', [ShopController::class, 'terminalCheckout'])
+    ->middleware('throttle:20,1');
 
 /*
 |--------------------------------------------------------------------------
@@ -528,6 +532,7 @@ Route::prefix('api/shell')->group(function () {
     Route::get('/store/products', [ShellApiController::class, 'getProducts']);
     Route::post('/store/checkout', [ShellApiController::class, 'checkout']);
     Route::get('/store/order-status', [ShellApiController::class, 'getOrderStatus']);
+    Route::post('/store/release-scheduled', [ShellApiController::class, 'releaseScheduledOrder']);
     Route::get('/products', [ShellApiController::class, 'getProducts']);
     Route::post('/checkout', [ShellApiController::class, 'checkout']);
     Route::get('/order-status', [ShellApiController::class, 'getOrderStatus']);

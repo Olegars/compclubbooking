@@ -34,6 +34,7 @@ use App\Services\ComputerStatusService;
 use App\Services\Fan\FanControlService;
 use App\Services\Light\LightControlService;
 use App\Services\GameRequestService;
+use App\Services\PreSessionOrderService;
 use App\Services\ProductStockService;
 use App\Services\UserCloudSettingsService;
 use App\Services\VideoMarkerService;
@@ -1372,6 +1373,7 @@ class ShellApiController extends Controller
             'cooking' => 'В РАБОТЕ',
             'delivered' => 'ЗАКАЗ ВЫПОЛНЕН',
             'cancelled' => 'ЗАКАЗ ОТМЕНЁН',
+            'scheduled' => 'К СЕССИИ',
             default => 'В РАБОТЕ',
         };
     }
@@ -1393,8 +1395,14 @@ class ShellApiController extends Controller
                 'order_id' => null,
                 'status' => null,
                 'orders' => [],
+                'has_scheduled_order' => false,
+                'scheduled_order_id' => null,
+                'scheduled_summary' => '',
+                'scheduled_pc_name' => null,
             ];
         }
+
+        $scheduled = app(PreSessionOrderService::class)->scheduledSnapshotForComputer($terminalId);
 
         $active = $this->ordersForTerminal($terminalId)
             ->whereIn('status', ['pending', 'cooking'])
@@ -1415,13 +1423,13 @@ class ShellApiController extends Controller
         $hasActive = $active->isNotEmpty()
             || ($primary && in_array($primary->status, ['delivered', 'cancelled'], true));
 
-        return [
+        return array_merge([
             'has_active_order' => (bool) $hasActive && $primary !== null,
             'status_text' => $primary ? self::orderStatusLabel($primary->status) : '',
             'order_id' => $primary ? (int) $primary->id : null,
             'status' => $primary?->status,
             'orders' => $orders,
-        ];
+        ], $scheduled);
     }
 
     public function getProducts(Request $request)
@@ -1429,14 +1437,9 @@ class ShellApiController extends Controller
         $terminalId = (int) $request->input('terminal_id', 0);
         $snapshot = $this->shellOrderSnapshot($terminalId);
 
-        return response()->json([
-            'has_active_order' => $snapshot['has_active_order'],
-            'status_text' => $snapshot['status_text'],
-            'order_id' => $snapshot['order_id'],
-            'status' => $snapshot['status'],
-            'orders' => $snapshot['orders'],
+        return response()->json(array_merge($snapshot, [
             'products' => Product::query()->orderBy('name')->get(),
-        ]);
+        ]));
     }
 
     public function getOrderStatus(Request $request)
@@ -1452,14 +1455,12 @@ class ShellApiController extends Controller
         if ($orderId > 0) {
             $order = $this->ordersForTerminal($terminalId)->where('id', $orderId)->first();
             if (!$order) {
-                return response()->json([
+                $snapshot = $this->shellOrderSnapshot($terminalId);
+
+                return response()->json(array_merge($snapshot, [
                     'status' => 'success',
-                    'has_active_order' => false,
-                    'status_text' => '',
-                    'order_id' => null,
-                    'order_status' => null,
-                    'orders' => [],
-                ]);
+                    'order_status' => $snapshot['status'],
+                ]));
             }
 
             $isActive = in_array($order->status, ['pending', 'cooking'], true)
@@ -1473,26 +1474,22 @@ class ShellApiController extends Controller
                 ? $snapshot['orders']
                 : [$this->mapOrderPayload($order)];
 
-            return response()->json([
+            return response()->json(array_merge($snapshot, [
                 'status' => 'success',
                 'has_active_order' => $isActive,
                 'status_text' => self::orderStatusLabel($order->status),
                 'order_id' => (int) $order->id,
                 'order_status' => $order->status,
                 'orders' => $orders,
-            ]);
+            ]));
         }
 
         $snapshot = $this->shellOrderSnapshot($terminalId);
 
-        return response()->json([
+        return response()->json(array_merge($snapshot, [
             'status' => 'success',
-            'has_active_order' => $snapshot['has_active_order'],
-            'status_text' => $snapshot['status_text'],
-            'order_id' => $snapshot['order_id'],
             'order_status' => $snapshot['status'],
-            'orders' => $snapshot['orders'],
-        ]);
+        ]));
     }
 
     /**
@@ -1556,19 +1553,20 @@ class ShellApiController extends Controller
         }
 
         try {
-            $booking = Booking::where('status', 'active')
-                ->where(function ($query) use ($request) {
-                    $query->whereJsonContains('pc_ids', (string) $request->terminal_id)
-                        ->orWhere('computer_id', $request->terminal_id);
-                })->first();
+            $preSession = app(PreSessionOrderService::class);
+            $terminalId = (int) $request->terminal_id;
+            $resolved = $preSession->resolveForComputer($terminalId);
 
-            if (!$booking) {
-                Log::warning('Shell shop checkout: no active booking', [
+            if ($resolved['mode'] === 'none' || ! $resolved['booking']) {
+                Log::warning('Shell shop checkout: no active or upcoming booking', [
                     'terminal_id' => $request->terminal_id,
                     'items' => $qtyByProduct,
                 ]);
-                return response()->json(['message' => 'Активная сессия не найдена.'], 403);
+                return response()->json(['message' => $resolved['message'] ?: 'Активная сессия не найдена.'], 403);
             }
+
+            $booking = $resolved['booking'];
+            $pcName = $resolved['pc_name'] ?: OrderDeliveryTarget::labelForComputerId($terminalId);
 
             $user = User::find($booking->user_id);
             if (!$user) {
@@ -1619,10 +1617,12 @@ class ShellApiController extends Controller
             }
 
             $summary = Order::summaryFromItems($lineItems);
+            $orderAttrs = $preSession->orderCreateAttributes($resolved, $pcName);
             $newBalance = $balance;
             $orderId = 0;
-            $orderStatus = 'pending';
+            $orderStatus = $orderAttrs['status'] ?? 'pending';
             $transactionId = 0;
+            $scheduled = $orderStatus === Order::STATUS_SCHEDULED;
 
             DB::transaction(function () use (
                 $user,
@@ -1634,6 +1634,7 @@ class ShellApiController extends Controller
                 $totalPrice,
                 $summary,
                 $stockService,
+                $orderAttrs,
                 &$newBalance,
                 &$orderId,
                 &$orderStatus,
@@ -1654,17 +1655,29 @@ class ShellApiController extends Controller
                 ]);
                 $transactionId = (int) $tx->id;
 
-                $orderStatus = 'pending';
-                $orderId = (int) DB::table('orders')->insertGetId([
+                $orderStatus = $orderAttrs['status'] ?? 'pending';
+                $ts = static function ($value) {
+                    if ($value instanceof \DateTimeInterface) {
+                        return $value->format('Y-m-d H:i:s');
+                    }
+
+                    return $value;
+                };
+                $insert = [
                     'user_id' => $user->id,
                     'product_name' => $summary,
                     'items' => json_encode($lineItems, JSON_UNESCAPED_UNICODE),
                     'price' => $totalPrice,
-                    'pc_name' => OrderDeliveryTarget::labelForComputerId((int) $request->terminal_id),
+                    'pc_name' => $orderAttrs['pc_name'],
                     'status' => $orderStatus,
+                    'booking_id' => $orderAttrs['booking_id'] ?? null,
+                    'fulfill_at' => $ts($orderAttrs['fulfill_at'] ?? null),
+                    'released_at' => $ts($orderAttrs['released_at'] ?? null),
+                    'session_starts_at' => $ts($orderAttrs['session_starts_at'] ?? null),
                     'created_at' => now(),
                     'updated_at' => now(),
-                ]);
+                ];
+                $orderId = (int) DB::table('orders')->insertGetId($insert);
 
                 foreach ($qtyByProduct as $pid => $qty) {
                     $stockService->decrementUnmarked($products[$pid], $qty, $orderId);
@@ -1673,13 +1686,7 @@ class ShellApiController extends Controller
                 $stockService->reserveMarkedForOrder($orderId, $lineItems);
             });
 
-            try {
-                app(\App\Services\KitchenOrderPrintService::class)->enqueue($orderId);
-            } catch (\Throwable $e) {
-                Log::warning('Kitchen print enqueue (shell): '.$e->getMessage(), [
-                    'order_id' => $orderId,
-                ]);
-            }
+            $preSession->enqueueKitchenIfPending($orderId);
 
             $fiscalReceipt = null;
             if ($transactionId > 0) {
@@ -1718,11 +1725,16 @@ class ShellApiController extends Controller
                 'price' => $totalPrice,
                 'balance' => $newBalance,
                 'transaction_id' => $transactionId,
+                'scheduled' => $scheduled,
             ]);
+
+            $message = $scheduled
+                ? PreSessionOrderService::BOOKING_ORDER_MESSAGE
+                : 'Заказ оформлен!';
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Заказ оформлен!',
+                'message' => $message,
                 'balance' => $newBalance,
                 'deposit_balance' => $newBalance,
                 'order_id' => $orderId,
@@ -1731,6 +1743,7 @@ class ShellApiController extends Controller
                 'items' => $lineItems,
                 'price' => $totalPrice,
                 'fiscal_receipt' => $fiscalReceipt,
+                'scheduled' => $scheduled,
             ]);
         } catch (\Exception $e) {
             Log::error('Shell shop checkout error: ' . $e->getMessage(), [
@@ -1739,6 +1752,26 @@ class ShellApiController extends Controller
             ]);
             return response()->json(['message' => $e->getMessage()], 500);
         }
+    }
+
+    public function releaseScheduledOrder(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|min:1',
+        ]);
+
+        $terminalId = (int) $request->input('terminal_id');
+        $preSession = app(PreSessionOrderService::class);
+        $released = $preSession->releaseForComputer($terminalId);
+        $snapshot = $this->shellOrderSnapshot($terminalId);
+
+        return response()->json(array_merge($snapshot, [
+            'status' => 'success',
+            'released' => $released,
+            'message' => $released > 0
+                ? 'Заказ передан администратору'
+                : 'Нет заказа к сессии на этом ПК',
+        ]));
     }
 
     public function callAdmin(Request $request)

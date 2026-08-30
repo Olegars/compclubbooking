@@ -16,6 +16,32 @@ type Product = {
     stock: number
 }
 
+type DeliveryContext = {
+    mode?: string
+    message?: string
+    pc_name?: string | null
+    immediate?: boolean
+}
+
+const props = withDefaults(defineProps<{
+    products?: Product[]
+    delivery?: DeliveryContext | null
+    embedded?: boolean
+    kioskPhone?: string
+    kioskComputerId?: number
+}>(), {
+    products: () => [],
+    delivery: null,
+    embedded: false,
+    kioskPhone: '',
+    kioskComputerId: 0,
+})
+
+const emit = defineEmits<{
+    done: []
+    close: []
+}>()
+
 type CartLine = {
     product_id: number
     name: string
@@ -27,7 +53,8 @@ type CartLine = {
 
 const CART_STORAGE_KEY = 'reactor_shop_cart_v1'
 
-const products = ref<Product[]>([])
+const products = ref<Product[]>(Array.isArray(props.products) ? [...props.products] : [])
+const deliveryContext = ref<DeliveryContext | null>(props.delivery ?? null)
 const categories = ['Все', 'Напитки', 'Снэки', 'Еда']
 const activeCategory = ref('Все')
 
@@ -71,9 +98,15 @@ watch(cart, persistCart, { deep: true })
 
 const fetchProducts = async () => {
     try {
-        const { data } = await axios.get('/api/shop/products')
+        const url = props.embedded
+            ? '/api/shell/store/products'
+            : '/api/shop/products'
+        const { data } = await axios.get(url)
         products.value = (Array.isArray(data) ? data : (data.products || []))
             .filter((p: Product) => Number(p.stock) > 0)
+        if (!props.embedded && data && !Array.isArray(data) && data.delivery) {
+            deliveryContext.value = data.delivery
+        }
         syncCartWithStock()
     } catch (e) {
         showError('Не удалось загрузить список товаров')
@@ -167,21 +200,31 @@ const executeCheckout = async () => {
     isProcessing.value = true
 
     try {
-        const { data } = await axios.post('/api/shop/checkout', {
-            items: cart.value.map(l => ({
-                product_id: l.product_id,
-                qty: l.qty,
-            })),
-            order_type: 'desktop',
-            payment_method: 'account',
-        })
+        const items = cart.value.map(l => ({
+            product_id: l.product_id,
+            qty: l.qty,
+        }))
+        const { data } = props.embedded && props.kioskPhone
+            ? await axios.post('/api/terminal/shop/checkout', {
+                items,
+                client_phone: props.kioskPhone,
+                computer_id: props.kioskComputerId,
+                payment_method: 'account',
+            })
+            : await axios.post('/api/shop/checkout', {
+                items,
+                order_type: 'desktop',
+                payment_method: 'account',
+            })
 
         successData.value = { show: true, message: data.message || 'Заказ оформлен!' }
         cart.value = []
         persistCart()
         cartOpen.value = false
         window.dispatchEvent(new Event('shop-order-placed'))
-        router.reload({ only: ['auth', 'transactions', 'orders'] })
+        if (!props.embedded) {
+            router.reload({ only: ['auth', 'transactions', 'orders'] })
+        }
         fetchProducts()
     } catch (e: any) {
         const errors = e.response?.data?.errors
@@ -203,11 +246,24 @@ const handleImageError = (e: Event) => {
     target.src = '/images/shop/default.png'
 }
 
+const closeSuccess = () => {
+    successData.value.show = false
+    if (props.embedded) {
+        emit('done')
+    }
+}
+
 onMounted(fetchProducts)
 </script>
 
 <template>
-    <MainLayout>
+    <component :is="embedded ? 'div' : MainLayout" :class="embedded ? 'fixed inset-0 z-[9999998] overflow-y-auto bg-black' : ''">
+        <div v-if="embedded" class="sticky top-0 z-20 flex justify-end p-3">
+            <button type="button" @click="emit('close')"
+                    class="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white/50 hover:text-white cursor-pointer">
+                Закрыть
+            </button>
+        </div>
         <div class="max-w-6xl mx-auto px-0 py-3 sm:p-6 space-y-4 sm:space-y-8 animate-in zoom-in duration-500 pb-28">
 
             <div class="space-y-5">
@@ -216,6 +272,14 @@ onMounted(fetchProducts)
                     <p class="mt-2 text-sm sm:text-base text-white/70 font-medium normal-case tracking-normal not-italic leading-snug">
                         Снаряжение и провизия для рейда
                     </p>
+                </div>
+
+                <div v-if="deliveryContext?.mode === 'booking' && deliveryContext.message"
+                     class="rounded-2xl border border-[#22c55e]/30 bg-[#22c55e]/10 px-4 py-3 text-sm text-white/80 leading-snug">
+                    {{ deliveryContext.message }}
+                    <span v-if="deliveryContext.pc_name" class="block mt-1 text-[11px] font-black uppercase tracking-widest text-[#22c55e]">
+                        ПК: {{ deliveryContext.pc_name }}
+                    </span>
                 </div>
 
                 <div class="flex flex-wrap items-center gap-2">
@@ -363,6 +427,9 @@ onMounted(fetchProducts)
                             <span class="text-[#22c55e] shrink-0">{{ Math.floor(line.unit_price * line.qty) }} ₽</span>
                         </li>
                     </ul>
+                    <p v-if="deliveryContext?.mode === 'booking'" class="text-white/50 text-xs leading-snug mb-6 italic">
+                        {{ deliveryContext.message }}
+                    </p>
                     <button type="button" @click="executeCheckout"
                             class="w-full py-6 bg-[#22c55e] hover:bg-[#2ae06d] text-black font-black uppercase rounded-2xl transition-all shadow-[0_0_20px_rgba(34,197,94,0.3)] active:scale-95 italic cursor-pointer">
                         Подтвердить оплату
@@ -381,7 +448,7 @@ onMounted(fetchProducts)
                     </div>
                     <h2 class="text-2xl font-black text-white uppercase italic mb-2">Заказ Принят</h2>
                     <p class="text-white/50 text-sm mb-8 italic">{{ successData.message }}</p>
-                    <button type="button" @click="successData.show = false" class="w-full py-5 bg-white/5 border border-white/10 text-white font-black uppercase rounded-2xl hover:bg-white/10 transition-all italic cursor-pointer">
+                    <button type="button" @click="closeSuccess" class="w-full py-5 bg-white/5 border border-white/10 text-white font-black uppercase rounded-2xl hover:bg-white/10 transition-all italic cursor-pointer">
                         Отлично
                     </button>
                 </div>
@@ -400,7 +467,7 @@ onMounted(fetchProducts)
                 <div class="w-12 h-12 border-4 border-[#22c55e]/20 border-t-[#22c55e] rounded-full animate-spin"></div>
             </div>
         </Teleport>
-    </MainLayout>
+    </component>
 </template>
 
 <style scoped>

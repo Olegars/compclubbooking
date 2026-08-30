@@ -14,6 +14,7 @@ import ZoneInfoModal from '@/Components/ZoneInfoModal.vue'
 import TariffsModal from '@/Components/TariffsModal.vue'
 import AgeWarningModal from '@/Components/AgeWarningModal.vue'
 import GamesBookingModal from '@/Components/GamesBookingModal.vue'
+import Shop from '@/Pages/User/Shop.vue'
 
 const props = withDefaults(defineProps<{
     clubData: {
@@ -164,6 +165,8 @@ const showConfirmModal = ref(false)
 const showSmsModal = ref(false)
 const showAgeWarning = ref(false)
 const showSuccessModal = ref(false)
+const showSnackOffer = ref(false)
+const showShopOverlay = ref(false)
 const showInfoModal = ref(false)
 const showTariffsModal = ref(false)
 const showGamesModal = ref(false)
@@ -939,6 +942,7 @@ const handleConfirmBooking = async (payload: any) => {
 
 const closeAllModals = () => {
     showConfirmModal.value = false; showSmsModal.value = false; showSuccessModal.value = false;
+    showSnackOffer.value = false; showShopOverlay.value = false;
     showInfoModal.value = false; showTariffsModal.value = false; showAgeWarning.value = false;
     showGamesModal.value = false; showGuestPhoneModal.value = false;
     isGuestAuthFlow.value = false;
@@ -947,8 +951,35 @@ const closeAllModals = () => {
 }
 
 const handleFinalClose = () => {
-    closeAllModals(); selectedIds.value = []; successReceipt.value = null;
-    if (!props.isTerminal) router.visit('/account/dashboard');
+    showSuccessModal.value = false
+    showSnackOffer.value = true
+}
+
+const declineSnacks = () => {
+    showSnackOffer.value = false
+    closeAllModals()
+    selectedIds.value = []
+    successReceipt.value = null
+    if (!props.isTerminal) router.visit('/account/dashboard')
+}
+
+const acceptSnacks = () => {
+    showSnackOffer.value = false
+    if (props.isTerminal) {
+        showShopOverlay.value = true
+        return
+    }
+    closeAllModals()
+    selectedIds.value = []
+    successReceipt.value = null
+    router.visit('/shop')
+}
+
+const closeShopOverlay = () => {
+    showShopOverlay.value = false
+    closeAllModals()
+    selectedIds.value = []
+    successReceipt.value = null
 }
 
 const applyStart = (nextHours: number) => {
@@ -1347,6 +1378,39 @@ onUnmounted(() => {
                 <ConfirmModal v-if="showConfirmModal" :isOpen="showConfirmModal" :mode="isTerminal ? 'auth' : 'booking'" :data="bookingDataForModal" @close="closeAllModals" @confirm="handleConfirmBooking" />
                 <SmsModal v-if="showSmsModal" :is-open="showSmsModal" :phone="userPhone" :is-terminal="isTerminal" @close="showSmsModal = false" @verify="handleSmsVerify" />
                 <PaymentModal v-if="showSuccessModal" :isOpen="showSuccessModal" mode="booking" :data="successReceipt || bookingDataForModal" @close="handleFinalClose" />
+
+                <div v-if="showSnackOffer" class="fixed inset-0 z-[9999999] flex items-center justify-center p-4">
+                    <div class="absolute inset-0 bg-black/90 backdrop-blur-xl"></div>
+                    <div class="relative w-full max-w-md bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[16px] overflow-hidden shadow-[0_0_100px_rgba(0,0,0,0.8)] text-center p-10">
+                        <h3 class="text-2xl font-black text-white uppercase italic tracking-tight mb-3 leading-snug">
+                            Добавить напитки и перекус к вашему приходу?
+                        </h3>
+                        <p class="text-white/50 text-sm mb-8 leading-snug">
+                            Заказ привезут за 5 минут до начала сессии к забронированному компьютеру.
+                        </p>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button type="button" @click="acceptSnacks"
+                                    class="py-5 bg-[#22c55e] hover:bg-[#2ae06d] rounded-2xl text-black font-black uppercase tracking-widest active:scale-95 transition-all italic cursor-pointer">
+                                Да
+                            </button>
+                            <button type="button" @click="declineSnacks"
+                                    class="py-5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-2xl text-white font-black uppercase tracking-widest active:scale-95 transition-all italic cursor-pointer">
+                                Нет
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <Shop v-if="showShopOverlay"
+                      embedded
+                      :kiosk-phone="userPhone"
+                      :kiosk-computer-id="Number(selectedIds[0] || 0)"
+                      :delivery="{
+                          mode: 'booking',
+                          message: 'На текущий момент активной сессии нет, но вы можете сделать заказ который будет доставлен за 5 минут до начала сессии к забронированному компьютеру'
+                      }"
+                      @close="closeShopOverlay"
+                      @done="closeShopOverlay" />
                 <ZoneInfoModal v-if="showInfoModal" :isOpen="showInfoModal" :room="selectedRoomInfo" @close="closeAllModals" />
                 <TariffsModal v-if="showTariffsModal" :isOpen="showTariffsModal" :showcase="tariffShowcase" @close="closeAllModals" />
                 <GamesBookingModal

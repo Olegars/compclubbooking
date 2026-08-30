@@ -598,7 +598,7 @@ class AdminController extends Controller
                 'users.phone as user_phone'
             )
             ->whereIn('orders.status', ['pending', 'cooking'])
-            ->orderBy('orders.created_at', 'asc')
+            ->orderByRaw('COALESCE(orders.released_at, orders.created_at) asc')
             ->get()
             ->map(function ($order) use ($stock) {
                 $labels = [

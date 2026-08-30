@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Order;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\PreSessionOrderService;
 use App\Services\ProductStockService;
 use App\Support\OrderDeliveryTarget;
 use Illuminate\Http\Request;
@@ -27,7 +28,7 @@ class ShopController extends Controller
 
         $orders = Order::query()
             ->where('user_id', $user->id)
-            ->whereIn('status', ['pending', 'cooking'])
+            ->whereIn('status', ['pending', 'cooking', Order::STATUS_SCHEDULED])
             ->orderByDesc('id')
             ->limit(10)
             ->get()
@@ -40,6 +41,7 @@ class ShopController extends Controller
                 $labels = [
                     'pending' => 'Заказ принят',
                     'cooking' => 'Заказ в работе',
+                    Order::STATUS_SCHEDULED => 'Доставим к началу сессии',
                 ];
 
                 return [
@@ -71,9 +73,31 @@ class ShopController extends Controller
             ->get();
 
         // Рендерим вьюшку магазина
+        $delivery = auth()->user()
+            ? app(PreSessionOrderService::class)->deliveryContextForUser((int) auth()->id())
+            : null;
+
         return Inertia::render('User/Shop', [
-            'products' => $products
+            'products' => $products,
+            'delivery' => $delivery,
         ]);
+    }
+
+    public function deliveryContext()
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return response()->json([
+                'mode' => 'none',
+                'message' => 'Чтобы заказать доставку к ПК, войдите в аккаунт',
+                'pc_name' => null,
+                'immediate' => false,
+            ]);
+        }
+
+        return response()->json(
+            app(PreSessionOrderService::class)->deliveryContextForUser((int) $user->id)
+        );
     }
 
     /**
@@ -111,10 +135,16 @@ class ShopController extends Controller
             ->get();
 
         // 3. Отдаем объединенный объект
+        $delivery = null;
+        if (auth()->user()) {
+            $delivery = app(PreSessionOrderService::class)->deliveryContextForUser((int) auth()->id());
+        }
+
         return response()->json([
             'has_active_order' => $hasActiveOrder,
             'status_text'      => $statusText,
-            'products'         => $products
+            'products'         => $products,
+            'delivery'         => $delivery,
         ]);
     }
 
@@ -135,6 +165,7 @@ class ShopController extends Controller
             'payment_method'   => 'required|in:account,sbp_qr,card',
             'client_phone'     => 'nullable|string',
             'terminal_id'      => 'nullable|integer',
+            'computer_id'      => 'nullable|integer',
         ]);
 
         $rawItems = $request->input('items');
@@ -201,8 +232,17 @@ class ShopController extends Controller
                     return response()->json(['message' => 'Введите номер телефона для оплаты с баланса'], 422);
                 }
 
-                $cleanPhone = preg_replace('/[^0-9]/', '', $request->client_phone);
-                $user = User::where('phone', $cleanPhone)->first();
+                $cleanPhone = preg_replace('/[^0-9]/', '', (string) $request->client_phone);
+                $local = strlen($cleanPhone) >= 10 ? substr($cleanPhone, -10) : $cleanPhone;
+                $user = User::query()
+                    ->where(function ($q) use ($cleanPhone, $local) {
+                        $q->where('phone', $cleanPhone)
+                            ->orWhere('phone', '+'.$cleanPhone)
+                            ->orWhere('phone', '7'.$local)
+                            ->orWhere('phone', '+7'.$local)
+                            ->orWhere('phone', '8'.$local);
+                    })
+                    ->first();
             } else {
                 $user = auth()->user();
             }
@@ -219,17 +259,32 @@ class ShopController extends Controller
             }
         }
 
-        // --- ТОЧКА ДОСТАВКИ ---
+        $preSession = app(PreSessionOrderService::class);
+        $resolved = null;
         $pcName = null;
 
         if ($orderType === 'kiosk') {
-            $terminalId = (int) $request->input('terminal_id', 0);
+            $terminalId = (int) $request->input('computer_id', $request->input('terminal_id', 0));
             if ($terminalId < 1) {
                 return response()->json([
                     'message' => 'Не указан терминал для доставки заказа',
                 ], 422);
             }
-            $pcName = OrderDeliveryTarget::labelForComputerId($terminalId);
+            $resolved = $preSession->resolveForComputer($terminalId);
+            if ($resolved['mode'] === 'none') {
+                $pcName = OrderDeliveryTarget::labelForComputerId($terminalId);
+                $resolved = [
+                    'mode' => 'session',
+                    'message' => "Заказ оформлен! Доставим к {$pcName}.",
+                    'pc_name' => $pcName,
+                    'booking' => null,
+                    'immediate' => true,
+                    'fulfill_at' => null,
+                    'session_starts_at' => null,
+                ];
+            } else {
+                $pcName = $resolved['pc_name'] ?: OrderDeliveryTarget::labelForComputerId($terminalId);
+            }
         } else {
             if (! $user) {
                 $user = auth()->user();
@@ -240,15 +295,17 @@ class ShopController extends Controller
                 ], 422);
             }
 
-            $pcName = OrderDeliveryTarget::labelFromUserActiveSession((int) $user->id);
-            if (! $pcName) {
+            $resolved = $preSession->resolveForUser((int) $user->id);
+            if ($resolved['mode'] === 'none' || ! $resolved['pc_name']) {
                 return response()->json([
-                    'message' => 'Нет активной сессии в клубе. Заказ можно оформить только когда вы сидите за ПК',
+                    'message' => $resolved['message'] ?: 'Нет активной сессии в клубе. Заказ можно оформить только когда вы сидите за ПК',
                 ], 422);
             }
 
-            if ($request->filled('terminal_id') && (int) $request->terminal_id > 0) {
-                $booking = OrderDeliveryTarget::activeBookingForUser((int) $user->id);
+            $pcName = $resolved['pc_name'];
+
+            if ($request->filled('terminal_id') && (int) $request->terminal_id > 0 && $resolved['mode'] === 'session') {
+                $booking = $resolved['booking'];
                 $sessionPc = $booking ? OrderDeliveryTarget::computerIdFromBooking($booking) : null;
                 if ($sessionPc && (int) $request->terminal_id !== (int) $sessionPc) {
                     return response()->json([
@@ -259,9 +316,23 @@ class ShopController extends Controller
         }
 
         $summary = Order::summaryFromItems($lineItems);
+        $orderAttrs = $preSession->orderCreateAttributes($resolved, $pcName);
+        $scheduled = ($orderAttrs['status'] ?? '') === Order::STATUS_SCHEDULED;
+        $createdOrder = null;
 
         try {
-            DB::transaction(function () use ($user, $lineItems, $summary, $totalPrice, $pcName, $paymentMethod, $stockService, $products, $qtyByProduct) {
+            DB::transaction(function () use (
+                $user,
+                $lineItems,
+                $summary,
+                $totalPrice,
+                $paymentMethod,
+                $stockService,
+                $products,
+                $qtyByProduct,
+                $orderAttrs,
+                &$createdOrder
+            ) {
                 if ($paymentMethod === 'account' && $user) {
                     $user->syncBalanceToWallet();
                     $wallet = $user->wallet()->first();
@@ -279,39 +350,54 @@ class ShopController extends Controller
                     ]);
                 }
 
-                $order = Order::create([
+                $createdOrder = Order::create(array_merge($orderAttrs, [
                     'user_id'      => $user ? $user->id : null,
                     'product_name' => $summary,
                     'items'        => $lineItems,
                     'price'        => $totalPrice,
-                    'pc_name'      => $pcName,
-                    'status'       => 'pending',
-                ]);
+                ]));
 
                 foreach ($qtyByProduct as $pid => $qty) {
-                    $stockService->decrementUnmarked($products[$pid], $qty, (int) $order->id);
+                    $stockService->decrementUnmarked($products[$pid], $qty, (int) $createdOrder->id);
                 }
 
-                $stockService->reserveMarkedForOrder((int) $order->id, $lineItems);
-
-                try {
-                    app(\App\Services\KitchenOrderPrintService::class)->enqueue($order);
-                } catch (\Throwable $e) {
-                    Log::warning('Kitchen print enqueue (shop): '.$e->getMessage(), [
-                        'order_id' => $order->id,
-                    ]);
-                }
+                $stockService->reserveMarkedForOrder((int) $createdOrder->id, $lineItems);
             });
+
+            if ($createdOrder) {
+                $preSession->enqueueKitchenIfPending($createdOrder);
+            }
+
+            $successMessage = $scheduled
+                ? PreSessionOrderService::BOOKING_ORDER_MESSAGE
+                : "Заказ оформлен! Доставим к {$pcName}.";
 
             return response()->json([
                 'status' => 'success',
-                'message' => "Заказ оформлен! Доставим к {$pcName}.",
+                'message' => $successMessage,
                 'pc_name' => $pcName,
+                'scheduled' => $scheduled,
+                'order_id' => $createdOrder?->id,
+                'order_status' => $createdOrder?->status,
             ]);
 
         } catch (\Exception $e) {
             Log::error("Reactor Shop Error: " . $e->getMessage());
             return response()->json(['message' => 'Ошибка сервера при проведении платежа: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Киоск клуба после брони: телефон только что подтверждён SMS, доставка к забронированному ПК.
+     */
+    public function terminalCheckout(Request $request)
+    {
+        $request->merge([
+            'order_type' => 'kiosk',
+            'payment_method' => $request->input('payment_method', 'account'),
+            'terminal_id' => $request->input('computer_id', $request->input('terminal_id')),
+        ]);
+
+        return $this->checkout($request);
     }
 }

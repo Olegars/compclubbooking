@@ -9,25 +9,43 @@ class Order extends Model
 {
     use HasFactory;
 
+    public const STATUS_SCHEDULED = 'scheduled';
+    public const STATUS_PENDING = 'pending';
+    public const STATUS_COOKING = 'cooking';
+    public const STATUS_DELIVERED = 'delivered';
+    public const STATUS_CANCELLED = 'cancelled';
+
     // Разрешаем запись этих полей
     protected $fillable = [
         'user_id',
+        'booking_id',
         'product_name',
         'items',
         'price',
         'pc_name',
-        'status'
+        'status',
+        'fulfill_at',
+        'released_at',
+        'session_starts_at',
     ];
 
     protected $casts = [
         'items' => 'array',
         'price' => 'float',
+        'fulfill_at' => 'datetime',
+        'released_at' => 'datetime',
+        'session_starts_at' => 'datetime',
     ];
 
     // Связь с пользователем (чтобы админ видел, кто заказал)
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function booking()
+    {
+        return $this->belongsTo(Booking::class);
     }
 
     /**

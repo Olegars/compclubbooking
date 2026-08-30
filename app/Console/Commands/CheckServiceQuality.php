@@ -20,7 +20,15 @@ class CheckServiceQuality extends Command
         // 1. ПРОВЕРКА ЗАБЫТЫХ ЗАКАЗОВ (более 5 минут в статусе pending)
         $lateOrders = DB::table('orders')
             ->where('status', 'pending')
-            ->where('created_at', '<', now()->subMinutes(5))
+            ->where(function ($q) {
+                $q->where(function ($released) {
+                    $released->whereNotNull('released_at')
+                        ->where('released_at', '<', now()->subMinutes(5));
+                })->orWhere(function ($created) {
+                    $created->whereNull('released_at')
+                        ->where('created_at', '<', now()->subMinutes(5));
+                });
+            })
             ->get();
 
         foreach ($lateOrders as $order) {

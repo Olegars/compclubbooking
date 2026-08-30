@@ -900,6 +900,15 @@ class BookingSessionTimingService
 
         $this->computerStatuses->syncFor((int) $booking->computer_id, $now);
 
+        try {
+            app(\App\Services\PreSessionOrderService::class)
+                ->cancelScheduledForBookingIds([(int) $booking->id]);
+        } catch (\Throwable $e) {
+            Log::warning('Cancel scheduled shop orders after no-show failed: '.$e->getMessage(), [
+                'booking_id' => $booking->id,
+            ]);
+        }
+
         $group = $booking->group;
         $groupId = (int) ($booking->booking_group_id ?: 0);
 

@@ -39,7 +39,7 @@ class ProfileController extends Controller
 
         // 2. Активные заказы из магазина
         $activeOrders = Order::where('user_id', $user->id)
-            ->whereIn('status', ['pending', 'cooking', 'new', 'waiting'])
+            ->whereIn('status', ['pending', 'cooking', 'new', 'waiting', 'scheduled'])
             ->latest()
             ->get();
 

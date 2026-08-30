@@ -54,6 +54,11 @@ class UpdatePcStatuses extends Command
             $this->info('Обновлено питание: '.$powerChanged);
         }
 
+        $released = app(\App\Services\PreSessionOrderService::class)->releaseDueOrders();
+        if ($released > 0) {
+            $this->info('Заказы к сессии в очереди: '.$released);
+        }
+
         return Command::SUCCESS;
     }
 }

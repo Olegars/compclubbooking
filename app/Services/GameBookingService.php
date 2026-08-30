@@ -406,6 +406,9 @@ class GameBookingService
 
             app(ComputerStatusService::class)->syncFor($computerIds);
 
+            app(\App\Services\PreSessionOrderService::class)
+                ->cancelScheduledForBookingIds($group->bookings()->pluck('id')->all());
+
             return $group->fresh();
         }, 3);
     }

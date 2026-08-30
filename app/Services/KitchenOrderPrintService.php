@@ -69,6 +69,9 @@ class KitchenOrderPrintService
         }
 
         $lines[] = str_repeat('-', 32);
+        if ($order->session_starts_at) {
+            $lines[] = 'К СЕССИИ '.$order->session_starts_at->timezone(config('app.timezone'))->format('H:i');
+        }
         $lines[] = now()->format('d.m.Y H:i');
         $lines[] = '';
 
