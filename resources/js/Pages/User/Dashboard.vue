@@ -575,8 +575,8 @@ onMounted(() => {
                                 <span class="text-[10px] text-[#eab308] uppercase font-bold italic tracking-widest">Заказ</span>
                                 <span class="text-sm font-black uppercase italic text-white/90 tracking-tight">{{ shopOrderLabel(b) }}</span>
                             </div>
-                            <p class="mt-2 text-[10px] text-white/30 font-mono italic">
-                                Доставим за 5 минут до начала к этому ПК
+                            <p class="mt-2 text-[10px] text-white/30 font-mono italic leading-relaxed">
+                                Доставим за 5 минут до начала к этому ПК. Если придёте раньше — нажмите «Я на месте — несите заказ»
                             </p>
                         </div>
 
