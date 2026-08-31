@@ -186,6 +186,52 @@ class PreSessionShopOrderTest extends TestCase
         $this->assertSame(1, OrderKitchenPrint::query()->count());
     }
 
+    public function test_two_scheduled_preorders_print_as_one_slip_on_release(): void
+    {
+        $startsAt = CarbonImmutable::now()->addHour();
+        $this->makeBooking($startsAt, $startsAt->addHour());
+
+        $other = Product::create([
+            'name' => 'Пепсикола',
+            'category' => 'Напитки',
+            'price' => 100,
+            'stock' => 10,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson('/api/shop/checkout', [
+                'items' => [['product_id' => $this->product->id, 'qty' => 1]],
+                'order_type' => 'desktop',
+                'payment_method' => 'account',
+            ])
+            ->assertOk();
+
+        $this->actingAs($this->user)
+            ->postJson('/api/shop/checkout', [
+                'items' => [['product_id' => $other->id, 'qty' => 1]],
+                'order_type' => 'desktop',
+                'payment_method' => 'account',
+            ])
+            ->assertOk();
+
+        $this->assertSame(2, Order::query()->where('status', Order::STATUS_SCHEDULED)->count());
+        $this->assertSame(0, OrderKitchenPrint::query()->count());
+
+        $released = app(PreSessionOrderService::class)
+            ->releaseDueOrders($startsAt->subMinutes(7));
+
+        $this->assertSame(2, $released);
+        $this->assertSame(1, OrderKitchenPrint::query()->count());
+
+        $job = OrderKitchenPrint::query()->first();
+        $ids = Order::query()->orderBy('id')->pluck('id');
+        $this->assertStringContainsString('#'.$ids[0].', #'.$ids[1], $job->payload_text);
+        $this->assertStringContainsString('1x Энергетик', $job->payload_text);
+        $this->assertStringContainsString('1x Пепсикола', $job->payload_text);
+        $this->assertStringContainsString('ПРЕДЗАКАЗ', $job->payload_text);
+    }
+
     private function makeBooking(CarbonImmutable $startsAt, CarbonImmutable $endsAt): Booking
     {
         $local = $startsAt->timezone(config('app.timezone'));

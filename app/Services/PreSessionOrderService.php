@@ -172,14 +172,7 @@ class PreSessionOrderService
             ->where('fulfill_at', '<=', $now)
             ->pluck('id');
 
-        $released = 0;
-        foreach ($ids as $id) {
-            if ($this->releaseOrderById((int) $id)) {
-                $released++;
-            }
-        }
-
-        return $released;
+        return $this->releaseIdsAndPrint($ids->all());
     }
 
     public function releaseForComputer(int $computerId): int
@@ -190,17 +183,53 @@ class PreSessionOrderService
             ->whereIn('pc_name', $labels)
             ->pluck('id');
 
-        $released = 0;
+        return $this->releaseIdsAndPrint($ids->all());
+    }
+
+    /**
+     * @param  list<int|string>  $ids
+     */
+    private function releaseIdsAndPrint(array $ids): int
+    {
+        $released = [];
         foreach ($ids as $id) {
-            if ($this->releaseOrderById((int) $id)) {
-                $released++;
+            if ($this->releaseOrderById((int) $id, false)) {
+                $released[] = (int) $id;
             }
         }
 
-        return $released;
+        $this->enqueueKitchenForReleased($released);
+
+        return count($released);
     }
 
-    public function releaseOrderById(int $orderId): bool
+    /**
+     * @param  list<int>  $orderIds
+     */
+    private function enqueueKitchenForReleased(array $orderIds): void
+    {
+        if ($orderIds === []) {
+            return;
+        }
+
+        $orders = Order::query()
+            ->whereIn('id', $orderIds)
+            ->where('status', Order::STATUS_PENDING)
+            ->orderBy('id')
+            ->get();
+
+        $seen = [];
+        foreach ($orders as $order) {
+            $key = ((int) $order->user_id).'|'.(string) $order->pc_name;
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $this->enqueueKitchenIfPending($order);
+        }
+    }
+
+    public function releaseOrderById(int $orderId, bool $enqueuePrint = true): bool
     {
         $order = Order::query()->find($orderId);
         if (! $order || $order->status !== Order::STATUS_SCHEDULED) {
@@ -212,7 +241,9 @@ class PreSessionOrderService
             'released_at' => now(),
         ]);
 
-        $this->enqueueKitchenIfPending($order->fresh());
+        if ($enqueuePrint) {
+            $this->enqueueKitchenIfPending($order->fresh());
+        }
 
         Log::info('Pre-session shop order released to admin queue', [
             'order_id' => $order->id,

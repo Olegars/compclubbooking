@@ -33,14 +33,11 @@ class KitchenOrderPrintService
         }
 
         try {
-            $text = $this->buildSlipText($order);
+            if ($this->isPreorder($order)) {
+                return $this->enqueuePreorderGroup($order);
+            }
 
-            return OrderKitchenPrint::create([
-                'order_id' => $order->id,
-                'status' => OrderKitchenPrint::STATUS_PENDING,
-                'payload_text' => $text,
-                'attempts' => 0,
-            ]);
+            return $this->createJob((int) $order->id, $this->buildSlipText($order));
         } catch (\Throwable $e) {
             Log::warning('Kitchen print enqueue failed: '.$e->getMessage(), [
                 'order_id' => $order->id,
@@ -52,25 +49,38 @@ class KitchenOrderPrintService
 
     public function buildSlipText(Order $order): string
     {
-        $pc = trim((string) ($order->pc_name ?: 'ПК'));
+        return $this->buildGroupedSlipText(collect([$order]));
+    }
+
+    /**
+     * @param  Collection<int, Order>  $orders
+     */
+    public function buildGroupedSlipText(Collection $orders): string
+    {
+        $orders = $orders->values();
+        $first = $orders->first();
+        if (! $first) {
+            return '';
+        }
+
+        $pc = trim((string) ($first->pc_name ?: 'ПК'));
+        $ids = $orders->pluck('id')->map(fn ($id) => '#'.$id)->implode(', ');
         $lines = [
-            $pc.' | #'.$order->id,
+            $pc.' | '.$ids,
             str_repeat('-', 32),
         ];
 
-        foreach ($order->lineItems() as $item) {
-            $qty = max(1, (int) $item['qty']);
-            $name = (string) $item['name'];
-            $lines[] = $qty.'x '.$name;
-        }
-
-        if (count($order->lineItems()) === 0 && $order->product_name) {
-            $lines[] = (string) $order->product_name;
+        foreach ($this->mergedLineItems($orders) as $row) {
+            $lines[] = $row['qty'].'x '.$row['name'];
         }
 
         $lines[] = str_repeat('-', 32);
-        if ($order->session_starts_at) {
-            $lines[] = 'К СЕССИИ '.$order->session_starts_at->timezone(config('app.timezone'))->format('H:i');
+        if ($orders->count() > 1 || $this->isPreorder($first)) {
+            $lines[] = 'ПРЕДЗАКАЗ';
+        }
+        $startsAt = $orders->first(fn (Order $order) => $order->session_starts_at)?->session_starts_at;
+        if ($startsAt) {
+            $lines[] = 'К СЕССИИ '.$startsAt->timezone(config('app.timezone'))->format('H:i');
         }
         $lines[] = now()->format('d.m.Y H:i');
         $lines[] = '';
@@ -222,5 +232,92 @@ class KitchenOrderPrintService
                 'claimed_at' => null,
                 'updated_at' => now(),
             ]);
+    }
+
+    private function isPreorder(Order $order): bool
+    {
+        return $order->fulfill_at !== null && (int) $order->user_id > 0;
+    }
+
+    private function enqueuePreorderGroup(Order $order): OrderKitchenPrint
+    {
+        return DB::transaction(function () use ($order) {
+            $siblings = $this->preorderSiblings($order);
+            $ids = $siblings->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+            OrderKitchenPrint::query()
+                ->whereIn('order_id', $ids)
+                ->where('status', OrderKitchenPrint::STATUS_PENDING)
+                ->lockForUpdate()
+                ->get()
+                ->each(fn (OrderKitchenPrint $job) => $job->delete());
+
+            $primaryId = (int) $siblings->min('id');
+
+            return $this->createJob($primaryId, $this->buildGroupedSlipText($siblings));
+        });
+    }
+
+    private function createJob(int $orderId, string $text): OrderKitchenPrint
+    {
+        return OrderKitchenPrint::create([
+            'order_id' => $orderId,
+            'status' => OrderKitchenPrint::STATUS_PENDING,
+            'payload_text' => $text,
+            'attempts' => 0,
+        ]);
+    }
+
+    /**
+     * @return Collection<int, Order>
+     */
+    private function preorderSiblings(Order $order): Collection
+    {
+        $rows = Order::query()
+            ->where('user_id', $order->user_id)
+            ->where('pc_name', $order->pc_name)
+            ->whereNotNull('fulfill_at')
+            ->whereIn('status', [Order::STATUS_PENDING, Order::STATUS_COOKING])
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        if ($rows->contains('id', $order->id)) {
+            return $rows;
+        }
+
+        return $rows->push($order)->sortBy('id')->values();
+    }
+
+    /**
+     * @param  Collection<int, Order>  $orders
+     * @return list<array{name: string, qty: int}>
+     */
+    private function mergedLineItems(Collection $orders): array
+    {
+        $merged = [];
+        foreach ($orders as $order) {
+            $items = $order->lineItems();
+            if (count($items) === 0 && $order->product_name) {
+                $items = [[
+                    'product_id' => null,
+                    'name' => (string) $order->product_name,
+                    'qty' => 1,
+                ]];
+            }
+            foreach ($items as $item) {
+                $name = (string) ($item['name'] ?? '');
+                if ($name === '') {
+                    continue;
+                }
+                $key = (int) ($item['product_id'] ?? 0).':'.$name;
+                if (! isset($merged[$key])) {
+                    $merged[$key] = ['name' => $name, 'qty' => 0];
+                }
+                $merged[$key]['qty'] += max(1, (int) ($item['qty'] ?? 1));
+            }
+        }
+
+        return array_values($merged);
     }
 }

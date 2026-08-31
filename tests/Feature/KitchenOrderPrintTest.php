@@ -59,6 +59,7 @@ class KitchenOrderPrintTest extends TestCase
         $this->assertStringContainsString('ПК-08 | #'.$order->id, $job->payload_text);
         $this->assertStringContainsString('2x Энергетик', $job->payload_text);
         $this->assertStringContainsString('1x Сэндвич', $job->payload_text);
+        $this->assertStringNotContainsString('ПРЕДЗАКАЗ', $job->payload_text);
     }
 
     public function test_enqueue_skipped_when_disabled(): void
@@ -109,5 +110,54 @@ class KitchenOrderPrintTest extends TestCase
     {
         $this->getJson('/api/kitchen/print-targets?token=wrong')
             ->assertStatus(401);
+    }
+
+    public function test_preorders_of_same_client_print_as_one_slip(): void
+    {
+        $user = User::create([
+            'name' => 'Guest',
+            'phone' => '+79990001144',
+            'email' => 'kitchen-pre@example.test',
+            'password' => 'password',
+        ]);
+
+        $first = Order::create([
+            'user_id' => $user->id,
+            'product_name' => 'Snickers Super',
+            'items' => [
+                ['product_id' => 1, 'name' => 'Snickers Super', 'qty' => 1, 'unit_price' => 90, 'line_total' => 90],
+            ],
+            'price' => 90,
+            'pc_name' => 'PC-1',
+            'status' => 'pending',
+            'fulfill_at' => now()->subMinute(),
+            'session_starts_at' => now()->addMinutes(6),
+        ]);
+
+        app(KitchenOrderPrintService::class)->enqueue($first);
+        $this->assertSame(1, OrderKitchenPrint::query()->count());
+
+        $second = Order::create([
+            'user_id' => $user->id,
+            'product_name' => 'Пепсикола',
+            'items' => [
+                ['product_id' => 2, 'name' => 'Пепсикола', 'qty' => 1, 'unit_price' => 100, 'line_total' => 100],
+            ],
+            'price' => 100,
+            'pc_name' => 'PC-1',
+            'status' => 'pending',
+            'fulfill_at' => now()->subMinute(),
+            'session_starts_at' => now()->addMinutes(6),
+        ]);
+
+        $job = app(KitchenOrderPrintService::class)->enqueue($second);
+
+        $this->assertNotNull($job);
+        $this->assertSame(1, OrderKitchenPrint::query()->where('status', OrderKitchenPrint::STATUS_PENDING)->count());
+        $this->assertSame($first->id, $job->order_id);
+        $this->assertStringContainsString('PC-1 | #'.$first->id.', #'.$second->id, $job->payload_text);
+        $this->assertStringContainsString('1x Snickers Super', $job->payload_text);
+        $this->assertStringContainsString('1x Пепсикола', $job->payload_text);
+        $this->assertStringContainsString('ПРЕДЗАКАЗ', $job->payload_text);
     }
 }
