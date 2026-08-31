@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Admin;
 use App\Models\Booking;
 use App\Models\BookingGroup;
 use App\Models\Club;
@@ -9,9 +10,11 @@ use App\Models\Computer;
 use App\Models\Order;
 use App\Models\OrderKitchenPrint;
 use App\Models\Product;
+use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Services\PreSessionOrderService;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -230,6 +233,53 @@ class PreSessionShopOrderTest extends TestCase
         $this->assertStringContainsString('1x Энергетик', $job->payload_text);
         $this->assertStringContainsString('1x Пепсикола', $job->payload_text);
         $this->assertStringContainsString('ПРЕДЗАКАЗ', $job->payload_text);
+    }
+
+    public function test_admin_cancel_refunds_balance_and_restores_stock_without_cancelling_booking(): void
+    {
+        $startsAt = CarbonImmutable::now()->addHour();
+        $booking = $this->makeBooking($startsAt, $startsAt->addHour());
+
+        $this->actingAs($this->user)
+            ->postJson('/api/shop/checkout', [
+                'items' => [['product_id' => $this->product->id, 'qty' => 1]],
+                'order_type' => 'desktop',
+                'payment_method' => 'account',
+            ])
+            ->assertOk();
+
+        $order = Order::query()->first();
+        $this->assertNotNull($order);
+        $this->assertEquals(900, $this->user->wallet()->first()->depositAmount());
+        $this->assertSame(9, $this->product->fresh()->stock);
+
+        $admin = Admin::create([
+            'name' => 'Bar Admin',
+            'email' => 'bar-admin@example.test',
+            'password' => 'password',
+            'role' => 'admin',
+            'club_id' => $this->club->id,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/orders/'.$order->id.'/status', ['status' => 'cancelled'])
+            ->assertRedirect();
+
+        $order->refresh();
+        $this->assertSame(Order::STATUS_CANCELLED, $order->status);
+        $this->assertEquals(1000, $this->user->wallet()->first()->fresh()->depositAmount());
+        $this->assertSame(10, $this->product->fresh()->stock);
+        $this->assertSame('confirmed', $booking->fresh()->status);
+        $this->assertSame(1, Transaction::query()->where('idempotency_key', 'shop-order:'.$order->id.':refund')->count());
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/orders/'.$order->id.'/status', ['status' => 'cancelled'])
+            ->assertRedirect();
+
+        $this->assertEquals(1000, $this->user->wallet()->first()->fresh()->depositAmount());
+        $this->assertSame(1, Transaction::query()->where('type', 'refund')->where('source', 'market')->count());
     }
 
     private function makeBooking(CarbonImmutable $startsAt, CarbonImmutable $endsAt): Booking

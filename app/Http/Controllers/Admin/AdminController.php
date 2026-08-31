@@ -20,6 +20,7 @@ use App\Support\AdminLocation;
 use App\Services\BookingSessionTimingService;
 use App\Services\ProductStockService;
 use App\Models\Computer;
+use App\Services\PreSessionOrderService;
 // Если у тебя есть модель BonusLog, раскомментируй:
 // use App\Models\BonusLog;
 
@@ -719,6 +720,15 @@ class AdminController extends Controller
         );
 
         if ($status === 'cancelled') {
+            $open = in_array((string) $order->status, [
+                Order::STATUS_PENDING,
+                Order::STATUS_COOKING,
+                Order::STATUS_SCHEDULED,
+            ], true);
+            if (! $open) {
+                return;
+            }
+
             $soldUnits = ProductUnit::query()
                 ->where('sold_order_id', $id)
                 ->where('status', ProductUnit::STATUS_SOLD)
@@ -739,6 +749,11 @@ class AdminController extends Controller
             foreach ($soldUnits->pluck('product_id')->unique() as $productId) {
                 $stock->syncMarkedStock((int) $productId);
             }
+
+            app(PreSessionOrderService::class)->refundShopOrderToWallet(
+                $order,
+                'Возврат магазина (отмена заказа): '.($order->product_name ?? ('#'.$id))
+            );
         }
 
         if ($status === 'delivered') {

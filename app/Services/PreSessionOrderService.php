@@ -323,28 +323,53 @@ class PreSessionOrderService
             $stock->releaseReservationsForOrder((int) $locked->id);
             $stock->restoreUnmarkedForOrder((int) $locked->id, $items);
 
-            $amount = (float) $locked->price;
-            if ($locked->user_id && $amount > 0) {
-                $user = User::query()->lockForUpdate()->find($locked->user_id);
-                if ($user) {
-                    $user->syncBalanceToWallet();
-                    $wallet = $user->wallet()->lockForUpdate()->first();
-                    if ($wallet) {
-                        $wallet->creditSpendable($amount);
-                        Transaction::create([
-                            'user_id' => $user->id,
-                            'amount' => $amount,
-                            'type' => 'refund',
-                            'source' => 'market',
-                            'description' => 'Возврат магазина (бронь отменена): '.$locked->product_name,
-                            'payload' => ['order_id' => $locked->id],
-                        ]);
-                    }
-                }
-            }
+            $this->refundShopOrderToWallet(
+                $locked,
+                'Возврат магазина (бронь отменена): '.$locked->product_name
+            );
 
             $locked->update(['status' => Order::STATUS_CANCELLED]);
         });
+    }
+
+    /**
+     * Возврат оплаты заказа бара на баланс. Бронь сессии не трогает.
+     */
+    public function refundShopOrderToWallet(Order|object $order, string $description): void
+    {
+        $orderId = (int) ($order->id ?? 0);
+        $userId = (int) ($order->user_id ?? 0);
+        $amount = (float) ($order->price ?? 0);
+        if ($orderId < 1 || $userId < 1 || $amount <= 0) {
+            return;
+        }
+
+        $key = 'shop-order:'.$orderId.':refund';
+        if (Transaction::query()->where('idempotency_key', $key)->exists()) {
+            return;
+        }
+
+        $user = User::query()->lockForUpdate()->find($userId);
+        if (! $user) {
+            return;
+        }
+
+        $user->syncBalanceToWallet();
+        $wallet = $user->wallet()->lockForUpdate()->first();
+        if (! $wallet) {
+            return;
+        }
+
+        $wallet->creditSpendable($amount);
+        Transaction::create([
+            'user_id' => $user->id,
+            'amount' => $amount,
+            'type' => 'refund',
+            'source' => 'market',
+            'description' => $description,
+            'payload' => ['order_id' => $orderId],
+            'idempotency_key' => $key,
+        ]);
     }
 
     /**
