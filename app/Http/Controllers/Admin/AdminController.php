@@ -623,6 +623,8 @@ class AdminController extends Controller
                     'status' => $order->status,
                     'status_label' => $labels[$order->status] ?? $order->status,
                     'is_preorder' => ! empty($order->fulfill_at),
+                    'user_id' => (int) $order->user_id,
+                    'booking_id' => $order->booking_id ? (int) $order->booking_id : null,
                     'marking_progress' => $marking,
                     'marking_complete' => $stock->orderMarkingFullyScanned((int) $order->id, $items),
                     'user' => [
@@ -643,58 +645,110 @@ class AdminController extends Controller
             'status' => 'required|in:pending,cooking,delivered,cancelled',
         ]);
 
-        $order = DB::table('orders')->where('id', $id)->first();
-        if (! $order) {
-            return back()->withErrors(['status' => 'Заказ не найден']);
+        $error = $this->applyStatusesToOrders([(int) $id], $request->status, $stock);
+        if ($error) {
+            return back()->withErrors(['status' => $error]);
         }
 
+        return back();
+    }
+
+    public function updateOrdersStatus(Request $request, ProductStockService $stock)
+    {
+        $data = $request->validate([
+            'ids' => 'required|array|min:1|max:40',
+            'ids.*' => 'integer|min:1',
+            'status' => 'required|in:pending,cooking,delivered,cancelled',
+        ]);
+
+        $ids = array_values(array_unique(array_map('intval', $data['ids'])));
+        $error = $this->applyStatusesToOrders($ids, $data['status'], $stock);
+        if ($error) {
+            return back()->withErrors(['status' => $error]);
+        }
+
+        return back();
+    }
+
+    /**
+     * @param  list<int>  $ids
+     */
+    private function applyStatusesToOrders(array $ids, string $status, ProductStockService $stock): ?string
+    {
+        $orders = DB::table('orders')->whereIn('id', $ids)->get()->keyBy('id');
+        foreach ($ids as $id) {
+            if (! $orders->has($id)) {
+                return 'Заказ не найден';
+            }
+        }
+
+        foreach ($ids as $id) {
+            $order = $orders->get($id);
+            $items = Order::normalizeItems(
+                $order->items ?? null,
+                $order->product_name ?? null,
+                (float) ($order->price ?? 0)
+            );
+            if ($status === 'delivered' && ! $stock->orderMarkingFullyScanned((int) $id, $items)) {
+                return 'Сначала отсканируйте коды маркировки всех напитков из заказа';
+            }
+        }
+
+        try {
+            DB::transaction(function () use ($ids, $orders, $status, $stock) {
+                foreach ($ids as $id) {
+                    $this->commitOrderStatus($orders->get($id), $status, $stock);
+                }
+            });
+        } catch (\Throwable $e) {
+            Log::error('Admin order status update failed: '.$e->getMessage(), ['ids' => $ids, 'status' => $status]);
+
+            return 'Не удалось обновить статус заказа';
+        }
+
+        return null;
+    }
+
+    private function commitOrderStatus(object $order, string $status, ProductStockService $stock): void
+    {
+        $id = (int) $order->id;
         $items = Order::normalizeItems(
             $order->items ?? null,
             $order->product_name ?? null,
             (float) ($order->price ?? 0)
         );
 
-        if ($request->status === 'delivered' && ! $stock->orderMarkingFullyScanned((int) $id, $items)) {
-            return back()->withErrors([
-                'status' => 'Сначала отсканируйте коды маркировки всех напитков из заказа',
-            ]);
+        if ($status === 'cancelled') {
+            $soldUnits = ProductUnit::query()
+                ->where('sold_order_id', $id)
+                ->where('status', ProductUnit::STATUS_SOLD)
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($soldUnits as $unit) {
+                $unit->update([
+                    'status' => ProductUnit::STATUS_AVAILABLE,
+                    'sold_order_id' => null,
+                    'sold_at' => null,
+                ]);
+            }
+
+            $stock->releaseReservationsForOrder($id);
+            $stock->restoreUnmarkedForOrder($id, $items);
+
+            foreach ($soldUnits->pluck('product_id')->unique() as $productId) {
+                $stock->syncMarkedStock((int) $productId);
+            }
         }
 
-        if ($request->status === 'cancelled') {
-            DB::transaction(function () use ($id, $items, $stock) {
-                $soldUnits = ProductUnit::query()
-                    ->where('sold_order_id', (int) $id)
-                    ->where('status', ProductUnit::STATUS_SOLD)
-                    ->lockForUpdate()
-                    ->get();
-
-                foreach ($soldUnits as $unit) {
-                    $unit->update([
-                        'status' => ProductUnit::STATUS_AVAILABLE,
-                        'sold_order_id' => null,
-                        'sold_at' => null,
-                    ]);
-                }
-
-                $stock->releaseReservationsForOrder((int) $id);
-                $stock->restoreUnmarkedForOrder((int) $id, $items);
-
-                foreach ($soldUnits->pluck('product_id')->unique() as $productId) {
-                    $stock->syncMarkedStock((int) $productId);
-                }
-            });
-        }
-
-        if ($request->status === 'delivered') {
-            $stock->releaseReservationsForOrder((int) $id);
+        if ($status === 'delivered') {
+            $stock->releaseReservationsForOrder($id);
         }
 
         DB::table('orders')->where('id', $id)->update([
-            'status' => $request->status,
+            'status' => $status,
             'updated_at' => now(),
         ]);
-
-        return back();
     }
 
     public function fulfillOrderScan(Request $request, $id, ProductStockService $stock)

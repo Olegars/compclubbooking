@@ -214,6 +214,7 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::post('/topup', [AdminController::class, 'topUpBalance']);
         Route::get('/search-user', [AdminController::class, 'searchUser']);
         Route::get('/orders', [AdminController::class, 'orders'])->name('admin.orders');
+        Route::post('/orders/status', [AdminController::class, 'updateOrdersStatus']);
         Route::post('/orders/{id}/status', [AdminController::class, 'updateOrderStatus']);
         Route::get('/transactions', [TransactionAdminController::class, 'index'])->name('admin.transactions');
         Route::get('/transactions/{transaction}/print-copy', [TransactionAdminController::class, 'printCopy'])

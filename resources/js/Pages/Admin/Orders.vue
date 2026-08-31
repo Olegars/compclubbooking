@@ -24,6 +24,82 @@ const hasOpenMarking = computed(() =>
     (props.orders || []).some(o => needsMarking(o) && !isMarkingComplete(o) && ['pending', 'cooking'].includes(o.status))
 )
 
+const preorderGroupKey = (order) => {
+    const phone = order.user?.phone || ''
+    const userId = order.user_id || ''
+    const pc = order.pc_name || ''
+    return `pre:${phone || userId}:${pc}`
+}
+
+const mergeBlockItems = (orders) => {
+    const map = new Map()
+    for (const order of orders) {
+        const rows = (order.items && order.items.length)
+            ? order.items
+            : (order.product_name ? [{
+                name: order.product_name,
+                qty: 1,
+                line_total: Number(order.price || 0),
+            }] : [])
+        for (const item of rows) {
+            const key = `${item.product_id || 0}:${item.name}`
+            const prev = map.get(key)
+            if (prev) {
+                prev.qty += Number(item.qty || 1)
+                prev.line_total += Number(item.line_total || 0)
+            } else {
+                map.set(key, {
+                    product_id: item.product_id ?? null,
+                    name: item.name,
+                    qty: Number(item.qty || 1),
+                    line_total: Number(item.line_total || 0),
+                })
+            }
+        }
+    }
+    return [...map.values()]
+}
+
+const orderBlocks = computed(() => {
+    const list = props.orders || []
+    const blocks = []
+    const preIndex = new Map()
+
+    for (const order of list) {
+        if (!order.is_preorder) {
+            blocks.push({ orders: [order] })
+            continue
+        }
+        const key = preorderGroupKey(order)
+        if (preIndex.has(key)) {
+            preIndex.get(key).orders.push(order)
+            continue
+        }
+        const block = { orders: [order] }
+        preIndex.set(key, block)
+        blocks.push(block)
+    }
+
+    return blocks.map((block) => {
+        const orders = block.orders
+        const first = orders[0]
+        const ids = orders.map(o => o.id)
+        return {
+            key: ids.length > 1 ? `g-${ids.join('-')}` : `o-${first.id}`,
+            ids,
+            orders,
+            is_preorder: Boolean(first.is_preorder),
+            user: first.user,
+            pc_name: first.pc_name,
+            items: mergeBlockItems(orders),
+            price: orders.reduce((sum, o) => sum + Number(o.price || 0), 0),
+            product_name: orders.map(o => o.product_name).filter(Boolean).join(', '),
+            status: first.status,
+            status_label: first.status_label,
+        }
+    })
+})
+
 const orderLabels = {
     delivered: 'Заказ выполнен',
     cancelled: 'Заказ отменён',
@@ -31,6 +107,30 @@ const orderLabels = {
 
 const progressFor = (order) => {
     return localProgress.value[order.id] || order.marking_progress || []
+}
+
+const progressForBlock = (block) => {
+    const map = new Map()
+    for (const order of block.orders) {
+        for (const row of progressFor(order)) {
+            const key = row.product_id || row.name
+            const prev = map.get(key)
+            if (prev) {
+                prev.scanned += Number(row.scanned || 0)
+                prev.required += Number(row.required || 0)
+                prev.remaining += Number(row.remaining || 0)
+            } else {
+                map.set(key, {
+                    product_id: row.product_id,
+                    name: row.name,
+                    scanned: Number(row.scanned || 0),
+                    required: Number(row.required || 0),
+                    remaining: Number(row.remaining || 0),
+                })
+            }
+        }
+    }
+    return [...map.values()]
 }
 
 const isMarkingComplete = (order) => {
@@ -42,22 +142,29 @@ const isMarkingComplete = (order) => {
 
 const needsMarking = (order) => (progressFor(order) || []).length > 0
 
-const setStatus = (id, status) => {
-    const order = (props.orders || []).find(o => o.id === id)
-    if (status === 'delivered' && order && needsMarking(order) && !isMarkingComplete(order)) {
+const blockNeedsMarking = (block) => progressForBlock(block).length > 0
+const blockMarkingComplete = (block) => progressForBlock(block).every(r => r.remaining <= 0)
+
+const setStatus = (ids, status) => {
+    const idList = Array.isArray(ids) ? ids : [ids]
+    const group = (props.orders || []).filter(o => idList.includes(o.id))
+    if (status === 'delivered' && group.some(o => needsMarking(o) && !isMarkingComplete(o))) {
         error('Отсканируйте коды маркировки перед выдачей')
         return
     }
 
-    router.post(`/admin/orders/${id}/status`, { status }, {
+    const isBatch = idList.length > 1
+    router.post(isBatch ? '/admin/orders/status' : `/admin/orders/${idList[0]}/status`, isBatch ? { ids: idList, status } : { status }, {
         preserveScroll: true,
         onSuccess: () => {
-            success(orderLabels[status] || 'Статус обновлён')
+            success(idList.length > 1
+                ? (status === 'delivered' ? 'Заказы выполнены' : (status === 'cancelled' ? 'Заказы отменены' : 'Статус обновлён'))
+                : (orderLabels[status] || 'Статус обновлён'))
             if (status === 'delivered') {
                 const next = { ...localProgress.value }
-                delete next[id]
+                for (const id of idList) delete next[id]
                 localProgress.value = next
-                if (lastScannedOrderId.value === id) lastScannedOrderId.value = null
+                if (idList.includes(lastScannedOrderId.value)) lastScannedOrderId.value = null
             }
         },
         onError: (errs) => error(errs?.status || 'Не удалось обновить статус заказа'),
@@ -67,15 +174,18 @@ const setStatus = (id, status) => {
 const cancelTarget = ref(null)
 const cancelMessage = computed(() => {
     if (!cancelTarget.value) return ''
+    const ids = cancelTarget.value.ids || [cancelTarget.value.id]
     const pc = cancelTarget.value.pc_name ? ` (${cancelTarget.value.pc_name})` : ''
-    return `Заказ #${cancelTarget.value.id}${pc} будет отменён. Действие необратимо.`
+    const label = ids.length > 1 ? `Заказы #${ids.join(', #')}` : `Заказ #${ids[0]}`
+    const verb = ids.length > 1 ? 'будут отменены' : 'будет отменён'
+    return `${label}${pc} ${verb}. Действие необратимо.`
 })
 
 const confirmCancel = () => {
     if (!cancelTarget.value) return
-    const id = cancelTarget.value.id
+    const ids = cancelTarget.value.ids || [cancelTarget.value.id]
     cancelTarget.value = null
-    setStatus(id, 'cancelled')
+    setStatus(ids, 'cancelled')
 }
 
 const refreshQueue = () => {
@@ -131,20 +241,22 @@ onUnmounted(() => {
             </div>
 
             <div v-if="orders && orders.length > 0" class="space-y-4">
-                <div v-for="order in orders" :key="order.id"
+                <div v-for="block in orderBlocks" :key="block.key"
                      class="bg-[#050505] border rounded-[0.875rem] p-6 flex flex-col gap-4 group hover:border-[#22c55e]/40 transition-all shadow-lg relative overflow-hidden"
-                     :class="lastScannedOrderId === order.id ? 'border-cyan-500 ring-1 ring-cyan-500/40' : 'border-white/5'">
+                     :class="block.ids.includes(lastScannedOrderId) ? 'border-cyan-500 ring-1 ring-cyan-500/40' : 'border-white/5'">
 
                     <div class="absolute left-0 top-0 bottom-0 w-1 bg-[#22c55e]/20 group-hover:bg-[#22c55e] transition-colors"></div>
 
                     <div class="pl-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                         <div class="flex-1 min-w-0">
                             <div class="text-[10px] text-[#22c55e] font-black uppercase tracking-widest mb-2 italic">
-                                Заказ #{{ order.id }} · Клиент: <span class="text-white">{{ order.user?.name }}</span> ({{ order.user?.phone }})
+                                {{ block.ids.length > 1 ? 'Заказы' : 'Заказ' }}
+                                #{{ block.ids.join(', #') }}
+                                · Клиент: <span class="text-white">{{ block.user?.name }}</span> ({{ block.user?.phone }})
                             </div>
 
-                            <ul v-if="order.items && order.items.length" class="space-y-1 mb-2">
-                                <li v-for="(item, idx) in order.items" :key="idx"
+                            <ul v-if="block.items && block.items.length" class="space-y-1 mb-2">
+                                <li v-for="(item, idx) in block.items" :key="idx"
                                     class="text-xl md:text-2xl font-black uppercase italic tracking-tight text-white flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                                     <span>{{ item.name }}</span>
                                     <span class="text-sm text-white/40 font-black not-italic tracking-widest">×{{ item.qty }}</span>
@@ -152,23 +264,23 @@ onUnmounted(() => {
                                 </li>
                             </ul>
                             <div v-else class="text-2xl font-black uppercase italic tracking-tight text-white mb-1">
-                                {{ order.product_name }}
+                                {{ block.product_name }}
                             </div>
 
                             <div class="flex flex-wrap items-center gap-2 mt-2">
                                 <div class="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-lg">
                                     <span class="text-[9px] text-white/40 uppercase font-black tracking-widest">Доставить на:</span>
-                                    <span class="text-sm text-white font-black">{{ order.pc_name }}</span>
+                                    <span class="text-sm text-white font-black">{{ block.pc_name }}</span>
                                 </div>
-                                <div v-if="order.price > 0"
+                                <div v-if="block.price > 0"
                                      class="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-lg">
                                     <span class="text-[9px] text-white/40 uppercase font-black tracking-widest">Итого:</span>
-                                    <span class="text-sm text-[#22c55e] font-black font-mono">{{ Number(order.price).toFixed(0) }} ₽</span>
+                                    <span class="text-sm text-[#22c55e] font-black font-mono">{{ Number(block.price).toFixed(0) }} ₽</span>
                                 </div>
                                 <div class="inline-flex items-center px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest bg-amber-500/10 border-amber-500/30 text-amber-300">
-                                    {{ order.status_label || 'В очереди' }}
+                                    {{ block.status_label || 'В очереди' }}
                                 </div>
-                                <div v-if="order.is_preorder"
+                                <div v-if="block.is_preorder"
                                      class="inline-flex items-center px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest bg-[#eab308]/15 border-[#eab308]/40 text-[#eab308]">
                                     Предзаказ
                                 </div>
@@ -176,23 +288,23 @@ onUnmounted(() => {
                         </div>
 
                         <div class="flex flex-wrap gap-3 w-full md:w-auto">
-                            <button v-if="order.status === 'cooking' || order.status === 'pending'"
+                            <button v-if="block.status === 'cooking' || block.status === 'pending'"
                                     type="button"
-                                    @click="setStatus(order.id, 'delivered')"
+                                    @click="setStatus(block.ids, 'delivered')"
                                     class="flex-1 md:flex-none px-8 py-4 bg-[#22c55e] hover:bg-[#1ea34d] text-black font-black uppercase text-xs tracking-widest rounded-xl transition-all shadow-[0_0_20px_rgba(34,197,94,0.2)] active:scale-95 cursor-pointer disabled:opacity-40"
-                                    :disabled="needsMarking(order) && !isMarkingComplete(order)">
+                                    :disabled="blockNeedsMarking(block) && !blockMarkingComplete(block)">
                                 Выполнен
                             </button>
-                            <button type="button" @click="cancelTarget = order"
+                            <button type="button" @click="cancelTarget = block"
                                     class="flex-1 md:flex-none px-6 py-4 bg-red-500/10 border border-red-500/30 text-red-500 font-black uppercase text-xs tracking-widest rounded-xl hover:bg-red-500 hover:text-black transition-all active:scale-95 cursor-pointer">
                                 Отмена
                             </button>
                         </div>
                     </div>
 
-                    <div v-if="needsMarking(order)" class="pl-4 space-y-2">
+                    <div v-if="blockNeedsMarking(block)" class="pl-4 space-y-2">
                         <div class="text-[9px] uppercase font-black tracking-widest text-white/30">Маркировка к выдаче</div>
-                        <div v-for="row in progressFor(order)" :key="row.product_id"
+                        <div v-for="row in progressForBlock(block)" :key="row.product_id || row.name"
                              class="flex items-center justify-between px-4 py-3 rounded-xl border text-[11px] font-black uppercase tracking-widest"
                              :class="row.remaining <= 0
                                 ? 'border-[#22c55e]/40 bg-[#22c55e]/10 text-[#22c55e]'
@@ -200,7 +312,7 @@ onUnmounted(() => {
                             <span>{{ row.name }}</span>
                             <span>{{ row.scanned }} / {{ row.required }}</span>
                         </div>
-                        <p v-if="lastScannedOrderId === order.id" class="text-[10px] text-cyan-400/80 uppercase tracking-widest font-bold">
+                        <p v-if="block.ids.includes(lastScannedOrderId)" class="text-[10px] text-cyan-400/80 uppercase tracking-widest font-bold">
                             Последний скан привязан к этому заказу
                         </p>
                     </div>
@@ -214,7 +326,7 @@ onUnmounted(() => {
         </div>
 
         <AdminConfirm :is-open="!!cancelTarget"
-                      title="Отменить заказ?"
+                      :title="(cancelTarget?.ids?.length || 0) > 1 ? 'Отменить заказы?' : 'Отменить заказ?'"
                       :message="cancelMessage"
                       confirm-text="Да, отменить"
                       cancel-text="Не трогать"
