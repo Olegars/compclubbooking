@@ -595,9 +595,9 @@ onMounted(() => {
                             </button>
                             <span
                                 v-else
-                                class="text-[10px] text-white/25 font-mono italic"
+                                class="text-[10px] text-red-400 font-mono italic"
                             >
-                                Самоотмена недоступна (менее {{ Math.round((b.cancel_before_minutes || 120) / 60) }} ч до старта)
+                                Отмена недоступна (менее {{ Math.round((b.cancel_before_minutes || 120) / 60) }} ч до начала сессии)
                             </span>
                         </div>
                 </div>
