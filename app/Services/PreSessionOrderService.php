@@ -335,7 +335,7 @@ class PreSessionOrderService
     /**
      * Возврат оплаты заказа бара на баланс. Бронь сессии не трогает.
      */
-    public function refundShopOrderToWallet(Order|object $order, string $description): void
+    public function refundShopOrderToWallet(object $order, string $description): void
     {
         $orderId = (int) ($order->id ?? 0);
         $userId = (int) ($order->user_id ?? 0);
