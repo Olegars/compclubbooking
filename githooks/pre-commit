@@ -1,0 +1,19 @@
+#!/bin/sh
+# Copies the built client APK into Laravel storage so it is committed with the site.
+
+ROOT="$(git rev-parse --show-toplevel)"
+APK="$ROOT/android-client/app/build/outputs/apk/debug/app-debug.apk"
+DEST_DIR="$ROOT/storage/app/apk"
+DEST="$DEST_DIR/sector0451.apk"
+
+if [ ! -f "$APK" ]; then
+  echo "pre-commit: no built APK at android-client/app/build/outputs/apk/debug/app-debug.apk"
+  echo "pre-commit: skip copy (existing $DEST will be committed if already staged/tracked)"
+  exit 0
+fi
+
+mkdir -p "$DEST_DIR"
+cp -f "$APK" "$DEST"
+git add -- "$DEST"
+echo "pre-commit: copied client APK -> storage/app/apk/sector0451.apk"
+exit 0

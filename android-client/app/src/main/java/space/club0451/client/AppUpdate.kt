@@ -113,7 +113,7 @@ class AppUpdate(
         if (updateFile().exists()) updateFile().delete()
 
         val request = DownloadManager.Request(Uri.parse(apkUrl))
-            .setTitle("Sector 0451")
+            .setTitle("0451")
             .setDescription("Загрузка обновления")
             .setMimeType("application/vnd.android.package-archive")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
