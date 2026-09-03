@@ -33,16 +33,17 @@ class AppUpdate(
     private val handler = Handler(Looper.getMainLooper())
     private var polling = false
     private var pendingInstall = false
+    private var remoteCode = 0
 
     private val completeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1) ?: return
             if (id != prefs.getLong(KEY_DOWNLOAD_ID, -1L)) return
             stopPolling()
-            if (downloadSuccessful(id)) {
+            if (isOutdated() && downloadSuccessful(id)) {
                 installDownloaded()
             } else {
-                showBar("Не удалось скачать обновление")
+                markUpToDate()
             }
         }
     }
@@ -67,9 +68,9 @@ class AppUpdate(
     }
 
     fun onResume() {
-        if (pendingInstall || prefs.getBoolean(KEY_READY, false)) {
-            installDownloaded()
-        }
+        if (!pendingInstall) return
+        pendingInstall = false
+        if (isOutdated()) installDownloaded() else markUpToDate()
     }
 
     fun check() {
@@ -78,34 +79,64 @@ class AppUpdate(
                 val conn = (URL("${BuildConfig.CLUB_URL.trimEnd('/')}/app.json").openConnection() as HttpURLConnection)
                 conn.connectTimeout = 8000
                 conn.readTimeout = 8000
+                conn.instanceFollowRedirects = true
+                conn.setRequestProperty("Accept", "application/json")
                 conn.setRequestProperty("User-Agent", "CompClubClient/${BuildConfig.VERSION_NAME}")
                 conn.connect()
                 if (conn.responseCode != 200) return@thread
                 val body = conn.inputStream.bufferedReader().readText()
                 conn.disconnect()
                 val json = JSONObject(body)
-                val remoteCode = json.optInt("version_code", 0)
+                val code = json.optInt("version_code", 0)
                 val apkUrl = json.optString("apk_url").ifBlank { "${BuildConfig.CLUB_URL.trimEnd('/')}/app.apk" }
-                if (remoteCode <= BuildConfig.VERSION_CODE) return@thread
-                activity.runOnUiThread { download(apkUrl, remoteCode) }
+                activity.runOnUiThread {
+                    remoteCode = code
+                    prefs.edit().putInt(KEY_REMOTE_CODE, code).apply()
+                    if (code <= BuildConfig.VERSION_CODE) {
+                        markUpToDate()
+                    } else {
+                        download(apkUrl, code)
+                    }
+                }
             } catch (_: Exception) {
             }
         }
     }
 
     fun downloadFromSite() {
-        download("${BuildConfig.CLUB_URL.trimEnd('/')}/app.apk", BuildConfig.VERSION_CODE + 1)
+        check()
     }
 
-    private fun download(apkUrl: String, remoteCode: Int) {
+    private fun isOutdated(): Boolean {
+        val remote = maxOf(remoteCode, prefs.getInt(KEY_REMOTE_CODE, 0))
+        return remote > BuildConfig.VERSION_CODE
+    }
+
+    private fun markUpToDate() {
+        pendingInstall = false
+        stopPolling()
+        hideBar()
+        val existing = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
+        if (existing > 0L) {
+            try {
+                dm.remove(existing)
+            } catch (_: Exception) {
+            }
+        }
+        prefs.edit().clear().apply()
+        val file = updateFile()
+        if (file.exists()) file.delete()
+    }
+
+    private fun download(apkUrl: String, code: Int) {
+        if (code <= BuildConfig.VERSION_CODE) {
+            markUpToDate()
+            return
+        }
         val existing = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
         if (existing > 0L && isRunning(existing)) {
             showBar("Загрузка обновления…")
             startPolling()
-            return
-        }
-        if (prefs.getBoolean(KEY_READY, false) && updateFile().isFile) {
-            installDownloaded()
             return
         }
 
@@ -129,8 +160,7 @@ class AppUpdate(
         val id = dm.enqueue(request)
         prefs.edit()
             .putLong(KEY_DOWNLOAD_ID, id)
-            .putInt(KEY_REMOTE_CODE, remoteCode)
-            .putBoolean(KEY_READY, false)
+            .putInt(KEY_REMOTE_CODE, code)
             .apply()
         showBar("Загрузка обновления…")
         startPolling()
@@ -169,8 +199,7 @@ class AppUpdate(
                     }
                     if (downloadStatus == DownloadManager.STATUS_SUCCESSFUL) {
                         stopPolling()
-                        prefs.edit().putBoolean(KEY_READY, true).apply()
-                        installDownloaded()
+                        if (isOutdated()) installDownloaded() else markUpToDate()
                         return
                     }
                     if (downloadStatus == DownloadManager.STATUS_FAILED) {
@@ -195,14 +224,16 @@ class AppUpdate(
     private fun downloadSuccessful(id: Long): Boolean {
         dm.query(DownloadManager.Query().setFilterById(id)).use { cursor ->
             if (cursor == null || !cursor.moveToFirst()) return false
-            val status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS))
-            val ok = status == DownloadManager.STATUS_SUCCESSFUL
-            if (ok) prefs.edit().putBoolean(KEY_READY, true).apply()
-            return ok
+            return cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)) ==
+                DownloadManager.STATUS_SUCCESSFUL
         }
     }
 
     private fun installDownloaded() {
+        if (!isOutdated()) {
+            markUpToDate()
+            return
+        }
         val file = updateFile()
         if (!file.isFile || file.length() < 1024L) {
             showBar("Файл обновления не найден")
@@ -220,7 +251,6 @@ class AppUpdate(
             activity.startActivity(settings)
             return
         }
-        pendingInstall = false
         showBar("Установка обновления…")
         val uri = FileProvider.getUriForFile(
             activity,
@@ -258,10 +288,13 @@ class AppUpdate(
         }
     }
 
+    private fun hideBar() {
+        bar.visibility = View.GONE
+    }
+
     companion object {
         private const val APK_NAME = "update.apk"
         private const val KEY_DOWNLOAD_ID = "download_id"
         private const val KEY_REMOTE_CODE = "remote_code"
-        private const val KEY_READY = "ready"
     }
 }
