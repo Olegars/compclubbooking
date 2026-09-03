@@ -70,6 +70,14 @@ use App\Http\Controllers\GameRequestController;
 |--------------------------------------------------------------------------
 */
 Route::get('/', [HomeController::class, 'index'])->name('home');
+Route::get('/app.apk', function () {
+    $path = (string) env('APP_APK_PATH', 'C:\\Qt\\compclubApp\\app-debug.apk');
+    abort_unless(is_file($path), 404);
+
+    return response()->download($path, 'sector0451.apk', [
+        'Content-Type' => 'application/vnd.android.package-archive',
+    ]);
+})->name('app.apk');
 Route::get('/legal/offer', fn () => Inertia::render('Legal/Offer'))->name('legal.offer');
 Route::get('/receipt/stub/{transaction}', [\App\Http\Controllers\ReceiptStubController::class, 'show'])
     ->name('receipt.stub');

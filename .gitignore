@@ -19,6 +19,11 @@
 /storage/*.key
 /storage/pail
 /vendor
+/android-client/app/build
+/android-client/.gradle
+/android-client/local.properties
+/android-client/captures
+/android-client/.idea
 _ide_helper.php
 Homestead.json
 Homestead.yaml

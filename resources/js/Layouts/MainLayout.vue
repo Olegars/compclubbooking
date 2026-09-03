@@ -67,6 +67,7 @@ const displayBalance = computed(() => {
 })
 
 const isAuthenticated = computed(() => !!(page.props.auth?.user || page.props.user))
+const isClientApp = /CompClubClient/i.test(navigator.userAgent || '')
 const isBookingPage = computed(() => String(page.url || '').startsWith('/booking'))
 const isAccountPage = computed(() => String(page.url || '').startsWith('/account'))
 const isShopPage = computed(() => String(page.url || '').startsWith('/shop'))
@@ -310,6 +311,12 @@ onUnmounted(() => {
                         :class="{ 'active': $page.url.startsWith('/account') }"
                     >Кабинет</Link>
                     <Link href="/booking" class="nav-btn" :class="{ 'active': $page.url.startsWith('/booking') }">Бронирование</Link>
+                    <a
+                        v-if="!isClientApp"
+                        href="/app.apk"
+                        class="nav-btn nav-btn-download"
+                        download="sector0451.apk"
+                    >Скачать приложение</a>
                 </div>
                 <div class="masthead-tools">
                     <button
@@ -568,28 +575,29 @@ onUnmounted(() => {
 }
 .site-nav-links {
     display: flex;
-    flex: 1 1 100%;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
     min-width: 0;
     gap: 0.4rem;
+    align-items: stretch;
 }
 @media (min-width: 640px) {
     .site-nav-links {
-        flex: 1 1 auto;
         gap: 0.5rem;
     }
     .masthead-tools { flex: 0 0 auto; }
 }
 .site-nav-links .nav-btn {
-    flex: 1 1 0;
+    flex: 0 0 auto;
     min-width: 0;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     text-align: center;
 }
 
 .nav-btn {
-    @apply px-2 py-2.5 sm:px-6 sm:py-3 border border-white/10 rounded-xl text-[9px] sm:text-[11px] font-black transition-all cursor-pointer uppercase tracking-widest italic;
+    @apply px-2.5 py-2.5 sm:px-4 sm:py-3 border border-white/10 rounded-xl text-[9px] sm:text-[11px] font-black transition-all cursor-pointer uppercase tracking-widest italic;
     font-family: Arial, Helvetica, sans-serif;
     white-space: nowrap;
     -webkit-font-smoothing: antialiased;
@@ -598,6 +606,10 @@ onUnmounted(() => {
 .nav-btn.active { @apply bg-[#22c55e] text-black border-transparent shadow-[0_0_20px_rgba(34,197,94,0.4)]; }
 .nav-btn-exit { @apply !text-red-500 !border-red-500/20 hover:!bg-red-500 hover:!text-white; }
 .nav-btn-enter { @apply !text-[#22c55e] !border-[#22c55e]/30 hover:!bg-[#22c55e] hover:!text-black; }
+.nav-btn-download {
+    @apply !text-[#22c55e] !border-[#22c55e]/30 hover:!bg-[#22c55e]/15;
+    text-decoration: none;
+}
 
 .nav-btn-icon {
     @apply inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 border border-white/10 rounded-xl

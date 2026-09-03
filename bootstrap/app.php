@@ -16,6 +16,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
 
         // === ПОДКЛЮЧЕНИЕ ГЛОБАЛЬНОЙ ШИНЫ INERTIA ===
+        $middleware->web(prepend: [
+            \App\Http\Middleware\BlockAdminInClientApp::class,
+        ]);
+
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
