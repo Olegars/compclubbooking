@@ -82,6 +82,17 @@ Route::get('/app.apk', function () {
 
     return $response;
 })->name('app.apk');
+Route::get('/app.json', function () {
+    $path = storage_path('app/apk/sector0451.apk');
+    abort_unless(is_file($path), 404);
+
+    return response()->json([
+        'version_code' => (int) config('client_app.version_code'),
+        'version_name' => (string) config('client_app.version_name'),
+        'apk_url' => url('/app.apk'),
+        'size' => filesize($path),
+    ]);
+})->name('app.json');
 Route::get('/legal/offer', fn () => Inertia::render('Legal/Offer'))->name('legal.offer');
 Route::get('/receipt/stub/{transaction}', [\App\Http\Controllers\ReceiptStubController::class, 'show'])
     ->name('receipt.stub');

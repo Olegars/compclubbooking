@@ -19,4 +19,16 @@ class ClientAppApkDownloadTest extends TestCase
             ->assertHeader('x-content-type-options', 'nosniff')
             ->assertDownload('sector0451.apk');
     }
+
+    public function test_apk_manifest_json_is_public(): void
+    {
+        $path = storage_path('app/apk/sector0451.apk');
+        if (! is_file($path)) {
+            $this->markTestSkipped('APK file is missing from storage/app/apk');
+        }
+
+        $this->get('/app.json')
+            ->assertOk()
+            ->assertJsonStructure(['version_code', 'version_name', 'apk_url', 'size']);
+    }
 }

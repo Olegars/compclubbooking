@@ -20,6 +20,7 @@ import space.club0451.client.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
+    private lateinit var updater: AppUpdate
     private var pendingPermissionRequest: PermissionRequest? = null
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -28,6 +29,12 @@ class MainActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, true)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        updater = AppUpdate(
+            this,
+            binding.updateBar,
+            binding.updateStatus,
+            binding.updateProgress,
+        )
 
         val web = binding.webView
         CookieManager.getInstance().setAcceptCookie(true)
@@ -56,6 +63,10 @@ class MainActivity : AppCompatActivity() {
                 val path = url.path.orEmpty()
                 if (path == "/admin" || path.startsWith("/admin/")) {
                     view.loadUrl(BuildConfig.CLUB_URL.trimEnd('/') + "/")
+                    return true
+                }
+                if (path == "/app.apk" || path.endsWith("/app.apk")) {
+                    updater.downloadFromSite()
                     return true
                 }
                 return false
@@ -99,6 +110,17 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState == null) {
             web.loadUrl(BuildConfig.CLUB_URL.trimEnd('/') + "/")
         }
+        updater.start()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::updater.isInitialized) updater.onResume()
+    }
+
+    override fun onDestroy() {
+        if (::updater.isInitialized) updater.stop()
+        super.onDestroy()
     }
 
     override fun onRequestPermissionsResult(

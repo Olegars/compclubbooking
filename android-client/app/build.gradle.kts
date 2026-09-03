@@ -11,8 +11,8 @@ android {
         applicationId = "space.club0451.client"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         buildConfigField("String", "CLUB_URL", "\"https://0451.space\"")
     }
 
