@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Wallet;
+use App\Services\PlayerNicknameService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -31,7 +32,7 @@ class SmsAuthController extends Controller
     }
 
     // === СТАРЫЙ МЕТОД: ПРОВЕРКА КОДА ===
-    public function verifyCode(Request $request)
+    public function verifyCode(Request $request, PlayerNicknameService $nicks)
     {
         $request->validate([
             'phone' => 'required|string',
@@ -43,14 +44,14 @@ class SmsAuthController extends Controller
             return back()->withErrors(['code' => 'Неверный код доступа']);
         }
 
-        $user = \App\Models\User::where('phone', $request->phone)->first();
+        $user = User::where('phone', $request->phone)->first();
 
         // --- СОЗДАНИЕ ЮЗЕРА (БРОНЕБОЙНЫЙ МЕТОД) ---
         if (!$user) {
             // Используем прямое назначение свойств, чтобы обойти блокировку $fillable
-            $user = new \App\Models\User();
+            $user = new User();
             $user->phone = $request->phone;
-            $user->name = 'Stalker_' . substr($request->phone, -4);
+            $user->name = $nicks->assignForNewUser();
             $user->email = $request->phone . '@reactor.club';
             $user->password = bcrypt(\Illuminate\Support\Str::random(16));
             $user->avatar = 'avatar_' . rand(1, 10) . '.png';

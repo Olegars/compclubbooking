@@ -3,6 +3,7 @@
 namespace App\Services\AiAssistant;
 
 use App\Models\AiAssistantSetting;
+use App\Models\Club;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -164,6 +165,70 @@ class DeepSeekChat
         }
 
         return $text;
+    }
+
+    /**
+     * Короткий текстовый completion (ники и прочие не голосовые задачи).
+     */
+    public function complete(
+        string $system,
+        string $user,
+        float $temperature = 0.9,
+        int $maxTokens = 48,
+        ?int $clubId = null,
+        ?float $timeout = null,
+    ): string {
+        $settings = $this->settingsForOptionalClub($clubId);
+        $key = $settings->resolvedLlmApiKey();
+        if ($key === '') {
+            throw new RuntimeException('LLM API-ключ не задан (админка или .env).');
+        }
+
+        $base = $settings->resolvedLlmBaseUrl();
+        $model = $settings->resolvedLlmModel();
+        $timeout ??= min(8.0, (float) config('ai_assistant.http_timeout', 60));
+
+        $response = Http::timeout($timeout)
+            ->withToken($key)
+            ->acceptJson()
+            ->post($base.'/chat/completions', $this->chatPayload(
+                $model,
+                [
+                    ['role' => 'system', 'content' => $system],
+                    ['role' => 'user', 'content' => $user],
+                ],
+                temperature: $temperature,
+                maxTokens: $maxTokens,
+            ));
+
+        if (! $response->successful()) {
+            throw new RuntimeException(
+                'LLM failed: HTTP '.$response->status().' '.$response->body()
+            );
+        }
+
+        $text = $this->extractMessageText($response->json());
+        if ($text === '') {
+            throw new RuntimeException('LLM вернул пустой ответ.');
+        }
+
+        return $text;
+    }
+
+    /**
+     * Без клуба в БД не создаём ai_assistant_settings с club_id=0 (FK).
+     */
+    private function settingsForOptionalClub(?int $clubId): AiAssistantSetting
+    {
+        $id = $clubId ?: (int) Club::query()->value('id');
+        if ($id > 0) {
+            return AiAssistantSetting::forClub($id);
+        }
+
+        return new AiAssistantSetting([
+            'llm_provider' => 'deepseek',
+            'is_enabled' => true,
+        ]);
     }
 
     /**
