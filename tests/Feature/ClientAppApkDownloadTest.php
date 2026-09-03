@@ -8,9 +8,9 @@ class ClientAppApkDownloadTest extends TestCase
 {
     public function test_apk_is_downloadable(): void
     {
-        $path = (string) env('APP_APK_PATH', 'C:\\Qt\\compclubApp\\app-debug.apk');
+        $path = public_path('app.apk');
         if (! is_file($path)) {
-            $this->markTestSkipped('APK file is missing');
+            $this->markTestSkipped('APK file is missing from public/');
         }
 
         $this->get('/app.apk')

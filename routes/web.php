@@ -71,7 +71,7 @@ use App\Http\Controllers\GameRequestController;
 */
 Route::get('/', [HomeController::class, 'index'])->name('home');
 Route::get('/app.apk', function () {
-    $path = (string) env('APP_APK_PATH', 'C:\\Qt\\compclubApp\\app-debug.apk');
+    $path = public_path('app.apk');
     abort_unless(is_file($path), 404);
 
     return response()->download($path, 'sector0451.apk', [
