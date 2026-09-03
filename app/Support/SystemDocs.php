@@ -493,9 +493,15 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Настройки профиля',
-                        'description' => 'Редактирование никнейма и email. Телефон зафиксирован как идентификатор входа.',
+                        'description' => 'Редактирование никнейма и email. Телефон зафиксирован как идентификатор входа. Стартовый ник при первой регистрации выдаёт DeepSeek (см. «Игровой ник»).',
                         'path' => '/account/profile',
                         'audience' => 'Игрок',
+                    ],
+                    [
+                        'title' => 'Игровой ник',
+                        'description' => "Гость ник не выбирает: при первом SMS-входе (POST /auth/verify-code, новый users.phone) PlayerNicknameService спрашивает DeepSeek — тот же ключ, что у голосового компаньона (админка /admin/ai-assistant или DEEPSEEK_API_KEY).\n\nПромпт: произносимый игровой позывной, CamelCase из одного-двух коротких слов, только буквы (латиница или кириллица), 4–12 символов, без пробелов, цифр, подчёркиваний _ и дефисов -. Банальности Gamer / Player / User / Stalker отбрасываются. Ответ чистится (Frost-Fox_ → FrostFox). Таймаут 8 с, thinking у V4 выключен.\n\nЕсли ключа нет, LLM упал или ник уже занят — слово из запасного списка (Nova, Drift, Raven…); при исчерпании пула — то же слово + число без разделителя (Nova7). Повторный вход по телефону имя не меняет.\n\nСмена: /account/profile (users.name, max 50). Ник уходит в шелл (login name) и в промпт голосового приветствия {{player}}.",
+                        'path' => '/account/profile',
+                        'audience' => 'Игрок / Система',
                     ],
                     [
                         'title' => 'Магазин',
@@ -529,9 +535,15 @@ class SystemDocs
                     ],
                     [
                         'title' => 'SMS-вход',
-                        'description' => 'Вход по телефону: send-code / verify-code. Новому игроку ник придумывает DeepSeek (произносимый, без _ и -); если LLM недоступен — из запасного списка. Реальная SMS пока не подключена (тестовый код в логах).',
+                        'description' => 'Вход по телефону: send-code / verify-code. Новому игроку ник придумывает DeepSeek (см. «Игровой ник»). Реальная SMS пока не подключена (тестовый код 0451 в логах). При входе пишется users.offer_accepted_at.',
                         'path' => '/login',
                         'audience' => 'Игрок',
+                    ],
+                    [
+                        'title' => 'Клиентское приложение (0451)',
+                        'description' => "Android-обёртка сайта клуба, не путать с PC Qt-шеллом и TV Shell (ru.compclub.tvshell).\n\nПакет space.club0451.client, имя на устройстве «0451», исходники android-client/. WebView открывает CLUB_URL: лендинг, бронь, кабинет, магазин, QR-вход на ПК. UA дополняется CompClubClient/… — по нему сайт прячет кнопку «Скачать приложение», заказы бара пишутся channel=app, админка режется (middleware BlockAdminInClientApp + редирект /admin → / в WebView и в app.js; в бандл приложения Admin-страницы не входят).\n\nСкачать с сайта: GET /app.apk (файл storage/app/apk/sector0451.apk), кнопка в шапке (только вне приложения). Самообновление: GET /app.json {version_code, version_name, apk_url, size}; если version_code больше установленного — DownloadManager и установка. После выкладки APK поднять CLIENT_APP_VERSION_CODE / CLIENT_APP_VERSION_NAME в .env (config/client_app.php).\n\nКамера — сканер QR в ЛК (jsQR). Микрофон — на будущее под голосовые фичи сайта. Не ставить как киоск на ТВ.",
+                        'path' => '/app.apk',
+                        'audience' => 'Игрок / Техник',
                     ],
                 ],
             ],
