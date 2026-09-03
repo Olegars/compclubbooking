@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Order;
 use App\Models\OrderKitchenPrint;
+use App\Support\OrderChannel;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -65,10 +66,19 @@ class KitchenOrderPrintService
 
         $pc = trim((string) ($first->pc_name ?: 'ПК'));
         $ids = $orders->pluck('id')->map(fn ($id) => '#'.$id)->implode(', ');
+        $channelLabels = $orders
+            ->pluck('channel')
+            ->unique()
+            ->map(fn ($channel) => OrderChannel::label($channel))
+            ->filter()
+            ->implode(' / ');
         $lines = [
             $pc.' | '.$ids,
-            str_repeat('-', 32),
         ];
+        if ($channelLabels !== '') {
+            $lines[] = mb_strtoupper($channelLabels);
+        }
+        $lines[] = str_repeat('-', 32);
 
         foreach ($this->mergedLineItems($orders) as $row) {
             $lines[] = $row['qty'].'x '.$row['name'];

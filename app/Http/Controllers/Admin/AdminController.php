@@ -17,6 +17,7 @@ use App\Models\ComputerSosAlert;
 use App\Models\ComputerInputAlert;
 use App\Support\AdminAlerts;
 use App\Support\AdminLocation;
+use App\Support\OrderChannel;
 use App\Services\BookingSessionTimingService;
 use App\Services\ProductStockService;
 use App\Models\Computer;
@@ -621,6 +622,8 @@ class AdminController extends Controller
                     'items' => $items,
                     'price' => (float) ($order->price ?? 0),
                     'pc_name' => $order->pc_name,
+                    'channel' => $order->channel ?? null,
+                    'channel_label' => OrderChannel::label($order->channel ?? null),
                     'status' => $order->status,
                     'status_label' => $labels[$order->status] ?? $order->status,
                     'is_preorder' => ! empty($order->fulfill_at),

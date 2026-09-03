@@ -15,6 +15,7 @@ use App\Models\Game;
 use App\Models\QuickApp;
 use App\Models\Computer;
 use App\Support\ClubBrand;
+use App\Support\OrderChannel;
 use App\Support\OrderDeliveryTarget;
 use App\Support\ZoneSlug;
 use App\Models\UserGameStat;
@@ -1669,6 +1670,7 @@ class ShellApiController extends Controller
                     'items' => json_encode($lineItems, JSON_UNESCAPED_UNICODE),
                     'price' => $totalPrice,
                     'pc_name' => $orderAttrs['pc_name'],
+                    'channel' => OrderChannel::SHELL,
                     'status' => $orderStatus,
                     'booking_id' => $orderAttrs['booking_id'] ?? null,
                     'fulfill_at' => $ts($orderAttrs['fulfill_at'] ?? null),

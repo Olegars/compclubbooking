@@ -96,6 +96,7 @@ const orderBlocks = computed(() => {
             product_name: orders.map(o => o.product_name).filter(Boolean).join(', '),
             status: first.status,
             status_label: first.status_label,
+            channel_labels: [...new Set(orders.map(o => o.channel_label).filter(Boolean))],
         }
     })
 })
@@ -279,6 +280,10 @@ onUnmounted(() => {
                                 </div>
                                 <div class="inline-flex items-center px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest bg-amber-500/10 border-amber-500/30 text-amber-300">
                                     {{ block.status_label || 'В очереди' }}
+                                </div>
+                                <div v-for="label in (block.channel_labels || [])" :key="label"
+                                     class="inline-flex items-center px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest bg-white/5 border-white/15 text-white/70">
+                                    {{ label }}
                                 </div>
                                 <div v-if="block.is_preorder"
                                      class="inline-flex items-center px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-widest bg-[#eab308]/15 border-[#eab308]/40 text-[#eab308]">

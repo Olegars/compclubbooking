@@ -8,6 +8,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Services\PreSessionOrderService;
 use App\Services\ProductStockService;
+use App\Support\OrderChannel;
 use App\Support\OrderDeliveryTarget;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -318,6 +319,7 @@ class ShopController extends Controller
         $summary = Order::summaryFromItems($lineItems);
         $orderAttrs = $preSession->orderCreateAttributes($resolved, $pcName);
         $scheduled = ($orderAttrs['status'] ?? '') === Order::STATUS_SCHEDULED;
+        $channel = OrderChannel::fromShopRequest($request);
         $createdOrder = null;
 
         try {
@@ -331,6 +333,7 @@ class ShopController extends Controller
                 $products,
                 $qtyByProduct,
                 $orderAttrs,
+                $channel,
                 &$createdOrder
             ) {
                 if ($paymentMethod === 'account' && $user) {
@@ -355,6 +358,7 @@ class ShopController extends Controller
                     'product_name' => $summary,
                     'items'        => $lineItems,
                     'price'        => $totalPrice,
+                    'channel'      => $channel,
                 ]));
 
                 foreach ($qtyByProduct as $pid => $qty) {

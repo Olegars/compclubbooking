@@ -23,6 +23,7 @@ class Order extends Model
         'items',
         'price',
         'pc_name',
+        'channel',
         'status',
         'fulfill_at',
         'released_at',

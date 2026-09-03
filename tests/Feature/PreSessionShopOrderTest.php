@@ -14,6 +14,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Services\PreSessionOrderService;
+use App\Support\OrderChannel;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -280,6 +281,65 @@ class PreSessionShopOrderTest extends TestCase
 
         $this->assertEquals(1000, $this->user->wallet()->first()->fresh()->depositAmount());
         $this->assertSame(1, Transaction::query()->where('type', 'refund')->where('source', 'market')->count());
+    }
+
+    public function test_website_checkout_stores_site_channel(): void
+    {
+        $startsAt = CarbonImmutable::now()->addHour();
+        $this->makeBooking($startsAt, $startsAt->addHour());
+
+        $this->actingAs($this->user)
+            ->postJson('/api/shop/checkout', [
+                'items' => [['product_id' => $this->product->id, 'qty' => 1]],
+                'order_type' => 'desktop',
+                'payment_method' => 'account',
+            ])
+            ->assertOk();
+
+        $this->assertSame(OrderChannel::SITE, Order::query()->value('channel'));
+    }
+
+    public function test_client_app_checkout_stores_app_channel(): void
+    {
+        $startsAt = CarbonImmutable::now()->addHour();
+        $this->makeBooking($startsAt, $startsAt->addHour());
+
+        $this->actingAs($this->user)
+            ->withHeaders(['User-Agent' => 'Mozilla/5.0 CompClubClient/1.0'])
+            ->postJson('/api/shop/checkout', [
+                'items' => [['product_id' => $this->product->id, 'qty' => 1]],
+                'order_type' => 'desktop',
+                'payment_method' => 'account',
+            ])
+            ->assertOk();
+
+        $this->assertSame(OrderChannel::APP, Order::query()->value('channel'));
+    }
+
+    public function test_terminal_checkout_stores_terminal_channel(): void
+    {
+        $this->postJson('/api/terminal/shop/checkout', [
+            'items' => [['product_id' => $this->product->id, 'qty' => 1]],
+            'client_phone' => $this->user->phone,
+            'computer_id' => $this->computer->id,
+            'payment_method' => 'account',
+        ])->assertOk();
+
+        $this->assertSame(OrderChannel::TERMINAL, Order::query()->value('channel'));
+        $this->assertSame($this->computer->name, Order::query()->value('pc_name'));
+    }
+
+    public function test_shell_checkout_stores_shell_channel(): void
+    {
+        $startsAt = CarbonImmutable::now()->addHour();
+        $this->makeBooking($startsAt, $startsAt->addHour());
+
+        $this->postJson('/api/shell/checkout', [
+            'terminal_id' => $this->computer->id,
+            'items' => [['product_id' => $this->product->id, 'qty' => 1]],
+        ])->assertOk();
+
+        $this->assertSame(OrderChannel::SHELL, Order::query()->value('channel'));
     }
 
     private function makeBooking(CarbonImmutable $startsAt, CarbonImmutable $endsAt): Booking

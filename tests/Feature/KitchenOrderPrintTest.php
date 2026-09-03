@@ -45,6 +45,7 @@ class KitchenOrderPrintTest extends TestCase
             ],
             'price' => 350,
             'pc_name' => 'ПК-08',
+            'channel' => 'site',
             'status' => 'pending',
         ]);
     }
@@ -57,6 +58,7 @@ class KitchenOrderPrintTest extends TestCase
         $this->assertNotNull($job);
         $this->assertSame(OrderKitchenPrint::STATUS_PENDING, $job->status);
         $this->assertStringContainsString('ПК-08 | #'.$order->id, $job->payload_text);
+        $this->assertStringContainsString('САЙТ', $job->payload_text);
         $this->assertStringContainsString('2x Энергетик', $job->payload_text);
         $this->assertStringContainsString('1x Сэндвич', $job->payload_text);
         $this->assertStringNotContainsString('ПРЕДЗАКАЗ', $job->payload_text);
