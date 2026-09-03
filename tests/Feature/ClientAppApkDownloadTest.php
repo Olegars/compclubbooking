@@ -6,15 +6,17 @@ use Tests\TestCase;
 
 class ClientAppApkDownloadTest extends TestCase
 {
-    public function test_apk_is_downloadable(): void
+    public function test_apk_is_downloadable_with_installer_mime(): void
     {
-        $path = public_path('app.apk');
+        $path = storage_path('app/apk/sector0451.apk');
         if (! is_file($path)) {
-            $this->markTestSkipped('APK file is missing from public/');
+            $this->markTestSkipped('APK file is missing from storage/app/apk');
         }
 
         $this->get('/app.apk')
             ->assertOk()
+            ->assertHeader('content-type', 'application/vnd.android.package-archive')
+            ->assertHeader('x-content-type-options', 'nosniff')
             ->assertDownload('sector0451.apk');
     }
 }

@@ -68,6 +68,15 @@ const displayBalance = computed(() => {
 
 const isAuthenticated = computed(() => !!(page.props.auth?.user || page.props.user))
 const isClientApp = /CompClubClient/i.test(navigator.userAgent || '')
+const apkNoticeOpen = ref(false)
+let apkNoticeTimer: ReturnType<typeof setTimeout> | null = null
+
+const onApkDownloadClick = () => {
+    if (apkNoticeTimer) clearTimeout(apkNoticeTimer)
+    apkNoticeTimer = setTimeout(() => {
+        apkNoticeOpen.value = true
+    }, 1000)
+}
 const isBookingPage = computed(() => String(page.url || '').startsWith('/booking'))
 const isAccountPage = computed(() => String(page.url || '').startsWith('/account'))
 const isShopPage = computed(() => String(page.url || '').startsWith('/shop'))
@@ -268,6 +277,7 @@ watch(() => page.url, () => {
 
 onUnmounted(() => {
     stopFlipClock()
+    if (apkNoticeTimer) clearTimeout(apkNoticeTimer)
 })
 </script>
 
@@ -316,6 +326,7 @@ onUnmounted(() => {
                         href="/app.apk"
                         class="nav-btn nav-btn-download"
                         download="sector0451.apk"
+                        @click="onApkDownloadClick"
                     >Скачать приложение</a>
                 </div>
                 <div class="masthead-tools">
@@ -463,6 +474,23 @@ onUnmounted(() => {
                 @activated="onQrActivated"
                 @request-topup="onQrRequestTopUp"
             />
+
+            <div
+                v-if="apkNoticeOpen"
+                class="fixed inset-0 flex items-end sm:items-center justify-center z-[9998] p-4 sm:p-6"
+            >
+                <div class="absolute inset-0 bg-black/80" @click="apkNoticeOpen = false"></div>
+                <div class="relative w-full max-w-md bg-[#0a0a0a] border border-[#22c55e]/40 rounded-[1.25rem] p-6 sm:p-8 shadow-[0_0_80px_rgba(34,197,94,0.2)]">
+                    <p class="text-[11px] sm:text-sm text-white/80 uppercase tracking-widest leading-relaxed font-black italic">
+                        После завершения загрузки нажмите «Открыть» во всплывающем окне или в шторке уведомлений вверху экрана.
+                    </p>
+                    <button
+                        type="button"
+                        class="mt-6 w-full py-4 bg-[#22c55e] text-black font-black uppercase rounded-xl italic tracking-widest"
+                        @click="apkNoticeOpen = false"
+                    >Понятно</button>
+                </div>
+            </div>
         </Teleport>
 
         <FlashToast />

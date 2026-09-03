@@ -71,12 +71,16 @@ use App\Http\Controllers\GameRequestController;
 */
 Route::get('/', [HomeController::class, 'index'])->name('home');
 Route::get('/app.apk', function () {
-    $path = public_path('app.apk');
+    $path = storage_path('app/apk/sector0451.apk');
     abort_unless(is_file($path), 404);
 
-    return response()->download($path, 'sector0451.apk', [
-        'Content-Type' => 'application/vnd.android.package-archive',
-    ]);
+    $response = response()->file($path);
+    $response->headers->set('Content-Type', 'application/vnd.android.package-archive');
+    $response->headers->set('Content-Disposition', 'attachment; filename="sector0451.apk"');
+    $response->headers->set('X-Content-Type-Options', 'nosniff');
+    $response->headers->set('Cache-Control', 'private, no-transform');
+
+    return $response;
 })->name('app.apk');
 Route::get('/legal/offer', fn () => Inertia::render('Legal/Offer'))->name('legal.offer');
 Route::get('/receipt/stub/{transaction}', [\App\Http\Controllers\ReceiptStubController::class, 'show'])
