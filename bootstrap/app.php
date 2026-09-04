@@ -65,6 +65,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/kitchen/print-applied',
             'api/video/marker-applied',
             'api/store/build-verify',
+            'api/store/avito/webhook',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

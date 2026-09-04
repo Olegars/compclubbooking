@@ -4,6 +4,7 @@ namespace App\Support;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Дешёвые счётчики для бейджей сайдбара админки (только COUNT, без выборок).
@@ -22,8 +23,10 @@ class AdminAlerts
                 'pending_orders' => $pendingOrders,
                 'sos' => $sos,
                 'input' => $input,
-                // Столько строк реально увидит оператор в «Реестре инцидентов»
                 'incidents' => $incidents + $sos + $input,
+                'avito_unread' => Schema::hasTable('store_avito_chats')
+                    ? (int) DB::table('store_avito_chats')->where('unread', true)->count()
+                    : 0,
             ];
         } catch (\Throwable $e) {
             Log::warning('AdminAlerts::counts failed: '.$e->getMessage());
@@ -39,6 +42,7 @@ class AdminAlerts
             'sos' => 0,
             'input' => 0,
             'incidents' => 0,
+            'avito_unread' => 0,
         ];
     }
 }

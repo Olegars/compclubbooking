@@ -1,0 +1,189 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Admin;
+use App\Models\Club;
+use App\Models\StoreAvitoAd;
+use App\Models\StoreAvitoChat;
+use App\Models\StoreAvitoMessage;
+use App\Models\StoreAvitoProductAttr;
+use App\Models\StoreAvitoSetting;
+use App\Models\StoreSupplierCatalogProduct;
+use App\Services\StoreAvito\StoreAvitoAdGenerator;
+use App\Services\StoreAvito\StoreAvitoPricer;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class StoreAvitoTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private Club $club;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->club = Club::create([
+            'name' => 'Store Club',
+            'slug' => 'store-club',
+            'type' => 'store',
+        ]);
+    }
+
+    public function test_pricer_applies_markup_extra_and_rounding(): void
+    {
+        $settings = StoreAvitoSetting::current();
+        $settings->forceFill([
+            'markup_percent' => 10,
+            'extra_rub' => 4000,
+            'round_to' => 100,
+            'discount_over_60k_pct' => 0,
+            'discount_over_100k_pct' => 0,
+        ])->save();
+
+        $price = (new StoreAvitoPricer)->quote([
+            ['purchase' => 10000],
+            ['purchase' => 20000],
+        ], $settings);
+
+        // (10000+20000)*1.1 + 4000 = 37000
+        $this->assertSame(37000, $price);
+    }
+
+    public function test_generator_makes_unique_pc_ads_with_config_id(): void
+    {
+        $this->seedPcPool();
+        StoreAvitoSetting::current()->forceFill([
+            'address' => 'Москва, Тестовая 1',
+            'markup_percent' => 15,
+            'extra_rub' => 4000,
+            'pc_type' => 'Игровой',
+        ])->save();
+
+        $result = app(StoreAvitoAdGenerator::class)->generate(3, enrich: false);
+
+        $this->assertSame(3, $result['created']);
+        $ads = StoreAvitoAd::query()->get();
+        $this->assertCount(3, $ads);
+        $this->assertCount(3, $ads->pluck('fingerprint')->unique());
+        $this->assertCount(3, $ads->pluck('config_id')->unique());
+
+        $ad = $ads->first();
+        $this->assertMatchesRegularExpression('/^[A-Z]{3}\d{5}$/', $ad->config_id);
+        $this->assertStringContainsString($ad->config_id, $ad->title);
+        $this->assertStringContainsString(
+            'Для получения текущего списка комплектующих для данной конфигурации (ID:'.$ad->config_id.') запросите в чате',
+            $ad->description
+        );
+        $this->assertSame('Intel', $ad->xml['BrandProcessor']);
+        $this->assertSame('Core i5', $ad->xml['ModelProcessor']);
+        $this->assertSame('32 ГБ', $ad->xml['RamSize']);
+        $this->assertGreaterThan(0, $ad->price);
+    }
+
+    public function test_xml_feed_contains_avito_pc_fields(): void
+    {
+        $this->seedPcPool();
+        $settings = StoreAvitoSetting::current();
+        $settings->forceFill(['address' => 'Москва, Тестовая 1'])->save();
+        app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
+        $ad = StoreAvitoAd::query()->first();
+
+        $this->get('/avito/'.$settings->fresh()->feed_token.'/feed.xml')
+            ->assertOk()
+            ->assertSee('<Ads formatVersion="3" target="Avito.ru">', false)
+            ->assertSee('<Id>pc-'.$ad->config_id.'</Id>', false)
+            ->assertSee('<Category>Настольные компьютеры</Category>', false)
+            ->assertSee('<GoodsSubType>Системные блоки</GoodsSubType>', false)
+            ->assertSee('<BrandProcessor>Intel</BrandProcessor>', false)
+            ->assertSee($ad->config_id, false);
+
+        $this->get('/avito/wrong-token/feed.xml')->assertNotFound();
+    }
+
+    public function test_webhook_replies_with_live_bom_for_config_id(): void
+    {
+        $this->seedPcPool();
+        StoreAvitoSetting::current()->forceFill(['auto_reply_enabled' => false])->save();
+        app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
+        $ad = StoreAvitoAd::query()->first();
+
+        $this->postJson('/api/store/avito/webhook', [
+            'payload' => [
+                'value' => [
+                    'id' => 'm1',
+                    'chat_id' => 'u2i-test',
+                    'user_id' => 1,
+                    'author_id' => 99,
+                    'type' => 'text',
+                    'content' => ['text' => 'Здравствуйте, пришлите комплектующие ID:'.$ad->config_id],
+                    'created' => time(),
+                ],
+            ],
+        ])->assertOk();
+
+        $this->assertTrue(StoreAvitoChat::query()->where('chat_id', 'u2i-test')->exists());
+        $this->assertTrue(
+            StoreAvitoMessage::query()
+                ->where('chat_id', 'u2i-test')
+                ->where('from_us', true)
+                ->get()
+                ->contains(fn (StoreAvitoMessage $m) => str_contains($m->text(), 'ID:'.$ad->config_id))
+        );
+    }
+
+    public function test_owner_opens_avito_admin_page(): void
+    {
+        $owner = Admin::create([
+            'name' => 'Owner',
+            'email' => 'owner@avito.test',
+            'password' => 'password',
+            'role' => 'owner',
+            'club_id' => $this->club->id,
+        ]);
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->get('/admin/store/avito')
+            ->assertOk();
+    }
+
+    private function seedPcPool(): void
+    {
+        $rows = [
+            [101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, ['socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F']],
+            [102, 'cpu', 'Процессор Intel Core i7-14700F', 'Intel', 28000, ['socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i7', 'avito_code' => '14700F']],
+            [201, 'motherboard', 'GIGABYTE B760M DS3H DDR5', 'Gigabyte', 9000, ['socket' => 'LGA1700', 'ddr' => 'DDR5', 'avito_brand' => 'Gigabyte', 'avito_model' => 'B760']],
+            [202, 'motherboard', 'MSI B760 GAMING DDR5', 'MSI', 11000, ['socket' => 'LGA1700', 'ddr' => 'DDR5', 'avito_brand' => 'MSI', 'avito_model' => 'B760']],
+            [301, 'ram', 'Kingston DDR5 32GB 2x16', 'Kingston', 7000, ['ddr' => 'DDR5', 'ram_gb' => 32, 'avito_code' => '32 ГБ']],
+            [302, 'ram', 'ADATA DDR5 32GB', 'ADATA', 7500, ['ddr' => 'DDR5', 'ram_gb' => 32, 'avito_code' => '32 ГБ']],
+            [401, 'gpu', 'Palit RTX 4060 8GB', 'Palit', 32000, ['avito_brand' => 'NVIDIA', 'avito_model' => 'GeForce RTX 4060', 'avito_code' => 'RTX 4060']],
+            [402, 'gpu', 'MSI RTX 4070 12GB', 'MSI', 54000, ['avito_brand' => 'NVIDIA', 'avito_model' => 'GeForce RTX 4070', 'avito_code' => 'RTX 4070']],
+            [501, 'ssd', 'Kingston NV2 1TB', 'Kingston', 6000, []],
+            [502, 'ssd', 'Samsung 990 EVO 1TB', 'Samsung', 9000, []],
+            [601, 'psu', 'Chieftec 650W', 'Chieftec', 5000, ['wattage' => 650]],
+            [701, 'cooler', 'ID-COOLING SE-224', 'ID-COOLING', 2500, []],
+            [801, 'case', 'Deepcool CC560', 'Deepcool', 4000, []],
+        ];
+
+        foreach ($rows as [$sku, $type, $name, $vendor, $price, $extra]) {
+            StoreSupplierCatalogProduct::query()->create([
+                'sku' => $sku,
+                'name' => $name,
+                'vendor' => $vendor,
+                'price' => $price,
+                'stock_qty' => 5,
+            ]);
+            StoreAvitoProductAttr::query()->create(array_merge([
+                'sku' => $sku,
+                'type' => $type,
+                'source' => 'heuristic',
+                'mapped_at' => now(),
+                'avito_brand' => $vendor,
+                'avito_model' => $name,
+            ], $extra));
+        }
+    }
+}

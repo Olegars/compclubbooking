@@ -67,7 +67,7 @@ class SystemDocs
                 'items' => [
                     [
                         'title' => 'Обзор модуля',
-                        'description' => "Отдельный контур сборки и продажи ПК (не путать со складом бара /admin/inventory).\n\nПоток: смета клиенту → позиции из каталога ITP/QuickFox и/или со склада → заказ недостающего у поставщика → приёмка на склад с серийниками → сборка ПК → заказ магазина / выдача → гарантия (QR, талон) → при обращении: ремонт / возврат в сборку / замена детали.\n\nРазделы: /admin/store/estimates, /warehouse, /built-pcs, /orders, /warranty, /clients. Локации (клубы) — /admin/store/locations, переключение локации влияет на выборку склада/смет.",
+                        'description' => "Отдельный контур сборки и продажи ПК (не путать со складом бара /admin/inventory).\n\nПоток: смета клиенту → позиции из каталога ITP/QuickFox и/или со склада → заказ недостающего у поставщика → приёмка на склад с серийниками → сборка ПК → заказ магазина / выдача → гарантия (QR, талон) → при обращении: ремонт / возврат в сборку / замена детали.\n\nРазделы: /admin/store/estimates, /warehouse, /built-pcs, /orders, /warranty, /clients, /avito. Локации (клубы) — /admin/store/locations, переключение локации влияет на выборку склада/смет.",
                         'path' => '/admin/store/estimates',
                         'audience' => 'Админ / Сборщик / Owner',
                     ],
@@ -114,8 +114,14 @@ class SystemDocs
                         'audience' => 'Админ',
                     ],
                     [
+                        'title' => 'Avito (системные блоки)',
+                        'description' => "Раздел /admin/store/avito: один аккаунт магазина, только настольные ПК (ноутбуки и прочие категории не выгружаются).\n\nКаждый час cron store:generate-avito-ads (если включено) собирает N уникальных конфигураций из каталога поставщика: сокет CPU=плата, DDR платы=ОЗУ. Цена = сумма закупок из каталога + наценка + корпус в цене, скидка от 60к/100к, округление.\n\nXML-фид GET /avito/{token}/feed.xml — поля Avito (BrandProcessor, ModelProcessor, CodeProcessor, видеокарта, RamSize и т.д.). Сопоставление названия из каталога со словарём Avito: эвристика + DeepSeek (тот же ключ, что у AI-ассистента). Заголовок ≤50 символов, в нём ID сборки вида DZK48190; в тексте обязательная фраза «Для получения текущего списка комплектующих для данной конфигурации (ID:…) запросите в чате».\n\nЧат: webhook POST /api/store/avito/webhook, ночной автоответ, по ID в сообщении уходит актуальная комплектация с живыми ценами каталога. Картинки фида: /avito/{token}/img/{config}/{sku}/{i} (прокси QuickFox).",
+                        'path' => '/admin/store/avito',
+                        'audience' => 'Админ / Система',
+                    ],
+                    [
                         'title' => 'Планировщик синка каталога',
-                        'description' => "Laravel Schedule сам не крутится: на сервере cron пользователя www-data (тот же, что PHP-FPM):\n* * * * * cd /var/www/… && /usr/bin/php artisan schedule:run >> /dev/null 2>&1\n\nЗадачи: store:sync-supplier-catalog в 09:00 Europe/Moscow; store:classify-cases в 09:40. Логи (если включены в routes/console.php): storage/logs/catalog-sync.log, catalog-cases.log.\nПроверка: sudo -u www-data php artisan schedule:list / schedule:run -v. Разовый синк: store:sync-supplier-catalog.",
+                        'description' => "Laravel Schedule сам не крутится: на сервере cron пользователя www-data (тот же, что PHP-FPM):\n* * * * * cd /var/www/… && /usr/bin/php artisan schedule:run >> /dev/null 2>&1\n\nЗадачи: store:sync-supplier-catalog в 09:00 Europe/Moscow; store:classify-cases в 09:40; store:generate-avito-ads каждый час. Логи (если включены в routes/console.php): storage/logs/catalog-sync.log, catalog-cases.log, avito-ads.log.\nПроверка: sudo -u www-data php artisan schedule:list / schedule:run -v. Разовый синк: store:sync-supplier-catalog. Разовая пачка Avito: store:generate-avito-ads --sync --force.",
                         'path' => null,
                         'audience' => 'Система / Owner',
                     ],

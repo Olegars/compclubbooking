@@ -62,6 +62,9 @@ use App\Http\Controllers\Admin\Store\WarrantyController as StoreWarrantyControll
 use App\Http\Controllers\Admin\Store\StoreClientController;
 use App\Http\Controllers\Admin\Store\EstimateController as StoreEstimateController;
 use App\Http\Controllers\Admin\Store\LocationController as StoreLocationController;
+use App\Http\Controllers\Admin\Store\AvitoController as StoreAvitoController;
+use App\Http\Controllers\StoreAvitoFeedController;
+use App\Http\Controllers\StoreAvitoWebhookController;
 use App\Http\Controllers\GameRequestController;
 
 /*
@@ -94,6 +97,11 @@ Route::get('/app.json', function () {
     ]);
 })->name('app.json');
 Route::get('/legal/offer', fn () => Inertia::render('Legal/Offer'))->name('legal.offer');
+Route::get('/avito/{token}/feed.xml', [StoreAvitoFeedController::class, 'feed'])->name('store.avito.feed');
+Route::get('/avito/{token}/img/{configId}/{sku}/{index}', [StoreAvitoFeedController::class, 'image'])
+    ->whereNumber('sku')
+    ->whereNumber('index')
+    ->name('store.avito.image');
 Route::get('/receipt/stub/{transaction}', [\App\Http\Controllers\ReceiptStubController::class, 'show'])
     ->name('receipt.stub');
 Route::get('/booking/{slug?}', [ClubController::class, 'show'])->name('booking');
@@ -336,6 +344,15 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::post('/clients', [StoreClientController::class, 'store'])->name('admin.store.clients.store');
             Route::put('/clients/{storeClient}', [StoreClientController::class, 'update'])->name('admin.store.clients.update');
             Route::delete('/clients/{storeClient}', [StoreClientController::class, 'destroy'])->name('admin.store.clients.destroy');
+
+            Route::get('/avito', [StoreAvitoController::class, 'index'])->name('admin.store.avito');
+            Route::put('/avito/settings', [StoreAvitoController::class, 'updateSettings'])->name('admin.store.avito.settings');
+            Route::post('/avito/generate', [StoreAvitoController::class, 'generate'])->name('admin.store.avito.generate');
+            Route::post('/avito/webhook', [StoreAvitoController::class, 'connectWebhook'])->name('admin.store.avito.webhook.connect');
+            Route::post('/avito/ads/{storeAvitoAd}', [StoreAvitoController::class, 'updateAd'])->name('admin.store.avito.ads.update');
+            Route::post('/avito/chats/send', [StoreAvitoController::class, 'sendMessage'])->name('admin.store.avito.chats.send');
+            Route::post('/avito/chats/bom', [StoreAvitoController::class, 'sendBom'])->name('admin.store.avito.chats.bom');
+            Route::post('/avito/chats/{storeAvitoChat}', [StoreAvitoController::class, 'markChat'])->name('admin.store.avito.chats.mark');
         });
 
     // УРОВЕНЬ: SUPERVISOR+
@@ -489,6 +506,8 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
 Route::prefix('api/store')->group(function () {
     Route::post('/build-verify', \App\Http\Controllers\Api\StoreBuildVerifyController::class)
         ->name('api.store.build-verify');
+    Route::post('/avito/webhook', StoreAvitoWebhookController::class)
+        ->name('api.store.avito.webhook');
 });
 
 /*

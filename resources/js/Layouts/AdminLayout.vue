@@ -179,6 +179,15 @@ const switchLocation = (clubId: string | number) => {
                           :class="isActive('/admin/store/clients') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>👤</span> Клиенты
                     </Link>
+                    <Link v-if="canAccessStore || isOwner" href="/admin/store/avito"
+                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
+                          :class="isActive('/admin/store/avito') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                        <span>📣</span> Avito
+                        <span v-if="counts.avito_unread > 0"
+                              class="ml-auto min-w-[22px] px-2 py-0.5 rounded-full bg-amber-500 text-black text-[10px] font-black tabular-nums text-center">
+                            {{ counts.avito_unread }}
+                        </span>
+                    </Link>
                     <Link v-if="isOwner" href="/admin/store/locations"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/store/locations') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">

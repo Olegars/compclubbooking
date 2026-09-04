@@ -1,0 +1,74 @@
+<?php
+
+namespace Tests\Unit;
+
+use App\Services\StoreAvito\StoreAvitoCatalogAttrParser;
+use App\Services\StoreAvito\StoreAvitoCopywriter;
+use Tests\TestCase;
+
+class StoreAvitoParserTest extends TestCase
+{
+    private StoreAvitoCatalogAttrParser $parser;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->parser = new StoreAvitoCatalogAttrParser;
+    }
+
+    public function test_parses_intel_cpu_for_avito_xml(): void
+    {
+        $a = $this->parser->parse('cpu', 'Процессор Intel Core i5-12400F OEM', '12400F', 'Intel');
+
+        $this->assertSame('Intel', $a['avito_brand']);
+        $this->assertSame('Core i5', $a['avito_model']);
+        $this->assertSame('12400F', $a['avito_code']);
+        $this->assertSame('LGA1700', $a['socket']);
+    }
+
+    public function test_parses_ryzen_and_am5(): void
+    {
+        $a = $this->parser->parse('cpu', 'AMD Ryzen 7 7800X3D', '', 'AMD');
+
+        $this->assertSame('AMD', $a['avito_brand']);
+        $this->assertSame('Ryzen 7', $a['avito_model']);
+        $this->assertSame('7800X3D', $a['avito_code']);
+        $this->assertSame('AM5', $a['socket']);
+    }
+
+    public function test_parses_rtx_gpu(): void
+    {
+        $a = $this->parser->parse('gpu', 'Palit GeForce RTX 4060 Dual 8GB', '', 'Palit');
+
+        $this->assertSame('NVIDIA', $a['avito_brand']);
+        $this->assertSame('GeForce RTX 4060', $a['avito_model']);
+        $this->assertSame('RTX 4060', $a['avito_code']);
+    }
+
+    public function test_parses_ram_kit_and_ddr5(): void
+    {
+        $a = $this->parser->parse('ram', 'Kingston Fury Beast DDR5 32GB (2x16GB) 6000', '', 'Kingston');
+
+        $this->assertSame('DDR5', $a['ddr']);
+        $this->assertSame(32, $a['ram_gb']);
+        $this->assertSame('32 ГБ', $a['avito_code']);
+    }
+
+    public function test_parses_b650_board(): void
+    {
+        $a = $this->parser->parse('motherboard', 'GIGABYTE B650 AORUS ELITE AX', '', 'Gigabyte');
+
+        $this->assertSame('Gigabyte', $a['avito_brand']);
+        $this->assertSame('AM5', $a['socket']);
+        $this->assertSame('DDR5', $a['ddr']);
+    }
+
+    public function test_title_keeps_config_id_within_50_chars(): void
+    {
+        $copy = new StoreAvitoCopywriter;
+        $title = $copy->clampTitle('Игровой компьютер на топовом железе для киберспорта 2026 супер', 'DZK48190');
+
+        $this->assertLessThanOrEqual(50, mb_strlen($title));
+        $this->assertStringContainsString('DZK48190', $title);
+    }
+}

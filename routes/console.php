@@ -22,3 +22,8 @@ Schedule::command('store:classify-cases')
     ->timezone('Europe/Moscow')
     ->withoutOverlapping(120)
     ->appendOutputTo(storage_path('logs/catalog-cases.log'));
+Schedule::command('store:generate-avito-ads --sync')
+    ->hourly()
+    ->timezone('Europe/Moscow')
+    ->withoutOverlapping(50)
+    ->appendOutputTo(storage_path('logs/avito-ads.log'));

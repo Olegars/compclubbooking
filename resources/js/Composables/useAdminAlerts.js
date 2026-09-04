@@ -7,6 +7,7 @@ const counts = reactive({
     sos: 0,
     input: 0,
     incidents: 0,
+    avito_unread: 0,
 })
 
 const setCounts = (next) => {
