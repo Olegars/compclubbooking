@@ -13,10 +13,15 @@ class ShellQrLoginController extends Controller
     {
         $data = $request->validate([
             'token' => 'required|uuid',
+            'accept_seat_change' => 'sometimes|boolean',
         ]);
 
         try {
-            $result = $qr->redeem($request->user(), $data['token']);
+            $result = $qr->redeem(
+                $request->user(),
+                $data['token'],
+                $request->boolean('accept_seat_change')
+            );
         } catch (ValidationException $e) {
             return response()->json([
                 'status' => 'error',

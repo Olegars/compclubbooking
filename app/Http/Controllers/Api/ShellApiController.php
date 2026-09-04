@@ -41,6 +41,7 @@ use App\Services\UserCloudSettingsService;
 use App\Services\VideoMarkerService;
 use App\Services\ShellQrLoginService;
 use App\Services\WakeOnLan;
+use App\Services\WrongSeatLoginService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -103,7 +104,8 @@ class ShellApiController extends Controller
             $request->validate([
                 'phone' => 'required|string',
                 'pin' => 'required|string|size:4',
-                'terminal_id' => 'required|integer'
+                'terminal_id' => 'required|integer',
+                'accept_seat_change' => 'sometimes|boolean',
             ]);
 
             $phone = (string) $request->phone;
@@ -151,18 +153,39 @@ class ShellApiController extends Controller
                 ->first();
 
             if (!$booking) {
-                Log::warning('Shell login: no matching booking', [
-                    'user_id' => $user->id,
-                    'phone' => $phone,
-                    'pin' => $pin,
-                    'terminal_id' => $terminalId,
-                    'candidates' => $candidates,
-                ]);
+                $wrongSeat = app(WrongSeatLoginService::class);
+                $elsewhere = $wrongSeat->findPinBookingElsewhere($user, $pin, $terminalId);
+                if ($elsewhere) {
+                    $decision = $wrongSeat->decide(
+                        $elsewhere,
+                        $terminalId,
+                        $request->boolean('accept_seat_change')
+                    );
+                    if (($decision['status'] ?? '') !== WrongSeatLoginService::STATUS_PROCEED) {
+                        Log::info('Shell login: wrong PC', [
+                            'user_id' => $user->id,
+                            'terminal_id' => $terminalId,
+                            'booking_id' => $elsewhere->id,
+                            'status' => $decision['status'] ?? null,
+                        ]);
 
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Неверный PIN-код, либо сессия уже была активирована.',
-                ]);
+                        return response()->json($decision);
+                    }
+                    $booking = $decision['booking'];
+                } else {
+                    Log::warning('Shell login: no matching booking', [
+                        'user_id' => $user->id,
+                        'phone' => $phone,
+                        'pin' => $pin,
+                        'terminal_id' => $terminalId,
+                        'candidates' => $candidates,
+                    ]);
+
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Неверный PIN-код, либо сессия уже была активирована.',
+                    ]);
+                }
             }
 
             $timing = app(BookingSessionTimingService::class);

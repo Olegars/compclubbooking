@@ -14,6 +14,7 @@ use App\Services\Fan\FanControlService;
 use App\Services\Light\LightControlService;
 use App\Services\GameBookingService;
 use App\Services\UserCloudSettingsService;
+use App\Services\WrongSeatLoginService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -31,6 +32,7 @@ class ShellQrLoginService
     public function __construct(
         private readonly GameBookingService $bookings,
         private readonly BookingSessionTimingService $timing,
+        private readonly WrongSeatLoginService $wrongSeat,
     ) {
     }
 
@@ -112,7 +114,7 @@ class ShellQrLoginService
     /**
      * @return array<string, mixed>
      */
-    public function redeem(User $user, string $token): array
+    public function redeem(User $user, string $token, bool $acceptSeatChange = false): array
     {
         $challenge = $this->pendingChallengeOrFail($token);
         $computer = Computer::query()->with('space.zone')->findOrFail($challenge->computer_id);
@@ -121,6 +123,19 @@ class ShellQrLoginService
         $booking = $this->findUserBookingOnComputer($user, $terminalId);
         if ($booking) {
             return $this->activateAndConsume($user, $challenge, $booking);
+        }
+
+        $elsewhere = $this->wrongSeat->findUserBookingElsewhere($user, $terminalId);
+        if ($elsewhere) {
+            $decision = $this->wrongSeat->decide($elsewhere, $terminalId, $acceptSeatChange);
+            if (($decision['status'] ?? '') !== WrongSeatLoginService::STATUS_PROCEED) {
+                return array_merge($decision, [
+                    'token' => $challenge->token,
+                    'computer' => $this->computerPayload($computer),
+                ]);
+            }
+
+            return $this->activateAndConsume($user, $challenge, $decision['booking']);
         }
 
         $now = CarbonImmutable::now(config('app.timezone'));

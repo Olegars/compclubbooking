@@ -18,7 +18,7 @@ const emit = defineEmits<{
 }>()
 const clubName = useClubName()
 
-type Phase = 'scan' | 'busy' | 'needs_booking' | 'success' | 'error'
+type Phase = 'scan' | 'busy' | 'needs_booking' | 'wrong_pc_available' | 'success' | 'error'
 
 const phase = ref<Phase>('scan')
 const errorMessage = ref('')
@@ -28,6 +28,9 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 
 const token = ref('')
 const computerName = ref('')
+const bookedComputerName = ref('')
+const seatMessage = ref('')
+const seatBusy = ref(false)
 const balance = ref(0)
 const durationMinutes = ref(60)
 const minDuration = ref(60)
@@ -140,6 +143,9 @@ const resetState = () => {
     errorMessage.value = ''
     token.value = ''
     computerName.value = ''
+    bookedComputerName.value = ''
+    seatMessage.value = ''
+    seatBusy.value = false
     balance.value = 0
     durationMinutes.value = 60
     minDuration.value = 60
@@ -179,6 +185,15 @@ const handleRedeem = async (scanned: string) => {
         if (data.status === 'activated') {
             phase.value = 'success'
             emit('activated', data)
+            return
+        }
+        if (data.status === 'wrong_pc_available') {
+            token.value = scanned
+            bookedComputerName.value = String(data.booked_computer?.name || '')
+            computerName.value = String(data.computer?.name || data.this_computer?.name || '')
+            seatMessage.value = String(data.message || '')
+            phase.value = 'wrong_pc_available'
+            stopCamera()
             return
         }
         if (data.status === 'needs_booking') {
@@ -261,6 +276,34 @@ const openSession = async () => {
     } finally {
         busy.value = false
     }
+}
+
+const confirmSeatChange = async () => {
+    if (!token.value || seatBusy.value) return
+    seatBusy.value = true
+    errorMessage.value = ''
+    try {
+        const { data } = await axios.post('/account/qr/redeem', {
+            token: token.value,
+            accept_seat_change: true,
+        })
+        if (data.status === 'activated') {
+            phase.value = 'success'
+            emit('activated', data)
+            return
+        }
+        phase.value = 'error'
+        errorMessage.value = data.message || 'Не удалось перенести бронь'
+    } catch (e: any) {
+        phase.value = 'error'
+        errorMessage.value = e.response?.data?.message || e.message || 'Ошибка сети'
+    } finally {
+        seatBusy.value = false
+    }
+}
+
+const declineSeatChange = () => {
+    close()
 }
 
 const retryScan = () => {
@@ -409,6 +452,28 @@ defineExpose({
                         class="w-full py-3 text-white/40 text-[10px] uppercase tracking-widest hover:text-white"
                         @click="retryScan"
                     >Сканировать снова</button>
+                </div>
+
+                <div v-else-if="phase === 'wrong_pc_available'" class="space-y-5 text-center">
+                    <p class="text-white/80 text-sm leading-relaxed">
+                        {{ seatMessage || `Вы забронировали компьютер «${bookedComputerName || 'другой'}», однако этот свободен на время вашей брони. Хотите использовать его?` }}
+                    </p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button
+                            type="button"
+                            class="py-4 rounded-[1rem] border border-white/20 text-white font-black uppercase italic tracking-wide hover:border-white/40"
+                            :disabled="seatBusy"
+                            @click="declineSeatChange"
+                        >Нет</button>
+                        <button
+                            type="button"
+                            class="py-4 rounded-[1rem] bg-[#22c55e] text-black font-black uppercase italic tracking-wide hover:bg-[#2ae06d] disabled:opacity-60"
+                            :disabled="seatBusy"
+                            @click="confirmSeatChange"
+                        >
+                            {{ seatBusy ? 'Открываем…' : 'Да' }}
+                        </button>
+                    </div>
                 </div>
 
                 <div v-else-if="phase === 'success'" class="text-center space-y-4 py-6">
