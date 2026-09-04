@@ -18,6 +18,7 @@ class StoreAvitoSetting extends Model
         'access_token_expires_at', 'avito_user_id', 'feed_token',
         'auto_reply_enabled', 'auto_reply_from', 'auto_reply_to', 'auto_reply_text',
         'last_generated_at', 'last_generate_result', 'last_error',
+        'last_dict_sync_at', 'last_dict_sync_result',
     ];
 
     protected $hidden = [
@@ -37,6 +38,8 @@ class StoreAvitoSetting extends Model
         'access_token_expires_at' => 'datetime',
         'last_generated_at' => 'datetime',
         'last_generate_result' => 'array',
+        'last_dict_sync_at' => 'datetime',
+        'last_dict_sync_result' => 'array',
     ];
 
     public static function current(): self
@@ -56,11 +59,14 @@ class StoreAvitoSetting extends Model
         ]);
     }
 
+    public function hasAvitoApi(): bool
+    {
+        return filled($this->client_id) && filled($this->client_secret);
+    }
+
     public function hasMessenger(): bool
     {
-        return filled($this->client_id)
-            && filled($this->client_secret)
-            && (int) $this->avito_user_id > 0;
+        return $this->hasAvitoApi() && (int) $this->avito_user_id > 0;
     }
 
     public static function configPhrase(string $configId): string

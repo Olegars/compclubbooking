@@ -54,30 +54,25 @@ class AvitoPcXmlDict
         return ['ASUS', 'MSI', 'Gigabyte', 'ASRock', 'Biostar', 'Colorful', 'Maxsun', 'NZXT', 'Другой'];
     }
 
-    /** @return list<string> */
+    /**
+     * Производитель платы (ZOTAC/Palit/MSI), не чип NVIDIA/GeForce.
+     *
+     * @return list<string>
+     */
     public static function videocardBrands(): array
     {
-        return ['NVIDIA', 'AMD', 'Intel'];
+        return [
+            'ASUS', 'MSI', 'Gigabyte', 'GIGABYTE', 'Palit', 'ZOTAC',
+            'Gainward', 'KFA2', 'GALAX', 'PNY', 'Inno3D', 'Colorful', 'ASRock',
+            'Sapphire', 'PowerColor', 'XFX', 'AFOX', 'Maxsun', 'Biostar',
+            'Leadtek', 'EVGA', 'Manli', 'Sparkle', 'NVIDIA', 'AMD', 'Intel',
+        ];
     }
 
     /** @return list<string> */
     public static function videocardModels(): array
     {
-        return [
-            'GeForce GTX 1650', 'GeForce GTX 1660 Super',
-            'GeForce RTX 3050', 'GeForce RTX 3060', 'GeForce RTX 3060 Ti',
-            'GeForce RTX 3070', 'GeForce RTX 3070 Ti', 'GeForce RTX 3080', 'GeForce RTX 3090',
-            'GeForce RTX 4060', 'GeForce RTX 4060 Ti',
-            'GeForce RTX 4070', 'GeForce RTX 4070 Super', 'GeForce RTX 4070 Ti', 'GeForce RTX 4070 Ti Super',
-            'GeForce RTX 4080', 'GeForce RTX 4080 Super', 'GeForce RTX 4090',
-            'GeForce RTX 5050', 'GeForce RTX 5060', 'GeForce RTX 5060 Ti',
-            'GeForce RTX 5070', 'GeForce RTX 5070 Ti', 'GeForce RTX 5080', 'GeForce RTX 5090',
-            'Radeon RX 6600', 'Radeon RX 6700 XT', 'Radeon RX 6750 XT',
-            'Radeon RX 7600', 'Radeon RX 7600 XT', 'Radeon RX 7700 XT',
-            'Radeon RX 7800 XT', 'Radeon RX 7900 GRE', 'Radeon RX 7900 XT', 'Radeon RX 7900 XTX',
-            'Radeon RX 9060 XT', 'Radeon RX 9070', 'Radeon RX 9070 XT',
-            'Arc A750', 'Arc A770', 'Arc B580',
-        ];
+        return [];
     }
 
     /** @return list<string> */

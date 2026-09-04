@@ -6,6 +6,8 @@ use App\Models\StoreAvitoAd;
 use App\Models\StoreAvitoChat;
 use App\Models\StoreAvitoMessage;
 use App\Models\StoreAvitoSetting;
+use App\Services\StoreAvito\StoreAvitoDictMatcher;
+use App\Services\StoreAvito\StoreAvitoDictSyncService;
 use App\Services\StoreAvito\StoreAvitoGenerateLauncher;
 use App\Services\StoreAvito\StoreAvitoMessengerService;
 use Illuminate\Http\Request;
@@ -18,13 +20,29 @@ class AvitoController extends StoreController
     {
         $settings = StoreAvitoSetting::current();
         $tab = $request->string('tab')->toString() ?: 'ads';
+        $q = mb_strtoupper(trim($request->string('q')->toString()));
         $chatId = $request->string('chat')->toString();
 
-        $chats = StoreAvitoChat::query()
+        $adsQuery = StoreAvitoAd::query()->orderByDesc('id');
+        if ($q !== '') {
+            $adsQuery->where(function ($w) use ($q) {
+                $w->where('config_id', 'like', '%'.$q.'%')
+                    ->orWhere('title', 'like', '%'.$q.'%');
+            });
+        }
+
+        $chatsQuery = StoreAvitoChat::query()
             ->orderByDesc('last_message_at')
-            ->orderByDesc('id')
-            ->limit(80)
-            ->get();
+            ->orderByDesc('id');
+        if ($q !== '') {
+            $chatsQuery->where(function ($w) use ($q) {
+                $w->where('config_id', 'like', '%'.$q.'%')
+                    ->orWhere('ad_title', 'like', '%'.$q.'%')
+                    ->orWhere('client_name', 'like', '%'.$q.'%');
+            });
+        }
+
+        $chats = $chatsQuery->limit(80)->get();
 
         $activeChat = $chatId !== ''
             ? $chats->firstWhere('chat_id', $chatId) ?? StoreAvitoChat::query()->where('chat_id', $chatId)->first()
@@ -41,9 +59,10 @@ class AvitoController extends StoreController
 
         return Inertia::render('Admin/Store/Avito', [
             'tab' => in_array($tab, ['ads', 'chats', 'settings'], true) ? $tab : 'ads',
-            'settings' => $this->settingsPayload($settings),
+            'settings' => $this->settingsPayload($settings, app(StoreAvitoDictMatcher::class)),
             'feed_url' => URL::to('/avito/'.$settings->feed_token.'/feed.xml'),
-            'ads' => StoreAvitoAd::query()->orderByDesc('id')->limit(120)->get(),
+            'filters' => ['q' => $q !== '' ? $q : null],
+            'ads' => $adsQuery->limit($q !== '' ? 80 : 120)->get(),
             'chats' => $chats,
             'active_chat' => $activeChat,
             'messages' => $messages,
@@ -100,6 +119,16 @@ class AvitoController extends StoreController
 
         $count = (int) $request->input('count', StoreAvitoSetting::current()->ads_per_hour);
         $result = $launcher->launch(max(1, min(50, $count)), true);
+        $flash = $result['ok'] ? 'success' : 'error';
+
+        return back()->with($flash, $result['message']);
+    }
+
+    public function syncDicts(StoreAvitoDictSyncService $sync)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+
+        $result = $sync->launch();
         $flash = $result['ok'] ? 'success' : 'error';
 
         return back()->with($flash, $result['message']);
@@ -177,7 +206,7 @@ class AvitoController extends StoreController
     /**
      * @return array<string, mixed>
      */
-    private function settingsPayload(StoreAvitoSetting $settings): array
+    private function settingsPayload(StoreAvitoSetting $settings, StoreAvitoDictMatcher $matcher): array
     {
         return [
             'enabled' => $settings->enabled,
@@ -203,6 +232,11 @@ class AvitoController extends StoreController
             'last_generated_at' => $settings->last_generated_at?->toIso8601String(),
             'last_generate_result' => $settings->last_generate_result,
             'last_error' => $settings->last_error,
+            'last_dict_sync_at' => $settings->last_dict_sync_at?->toIso8601String(),
+            'last_dict_sync_result' => $settings->last_dict_sync_result,
+            'dict_stats' => \Illuminate\Support\Facades\Schema::hasTable('store_avito_dict_values')
+                ? $matcher->stats()
+                : [],
         ];
     }
 }

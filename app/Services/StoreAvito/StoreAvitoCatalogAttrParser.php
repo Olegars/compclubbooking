@@ -39,7 +39,7 @@ class StoreAvitoCatalogAttrParser
 
         return match ($type) {
             'cpu' => $this->cpu($hay, $attrs),
-            'gpu' => $this->gpu($hay, $attrs),
+            'gpu' => $this->gpu($hay, $vendor, $attrs),
             'ram' => $this->ram($hay, $attrs),
             'motherboard' => $this->motherboard($hay, $vendor, $attrs),
             'psu' => $this->psu($hay, $vendor, $attrs),
@@ -74,37 +74,11 @@ class StoreAvitoCatalogAttrParser
         return $attrs;
     }
 
-    private function gpu(string $hay, array $attrs): array
+    private function gpu(string $hay, string $vendor, array $attrs): array
     {
-        if (preg_match('/\b(radeon|rx\s*\d)/iu', $hay)) {
-            $attrs['avito_brand'] = 'AMD';
-        } elseif (preg_match('/\b(arc\s*[ab]\d)/iu', $hay)) {
-            $attrs['avito_brand'] = 'Intel';
-        } else {
-            $attrs['avito_brand'] = 'NVIDIA';
-        }
-
-        $raw = null;
-        if (preg_match('/rtx\s*(\d{4})\s*(ti)?\s*(super)?/iu', $hay, $m)) {
-            $raw = 'GeForce RTX '.$m[1];
-            if (! empty($m[2])) {
-                $raw .= ' Ti';
-            }
-            if (! empty($m[3])) {
-                $raw .= ' Super';
-            }
-        } elseif (preg_match('/gtx\s*(\d{3,4}\s*(?:super|ti)?)/iu', $hay, $m)) {
-            $raw = 'GeForce GTX '.trim(preg_replace('/\s+/', ' ', $m[1]));
-        } elseif (preg_match('/rx\s*(\d{3,4}\s*(?:xt|gre|xtx)?)/iu', $hay, $m)) {
-            $raw = 'Radeon RX '.strtoupper(trim(preg_replace('/\s+/', ' ', $m[1])));
-        } elseif (preg_match('/arc\s*([ab]\d{3})/iu', $hay, $m)) {
-            $raw = 'Arc '.strtoupper($m[1]);
-        }
-
-        $attrs['avito_model'] = AvitoPcXmlDict::closest(AvitoPcXmlDict::videocardModels(), $raw);
-        $attrs['avito_code'] = $attrs['avito_model']
-            ? preg_replace('/^(GeForce|Radeon)\s+/u', '', $attrs['avito_model'])
-            : null;
+        $attrs['avito_brand'] = $this->gpuMaker($hay, $vendor);
+        $attrs['avito_model'] = $this->cleanName($hay);
+        $attrs['avito_code'] = $this->gpuChip($hay);
 
         return $attrs;
     }
@@ -121,14 +95,15 @@ class StoreAvitoCatalogAttrParser
 
     private function motherboard(string $hay, string $vendor, array $attrs): array
     {
+        $brandHay = $vendor !== '' ? $vendor : $this->firstWord($hay);
         $attrs['avito_brand'] = AvitoPcXmlDict::closest(
             AvitoPcXmlDict::motherboardBrands(),
-            $vendor !== '' ? $vendor : $this->firstWord($hay),
-            'Другой',
+            $brandHay,
+            $brandHay !== '' ? $brandHay : 'Другой',
         );
         $chipsets = StoreComponentSpecs::dictionaries()['mb_chipset'];
         $chipset = AvitoPcXmlDict::closest($chipsets, $hay);
-        $attrs['avito_model'] = $chipset ?: mb_substr($hay, 0, 80);
+        $attrs['avito_model'] = $this->cleanName($hay);
         $attrs['avito_code'] = $chipset;
 
         if (! $attrs['socket'] && $chipset) {
@@ -157,6 +132,61 @@ class StoreAvitoCatalogAttrParser
         $attrs['avito_code'] = $attrs['avito_model'];
 
         return $attrs;
+    }
+
+    private function gpuMaker(string $hay, string $vendor): ?string
+    {
+        $makers = AvitoPcXmlDict::videocardBrands();
+        usort($makers, fn ($a, $b) => mb_strlen((string) $b) <=> mb_strlen((string) $a));
+        $blob = mb_strtolower($vendor.' '.$hay);
+        foreach ($makers as $maker) {
+            $maker = (string) $maker;
+            if (in_array(mb_strtolower($maker), ['nvidia', 'amd', 'intel'], true)) {
+                continue;
+            }
+            if ($maker !== '' && str_contains($blob, mb_strtolower($maker))) {
+                return $maker;
+            }
+        }
+        if ($vendor !== '') {
+            return $vendor;
+        }
+
+        return $this->firstWord($this->cleanName($hay)) ?: null;
+    }
+
+    private function gpuChip(string $hay): ?string
+    {
+        if (preg_match('/rtx\s*(\d{4})\s*(ti)?\s*(super)?/iu', $hay, $m)) {
+            $raw = 'RTX '.$m[1];
+            if (! empty($m[2])) {
+                $raw .= ' Ti';
+            }
+            if (! empty($m[3])) {
+                $raw .= ' Super';
+            }
+
+            return $raw;
+        }
+        if (preg_match('/gtx\s*(\d{3,4}\s*(?:super|ti)?)/iu', $hay, $m)) {
+            return 'GTX '.trim(preg_replace('/\s+/', ' ', $m[1]));
+        }
+        if (preg_match('/rx\s*(\d{3,4}\s*(?:xt|gre|xtx)?)/iu', $hay, $m)) {
+            return 'RX '.strtoupper(trim(preg_replace('/\s+/', ' ', $m[1])));
+        }
+        if (preg_match('/arc\s*([ab]\d{3})/iu', $hay, $m)) {
+            return 'Arc '.strtoupper($m[1]);
+        }
+
+        return null;
+    }
+
+    private function cleanName(string $hay): string
+    {
+        $hay = trim($hay);
+        $hay = preg_replace('/^(видеокарта|процессор|материнская\s+плата|оперативная\s+память)\s+/iu', '', $hay) ?? $hay;
+
+        return mb_substr(trim($hay), 0, 180);
     }
 
     private function processorModel(string $hay): ?string

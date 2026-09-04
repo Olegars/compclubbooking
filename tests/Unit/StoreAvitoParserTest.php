@@ -36,13 +36,22 @@ class StoreAvitoParserTest extends TestCase
         $this->assertSame('AM5', $a['socket']);
     }
 
-    public function test_parses_rtx_gpu(): void
+    public function test_parses_card_maker_gpu_not_nvidia_chip(): void
+    {
+        $a = $this->parser->parse('gpu', 'ZOTAC GAMING GEFORCE RTX 4060 Ti 16GB AMP', '', 'ZOTAC');
+
+        $this->assertSame('ZOTAC', $a['avito_brand']);
+        $this->assertStringContainsString('4060 Ti', $a['avito_model']);
+        $this->assertStringContainsString('AMP', $a['avito_model']);
+        $this->assertSame('RTX 4060 Ti', $a['avito_code']);
+    }
+
+    public function test_parses_palit_gpu_brand(): void
     {
         $a = $this->parser->parse('gpu', 'Palit GeForce RTX 4060 Dual 8GB', '', 'Palit');
 
-        $this->assertSame('NVIDIA', $a['avito_brand']);
-        $this->assertSame('GeForce RTX 4060', $a['avito_model']);
-        $this->assertSame('RTX 4060', $a['avito_code']);
+        $this->assertSame('Palit', $a['avito_brand']);
+        $this->assertStringContainsString('RTX 4060', $a['avito_model']);
     }
 
     public function test_parses_ram_kit_and_ddr5(): void
@@ -54,11 +63,22 @@ class StoreAvitoParserTest extends TestCase
         $this->assertSame('32 ГБ', $a['avito_code']);
     }
 
+    public function test_parses_full_motherboard_name_not_chipset(): void
+    {
+        $a = $this->parser->parse('motherboard', 'GIGABYTE B760M GAMING X DDR4 (rev. 1.0)', '', 'GIGABYTE');
+
+        $this->assertSame('Gigabyte', $a['avito_brand']);
+        $this->assertStringContainsString('B760M GAMING X DDR4', $a['avito_model']);
+        $this->assertSame('LGA1700', $a['socket']);
+        $this->assertSame('DDR4', $a['ddr']);
+    }
+
     public function test_parses_b650_board(): void
     {
         $a = $this->parser->parse('motherboard', 'GIGABYTE B650 AORUS ELITE AX', '', 'Gigabyte');
 
         $this->assertSame('Gigabyte', $a['avito_brand']);
+        $this->assertStringContainsString('B650', $a['avito_model']);
         $this->assertSame('AM5', $a['socket']);
         $this->assertSame('DDR5', $a['ddr']);
     }

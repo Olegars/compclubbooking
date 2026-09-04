@@ -14,6 +14,7 @@ type Ad = {
     price: number
     status: string
     components: { type: string, name: string, sale?: number }[]
+    xml?: Record<string, string>
     generated_at?: string
 }
 
@@ -45,11 +46,25 @@ const props = defineProps<{
     messages: Message[]
     canManage: boolean
     unread: number
+    filters?: { q?: string | null }
 }>()
 
 const tab = computed({
     get: () => props.tab || 'ads',
-    set: (v: string) => router.get('/admin/store/avito', { tab: v, chat: props.active_chat?.chat_id }, { preserveState: true, replace: true }),
+    set: (v: string) => router.get('/admin/store/avito', {
+        tab: v,
+        chat: props.active_chat?.chat_id,
+        ...(q.value ? { q: q.value } : {}),
+    }, { preserveState: true, replace: true }),
+})
+
+const q = computed({
+    get: () => props.filters?.q || '',
+    set: (v: string) => router.get('/admin/store/avito', {
+        tab: props.tab || 'ads',
+        chat: props.active_chat?.chat_id,
+        ...(v.trim() ? { q: v.trim() } : {}),
+    }, { preserveState: true, replace: true }),
 })
 
 const settingsForm = useForm({
@@ -81,14 +96,16 @@ const reply = useForm({
 
 const openAd = ref<Ad | null>(null)
 const generating = computed(() => props.settings?.last_generate_result?.status === 'running')
+const dictSyncing = computed(() => props.settings?.last_dict_sync_result?.status === 'running')
+const dictStats = computed(() => props.settings?.dict_stats || {})
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
-watch(generating, (on) => {
+watch([generating, dictSyncing], ([gen, dict]) => {
     if (pollTimer) {
         clearInterval(pollTimer)
         pollTimer = null
     }
-    if (!on) return
+    if (!gen && !dict) return
     pollTimer = setInterval(() => {
         router.reload({ only: ['ads', 'settings'], preserveScroll: true })
     }, 5000)
@@ -104,13 +121,17 @@ const statusLabel: Record<string, string> = {
 }
 
 const openChat = (chat: Chat) => {
-    router.get('/admin/store/avito', { tab: 'chats', chat: chat.chat_id, mark_read: 1 }, { preserveState: true })
+    router.get('/admin/store/avito', { tab: 'chats', chat: chat.chat_id, mark_read: 1, ...(q.value ? { q: q.value } : {}) }, { preserveState: true })
 }
 
 const saveSettings = () => settingsForm.put('/admin/store/avito/settings')
 
 const generate = () => {
     router.post('/admin/store/avito/generate', { count: settingsForm.ads_per_hour }, { preserveScroll: true })
+}
+
+const syncDicts = () => {
+    router.post('/admin/store/avito/dicts', {}, { preserveScroll: true })
 }
 
 const setStatus = (ad: Ad, status: string) => {
@@ -160,7 +181,9 @@ const messageText = (m: Message) => m.content?.text || ''
                         Один аккаунт · только системные блоки · XML автозагрузка
                     </p>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex gap-2 items-center">
+                    <input v-model="q" placeholder="ID сборки…"
+                           class="bg-black border border-white/10 rounded-xl px-4 py-3 text-sm w-44 uppercase tracking-widest" />
                     <button class="px-4 py-3 rounded-xl text-[10px] uppercase font-black"
                             :class="tab === 'ads' ? 'bg-amber-500 text-black' : 'border border-white/10 text-white/50'"
                             @click="tab = 'ads'">Объявления</button>
@@ -204,7 +227,7 @@ const messageText = (m: Message) => m.content?.text || ''
                             </button>
                         </div>
                     </div>
-                    <div v-if="!ads.length" class="text-white/30 text-sm py-10 text-center">Объявлений нет — включите генерацию в настройках.</div>
+                    <div v-if="!ads.length" class="text-white/30 text-sm py-10 text-center">{{ q ? 'Нет объявлений с таким ID' : 'Объявлений нет — включите генерацию в настройках.' }}</div>
                 </div>
             </div>
 
@@ -220,7 +243,7 @@ const messageText = (m: Message) => m.content?.text || ''
                         </div>
                         <div class="text-[10px] text-white/30 truncate">{{ c.config_id || c.ad_title || c.chat_id }}</div>
                     </div>
-                    <div v-if="!chats.length" class="p-6 text-white/30 text-sm">Чатов пока нет.</div>
+                    <div v-if="!chats.length" class="p-6 text-white/30 text-sm">{{ q ? 'Нет чатов с таким ID' : 'Чатов пока нет.' }}</div>
                 </div>
                 <div class="border border-white/5 rounded-2xl bg-[#080808] flex flex-col min-h-[520px]">
                     <div v-if="active_chat" class="px-5 py-4 border-b border-white/5 flex justify-between gap-3">
@@ -292,7 +315,24 @@ const messageText = (m: Message) => m.content?.text || ''
                     <div class="font-black uppercase italic">XML-фид</div>
                     <div class="text-xs text-white/50 break-all">{{ feed_url }}</div>
                     <button type="button" class="px-4 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400" @click="copyFeed">Копировать URL</button>
-                    <p class="text-[11px] text-white/35 leading-relaxed">В кабинете Avito → Автозагрузка укажите эту ссылку. Без полей из XML объявление не разместить: процессор/видеокарта/ОЗУ подставляются из каталога и сверяются со словарём Avito (DeepSeek добивает то, что не разобрала эвристика).</p>
+                    <p class="text-[11px] text-white/35 leading-relaxed">В кабинете Avito → Автозагрузка укажите эту ссылку. Характеристики (процессор, видеокарта, плата, ОЗУ) должны совпадать со справочником Avito — не с названиями чипов NVIDIA/GeForce.</p>
+                </div>
+
+                <div class="border border-white/5 rounded-2xl p-6 space-y-4">
+                    <div class="font-black uppercase italic">Справочник Avito</div>
+                    <p class="text-[11px] text-white/35 leading-relaxed">Официальные значения тегов XML (BrandProcessor, BrandVideocard = ZOTAC/Palit, полное имя платы). Без синка автозагрузка отклонит объявления.</p>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px] text-white/60">
+                        <div>CPU brand {{ dictStats.BrandProcessor || 0 }}</div>
+                        <div>CPU code {{ dictStats.CodeProcessor || 0 }}</div>
+                        <div>GPU brand {{ dictStats.BrandVideocard || 0 }}</div>
+                        <div>GPU model {{ dictStats.ModelVideocard || 0 }}</div>
+                        <div>MB brand {{ dictStats.BrandMotherboard || 0 }}</div>
+                        <div>MB model {{ dictStats.ModelMotherboard || 0 }}</div>
+                        <div>ОЗУ {{ dictStats.RamSize || 0 }}</div>
+                    </div>
+                    <div class="text-[11px] text-white/40" v-if="settings.last_dict_sync_at">Последний синк: {{ settings.last_dict_sync_at }}</div>
+                    <div class="text-[11px] text-red-400" v-if="settings.last_dict_sync_result?.error">{{ settings.last_dict_sync_result.error }}</div>
+                    <button type="button" class="px-4 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400 disabled:opacity-40" :disabled="dictSyncing" @click="syncDicts">{{ dictSyncing ? 'Качаю справочник…' : 'Скачать XML-справочник Avito' }}</button>
                 </div>
 
                 <div class="border border-white/5 rounded-2xl p-6 space-y-4">
@@ -338,6 +378,12 @@ const messageText = (m: Message) => m.content?.text || ''
                 <ul class="text-sm text-white/50 space-y-1">
                     <li v-for="(c, i) in openAd.components" :key="i">{{ c.type }} — {{ c.name }}</li>
                 </ul>
+                <dl v-if="openAd.xml" class="text-sm text-white/60 space-y-1 border-t border-white/5 pt-4">
+                    <div v-for="(v, k) in openAd.xml" :key="k" class="flex gap-2">
+                        <dt class="text-white/35 w-44 shrink-0">{{ k }}</dt>
+                        <dd>{{ v }}</dd>
+                    </div>
+                </dl>
                 <button class="px-4 py-2 text-[10px] uppercase font-black text-white/40" @click="openAd = null">Закрыть</button>
             </div>
         </div>

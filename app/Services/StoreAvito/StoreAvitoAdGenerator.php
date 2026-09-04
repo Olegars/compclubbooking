@@ -13,6 +13,8 @@ class StoreAvitoAdGenerator
         private readonly StoreAvitoBuildComposer $composer,
         private readonly StoreAvitoPricer $pricer,
         private readonly StoreAvitoCopywriter $copywriter,
+        private readonly StoreAvitoDictMatcher $matcher,
+        private readonly StoreAvitoDictSyncService $dicts,
     ) {}
 
     /**
@@ -52,10 +54,18 @@ class StoreAvitoAdGenerator
         ])->save();
 
         if ($enrich) {
+            if (filled($settings->client_id) && filled($settings->client_secret) && ! $this->matcher->hasCatalog('ModelVideocard')) {
+                try {
+                    $this->dicts->sync($settings);
+                    $settings->refresh();
+                } catch (\Throwable $e) {
+                    $error = $error ?: $e->getMessage();
+                }
+            }
             try {
                 $enriched = $this->attrs->enrichPool();
             } catch (\Throwable $e) {
-                $error = $e->getMessage();
+                $error = $error ?: $e->getMessage();
             }
         }
 

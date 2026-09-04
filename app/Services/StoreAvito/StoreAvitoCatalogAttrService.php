@@ -18,6 +18,7 @@ class StoreAvitoCatalogAttrService
     public function __construct(
         private readonly StoreAvitoCatalogAttrParser $parser,
         private readonly StoreSupplierCatalogSearchService $search,
+        private readonly StoreAvitoDictMatcher $matcher,
     ) {}
 
     /**
@@ -154,12 +155,10 @@ class StoreAvitoCatalogAttrService
         }
 
         $dictHint = match ($type) {
-            'cpu' => 'avito_brand из '.implode('/', AvitoPcXmlDict::processorBrands())
-                .'; avito_model из '.implode(', ', AvitoPcXmlDict::processorModels())
-                .'; avito_code — код вроде 12400F/7600X.',
-            'gpu' => 'avito_brand NVIDIA|AMD|Intel; avito_model строго из списка GeForce RTX … / Radeon RX …',
+            'cpu' => 'avito_brand Intel|AMD; avito_model Core i5|Ryzen 7 и т.п.; avito_code — 12400F/7600X.',
+            'gpu' => 'avito_brand — производитель карты (ZOTAC, Palit, MSI, ASUS, Gigabyte), НЕ NVIDIA/AMD. avito_model — полное имя из названия, как ZOTAC GAMING GEFORCE RTX 4060 Ti 16GB AMP.',
             'ram' => 'ram_gb число, ddr DDR4|DDR5, avito_code вида «32 ГБ».',
-            'motherboard' => 'socket AM4|AM5|LGA1700|LGA1851, ddr DDR4|DDR5, avito_brand ASUS|MSI|Gigabyte|ASRock.',
+            'motherboard' => 'socket AM4|AM5|LGA1700|LGA1851, ddr DDR4|DDR5, avito_brand ASUS|MSI|Gigabyte|ASRock, avito_model — полное имя платы.',
             default => 'заполни бренд/модель по названию.',
         };
 
@@ -250,16 +249,28 @@ PROMPT;
     private function clamp(string $type, array $parsed): array
     {
         if ($type === 'cpu') {
-            $parsed['avito_brand'] = AvitoPcXmlDict::closest(AvitoPcXmlDict::processorBrands(), $parsed['avito_brand'] ?? null);
-            $parsed['avito_model'] = AvitoPcXmlDict::closest(AvitoPcXmlDict::processorModels(), $parsed['avito_model'] ?? null);
-            $parsed['avito_code'] = AvitoPcXmlDict::closest(AvitoPcXmlDict::processorCodes(), $parsed['avito_code'] ?? null);
+            $parsed['avito_brand'] = $this->matcher->match('BrandProcessor', (string) ($parsed['avito_brand'] ?? ''))
+                ?: $parsed['avito_brand'];
+            $parsed['avito_model'] = $this->matcher->match('ModelProcessor', (string) ($parsed['avito_model'] ?? ''), $parsed['avito_brand'] ?? null)
+                ?: $parsed['avito_model'];
+            $parsed['avito_code'] = $this->matcher->match('CodeProcessor', (string) ($parsed['avito_code'] ?? ''), $parsed['avito_model'] ?? null)
+                ?: $parsed['avito_code'];
         }
         if ($type === 'gpu') {
-            $parsed['avito_brand'] = AvitoPcXmlDict::closest(AvitoPcXmlDict::videocardBrands(), $parsed['avito_brand'] ?? null, 'NVIDIA');
-            $parsed['avito_model'] = AvitoPcXmlDict::closest(AvitoPcXmlDict::videocardModels(), $parsed['avito_model'] ?? null);
+            $hay = trim(($parsed['avito_brand'] ?? '').' '.($parsed['avito_model'] ?? ''));
+            $parsed['avito_brand'] = $this->matcher->match('BrandVideocard', $hay) ?: $parsed['avito_brand'];
+            $parsed['avito_model'] = $this->matcher->match('ModelVideocard', (string) ($parsed['avito_model'] ?? ''), $parsed['avito_brand'] ?? null)
+                ?: $parsed['avito_model'];
+            if (! empty($parsed['avito_code'])) {
+                $parsed['avito_code'] = $this->matcher->match('CodeVideocard', (string) $parsed['avito_code'], $parsed['avito_model'] ?? null)
+                    ?: $parsed['avito_code'];
+            }
         }
         if ($type === 'motherboard') {
-            $parsed['avito_brand'] = AvitoPcXmlDict::closest(AvitoPcXmlDict::motherboardBrands(), $parsed['avito_brand'] ?? null, 'Другой');
+            $parsed['avito_brand'] = $this->matcher->match('BrandMotherboard', (string) ($parsed['avito_brand'] ?? ''))
+                ?: $parsed['avito_brand'];
+            $parsed['avito_model'] = $this->matcher->match('ModelMotherboard', (string) ($parsed['avito_model'] ?? ''), $parsed['avito_brand'] ?? null)
+                ?: $parsed['avito_model'];
         }
         if ($type === 'ram' && ! empty($parsed['ram_gb'])) {
             $parsed['avito_code'] = AvitoPcXmlDict::ramSizeForGb((int) $parsed['ram_gb']);

@@ -11,6 +11,9 @@ use Illuminate\Support\Collection;
 
 class StoreAvitoBuildComposer
 {
+    public function __construct(
+        private readonly StoreAvitoDictMatcher $matcher,
+    ) {}
     /**
      * @return list<array{
      *   fingerprint: string,
@@ -110,6 +113,7 @@ class StoreAvitoBuildComposer
                 'avito_brand' => $attr->avito_brand,
                 'avito_model' => $attr->avito_model,
                 'avito_code' => $attr->avito_code,
+                'vendor' => (string) ($p->vendor ?? ''),
                 'has_image' => (bool) $p->has_image,
             ];
         })->filter()->values();
@@ -160,23 +164,60 @@ class StoreAvitoBuildComposer
     private function xmlFrom(StoreAvitoSetting $settings, array $cpu, array $board, array $ram, ?array $gpu): array
     {
         $ramGb = (int) ($ram['ram_gb'] ?? 16);
+        $cpuHay = $this->hay($cpu);
+        $boardHay = $this->hay($board);
+        $cpuBrand = $this->matcher->match('BrandProcessor', $cpuHay) ?: (string) ($cpu['avito_brand'] ?: 'Intel');
+        $cpuModel = $this->matcher->match('ModelProcessor', $cpuHay, $cpuBrand) ?: (string) ($cpu['avito_model'] ?: 'Core i5');
+        $cpuCode = $this->matcher->match('CodeProcessor', $cpuHay, $cpuModel) ?: (string) ($cpu['avito_code'] ?: '');
 
-        return [
+        $mbBrand = $this->matcher->match('BrandMotherboard', $boardHay) ?: (string) ($board['avito_brand'] ?: 'Другой');
+        $mbModel = $this->matcher->match('ModelMotherboard', $boardHay, $mbBrand)
+            ?: (string) ($board['avito_model'] ?: $board['name']);
+
+        $xml = [
             'Category' => AvitoPcXmlDict::CATEGORY,
-            'GoodsSubType' => AvitoPcXmlDict::GOODS_SUB_TYPE,
-            'AdType' => AvitoPcXmlDict::AD_TYPE,
-            'Condition' => AvitoPcXmlDict::CONDITION,
-            'Brand' => AvitoPcXmlDict::BRAND,
-            'Type' => AvitoPcXmlDict::closest(AvitoPcXmlDict::pcTypes(), $settings->pc_type, 'Игровой') ?: 'Игровой',
-            'BrandProcessor' => (string) ($cpu['avito_brand'] ?: 'Intel'),
-            'ModelProcessor' => (string) ($cpu['avito_model'] ?: 'Core i5'),
-            'CodeProcessor' => (string) ($cpu['avito_code'] ?: '12400F'),
-            'BrandMotherboard' => (string) ($board['avito_brand'] ?: 'Другой'),
-            'ModelMotherboard' => (string) ($board['avito_model'] ?: $board['name']),
-            'BrandVideocard' => (string) ($gpu['avito_brand'] ?? 'NVIDIA'),
-            'ModelVideocard' => (string) ($gpu['avito_model'] ?? 'GeForce RTX 4060'),
-            'CodeVideocard' => (string) ($gpu['avito_code'] ?? 'RTX 4060'),
-            'RamSize' => AvitoPcXmlDict::ramSizeForGb($ramGb),
+            'GoodsSubType' => $this->matcher->match('GoodsSubType', AvitoPcXmlDict::GOODS_SUB_TYPE) ?: AvitoPcXmlDict::GOODS_SUB_TYPE,
+            'AdType' => $this->matcher->match('AdType', AvitoPcXmlDict::AD_TYPE) ?: AvitoPcXmlDict::AD_TYPE,
+            'Condition' => $this->matcher->match('Condition', AvitoPcXmlDict::CONDITION) ?: AvitoPcXmlDict::CONDITION,
+            'Brand' => $this->matcher->match('Brand', AvitoPcXmlDict::BRAND) ?: AvitoPcXmlDict::BRAND,
+            'Type' => $this->matcher->match('Type', (string) $settings->pc_type) ?: (AvitoPcXmlDict::closest(AvitoPcXmlDict::pcTypes(), $settings->pc_type, 'Игровой') ?: 'Игровой'),
+            'BrandProcessor' => $cpuBrand,
+            'ModelProcessor' => $cpuModel,
+            'CodeProcessor' => $cpuCode,
+            'BrandMotherboard' => $mbBrand,
+            'ModelMotherboard' => $mbModel,
+            'RamSize' => $this->matcher->match('RamSize', $ramGb.' ГБ') ?: AvitoPcXmlDict::ramSizeForGb($ramGb),
         ];
+
+        if ($gpu) {
+            $gpuHay = $this->hay($gpu);
+            $gpuBrand = $this->matcher->match('BrandVideocard', $gpuHay) ?: (string) ($gpu['avito_brand'] ?? '');
+            $gpuModel = $this->matcher->match('ModelVideocard', $gpuHay, $gpuBrand)
+                ?: (string) ($gpu['avito_model'] ?? $gpu['name'] ?? '');
+            $gpuCode = $this->matcher->match('CodeVideocard', $gpuHay, $gpuModel);
+            if ($gpuBrand !== '') {
+                $xml['BrandVideocard'] = $gpuBrand;
+            }
+            if ($gpuModel !== '') {
+                $xml['ModelVideocard'] = $gpuModel;
+            }
+            if ($gpuCode) {
+                $xml['CodeVideocard'] = $gpuCode;
+            }
+        }
+
+        return array_filter($xml, fn ($v) => $v !== null && $v !== '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $part
+     */
+    private function hay(array $part): string
+    {
+        return trim(implode(' ', array_filter([
+            $part['name'] ?? null,
+            $part['part'] ?? null,
+            $part['vendor'] ?? null,
+        ], fn ($v) => is_string($v) && trim($v) !== '')));
     }
 }
