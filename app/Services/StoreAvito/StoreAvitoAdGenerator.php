@@ -4,6 +4,7 @@ namespace App\Services\StoreAvito;
 
 use App\Models\StoreAvitoAd;
 use App\Models\StoreAvitoSetting;
+use Illuminate\Support\Facades\Cache;
 
 class StoreAvitoAdGenerator
 {
@@ -19,10 +20,36 @@ class StoreAvitoAdGenerator
      */
     public function generate(?int $count = null, bool $enrich = true): array
     {
+        @set_time_limit(0);
+        $lock = Cache::lock('store-avito-generate', 2400);
+        if (! $lock->get()) {
+            return ['created' => 0, 'skipped' => 0, 'enriched' => 0, 'error' => 'already running'];
+        }
+
+        try {
+            return $this->generateLocked($count, $enrich);
+        } finally {
+            optional($lock)->release();
+        }
+    }
+
+    /**
+     * @return array{created:int, skipped:int, enriched:int, error:?string}
+     */
+    private function generateLocked(?int $count, bool $enrich): array
+    {
         $settings = StoreAvitoSetting::current();
         $count ??= max(1, (int) $settings->ads_per_hour);
         $error = null;
         $enriched = 0;
+        $settings->forceFill([
+            'last_error' => null,
+            'last_generate_result' => [
+                'status' => 'running',
+                'count' => $count,
+                'started_at' => now()->toIso8601String(),
+            ],
+        ])->save();
 
         if ($enrich) {
             try {
@@ -42,6 +69,7 @@ class StoreAvitoAdGenerator
         $this->trimActive((int) $settings->keep_active);
 
         $result = [
+            'status' => $error ? 'error' : 'ok',
             'created' => $created,
             'skipped' => max(0, $count - $created),
             'enriched' => $enriched,

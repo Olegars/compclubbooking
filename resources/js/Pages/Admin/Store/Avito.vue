@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { Head, router, useForm } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { useClubName } from '@/Composables/useClubName'
@@ -80,6 +80,22 @@ const reply = useForm({
 })
 
 const openAd = ref<Ad | null>(null)
+const generating = computed(() => props.settings?.last_generate_result?.status === 'running')
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
+watch(generating, (on) => {
+    if (pollTimer) {
+        clearInterval(pollTimer)
+        pollTimer = null
+    }
+    if (!on) return
+    pollTimer = setInterval(() => {
+        router.reload({ only: ['ads', 'settings'], preserveScroll: true })
+    }, 5000)
+}, { immediate: true })
+onUnmounted(() => {
+    if (pollTimer) clearInterval(pollTimer)
+})
 
 const statusLabel: Record<string, string> = {
     active: 'в фиде',
@@ -164,12 +180,14 @@ const messageText = (m: Message) => m.content?.text || ''
                 <div class="flex flex-wrap gap-3 items-center justify-between">
                     <div class="text-[10px] uppercase tracking-widest text-white/30">
                         В фиде: {{ ads.filter(a => a.status === 'active').length }} · всего {{ ads.length }}
-                        <span v-if="settings.last_generate_result" class="ml-3">
+                        <span v-if="generating" class="ml-3 text-amber-400">генерация… DeepSeek пишет тексты, это 1–3 мин</span>
+                        <span v-else-if="settings.last_generate_result?.created != null" class="ml-3">
                             последняя пачка: {{ settings.last_generate_result.created }} шт
                         </span>
                     </div>
-                    <button v-if="canManage" class="px-6 py-3 bg-amber-500 text-black text-[10px] uppercase font-black rounded-2xl"
-                            @click="generate">Сгенерировать пачку</button>
+                    <button v-if="canManage" class="px-6 py-3 bg-amber-500 text-black text-[10px] uppercase font-black rounded-2xl disabled:opacity-40"
+                            :disabled="generating"
+                            @click="generate">{{ generating ? 'Идёт генерация' : 'Сгенерировать пачку' }}</button>
                 </div>
                 <div class="space-y-2">
                     <div v-for="ad in ads" :key="ad.id"

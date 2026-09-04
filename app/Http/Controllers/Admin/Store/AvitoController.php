@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers\Admin\Store;
 
-use App\Jobs\GenerateStoreAvitoAdsJob;
 use App\Models\StoreAvitoAd;
 use App\Models\StoreAvitoChat;
 use App\Models\StoreAvitoMessage;
 use App\Models\StoreAvitoSetting;
+use App\Services\StoreAvito\StoreAvitoGenerateLauncher;
 use App\Services\StoreAvito\StoreAvitoMessengerService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
@@ -94,14 +94,15 @@ class AvitoController extends StoreController
         return back()->with('success', 'Настройки Avito сохранены.');
     }
 
-    public function generate(Request $request)
+    public function generate(Request $request, StoreAvitoGenerateLauncher $launcher)
     {
         abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
 
         $count = (int) $request->input('count', StoreAvitoSetting::current()->ads_per_hour);
-        GenerateStoreAvitoAdsJob::dispatch(max(1, min(50, $count)), true);
+        $result = $launcher->launch(max(1, min(50, $count)), true);
+        $flash = $result['ok'] ? 'success' : 'error';
 
-        return back()->with('success', 'Генерация объявлений поставлена в очередь.');
+        return back()->with($flash, $result['message']);
     }
 
     public function updateAd(Request $request, StoreAvitoAd $storeAvitoAd)

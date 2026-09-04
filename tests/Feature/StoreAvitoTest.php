@@ -134,6 +134,25 @@ class StoreAvitoTest extends TestCase
         );
     }
 
+    public function test_generate_http_returns_immediately_without_building_ads(): void
+    {
+        $owner = Admin::create([
+            'name' => 'Owner',
+            'email' => 'owner-gen@avito.test',
+            'password' => 'password',
+            'role' => 'owner',
+            'club_id' => $this->club->id,
+        ]);
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/store/avito/generate', ['count' => 20])
+            ->assertRedirect();
+
+        $this->assertSame(0, StoreAvitoAd::query()->count());
+        $this->assertSame('running', StoreAvitoSetting::current()->last_generate_result['status'] ?? null);
+    }
+
     public function test_owner_opens_avito_admin_page(): void
     {
         $owner = Admin::create([

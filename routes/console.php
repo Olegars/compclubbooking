@@ -27,3 +27,20 @@ Schedule::command('store:generate-avito-ads --sync')
     ->timezone('Europe/Moscow')
     ->withoutOverlapping(50)
     ->appendOutputTo(storage_path('logs/avito-ads.log'));
+Schedule::command('store:generate-avito-ads --sync --force')
+    ->everyMinute()
+    ->timezone('Europe/Moscow')
+    ->withoutOverlapping(50)
+    ->when(function () {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('store_avito_settings')) {
+            return false;
+        }
+        $raw = \Illuminate\Support\Facades\DB::table('store_avito_settings')->orderBy('id')->value('last_generate_result');
+        $data = is_string($raw) ? json_decode($raw, true) : $raw;
+        if (! is_array($data)) {
+            return false;
+        }
+
+        return ($data['status'] ?? '') === 'running' && ! empty($data['queued']);
+    })
+    ->appendOutputTo(storage_path('logs/avito-ads.log'));
