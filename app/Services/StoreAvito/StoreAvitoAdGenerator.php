@@ -55,6 +55,12 @@ class StoreAvitoAdGenerator
 
         $this->mark($settings, 'copy', $count, $startedAt);
         $builds = $this->composer->compose($count, $settings);
+        if ($builds === []) {
+            $fail = implode(' ', $this->composer->lastFailures());
+            if ($fail !== '') {
+                $error = $error ? $error.'; '.$fail : $fail;
+            }
+        }
         $jobs = [];
         foreach ($builds as $build) {
             $configId = $this->newConfigId();

@@ -78,6 +78,11 @@ class StoreAvitoTest extends TestCase
         $ad = $ads->first();
         $this->assertMatchesRegularExpression('/^[A-Z]{3}\d{5}$/', $ad->config_id);
         $this->assertStringContainsString($ad->config_id, $ad->title);
+        foreach ($ad->components as $row) {
+            if (! empty($row['name'])) {
+                $this->assertStringContainsString((string) $row['name'], $ad->description);
+            }
+        }
         $this->assertStringContainsString(
             'Для получения текущего списка комплектующих для данной конфигурации (ID:'.$ad->config_id.') запросите в чате',
             $ad->description
@@ -346,6 +351,11 @@ class StoreAvitoTest extends TestCase
         $this->assertSame('12400F', $ad1->xml['CodeProcessor']);
         $this->assertSame('16 ГБ', $ad1->xml['RamSize']);
         $this->assertStringContainsString('4060 Ti', (string) ($ad1->xml['ModelVideocard'] ?? $ad1->xml['CodeVideocard'] ?? ''));
+        foreach ($ad1->components as $row) {
+            if (! empty($row['name'])) {
+                $this->assertStringContainsString((string) $row['name'], $ad1->description);
+            }
+        }
         $this->assertSame($a->id, StoreAvitoSetting::current()->last_config_id);
         $this->assertSame(1, $a->fresh()->use_count);
 
@@ -357,6 +367,25 @@ class StoreAvitoTest extends TestCase
         $this->assertStringContainsString('4070', (string) ($ad2->xml['ModelVideocard'] ?? $ad2->xml['CodeVideocard'] ?? ''));
         $this->assertStringNotContainsString('4060', (string) ($ad2->xml['ModelVideocard'] ?? ''));
         $this->assertSame($b->id, StoreAvitoSetting::current()->last_config_id);
+    }
+
+    public function test_disabled_configs_do_not_fall_back_to_random_catalog(): void
+    {
+        $this->seed(StoreAvitoPartsSeeder::class);
+        $this->seedPcPool();
+        $cfg = $this->makeConfig('cpu-12400f', 'ram-ddr5-16', 'ssd-m2-256', 'psu-600', 'gpu-rtx-4060-ti');
+        $cfg->forceFill(['enabled' => false])->save();
+        StoreAvitoSetting::current()->forceFill([
+            'address' => 'Москва, Тестовая 1',
+            'pc_type' => 'Игровой',
+        ])->save();
+
+        $result = app(StoreAvitoAdGenerator::class)->generate(2, enrich: false);
+
+        $this->assertSame(0, $result['created']);
+        $this->assertSame(0, StoreAvitoAd::query()->count());
+        $this->assertSame(0, $cfg->fresh()->use_count);
+        $this->assertStringContainsString('выключен', (string) $result['error']);
     }
 
     private function makeConfig(string $cpu, string $ram, string $ssd, string $psu, string $gpu = 'gpu-rtx-4060-ti'): StoreAvitoConfig

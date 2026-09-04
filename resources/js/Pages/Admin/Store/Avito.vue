@@ -337,6 +337,9 @@ const messageText = (m: Message) => m.content?.text || ''
                     <div class="text-[10px] uppercase tracking-widest text-white/30">
                         В фиде: {{ ads.filter(a => a.status === 'active').length }} · всего {{ ads.length }}
                         <span v-if="generating" class="ml-3 text-amber-400">{{ generateHint }}</span>
+                        <span v-else-if="settings.last_generate_result?.error" class="ml-3 text-red-400 normal-case tracking-normal">
+                            {{ settings.last_generate_result.error }}
+                        </span>
                         <span v-else-if="settings.last_generate_result?.created != null" class="ml-3">
                             последняя пачка: {{ settings.last_generate_result.created }} шт
                         </span>
@@ -424,14 +427,18 @@ const messageText = (m: Message) => m.content?.text || ''
                 <div class="space-y-2">
                     <div v-for="c in filteredConfigs" :key="c.id"
                          class="border rounded-2xl p-5 flex flex-wrap gap-4 justify-between items-start"
-                         :class="c.id === nextConfigId ? 'border-amber-500/50 bg-amber-500/5' : 'border-white/5 bg-[#080808]'">
+                         :class="[
+                             !c.enabled ? 'opacity-45' : '',
+                             c.id === nextConfigId ? 'border-amber-500/50 bg-amber-500/5' : 'border-white/5 bg-[#080808]',
+                         ]">
                         <div class="min-w-0 space-y-1">
                             <div class="text-[10px] uppercase tracking-widest text-amber-400">
                                 №{{ c.sort_order }}
                                 · {{ c.socket }}
                                 · {{ c.ddr }}
                                 · использована {{ c.use_count }}
-                                <span v-if="c.id === nextConfigId" class="ml-2 text-amber-300">следующая</span>
+                                <span v-if="!c.enabled" class="ml-2 text-white/40">выключена</span>
+                                <span v-else-if="c.id === nextConfigId" class="ml-2 text-amber-300">следующая</span>
                             </div>
                             <div class="font-black uppercase text-sm">{{ c.name }}</div>
                             <div class="text-[11px] text-white/40">{{ c.cpu }} · {{ c.gpu }} · {{ c.ram }} · {{ c.ssd }} · {{ c.psu }}</div>
@@ -439,7 +446,7 @@ const messageText = (m: Message) => m.content?.text || ''
                         <div v-if="canManage" class="flex gap-2 items-center shrink-0">
                             <button class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black"
                                     :class="c.enabled ? 'border-amber-500/30 text-amber-400' : 'border-white/10 text-white/30'"
-                                    @click="toggleConfig(c)">{{ c.enabled ? 'Вкл' : 'Выкл' }}</button>
+                                    @click="toggleConfig(c)">{{ c.enabled ? 'Отключить' : 'Включить' }}</button>
                             <button class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/40"
                                     @click="deleteConfig(c)">Удалить</button>
                         </div>

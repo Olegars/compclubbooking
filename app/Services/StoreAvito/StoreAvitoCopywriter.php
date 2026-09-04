@@ -29,16 +29,8 @@ class StoreAvitoCopywriter
                 $id = (string) $job['config_id'];
                 $phrase = StoreAvitoSetting::configPhrase($id);
                 $title = $this->clampTitle((string) ($got[$id]['title'] ?? ''), $id);
-                $description = trim((string) ($got[$id]['description'] ?? ''));
-                if ($title === '' || $description === '') {
-                    $out[$id] = $this->fallback($id, $job['components'], (int) $job['price'], $job['xml'], $phrase);
-
-                    continue;
-                }
-                if (! str_contains($description, $id)) {
-                    $description = rtrim($description)."\n\n".$phrase;
-                }
-                $out[$id] = ['title' => $title, 'description' => $description];
+                $lead = trim((string) ($got[$id]['lead'] ?? ''));
+                $out[$id] = $this->assemble($id, $title, $lead, $job['components'], (int) $job['price'], $job['xml'], $phrase);
             }
         }
 
@@ -63,7 +55,7 @@ class StoreAvitoCopywriter
 
     /**
      * @param  list<array{config_id:string, components:list<array<string,mixed>>, price:int, xml:array<string,string>}>  $chunk
-     * @return array<string, array{title?:string, description?:string}>
+     * @return array<string, array{title?:string, lead?:string}>
      */
     private function askMany(array $chunk): array
     {
@@ -72,41 +64,35 @@ class StoreAvitoCopywriter
         foreach ($chunk as $job) {
             $bom = [];
             foreach ($job['components'] as $row) {
-                $bom[] = [
-                    'type' => $row['type'] ?? '',
-                    'name' => $row['name'] ?? '',
-                ];
+                $bom[] = (string) ($row['name'] ?? '');
             }
             $id = (string) $job['config_id'];
             $payload[] = [
                 'config_id' => $id,
                 'price' => (int) $job['price'],
-                'xml' => $job['xml'],
+                'title_hints' => array_values(array_filter([
+                    $job['xml']['CodeProcessor'] ?? null,
+                    $job['xml']['CodeVideocard'] ?? null,
+                    $job['xml']['RamSize'] ?? null,
+                ])),
                 'bom' => $bom,
-                'phrase' => StoreAvitoSetting::configPhrase($id),
             ];
         }
 
         $system = <<<'PROMPT'
-Ты копирайтер магазина готовых игровых ПК для объявлений Avito.
-Верни ТОЛЬКО JSON-массив, по одному объекту на каждый config_id:
-[{"config_id":"...","title":"...","description":"..."}]
-Правила title:
-- максимум 50 символов;
-- обязательно включи config_id как есть;
-- без кавычек, без слова Avito, формулировки разные у разных объявлений.
-Правила description:
-- живой текст на русском;
-- перечисли комплектующие из BOM, не выдумывай детали;
-- укажи цену;
-- в конце ОБЯЗАТЕЛЬНО поле phrase из запроса;
-- без markdown, можно абзацы и эмодзи умеренно.
+Ты копирайтер магазина готовых игровых ПК для Avito.
+Верни ТОЛЬКО JSON-массив:
+[{"config_id":"...","title":"...","lead":"..."}]
+title: максимум 50 символов, обязательно config_id как есть, без кавычек, без слова Avito.
+Можно взять короткие намёки из title_hints (процессоры/видеокарты из BOM).
+lead: 1–2 предложения на русском, общее впечатление для геймера.
+ЗАПРЕЩЕНО в lead называть модели, бренды, объёмы RAM/SSD/VRAM, Intel, AMD, NVIDIA, Ryzen, Core, RTX — комплектующие ниже подставит программа.
 PROMPT;
 
         $body = [
             'model' => $settings->resolvedLlmModel(),
             'temperature' => 0.85,
-            'max_tokens' => min(8000, 700 * count($chunk)),
+            'max_tokens' => min(2000, 250 * count($chunk)),
             'messages' => [
                 ['role' => 'system', 'content' => $system],
                 ['role' => 'user', 'content' => json_encode($payload, JSON_UNESCAPED_UNICODE)],
@@ -150,18 +136,41 @@ PROMPT;
 
     /**
      * @param  list<array<string, mixed>>  $components
+     * @param  array<string, string>  $xml
      * @return array{title: string, description: string}
      */
     public function fallback(string $configId, array $components, int $price, array $xml, string $phrase): array
     {
-        $cpu = $xml['CodeProcessor'] ?? 'PC';
-        $gpu = $xml['CodeVideocard'] ?? '';
-        $ram = $xml['RamSize'] ?? '';
-        $title = $this->clampTitle(trim("ПК {$cpu} {$gpu} {$ram} {$configId}"), $configId);
+        return $this->assemble($configId, '', '', $components, $price, $xml, $phrase);
+    }
 
-        $lines = ["Игровой компьютер {$price} ₽", ''];
+    /**
+     * @param  list<array<string, mixed>>  $components
+     * @param  array<string, string>  $xml
+     * @return array{title: string, description: string}
+     */
+    private function assemble(string $configId, string $title, string $lead, array $components, int $price, array $xml, string $phrase): array
+    {
+        $title = $this->clampTitle($title, $configId);
+        if ($title === $configId || trim($title) === '') {
+            $cpu = $xml['CodeProcessor'] ?? 'PC';
+            $gpu = $xml['CodeVideocard'] ?? '';
+            $ram = $xml['RamSize'] ?? '';
+            $title = $this->clampTitle(trim("ПК {$cpu} {$gpu} {$ram} {$configId}"), $configId);
+        }
+
+        $lines = [];
+        if ($lead !== '') {
+            $lines[] = $lead;
+            $lines[] = '';
+        }
+        $lines[] = 'Цена '.$price.' ₽. Комплектация:';
+        $lines[] = '';
         foreach ($components as $row) {
-            $lines[] = '• '.($row['name'] ?? '');
+            $name = trim((string) ($row['name'] ?? ''));
+            if ($name !== '') {
+                $lines[] = '• '.$name;
+            }
         }
         $lines[] = '';
         $lines[] = $phrase;
@@ -176,6 +185,9 @@ PROMPT;
     {
         $title = trim(preg_replace('/\s+/u', ' ', $title) ?? $title);
         $title = str_replace(['«', '»', '"'], '', $title);
+        if ($title === '') {
+            return $configId;
+        }
         if (! str_contains($title, $configId)) {
             $title = trim(mb_substr($title, 0, 50 - mb_strlen($configId) - 1)).' '.$configId;
         }

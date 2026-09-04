@@ -12,9 +12,20 @@ use Illuminate\Support\Collection;
 
 class StoreAvitoBuildComposer
 {
+    /** @var list<string> */
+    private array $lastFailures = [];
+
     public function __construct(
         private readonly StoreAvitoDictMatcher $matcher,
     ) {}
+
+    /**
+     * @return list<string>
+     */
+    public function lastFailures(): array
+    {
+        return $this->lastFailures;
+    }
     /**
      * @return list<array{
      *   fingerprint: string,
@@ -25,7 +36,9 @@ class StoreAvitoBuildComposer
      */
     public function compose(int $count, ?StoreAvitoSetting $settings = null): array
     {
+        $this->lastFailures = [];
         $settings ??= StoreAvitoSetting::current();
+        $hasConfigs = StoreAvitoConfig::query()->exists();
         $templates = StoreAvitoConfig::query()
             ->enabled()
             ->with(['cpu', 'gpu', 'ram', 'ssd', 'psu'])
@@ -34,8 +47,19 @@ class StoreAvitoBuildComposer
             ->get()
             ->values();
 
+        if ($hasConfigs && $templates->isEmpty()) {
+            $this->lastFailures[] = 'Конфигурации есть, но все выключены. Включи нужные кнопкой «Включить» — случайные сборки из каталога больше не создаются.';
+
+            return [];
+        }
+
         if ($templates->isNotEmpty()) {
-            return $this->composeFromTemplates($templates, $count, $settings);
+            $out = $this->composeFromTemplates($templates, $count, $settings);
+            if ($out === [] && $this->lastFailures === []) {
+                $this->lastFailures[] = 'Не удалось подобрать живые SKU из каталога под включённые конфигурации.';
+            }
+
+            return $out;
         }
 
         return $this->composeRandom($count, $settings);
@@ -50,6 +74,8 @@ class StoreAvitoBuildComposer
         $used = array_fill_keys(StoreAvitoAd::query()->pluck('fingerprint')->all(), true);
         $pools = $this->pools();
         if ($pools['cpu']->isEmpty() || $pools['motherboard']->isEmpty() || $pools['ram']->isEmpty() || $pools['ssd']->isEmpty()) {
+            $this->lastFailures[] = 'В каталоге нет размеченных CPU/плат/ОЗУ/SSD в наличии — не из чего собрать шаблон.';
+
             return [];
         }
 
@@ -92,6 +118,8 @@ class StoreAvitoBuildComposer
             $settings->forceFill(['last_config_id' => $lastUsed])->save();
         }
 
+        $this->lastFailures = array_values(array_unique($this->lastFailures));
+
         return $out;
     }
 
@@ -107,10 +135,30 @@ class StoreAvitoBuildComposer
         $ssds = $this->matchSsd($pools['ssd'], $tpl);
         $psus = $this->matchPsu($pools['psu'], $tpl);
         $gpus = $this->matchGpu($pools['gpu'], $tpl);
-        if ($cpus->isEmpty() || $rams->isEmpty() || $ssds->isEmpty()) {
+        $label = '№'.$tpl->sort_order;
+        if ($cpus->isEmpty()) {
+            $this->lastFailures[] = $label.': в каталоге нет процессора '.($tpl->cpu?->avito_code ?: $tpl->cpu?->label ?: 'из шаблона');
+
+            return null;
+        }
+        if ($rams->isEmpty()) {
+            $this->lastFailures[] = $label.': в каталоге нет ОЗУ '.($tpl->ram?->label ?: '');
+
+            return null;
+        }
+        if ($ssds->isEmpty()) {
+            $this->lastFailures[] = $label.': в каталоге нет SSD '.($tpl->ssd?->label ?: '');
+
             return null;
         }
         if ($needGpu && $gpus->isEmpty()) {
+            $this->lastFailures[] = $label.': в каталоге нет видеокарты '.($tpl->gpu?->avito_code ?: $tpl->gpu?->label ?: '');
+
+            return null;
+        }
+        if ($psus->isEmpty() && (int) ($tpl->psu?->wattage ?? 0) > 0) {
+            $this->lastFailures[] = $label.': в каталоге нет БП ~'.(int) $tpl->psu->wattage.' Вт';
+
             return null;
         }
 
@@ -128,7 +176,7 @@ class StoreAvitoBuildComposer
                 continue;
             }
             $ssd = $ssds->random();
-            $psu = $psus->isNotEmpty() ? $psus->random() : ($pools['psu']->isNotEmpty() ? $pools['psu']->random() : null);
+            $psu = $psus->isNotEmpty() ? $psus->random() : null;
             $cooler = $pools['cooler']->isNotEmpty() ? $pools['cooler']->random() : null;
             $case = $pools['case']->isNotEmpty() ? $pools['case']->random() : null;
             $parts = array_values(array_filter([$cpu, $board, $ram, $gpu, $ssd, $psu, $cooler, $case]));
@@ -144,6 +192,8 @@ class StoreAvitoBuildComposer
                 'store_avito_config_id' => (int) $tpl->id,
             ];
         }
+
+        $this->lastFailures[] = $label.': нет уникальной сборки (плата '.$tpl->socket.' '.$tpl->ddr.' или повтор SKU)';
 
         return null;
     }
@@ -169,9 +219,11 @@ class StoreAvitoBuildComposer
             if ($attr === $code) {
                 return true;
             }
-            $hay = mb_strtolower(($c['name'] ?? '').' '.($c['part'] ?? ''));
+            $hay = mb_strtolower(($c['name'] ?? '').' '.($c['part'] ?? '').' '.($c['avito_code'] ?? ''));
+            $needle = preg_replace('/\s+/u', '', $code) ?? $code;
+            $hayCompact = preg_replace('/\s+/u', '', $hay) ?? $hay;
 
-            return (bool) preg_match('/\b'.preg_quote($code, '/').'\b/u', $hay);
+            return (bool) preg_match('/(?<![0-9a-z])'.preg_quote($needle, '/').'(?![0-9a-z])/u', $hayCompact);
         })->values();
     }
 
@@ -491,9 +543,9 @@ class StoreAvitoBuildComposer
         $ramGb = (int) ($ram['ram_gb'] ?? 16);
         $cpuHay = $this->hay($cpu);
         $boardHay = $this->hay($board);
-        $cpuBrand = $this->matcher->match('BrandProcessor', $cpuHay) ?: (string) ($cpu['avito_brand'] ?: 'Intel');
-        $cpuModel = $this->matcher->match('ModelProcessor', $cpuHay, $cpuBrand) ?: (string) ($cpu['avito_model'] ?: 'Core i5');
-        $cpuCode = $this->matcher->match('CodeProcessor', $cpuHay, $cpuModel) ?: (string) ($cpu['avito_code'] ?: '');
+        $cpuBrand = $this->matcher->match('BrandProcessor', $cpuHay) ?: (string) ($cpu['avito_brand'] ?? '');
+        $cpuModel = $this->matcher->match('ModelProcessor', $cpuHay, $cpuBrand) ?: (string) ($cpu['avito_model'] ?? '');
+        $cpuCode = $this->matcher->match('CodeProcessor', $cpuHay, $cpuModel) ?: (string) ($cpu['avito_code'] ?? '');
 
         $mbBrand = $this->matcher->match('BrandMotherboard', $boardHay) ?: (string) ($board['avito_brand'] ?: 'Другой');
         $mbModel = $this->matcher->match('ModelMotherboard', $boardHay, $mbBrand)
