@@ -28,7 +28,7 @@ class StoreAvitoBuildComposer
         $settings ??= StoreAvitoSetting::current();
         $templates = StoreAvitoConfig::query()
             ->enabled()
-            ->with(['cpu', 'ram', 'ssd', 'psu'])
+            ->with(['cpu', 'gpu', 'ram', 'ssd', 'psu'])
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get()
@@ -106,7 +106,11 @@ class StoreAvitoBuildComposer
         $rams = $this->matchRam($pools['ram'], $tpl);
         $ssds = $this->matchSsd($pools['ssd'], $tpl);
         $psus = $this->matchPsu($pools['psu'], $tpl);
+        $gpus = $this->matchGpu($pools['gpu'], $tpl);
         if ($cpus->isEmpty() || $rams->isEmpty() || $ssds->isEmpty()) {
+            return null;
+        }
+        if ($needGpu && $gpus->isEmpty()) {
             return null;
         }
 
@@ -119,7 +123,7 @@ class StoreAvitoBuildComposer
             if (! $board) {
                 continue;
             }
-            $gpu = $pools['gpu']->isNotEmpty() ? $pools['gpu']->random() : null;
+            $gpu = $gpus->isNotEmpty() ? $gpus->random() : null;
             if ($needGpu && ! $gpu) {
                 continue;
             }
@@ -169,6 +173,50 @@ class StoreAvitoBuildComposer
 
             return (bool) preg_match('/\b'.preg_quote($code, '/').'\b/u', $hay);
         })->values();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $gpus
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function matchGpu(Collection $gpus, StoreAvitoConfig $tpl): Collection
+    {
+        $code = trim((string) ($tpl->gpu?->avito_code ?? ''));
+        if ($code === '') {
+            return $gpus;
+        }
+
+        return $gpus->filter(fn (array $g) => $this->gpuChipMatches($g, $code))->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $gpu
+     */
+    private function gpuChipMatches(array $gpu, string $code): bool
+    {
+        $hay = mb_strtolower(implode(' ', array_filter([
+            $gpu['name'] ?? null,
+            $gpu['part'] ?? null,
+            $gpu['avito_code'] ?? null,
+            $gpu['avito_model'] ?? null,
+        ])));
+        $code = mb_strtolower(trim($code));
+        $tokens = preg_split('/\s+/', $code) ?: [];
+        if ($tokens === []) {
+            return false;
+        }
+        $re = implode('\s*', array_map(fn (string $t) => preg_quote($t, '/'), $tokens));
+        if (! preg_match('/'.$re.'/u', $hay)) {
+            return false;
+        }
+        if (! str_contains($code, 'ti') && preg_match('/'.$re.'\s*ti\b/u', $hay)) {
+            return false;
+        }
+        if (! str_contains($code, 'super') && preg_match('/'.$re.'\s*super\b/u', $hay)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

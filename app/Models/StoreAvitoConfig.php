@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class StoreAvitoConfig extends Model
 {
     protected $fillable = [
-        'name', 'cpu_part_id', 'ram_part_id', 'ssd_part_id', 'psu_part_id',
+        'name', 'cpu_part_id', 'gpu_part_id', 'ram_part_id', 'ssd_part_id', 'psu_part_id',
         'socket', 'ddr', 'sort_order', 'use_count', 'enabled', 'last_used_at',
     ];
 
@@ -20,6 +20,11 @@ class StoreAvitoConfig extends Model
     public function cpu(): BelongsTo
     {
         return $this->belongsTo(StoreAvitoPart::class, 'cpu_part_id');
+    }
+
+    public function gpu(): BelongsTo
+    {
+        return $this->belongsTo(StoreAvitoPart::class, 'gpu_part_id');
     }
 
     public function ram(): BelongsTo
@@ -42,11 +47,16 @@ class StoreAvitoConfig extends Model
         return $query->where('enabled', true);
     }
 
-    public static function makeName(StoreAvitoPart $cpu, StoreAvitoPart $ram, StoreAvitoPart $ssd, StoreAvitoPart $psu): string
+    public static function makeName(StoreAvitoPart $cpu, StoreAvitoPart $ram, StoreAvitoPart $ssd, StoreAvitoPart $psu, ?StoreAvitoPart $gpu = null): string
     {
-        return $cpu->avito_code ?: $cpu->label
-            .' · '.$ram->label
-            .' · '.$ssd->label
-            .' · '.$psu->label;
+        $bits = [
+            $cpu->avito_code ?: $cpu->label,
+            $gpu?->avito_code ?: $gpu?->label,
+            $ram->label,
+            $ssd->label,
+            $psu->label,
+        ];
+
+        return implode(' · ', array_values(array_filter($bits)));
     }
 }

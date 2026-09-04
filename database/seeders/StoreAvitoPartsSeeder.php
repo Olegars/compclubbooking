@@ -13,6 +13,9 @@ class StoreAvitoPartsSeeder extends Seeder
         foreach ($this->cpus() as $row) {
             $this->upsert('cpu', $row, $order++);
         }
+        foreach ($this->gpus() as $row) {
+            $this->upsert('gpu', $row, $order++);
+        }
         foreach ($this->rams() as $row) {
             $this->upsert('ram', $row, $order++);
         }
@@ -22,6 +25,12 @@ class StoreAvitoPartsSeeder extends Seeder
         foreach ($this->psus() as $row) {
             $this->upsert('psu', $row, $order++);
         }
+
+        $keepGpu = array_column($this->gpus(), 'code');
+        StoreAvitoPart::query()
+            ->where('type', 'gpu')
+            ->whereNotIn('code', $keepGpu)
+            ->update(['enabled' => false]);
     }
 
     /**
@@ -90,6 +99,31 @@ class StoreAvitoPartsSeeder extends Seeder
                     }
                 }
             }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function gpus(): array
+    {
+        $chips = [
+            'RTX 4060', 'RTX 4060 Ti', 'RTX 4070', 'RTX 4070 Super', 'RTX 4070 Ti', 'RTX 4070 Ti Super',
+            'RTX 4080', 'RTX 4080 Super', 'RTX 4090',
+            'RTX 5050', 'RTX 5060', 'RTX 5060 Ti', 'RTX 5070', 'RTX 5070 Ti', 'RTX 5080', 'RTX 5090',
+            'RX 7600', 'RX 7600 XT', 'RX 7700 XT', 'RX 7800 XT',
+            'RX 7900 GRE', 'RX 7900 XT', 'RX 7900 XTX',
+            'RX 9060 XT', 'RX 9070', 'RX 9070 XT',
+        ];
+        $out = [];
+        foreach ($chips as $chip) {
+            $out[] = [
+                'code' => 'gpu-'.strtolower(str_replace(' ', '-', $chip)),
+                'label' => $chip,
+                'avito_code' => $chip,
+            ];
         }
 
         return $out;

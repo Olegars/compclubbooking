@@ -289,6 +289,8 @@ class StoreAvitoTest extends TestCase
         $this->assertSame(2, StoreAvitoPart::query()->where('type', 'ssd')->count());
         $this->assertSame(8, StoreAvitoPart::query()->where('type', 'psu')->count());
         $this->assertGreaterThan(20, StoreAvitoPart::query()->where('type', 'cpu')->count());
+        $this->assertGreaterThan(10, StoreAvitoPart::query()->where('type', 'gpu')->where('enabled', true)->count());
+        $this->assertFalse(StoreAvitoPart::query()->where('code', 'gpu-rtx-3060')->where('enabled', true)->exists());
         $owner = Admin::create([
             'name' => 'Owner',
             'email' => 'owner-cfg@avito.test',
@@ -301,6 +303,7 @@ class StoreAvitoTest extends TestCase
             ->withoutMiddleware(ValidateCsrfToken::class)
             ->post('/admin/store/avito/configs', [
                 'cpu_part_id' => StoreAvitoPart::query()->where('code', 'cpu-12400f')->value('id'),
+                'gpu_part_id' => StoreAvitoPart::query()->where('code', 'gpu-rtx-4060-ti')->value('id'),
                 'ram_part_id' => StoreAvitoPart::query()->where('code', 'ram-ddr5-16')->value('id'),
                 'ssd_part_id' => StoreAvitoPart::query()->where('code', 'ssd-m2-256')->value('id'),
                 'psu_part_id' => StoreAvitoPart::query()->where('code', 'psu-600')->value('id'),
@@ -313,6 +316,7 @@ class StoreAvitoTest extends TestCase
         $this->assertSame('LGA1700', $cfg->socket);
         $this->assertSame('DDR5', $cfg->ddr);
         $this->assertStringContainsString('12400F', $cfg->name);
+        $this->assertStringContainsString('4060 Ti', $cfg->name);
     }
 
     public function test_generator_walks_configs_in_order(): void
@@ -324,8 +328,8 @@ class StoreAvitoTest extends TestCase
         $this->addCatalogRow(511, 'ssd', 'Kingston NV2 256GB', 'Kingston', 3000, ['ram_gb' => 256]);
         $this->addCatalogRow(611, 'psu', 'Chieftec 600W', 'Chieftec', 4500, ['wattage' => 600]);
 
-        $a = $this->makeConfig('cpu-12400f', 'ram-ddr5-16', 'ssd-m2-256', 'psu-600');
-        $b = $this->makeConfig('cpu-14700f', 'ram-ddr5-16', 'ssd-m2-256', 'psu-600');
+        $a = $this->makeConfig('cpu-12400f', 'ram-ddr5-16', 'ssd-m2-256', 'psu-600', 'gpu-rtx-4060-ti');
+        $b = $this->makeConfig('cpu-14700f', 'ram-ddr5-16', 'ssd-m2-256', 'psu-600', 'gpu-rtx-4070');
 
         StoreAvitoSetting::current()->forceFill([
             'address' => 'Москва, Тестовая 1',
@@ -341,6 +345,7 @@ class StoreAvitoTest extends TestCase
         $this->assertSame($a->id, $ad1->store_avito_config_id);
         $this->assertSame('12400F', $ad1->xml['CodeProcessor']);
         $this->assertSame('16 ГБ', $ad1->xml['RamSize']);
+        $this->assertStringContainsString('4060 Ti', (string) ($ad1->xml['ModelVideocard'] ?? $ad1->xml['CodeVideocard'] ?? ''));
         $this->assertSame($a->id, StoreAvitoSetting::current()->last_config_id);
         $this->assertSame(1, $a->fresh()->use_count);
 
@@ -349,20 +354,24 @@ class StoreAvitoTest extends TestCase
         $ad2 = StoreAvitoAd::query()->orderByDesc('id')->first();
         $this->assertSame($b->id, $ad2->store_avito_config_id);
         $this->assertSame('14700F', $ad2->xml['CodeProcessor']);
+        $this->assertStringContainsString('4070', (string) ($ad2->xml['ModelVideocard'] ?? $ad2->xml['CodeVideocard'] ?? ''));
+        $this->assertStringNotContainsString('4060', (string) ($ad2->xml['ModelVideocard'] ?? ''));
         $this->assertSame($b->id, StoreAvitoSetting::current()->last_config_id);
     }
 
-    private function makeConfig(string $cpu, string $ram, string $ssd, string $psu): StoreAvitoConfig
+    private function makeConfig(string $cpu, string $ram, string $ssd, string $psu, string $gpu = 'gpu-rtx-4060-ti'): StoreAvitoConfig
     {
         $cpuPart = StoreAvitoPart::query()->where('code', $cpu)->firstOrFail();
+        $gpuPart = StoreAvitoPart::query()->where('code', $gpu)->firstOrFail();
         $ramPart = StoreAvitoPart::query()->where('code', $ram)->firstOrFail();
         $ssdPart = StoreAvitoPart::query()->where('code', $ssd)->firstOrFail();
         $psuPart = StoreAvitoPart::query()->where('code', $psu)->firstOrFail();
         $next = ((int) StoreAvitoConfig::query()->max('sort_order')) + 1;
 
         return StoreAvitoConfig::query()->create([
-            'name' => StoreAvitoConfig::makeName($cpuPart, $ramPart, $ssdPart, $psuPart),
+            'name' => StoreAvitoConfig::makeName($cpuPart, $ramPart, $ssdPart, $psuPart, $gpuPart),
             'cpu_part_id' => $cpuPart->id,
+            'gpu_part_id' => $gpuPart->id,
             'ram_part_id' => $ramPart->id,
             'ssd_part_id' => $ssdPart->id,
             'psu_part_id' => $psuPart->id,
