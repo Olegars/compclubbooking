@@ -125,6 +125,14 @@ const reply = useForm({
 
 const openAd = ref<Ad | null>(null)
 const generating = computed(() => props.settings?.last_generate_result?.status === 'running')
+const generateHint = computed(() => {
+    const r = props.settings?.last_generate_result
+    if (!r || r.status !== 'running') return ''
+    const n = r.count || settingsForm.ads_per_hour
+    if (r.stage === 'compose') return 'сборка сборок из каталога…'
+    if (r.stage === 'copy') return `DeepSeek пишет ${n} текст${n === 1 ? '' : 'а'} (один запрос)`
+    return n <= 3 ? `генерация ${n} объявл…` : 'генерация…'
+})
 const dictSyncing = computed(() => props.settings?.last_dict_sync_result?.status === 'running')
 const dictStats = computed(() => props.settings?.dict_stats || {})
 
@@ -328,7 +336,7 @@ const messageText = (m: Message) => m.content?.text || ''
                 <div class="flex flex-wrap gap-3 items-center justify-between">
                     <div class="text-[10px] uppercase tracking-widest text-white/30">
                         В фиде: {{ ads.filter(a => a.status === 'active').length }} · всего {{ ads.length }}
-                        <span v-if="generating" class="ml-3 text-amber-400">генерация… DeepSeek пишет тексты, это 1–3 мин</span>
+                        <span v-if="generating" class="ml-3 text-amber-400">{{ generateHint }}</span>
                         <span v-else-if="settings.last_generate_result?.created != null" class="ml-3">
                             последняя пачка: {{ settings.last_generate_result.created }} шт
                         </span>

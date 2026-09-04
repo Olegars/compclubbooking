@@ -13,8 +13,6 @@ class StoreAvitoAdGenerator
         private readonly StoreAvitoBuildComposer $composer,
         private readonly StoreAvitoPricer $pricer,
         private readonly StoreAvitoCopywriter $copywriter,
-        private readonly StoreAvitoDictMatcher $matcher,
-        private readonly StoreAvitoDictSyncService $dicts,
     ) {}
 
     /**
@@ -44,35 +42,68 @@ class StoreAvitoAdGenerator
         $count ??= max(1, (int) $settings->ads_per_hour);
         $error = null;
         $enriched = 0;
-        $settings->forceFill([
-            'last_error' => null,
-            'last_generate_result' => [
-                'status' => 'running',
-                'count' => $count,
-                'started_at' => now()->toIso8601String(),
-            ],
-        ])->save();
+        $startedAt = now()->toIso8601String();
+        $this->mark($settings, 'compose', $count, $startedAt);
 
         if ($enrich) {
-            if (filled($settings->client_id) && filled($settings->client_secret) && ! $this->matcher->hasCatalog('ModelVideocard')) {
-                try {
-                    $this->dicts->sync($settings);
-                    $settings->refresh();
-                } catch (\Throwable $e) {
-                    $error = $error ?: $e->getMessage();
-                }
-            }
             try {
-                $enriched = $this->attrs->enrichPool();
+                $enriched = $this->attrs->enrichPool(useLlm: false);
             } catch (\Throwable $e) {
-                $error = $error ?: $e->getMessage();
+                $error = $e->getMessage();
             }
         }
 
+        $this->mark($settings, 'copy', $count, $startedAt);
         $builds = $this->composer->compose($count, $settings);
-        $created = 0;
+        $jobs = [];
         foreach ($builds as $build) {
-            $this->persist($settings, $build);
+            $configId = $this->newConfigId();
+            $parts = [];
+            foreach ($build['components'] as $row) {
+                $purchase = (float) ($row['purchase'] ?? 0);
+                $parts[] = [
+                    'type' => $row['type'] ?? '',
+                    'sku' => $row['sku'] ?? 0,
+                    'name' => $row['name'] ?? '',
+                    'part' => $row['part'] ?? '',
+                    'purchase' => $purchase,
+                    'sale' => $this->pricer->saleOf($purchase, $settings),
+                ];
+            }
+            $jobs[] = [
+                'config_id' => $configId,
+                'fingerprint' => $build['fingerprint'],
+                'store_avito_config_id' => $build['store_avito_config_id'] ?? null,
+                'components' => $parts,
+                'images' => $this->imageRefs($build['components']),
+                'xml' => $build['xml'],
+                'price' => $this->pricer->quote($parts, $settings),
+            ];
+        }
+
+        $copies = $this->copywriter->writeMany($jobs);
+        $created = 0;
+        foreach ($jobs as $job) {
+            $copy = $copies[$job['config_id']] ?? $this->copywriter->fallback(
+                $job['config_id'],
+                $job['components'],
+                $job['price'],
+                $job['xml'],
+                StoreAvitoSetting::configPhrase($job['config_id']),
+            );
+            StoreAvitoAd::query()->create([
+                'config_id' => $job['config_id'],
+                'fingerprint' => $job['fingerprint'],
+                'store_avito_config_id' => $job['store_avito_config_id'],
+                'title' => $copy['title'],
+                'description' => $copy['description'],
+                'price' => $job['price'],
+                'components' => $job['components'],
+                'xml' => $job['xml'],
+                'images' => $job['images'],
+                'status' => 'active',
+                'generated_at' => now(),
+            ]);
             $created++;
         }
 
@@ -95,41 +126,16 @@ class StoreAvitoAdGenerator
         return $result;
     }
 
-    /**
-     * @param  array{fingerprint:string, components:list<array<string,mixed>>, xml:array<string,string>, store_avito_config_id?:int}  $build
-     */
-    private function persist(StoreAvitoSetting $settings, array $build): StoreAvitoAd
+    private function mark(StoreAvitoSetting $settings, string $stage, int $count, string $startedAt): void
     {
-        $configId = $this->newConfigId();
-        $parts = [];
-        foreach ($build['components'] as $row) {
-            $purchase = (float) ($row['purchase'] ?? 0);
-            $parts[] = [
-                'type' => $row['type'] ?? '',
-                'sku' => $row['sku'] ?? 0,
-                'name' => $row['name'] ?? '',
-                'part' => $row['part'] ?? '',
-                'purchase' => $purchase,
-                'sale' => $this->pricer->saleOf($purchase, $settings),
-            ];
-        }
-        $price = $this->pricer->quote($parts, $settings);
-        $copy = $this->copywriter->write($configId, $parts, $price, $build['xml']);
-        $images = $this->imageRefs($build['components']);
-
-        return StoreAvitoAd::query()->create([
-            'config_id' => $configId,
-            'fingerprint' => $build['fingerprint'],
-            'store_avito_config_id' => $build['store_avito_config_id'] ?? null,
-            'title' => $copy['title'],
-            'description' => $copy['description'],
-            'price' => $price,
-            'components' => $parts,
-            'xml' => $build['xml'],
-            'images' => $images,
-            'status' => 'active',
-            'generated_at' => now(),
-        ]);
+        $settings->forceFill([
+            'last_generate_result' => [
+                'status' => 'running',
+                'stage' => $stage,
+                'count' => $count,
+                'started_at' => $startedAt,
+            ],
+        ])->save();
     }
 
     /**

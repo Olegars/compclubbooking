@@ -45,9 +45,10 @@ class StoreAvitoCatalogAttrService
     }
 
     /**
-     * Доразметить товары без attrs. DeepSeek — только дыры, которые эвристика не закрыла.
+     * Доразметить товары без attrs. DeepSeek — только если $useLlm и эвристика не закрыла дыры.
+     * Генерация объявлений вызывает с useLlm=false: иначе 2 объявления ждут разметки всего каталога.
      */
-    public function enrichType(string $type, int $limit = 250): int
+    public function enrichType(string $type, int $limit = 250, bool $useLlm = true): int
     {
         $products = $this->inStock($type, $limit);
         $done = 0;
@@ -76,18 +77,18 @@ class StoreAvitoCatalogAttrService
             }
         }
 
-        if ($needLlm !== [] && $this->llmConfigured()) {
+        if ($useLlm && $needLlm !== [] && $this->llmConfigured()) {
             $done += $this->fillWithLlm($type, $needLlm);
         }
 
         return $done;
     }
 
-    public function enrichPool(): int
+    public function enrichPool(bool $useLlm = true): int
     {
         $n = 0;
         foreach (self::TYPES as $type) {
-            $n += $this->enrichType($type);
+            $n += $this->enrichType($type, useLlm: $useLlm);
         }
 
         return $n;

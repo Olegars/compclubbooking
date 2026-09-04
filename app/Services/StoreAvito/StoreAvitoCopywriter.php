@@ -10,82 +10,113 @@ use Illuminate\Support\Facades\Log;
 class StoreAvitoCopywriter
 {
     /**
-     * @param  list<array<string, mixed>>  $components
-     * @return array{title: string, description: string}
+     * @param  list<array{config_id:string, components:list<array<string,mixed>>, price:int, xml:array<string,string>}>  $jobs
+     * @return array<string, array{title: string, description: string}>
      */
-    public function write(string $configId, array $components, int $price, array $xml): array
+    public function writeMany(array $jobs): array
     {
-        $phrase = StoreAvitoSetting::configPhrase($configId);
-        $fallback = $this->fallback($configId, $components, $price, $xml, $phrase);
+        $out = [];
+        foreach (array_chunk($jobs, 8) as $chunk) {
+            $got = [];
+            if ($this->llmConfigured()) {
+                try {
+                    $got = $this->askMany($chunk);
+                } catch (\Throwable $e) {
+                    Log::warning('Avito copywriter batch: '.$e->getMessage());
+                }
+            }
+            foreach ($chunk as $job) {
+                $id = (string) $job['config_id'];
+                $phrase = StoreAvitoSetting::configPhrase($id);
+                $title = $this->clampTitle((string) ($got[$id]['title'] ?? ''), $id);
+                $description = trim((string) ($got[$id]['description'] ?? ''));
+                if ($title === '' || $description === '') {
+                    $out[$id] = $this->fallback($id, $job['components'], (int) $job['price'], $job['xml'], $phrase);
 
-        if (! $this->llmConfigured()) {
-            return $fallback;
+                    continue;
+                }
+                if (! str_contains($description, $id)) {
+                    $description = rtrim($description)."\n\n".$phrase;
+                }
+                $out[$id] = ['title' => $title, 'description' => $description];
+            }
         }
 
-        try {
-            $generated = $this->ask($configId, $components, $price, $xml, $phrase);
-        } catch (\Throwable $e) {
-            Log::warning('Avito copywriter: '.$e->getMessage());
-
-            return $fallback;
-        }
-
-        $title = $this->clampTitle((string) ($generated['title'] ?? ''), $configId);
-        $description = trim((string) ($generated['description'] ?? ''));
-        if ($title === '' || $description === '') {
-            return $fallback;
-        }
-        if (! str_contains($description, $configId)) {
-            $description = rtrim($description)."\n\n".$phrase;
-        }
-
-        return ['title' => $title, 'description' => $description];
+        return $out;
     }
 
     /**
      * @param  list<array<string, mixed>>  $components
      * @return array{title: string, description: string}
      */
-    private function ask(string $configId, array $components, int $price, array $xml, string $phrase): array
+    public function write(string $configId, array $components, int $price, array $xml): array
+    {
+        $many = $this->writeMany([[
+            'config_id' => $configId,
+            'components' => $components,
+            'price' => $price,
+            'xml' => $xml,
+        ]]);
+
+        return $many[$configId];
+    }
+
+    /**
+     * @param  list<array{config_id:string, components:list<array<string,mixed>>, price:int, xml:array<string,string>}>  $chunk
+     * @return array<string, array{title?:string, description?:string}>
+     */
+    private function askMany(array $chunk): array
     {
         $settings = AiAssistantSetting::forClub(null);
-        $bom = [];
-        foreach ($components as $row) {
-            $bom[] = [
-                'type' => $row['type'] ?? '',
-                'name' => $row['name'] ?? '',
+        $payload = [];
+        foreach ($chunk as $job) {
+            $bom = [];
+            foreach ($job['components'] as $row) {
+                $bom[] = [
+                    'type' => $row['type'] ?? '',
+                    'name' => $row['name'] ?? '',
+                ];
+            }
+            $id = (string) $job['config_id'];
+            $payload[] = [
+                'config_id' => $id,
+                'price' => (int) $job['price'],
+                'xml' => $job['xml'],
+                'bom' => $bom,
+                'phrase' => StoreAvitoSetting::configPhrase($id),
             ];
         }
 
-        $system = <<<PROMPT
+        $system = <<<'PROMPT'
 Ты копирайтер магазина готовых игровых ПК для объявлений Avito.
-Верни ТОЛЬКО JSON: {"title":"...","description":"..."}
+Верни ТОЛЬКО JSON-массив, по одному объекту на каждый config_id:
+[{"config_id":"...","title":"...","description":"..."}]
 Правила title:
 - максимум 50 символов;
-- обязательно включи ID конфигурации «{$configId}» как есть;
-- без кавычек, без слова Avito, уникальная формулировка.
+- обязательно включи config_id как есть;
+- без кавычек, без слова Avito, формулировки разные у разных объявлений.
 Правила description:
-- живой текст на русском, без копипасты шаблонов;
-- перечисли комплектующие из BOM, не выдумывай детали, которых нет;
-- цена {$price} ₽;
-- в конце ОБЯЗАТЕЛЬНО фраза: {$phrase}
+- живой текст на русском;
+- перечисли комплектующие из BOM, не выдумывай детали;
+- укажи цену;
+- в конце ОБЯЗАТЕЛЬНО поле phrase из запроса;
 - без markdown, можно абзацы и эмодзи умеренно.
 PROMPT;
 
         $body = [
             'model' => $settings->resolvedLlmModel(),
             'temperature' => 0.85,
-            'max_tokens' => 900,
+            'max_tokens' => min(8000, 700 * count($chunk)),
             'messages' => [
                 ['role' => 'system', 'content' => $system],
-                ['role' => 'user', 'content' => json_encode(['xml' => $xml, 'bom' => $bom], JSON_UNESCAPED_UNICODE)],
+                ['role' => 'user', 'content' => json_encode($payload, JSON_UNESCAPED_UNICODE)],
             ],
         ];
         if (str_contains(strtolower($settings->resolvedLlmModel()), 'deepseek')) {
             $body['thinking'] = ['type' => 'disabled'];
         }
 
-        $response = Http::timeout(45)
+        $response = Http::timeout(60)
             ->withToken($settings->resolvedLlmApiKey())
             ->acceptJson()
             ->post($settings->resolvedLlmBaseUrl().'/chat/completions', $body);
@@ -99,7 +130,7 @@ PROMPT;
         if ($text === '' && is_array($message)) {
             $text = trim((string) ($message['reasoning_content'] ?? ''));
         }
-        if (preg_match('/\{[\s\S]*\}/u', $text, $m)) {
+        if (preg_match('/\[[\s\S]*\]/u', $text, $m)) {
             $text = $m[0];
         }
         $decoded = json_decode($text, true);
@@ -107,7 +138,14 @@ PROMPT;
             throw new \RuntimeException('invalid JSON');
         }
 
-        return $decoded;
+        $byId = [];
+        foreach ($decoded as $row) {
+            if (is_array($row) && isset($row['config_id'])) {
+                $byId[(string) $row['config_id']] = $row;
+            }
+        }
+
+        return $byId;
     }
 
     /**

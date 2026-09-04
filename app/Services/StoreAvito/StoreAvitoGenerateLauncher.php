@@ -10,7 +10,7 @@ use Symfony\Component\Process\PhpExecutableFinder;
  */
 class StoreAvitoGenerateLauncher
 {
-    public const STALE_AFTER_MINUTES = 50;
+    public const STALE_AFTER_MINUTES = 8;
 
     public function isRunning(?StoreAvitoSetting $settings = null): bool
     {
@@ -86,6 +86,6 @@ class StoreAvitoGenerateLauncher
             return ['ok' => false, 'already' => false, 'message' => 'Не удалось запустить фон: '.$e->getMessage()];
         }
 
-        return ['ok' => true, 'already' => false, 'message' => 'Генерация запущена в фоне. Объявления появятся через 1–3 минуты.'];
+        return ['ok' => true, 'already' => false, 'message' => 'Генерация запущена в фоне. Для пачки из пары объявлений это обычно несколько секунд.'];
     }
 }
