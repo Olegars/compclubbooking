@@ -6,6 +6,32 @@ import { useClubName } from '@/Composables/useClubName'
 
 const clubName = useClubName()
 
+type Part = {
+    id: number
+    label: string
+    socket?: string | null
+    ddr?: string | null
+    ram_gb?: number | null
+    capacity_gb?: number | null
+    wattage?: number | null
+    avito_code?: string | null
+}
+
+type Cfg = {
+    id: number
+    name: string
+    socket: string
+    ddr: string
+    sort_order: number
+    use_count: number
+    enabled: boolean
+    last_used_at?: string | null
+    cpu?: string | null
+    ram?: string | null
+    ssd?: string | null
+    psu?: string | null
+}
+
 type Ad = {
     id: number
     config_id: string
@@ -47,6 +73,8 @@ const props = defineProps<{
     canManage: boolean
     unread: number
     filters?: { q?: string | null }
+    parts?: { cpu: Part[], ram: Part[], ssd: Part[], psu: Part[] }
+    configs?: Cfg[]
 }>()
 
 const tab = computed({
@@ -107,7 +135,7 @@ watch([generating, dictSyncing], ([gen, dict]) => {
     }
     if (!gen && !dict) return
     pollTimer = setInterval(() => {
-        router.reload({ only: ['ads', 'settings'], preserveScroll: true })
+        router.reload({ only: ['ads', 'settings', 'configs'], preserveScroll: true })
     }, 5000)
 }, { immediate: true })
 onUnmounted(() => {
@@ -126,8 +154,99 @@ const openChat = (chat: Chat) => {
 
 const saveSettings = () => settingsForm.put('/admin/store/avito/settings')
 
+const createCfg = useForm({
+    cpu_part_id: '' as string | number,
+    ram_part_id: '' as string | number,
+    ssd_part_id: '' as string | number,
+    psu_part_id: '' as string | number,
+})
+
+const filterSockets = ref<string[]>([])
+const filterDdrs = ref<string[]>([])
+const socketOpts = [
+    { id: 'AM4', label: 'AM4' },
+    { id: 'AM5', label: 'AM5' },
+    { id: 'LGA1700', label: '1700' },
+    { id: 'LGA1851', label: '1851' },
+]
+const ddrOpts = ['DDR4', 'DDR5']
+
+const parts = computed(() => props.parts || { cpu: [], ram: [], ssd: [], psu: [] })
+const allConfigs = computed(() => props.configs || [])
+
+const filteredCpus = computed(() => {
+    const list = parts.value.cpu
+    if (!filterSockets.value.length) return list
+    return list.filter(p => p.socket && filterSockets.value.includes(p.socket))
+})
+const filteredRams = computed(() => {
+    const list = parts.value.ram
+    if (!filterDdrs.value.length) return list
+    return list.filter(p => p.ddr && filterDdrs.value.includes(p.ddr))
+})
+const filteredConfigs = computed(() => {
+    return allConfigs.value.filter(c => {
+        if (filterSockets.value.length && !filterSockets.value.includes(c.socket)) return false
+        if (filterDdrs.value.length && !filterDdrs.value.includes(c.ddr)) return false
+        return true
+    })
+})
+
+const nextConfigId = computed(() => {
+    const enabled = allConfigs.value.filter(c => c.enabled)
+    if (!enabled.length) return null
+    const last = Number(props.settings?.last_config_id || 0)
+    const idx = enabled.findIndex(c => c.id === last)
+    if (idx < 0) return enabled[0].id
+    return enabled[(idx + 1) % enabled.length].id
+})
+
+const toggleSocket = (id: string) => {
+    const i = filterSockets.value.indexOf(id)
+    if (i >= 0) filterSockets.value.splice(i, 1)
+    else filterSockets.value.push(id)
+}
+const toggleDdr = (id: string) => {
+    const i = filterDdrs.value.indexOf(id)
+    if (i >= 0) filterDdrs.value.splice(i, 1)
+    else filterDdrs.value.push(id)
+}
+
+watch(filteredCpus, (list) => {
+    if (createCfg.cpu_part_id && !list.some(p => p.id === Number(createCfg.cpu_part_id))) {
+        createCfg.cpu_part_id = ''
+    }
+})
+watch(filteredRams, (list) => {
+    if (createCfg.ram_part_id && !list.some(p => p.id === Number(createCfg.ram_part_id))) {
+        createCfg.ram_part_id = ''
+    }
+})
+
 const generate = () => {
     router.post('/admin/store/avito/generate', { count: settingsForm.ads_per_hour }, { preserveScroll: true })
+}
+
+const saveConfig = () => {
+    createCfg.post('/admin/store/avito/configs', {
+        preserveScroll: true,
+        onSuccess: () => {
+            createCfg.reset()
+            createCfg.cpu_part_id = ''
+            createCfg.ram_part_id = ''
+            createCfg.ssd_part_id = ''
+            createCfg.psu_part_id = ''
+        },
+    })
+}
+
+const toggleConfig = (c: Cfg) => {
+    router.post(`/admin/store/avito/configs/${c.id}`, { enabled: !c.enabled }, { preserveScroll: true })
+}
+
+const deleteConfig = (c: Cfg) => {
+    if (!confirm(`Удалить конфигурацию №${c.sort_order}?`)) return
+    router.delete(`/admin/store/avito/configs/${c.id}`, { preserveScroll: true })
 }
 
 const syncDicts = () => {
@@ -187,6 +306,9 @@ const messageText = (m: Message) => m.content?.text || ''
                     <button class="px-4 py-3 rounded-xl text-[10px] uppercase font-black"
                             :class="tab === 'ads' ? 'bg-amber-500 text-black' : 'border border-white/10 text-white/50'"
                             @click="tab = 'ads'">Объявления</button>
+                    <button class="px-4 py-3 rounded-xl text-[10px] uppercase font-black"
+                            :class="tab === 'configs' ? 'bg-amber-500 text-black' : 'border border-white/10 text-white/50'"
+                            @click="tab = 'configs'">Конфигурации</button>
                     <button class="px-4 py-3 rounded-xl text-[10px] uppercase font-black relative"
                             :class="tab === 'chats' ? 'bg-amber-500 text-black' : 'border border-white/10 text-white/50'"
                             @click="tab = 'chats'">
@@ -228,6 +350,86 @@ const messageText = (m: Message) => m.content?.text || ''
                         </div>
                     </div>
                     <div v-if="!ads.length" class="text-white/30 text-sm py-10 text-center">{{ q ? 'Нет объявлений с таким ID' : 'Объявлений нет — включите генерацию в настройках.' }}</div>
+                </div>
+            </div>
+
+            <div v-if="tab === 'configs'" class="space-y-6">
+                <div class="flex flex-wrap gap-2 items-center">
+                    <button v-for="s in socketOpts" :key="s.id"
+                            class="px-3 py-2 rounded-xl text-[10px] uppercase font-black border"
+                            :class="filterSockets.includes(s.id) ? 'bg-amber-500 text-black border-amber-500' : 'border-white/10 text-white/50'"
+                            @click="toggleSocket(s.id)">{{ s.label }}</button>
+                    <button v-for="d in ddrOpts" :key="d"
+                            class="px-3 py-2 rounded-xl text-[10px] uppercase font-black border"
+                            :class="filterDdrs.includes(d) ? 'bg-amber-500 text-black border-amber-500' : 'border-white/10 text-white/50'"
+                            @click="toggleDdr(d)">{{ d }}</button>
+                    <div class="text-[10px] uppercase tracking-widest text-white/30 ml-auto">
+                        Следующая в генерации: №{{ allConfigs.find(c => c.id === nextConfigId)?.sort_order || '—' }}
+                    </div>
+                </div>
+
+                <form v-if="canManage" class="border border-white/5 rounded-2xl p-5 bg-[#080808] space-y-4" @submit.prevent="saveConfig">
+                    <div class="font-black uppercase italic text-sm">Новая конфигурация</div>
+                    <p v-if="!parts.cpu.length" class="text-[11px] text-amber-400/80">
+                        Абстрактные комплектующие пусты. На сервере: php artisan db:seed --class=StoreAvitoPartsSeeder
+                    </p>
+                    <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <label class="text-[10px] uppercase tracking-widest text-white/40">Процессор
+                            <select v-model="createCfg.cpu_part_id" required class="mt-2 w-full bg-black border border-white/10 rounded-xl px-3 py-3 text-sm">
+                                <option value="">—</option>
+                                <option v-for="p in filteredCpus" :key="p.id" :value="p.id">{{ p.label }}</option>
+                            </select>
+                        </label>
+                        <label class="text-[10px] uppercase tracking-widest text-white/40">Память
+                            <select v-model="createCfg.ram_part_id" required class="mt-2 w-full bg-black border border-white/10 rounded-xl px-3 py-3 text-sm">
+                                <option value="">—</option>
+                                <option v-for="p in filteredRams" :key="p.id" :value="p.id">{{ p.label }}</option>
+                            </select>
+                        </label>
+                        <label class="text-[10px] uppercase tracking-widest text-white/40">SSD M.2
+                            <select v-model="createCfg.ssd_part_id" required class="mt-2 w-full bg-black border border-white/10 rounded-xl px-3 py-3 text-sm">
+                                <option value="">—</option>
+                                <option v-for="p in parts.ssd" :key="p.id" :value="p.id">{{ p.label }}</option>
+                            </select>
+                        </label>
+                        <label class="text-[10px] uppercase tracking-widest text-white/40">Блок питания
+                            <select v-model="createCfg.psu_part_id" required class="mt-2 w-full bg-black border border-white/10 rounded-xl px-3 py-3 text-sm">
+                                <option value="">—</option>
+                                <option v-for="p in parts.psu" :key="p.id" :value="p.id">{{ p.label }}</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="flex justify-end">
+                        <button class="px-6 py-3 bg-amber-500 text-black text-[10px] uppercase font-black rounded-2xl" :disabled="createCfg.processing">Добавить</button>
+                    </div>
+                </form>
+
+                <div class="space-y-2">
+                    <div v-for="c in filteredConfigs" :key="c.id"
+                         class="border rounded-2xl p-5 flex flex-wrap gap-4 justify-between items-start"
+                         :class="c.id === nextConfigId ? 'border-amber-500/50 bg-amber-500/5' : 'border-white/5 bg-[#080808]'">
+                        <div class="min-w-0 space-y-1">
+                            <div class="text-[10px] uppercase tracking-widest text-amber-400">
+                                №{{ c.sort_order }}
+                                · {{ c.socket }}
+                                · {{ c.ddr }}
+                                · использована {{ c.use_count }}
+                                <span v-if="c.id === nextConfigId" class="ml-2 text-amber-300">следующая</span>
+                            </div>
+                            <div class="font-black uppercase text-sm">{{ c.name }}</div>
+                            <div class="text-[11px] text-white/40">{{ c.cpu }} · {{ c.ram }} · {{ c.ssd }} · {{ c.psu }}</div>
+                        </div>
+                        <div v-if="canManage" class="flex gap-2 items-center shrink-0">
+                            <button class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black"
+                                    :class="c.enabled ? 'border-amber-500/30 text-amber-400' : 'border-white/10 text-white/30'"
+                                    @click="toggleConfig(c)">{{ c.enabled ? 'Вкл' : 'Выкл' }}</button>
+                            <button class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/40"
+                                    @click="deleteConfig(c)">Удалить</button>
+                        </div>
+                    </div>
+                    <div v-if="!filteredConfigs.length" class="text-white/30 text-sm py-10 text-center">
+                        {{ allConfigs.length ? 'Нет конфигураций под выбранные галки.' : 'Конфигураций нет — соберите первую из абстрактных комплектующих.' }}
+                    </div>
                 </div>
             </div>
 

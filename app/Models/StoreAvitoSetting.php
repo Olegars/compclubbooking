@@ -18,7 +18,7 @@ class StoreAvitoSetting extends Model
         'access_token_expires_at', 'avito_user_id', 'feed_token',
         'auto_reply_enabled', 'auto_reply_from', 'auto_reply_to', 'auto_reply_text',
         'last_generated_at', 'last_generate_result', 'last_error',
-        'last_dict_sync_at', 'last_dict_sync_result',
+        'last_dict_sync_at', 'last_dict_sync_result', 'last_config_id',
     ];
 
     protected $hidden = [

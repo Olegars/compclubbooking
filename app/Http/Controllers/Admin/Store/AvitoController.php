@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Admin\Store;
 
 use App\Models\StoreAvitoAd;
 use App\Models\StoreAvitoChat;
+use App\Models\StoreAvitoConfig;
 use App\Models\StoreAvitoMessage;
+use App\Models\StoreAvitoPart;
 use App\Models\StoreAvitoSetting;
 use App\Services\StoreAvito\StoreAvitoDictMatcher;
 use App\Services\StoreAvito\StoreAvitoDictSyncService;
@@ -58,7 +60,7 @@ class AvitoController extends StoreController
             : collect();
 
         return Inertia::render('Admin/Store/Avito', [
-            'tab' => in_array($tab, ['ads', 'chats', 'settings'], true) ? $tab : 'ads',
+            'tab' => in_array($tab, ['ads', 'configs', 'chats', 'settings'], true) ? $tab : 'ads',
             'settings' => $this->settingsPayload($settings, app(StoreAvitoDictMatcher::class)),
             'feed_url' => URL::to('/avito/'.$settings->feed_token.'/feed.xml'),
             'filters' => ['q' => $q !== '' ? $q : null],
@@ -68,6 +70,8 @@ class AvitoController extends StoreController
             'messages' => $messages,
             'canManage' => $this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner',
             'unread' => StoreAvitoChat::query()->where('unread', true)->count(),
+            'parts' => $this->partsPayload(),
+            'configs' => $this->configsPayload(),
         ]);
     }
 
@@ -111,6 +115,61 @@ class AvitoController extends StoreController
         $settings->fill($data)->save();
 
         return back()->with('success', 'Настройки Avito сохранены.');
+    }
+
+    public function storeConfig(Request $request)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+
+        $data = $request->validate([
+            'cpu_part_id' => 'required|integer|exists:store_avito_parts,id',
+            'ram_part_id' => 'required|integer|exists:store_avito_parts,id',
+            'ssd_part_id' => 'required|integer|exists:store_avito_parts,id',
+            'psu_part_id' => 'required|integer|exists:store_avito_parts,id',
+        ]);
+
+        $cpu = StoreAvitoPart::query()->where('type', 'cpu')->findOrFail($data['cpu_part_id']);
+        $ram = StoreAvitoPart::query()->where('type', 'ram')->findOrFail($data['ram_part_id']);
+        $ssd = StoreAvitoPart::query()->where('type', 'ssd')->findOrFail($data['ssd_part_id']);
+        $psu = StoreAvitoPart::query()->where('type', 'psu')->findOrFail($data['psu_part_id']);
+
+        $next = ((int) StoreAvitoConfig::query()->max('sort_order')) + 1;
+        StoreAvitoConfig::query()->create([
+            'name' => StoreAvitoConfig::makeName($cpu, $ram, $ssd, $psu),
+            'cpu_part_id' => $cpu->id,
+            'ram_part_id' => $ram->id,
+            'ssd_part_id' => $ssd->id,
+            'psu_part_id' => $psu->id,
+            'socket' => (string) $cpu->socket,
+            'ddr' => (string) $ram->ddr,
+            'sort_order' => $next,
+            'enabled' => true,
+        ]);
+
+        return back()->with('success', 'Конфигурация №'.$next.' добавлена.');
+    }
+
+    public function updateConfig(Request $request, StoreAvitoConfig $storeAvitoConfig)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+
+        $data = $request->validate([
+            'enabled' => 'sometimes|boolean',
+        ]);
+        if ($request->has('enabled')) {
+            $data['enabled'] = $request->boolean('enabled');
+        }
+        $storeAvitoConfig->update($data);
+
+        return back();
+    }
+
+    public function destroyConfig(StoreAvitoConfig $storeAvitoConfig)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+        $storeAvitoConfig->delete();
+
+        return back()->with('success', 'Конфигурация удалена.');
     }
 
     public function generate(Request $request, StoreAvitoGenerateLauncher $launcher)
@@ -234,9 +293,76 @@ class AvitoController extends StoreController
             'last_error' => $settings->last_error,
             'last_dict_sync_at' => $settings->last_dict_sync_at?->toIso8601String(),
             'last_dict_sync_result' => $settings->last_dict_sync_result,
+            'last_config_id' => $settings->last_config_id,
             'dict_stats' => \Illuminate\Support\Facades\Schema::hasTable('store_avito_dict_values')
                 ? $matcher->stats()
                 : [],
         ];
+    }
+
+    /**
+     * @return array<string, list<array<string, mixed>>>
+     */
+    private function partsPayload(): array
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('store_avito_parts')) {
+            return ['cpu' => [], 'ram' => [], 'ssd' => [], 'psu' => []];
+        }
+
+        $grouped = StoreAvitoPart::query()
+            ->where('enabled', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('type');
+
+        $map = fn ($rows) => $rows->map(fn (StoreAvitoPart $p) => [
+            'id' => $p->id,
+            'label' => $p->label,
+            'socket' => $p->socket,
+            'ddr' => $p->ddr,
+            'ram_gb' => $p->ram_gb,
+            'capacity_gb' => $p->capacity_gb,
+            'wattage' => $p->wattage,
+            'avito_code' => $p->avito_code,
+        ])->values()->all();
+
+        return [
+            'cpu' => $map($grouped->get('cpu', collect())),
+            'ram' => $map($grouped->get('ram', collect())),
+            'ssd' => $map($grouped->get('ssd', collect())),
+            'psu' => $map($grouped->get('psu', collect())),
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function configsPayload(): array
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('store_avito_configs')) {
+            return [];
+        }
+
+        return StoreAvitoConfig::query()
+            ->with(['cpu', 'ram', 'ssd', 'psu'])
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (StoreAvitoConfig $c) => [
+                'id' => $c->id,
+                'name' => $c->name,
+                'socket' => $c->socket,
+                'ddr' => $c->ddr,
+                'sort_order' => $c->sort_order,
+                'use_count' => $c->use_count,
+                'enabled' => $c->enabled,
+                'last_used_at' => $c->last_used_at?->toIso8601String(),
+                'cpu' => $c->cpu?->label,
+                'ram' => $c->ram?->label,
+                'ssd' => $c->ssd?->label,
+                'psu' => $c->psu?->label,
+            ])
+            ->all();
     }
 }

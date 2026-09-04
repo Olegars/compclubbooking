@@ -11,6 +11,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             ClubSeeder::class,
             AdminSeeder::class,
+            StoreAvitoPartsSeeder::class,
         ]);
     }
 }

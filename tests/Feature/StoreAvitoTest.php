@@ -6,14 +6,17 @@ use App\Models\Admin;
 use App\Models\Club;
 use App\Models\StoreAvitoAd;
 use App\Models\StoreAvitoChat;
+use App\Models\StoreAvitoConfig;
 use App\Models\StoreAvitoDictValue;
 use App\Models\StoreAvitoMessage;
+use App\Models\StoreAvitoPart;
 use App\Models\StoreAvitoProductAttr;
 use App\Models\StoreAvitoSetting;
 use App\Models\StoreSupplierCatalogProduct;
 use App\Services\StoreAvito\StoreAvitoAdGenerator;
 use App\Services\StoreAvito\StoreAvitoDictMatcher;
 use App\Services\StoreAvito\StoreAvitoPricer;
+use Database\Seeders\StoreAvitoPartsSeeder;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -277,6 +280,119 @@ class StoreAvitoTest extends TestCase
 
         $this->assertSame('running', StoreAvitoSetting::current()->last_dict_sync_result['status'] ?? null);
         $this->assertSame(0, StoreAvitoDictValue::query()->count());
+    }
+
+    public function test_owner_creates_config_from_abstract_parts(): void
+    {
+        $this->seed(StoreAvitoPartsSeeder::class);
+        $this->assertSame(4, StoreAvitoPart::query()->where('type', 'ram')->count());
+        $this->assertSame(2, StoreAvitoPart::query()->where('type', 'ssd')->count());
+        $this->assertSame(8, StoreAvitoPart::query()->where('type', 'psu')->count());
+        $this->assertGreaterThan(20, StoreAvitoPart::query()->where('type', 'cpu')->count());
+        $owner = Admin::create([
+            'name' => 'Owner',
+            'email' => 'owner-cfg@avito.test',
+            'password' => 'password',
+            'role' => 'owner',
+            'club_id' => $this->club->id,
+        ]);
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/store/avito/configs', [
+                'cpu_part_id' => StoreAvitoPart::query()->where('code', 'cpu-12400f')->value('id'),
+                'ram_part_id' => StoreAvitoPart::query()->where('code', 'ram-ddr5-16')->value('id'),
+                'ssd_part_id' => StoreAvitoPart::query()->where('code', 'ssd-m2-256')->value('id'),
+                'psu_part_id' => StoreAvitoPart::query()->where('code', 'psu-600')->value('id'),
+            ])
+            ->assertRedirect();
+
+        $cfg = StoreAvitoConfig::query()->first();
+        $this->assertNotNull($cfg);
+        $this->assertSame(1, $cfg->sort_order);
+        $this->assertSame('LGA1700', $cfg->socket);
+        $this->assertSame('DDR5', $cfg->ddr);
+        $this->assertStringContainsString('12400F', $cfg->name);
+    }
+
+    public function test_generator_walks_configs_in_order(): void
+    {
+        $this->seed(StoreAvitoPartsSeeder::class);
+        $this->seedPcPool();
+        $this->addCatalogRow(211, 'motherboard', 'MSI B760 DDR5', 'MSI', 10000, ['socket' => 'LGA1700', 'ddr' => 'DDR5', 'avito_brand' => 'MSI']);
+        $this->addCatalogRow(311, 'ram', 'Kingston DDR5 16GB 2x8', 'Kingston', 5000, ['ddr' => 'DDR5', 'ram_gb' => 16, 'avito_code' => '16 ГБ']);
+        $this->addCatalogRow(511, 'ssd', 'Kingston NV2 256GB', 'Kingston', 3000, ['ram_gb' => 256]);
+        $this->addCatalogRow(611, 'psu', 'Chieftec 600W', 'Chieftec', 4500, ['wattage' => 600]);
+
+        $a = $this->makeConfig('cpu-12400f', 'ram-ddr5-16', 'ssd-m2-256', 'psu-600');
+        $b = $this->makeConfig('cpu-14700f', 'ram-ddr5-16', 'ssd-m2-256', 'psu-600');
+
+        StoreAvitoSetting::current()->forceFill([
+            'address' => 'Москва, Тестовая 1',
+            'markup_percent' => 15,
+            'extra_rub' => 4000,
+            'pc_type' => 'Игровой',
+        ])->save();
+
+        $gen = app(StoreAvitoAdGenerator::class);
+        $first = $gen->generate(1, enrich: false);
+        $this->assertSame(1, $first['created']);
+        $ad1 = StoreAvitoAd::query()->first();
+        $this->assertSame($a->id, $ad1->store_avito_config_id);
+        $this->assertSame('12400F', $ad1->xml['CodeProcessor']);
+        $this->assertSame('16 ГБ', $ad1->xml['RamSize']);
+        $this->assertSame($a->id, StoreAvitoSetting::current()->last_config_id);
+        $this->assertSame(1, $a->fresh()->use_count);
+
+        $second = $gen->generate(1, enrich: false);
+        $this->assertSame(1, $second['created']);
+        $ad2 = StoreAvitoAd::query()->orderByDesc('id')->first();
+        $this->assertSame($b->id, $ad2->store_avito_config_id);
+        $this->assertSame('14700F', $ad2->xml['CodeProcessor']);
+        $this->assertSame($b->id, StoreAvitoSetting::current()->last_config_id);
+    }
+
+    private function makeConfig(string $cpu, string $ram, string $ssd, string $psu): StoreAvitoConfig
+    {
+        $cpuPart = StoreAvitoPart::query()->where('code', $cpu)->firstOrFail();
+        $ramPart = StoreAvitoPart::query()->where('code', $ram)->firstOrFail();
+        $ssdPart = StoreAvitoPart::query()->where('code', $ssd)->firstOrFail();
+        $psuPart = StoreAvitoPart::query()->where('code', $psu)->firstOrFail();
+        $next = ((int) StoreAvitoConfig::query()->max('sort_order')) + 1;
+
+        return StoreAvitoConfig::query()->create([
+            'name' => StoreAvitoConfig::makeName($cpuPart, $ramPart, $ssdPart, $psuPart),
+            'cpu_part_id' => $cpuPart->id,
+            'ram_part_id' => $ramPart->id,
+            'ssd_part_id' => $ssdPart->id,
+            'psu_part_id' => $psuPart->id,
+            'socket' => (string) $cpuPart->socket,
+            'ddr' => (string) $ramPart->ddr,
+            'sort_order' => $next,
+            'enabled' => true,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     */
+    private function addCatalogRow(int $sku, string $type, string $name, string $vendor, int $price, array $extra): void
+    {
+        StoreSupplierCatalogProduct::query()->create([
+            'sku' => $sku,
+            'name' => $name,
+            'vendor' => $vendor,
+            'price' => $price,
+            'stock_qty' => 5,
+        ]);
+        StoreAvitoProductAttr::query()->create(array_merge([
+            'sku' => $sku,
+            'type' => $type,
+            'source' => 'heuristic',
+            'mapped_at' => now(),
+            'avito_brand' => $vendor,
+            'avito_model' => $name,
+        ], $extra));
     }
 
     private function seedPcPool(): void

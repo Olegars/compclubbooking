@@ -349,6 +349,9 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
             Route::put('/avito/settings', [StoreAvitoController::class, 'updateSettings'])->name('admin.store.avito.settings');
             Route::post('/avito/generate', [StoreAvitoController::class, 'generate'])->name('admin.store.avito.generate');
             Route::post('/avito/dicts', [StoreAvitoController::class, 'syncDicts'])->name('admin.store.avito.dicts');
+            Route::post('/avito/configs', [StoreAvitoController::class, 'storeConfig'])->name('admin.store.avito.configs.store');
+            Route::post('/avito/configs/{storeAvitoConfig}', [StoreAvitoController::class, 'updateConfig'])->name('admin.store.avito.configs.update');
+            Route::delete('/avito/configs/{storeAvitoConfig}', [StoreAvitoController::class, 'destroyConfig'])->name('admin.store.avito.configs.destroy');
             Route::post('/avito/webhook', [StoreAvitoController::class, 'connectWebhook'])->name('admin.store.avito.webhook.connect');
             Route::post('/avito/ads/{storeAvitoAd}', [StoreAvitoController::class, 'updateAd'])->name('admin.store.avito.ads.update');
             Route::post('/avito/chats/send', [StoreAvitoController::class, 'sendMessage'])->name('admin.store.avito.chats.send');

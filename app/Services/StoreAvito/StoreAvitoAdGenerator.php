@@ -96,7 +96,7 @@ class StoreAvitoAdGenerator
     }
 
     /**
-     * @param  array{fingerprint:string, components:list<array<string,mixed>>, xml:array<string,string>}  $build
+     * @param  array{fingerprint:string, components:list<array<string,mixed>>, xml:array<string,string>, store_avito_config_id?:int}  $build
      */
     private function persist(StoreAvitoSetting $settings, array $build): StoreAvitoAd
     {
@@ -120,6 +120,7 @@ class StoreAvitoAdGenerator
         return StoreAvitoAd::query()->create([
             'config_id' => $configId,
             'fingerprint' => $build['fingerprint'],
+            'store_avito_config_id' => $build['store_avito_config_id'] ?? null,
             'title' => $copy['title'],
             'description' => $copy['description'],
             'price' => $price,

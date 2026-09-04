@@ -9,7 +9,7 @@ class StoreAvitoAd extends Model
     public const STATUSES = ['active', 'archived', 'blocked'];
 
     protected $fillable = [
-        'config_id', 'fingerprint', 'title', 'description', 'price',
+        'config_id', 'fingerprint', 'store_avito_config_id', 'title', 'description', 'price',
         'components', 'xml', 'images', 'status', 'avito_id', 'generated_at',
     ];
 
