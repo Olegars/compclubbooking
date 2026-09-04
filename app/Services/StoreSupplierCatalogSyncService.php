@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\StoreSupplierCatalogCategory;
 use App\Models\StoreSupplierCatalogProduct;
+use App\Models\StoreAvitoProductAttr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -178,6 +179,9 @@ class StoreSupplierCatalogSyncService
                             'case_attrs_at' => null,
                             'updated_at' => $nowStr,
                         ]);
+                    if (Schema::hasTable('store_avito_product_attrs')) {
+                        StoreAvitoProductAttr::query()->whereIn('sku', $chunk)->delete();
+                    }
                 }
             }
 

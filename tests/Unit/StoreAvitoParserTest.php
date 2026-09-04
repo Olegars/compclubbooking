@@ -26,6 +26,21 @@ class StoreAvitoParserTest extends TestCase
         $this->assertSame('LGA1700', $a['socket']);
     }
 
+    public function test_parses_ryzen_5_7500f_from_catalog_name(): void
+    {
+        $a = $this->parser->parse(
+            'cpu',
+            'Процессор AMD Ryzen 5 7500F Soc-AM5 3.7GHz OEM',
+            '100-000000597',
+            'AMD',
+        );
+
+        $this->assertSame('AMD', $a['avito_brand']);
+        $this->assertSame('Ryzen 5', $a['avito_model']);
+        $this->assertSame('7500F', $a['avito_code']);
+        $this->assertSame('AM5', $a['socket']);
+    }
+
     public function test_parses_ryzen_and_am5(): void
     {
         $a = $this->parser->parse('cpu', 'AMD Ryzen 7 7800X3D', '', 'AMD');

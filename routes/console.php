@@ -22,6 +22,11 @@ Schedule::command('store:classify-cases')
     ->timezone('Europe/Moscow')
     ->withoutOverlapping(120)
     ->appendOutputTo(storage_path('logs/catalog-cases.log'));
+Schedule::command('store:classify-catalog-parts')
+    ->dailyAt('09:50')
+    ->timezone('Europe/Moscow')
+    ->withoutOverlapping(180)
+    ->appendOutputTo(storage_path('logs/catalog-parts.log'));
 Schedule::command('store:sync-avito-dicts')
     ->dailyAt('03:20')
     ->timezone('Europe/Moscow')

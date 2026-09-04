@@ -15,11 +15,19 @@ class StoreAvitoCatalogAttrService
 {
     public const TYPES = ['cpu', 'motherboard', 'ram', 'gpu', 'storage_ssd', 'psu', 'cooler', 'case'];
 
+    /** DeepSeek при синке каталога — как корпуса, только эти типы. */
+    public const STD_TYPES = ['cpu', 'gpu', 'motherboard', 'ram', 'storage_ssd', 'psu'];
+
     public function __construct(
         private readonly StoreAvitoCatalogAttrParser $parser,
         private readonly StoreSupplierCatalogSearchService $search,
         private readonly StoreAvitoDictMatcher $matcher,
     ) {}
+
+    public function isConfigured(): bool
+    {
+        return $this->llmConfigured();
+    }
 
     /**
      * @return Collection<int, StoreSupplierCatalogProduct>
@@ -28,12 +36,9 @@ class StoreAvitoCatalogAttrService
     {
         $q = StoreSupplierCatalogProduct::query()
             ->whereNotNull('price')
-            ->where('price', '>', 0)
-            ->where(function ($w) {
-                $w->whereNull('stock_qty')->orWhere('stock_qty', '>', 0);
-            });
+            ->where('price', '>', 0);
 
-        $ids = $this->search->categoryIdsForType($type);
+        $ids = $this->categoryIds($type);
         if (is_array($ids)) {
             if ($ids === []) {
                 return collect();
@@ -45,21 +50,49 @@ class StoreAvitoCatalogAttrService
     }
 
     /**
-     * Доразметить товары без attrs. DeepSeek — только если $useLlm и эвристика не закрыла дыры.
-     * Генерация объявлений вызывает с useLlm=false: иначе 2 объявления ждут разметки всего каталога.
+     * Как корпуса: уже размеченные не трогаем, DeepSeek только дыры.
+     *
+     * @return array{total:int, pending_before:int, classified:int}
      */
-    public function enrichType(string $type, int $limit = 250, bool $useLlm = true): int
+    public function classifyAll(bool $force = false): array
     {
-        $products = $this->inStock($type, $limit);
-        $done = 0;
-        $needLlm = [];
+        $total = 0;
+        $pending = 0;
+        $classified = 0;
+        foreach (self::STD_TYPES as $type) {
+            $products = $this->inCategory($type);
+            $total += $products->count();
+            $result = $this->classifyProducts($type, $products, $force);
+            $pending += $result['pending_before'];
+            $classified += $result['classified'];
+        }
 
+        return [
+            'total' => $total,
+            'pending_before' => $pending,
+            'classified' => $classified,
+        ];
+    }
+
+    /**
+     * @param  Collection<int, StoreSupplierCatalogProduct>  $products
+     * @return array{total:int, pending_before:int, classified:int}
+     */
+    public function classifyProducts(string $type, Collection $products, bool $force = false, bool $useLlm = true): array
+    {
+        if ($force && $products->isNotEmpty()) {
+            StoreAvitoProductAttr::query()->whereIn('sku', $products->pluck('sku')->all())->delete();
+        }
+
+        $needLlm = [];
+        $pending = 0;
+        $done = 0;
         foreach ($products as $product) {
             $existing = StoreAvitoProductAttr::query()->where('sku', $product->sku)->first();
-            if ($existing && filled($existing->avito_brand) && filled($existing->avito_model)) {
+            if ($existing && $this->rowComplete($type, $existing)) {
                 continue;
             }
-
+            $pending++;
             $parsed = $this->parser->parse(
                 $type,
                 (string) $product->name,
@@ -67,12 +100,9 @@ class StoreAvitoCatalogAttrService
                 (string) ($product->vendor ?? ''),
             );
             $parsed['type'] = $type === 'storage_ssd' ? 'ssd' : $type;
-
-            $complete = $this->isComplete($type, $parsed);
             $this->upsert((int) $product->sku, $parsed, 'heuristic');
             $done++;
-
-            if (! $complete) {
+            if (! $this->isComplete($type, $parsed)) {
                 $needLlm[] = $product;
             }
         }
@@ -81,14 +111,26 @@ class StoreAvitoCatalogAttrService
             $done += $this->fillWithLlm($type, $needLlm);
         }
 
-        return $done;
+        return [
+            'total' => $products->count(),
+            'pending_before' => $pending,
+            'classified' => $done,
+        ];
+    }
+
+    /**
+     * Доразметить товары без attrs. DeepSeek — только если $useLlm и эвристика не закрыла дыры.
+     */
+    public function enrichType(string $type, int $limit = 250, bool $useLlm = true): int
+    {
+        return $this->classifyProducts($type, $this->inStock($type, $limit), false, $useLlm)['classified'];
     }
 
     public function enrichPool(bool $useLlm = true): int
     {
         $n = 0;
-        foreach (self::TYPES as $type) {
-            $n += $this->enrichType($type, useLlm: $useLlm);
+        foreach (self::STD_TYPES as $type) {
+            $n += $this->enrichType($type, 8000, $useLlm);
         }
 
         return $n;
@@ -156,10 +198,12 @@ class StoreAvitoCatalogAttrService
         }
 
         $dictHint = match ($type) {
-            'cpu' => 'avito_brand Intel|AMD; avito_model Core i5|Ryzen 7 и т.п.; avito_code — 12400F/7600X.',
-            'gpu' => 'avito_brand — производитель карты (ZOTAC, Palit, MSI, ASUS, Gigabyte), НЕ NVIDIA/AMD. avito_model — полное имя из названия, как ZOTAC GAMING GEFORCE RTX 4060 Ti 16GB AMP.',
-            'ram' => 'ram_gb число, ddr DDR4|DDR5, avito_code вида «32 ГБ».',
+            'cpu' => 'avito_brand Intel|AMD; avito_model Core i5|Ryzen 5; avito_code — точный индекс из названия: 7500F не 7500, 12400F, 7800X3D. «Ryzen 5 7500F» → code 7500F, socket AM5.',
+            'gpu' => 'avito_brand — производитель карты (ZOTAC, Palit, MSI, ASUS, Gigabyte), НЕ NVIDIA/AMD. avito_model — полное имя из прайса. avito_code — чип: RTX 5060, RTX 5060 Ti, RX 9070 XT (Ti/Super только если есть в названии).',
+            'ram' => 'ram_gb число комплекта, ddr DDR4|DDR5, avito_code вида «32 ГБ».',
             'motherboard' => 'socket AM4|AM5|LGA1700|LGA1851, ddr DDR4|DDR5, avito_brand ASUS|MSI|Gigabyte|ASRock, avito_model — полное имя платы.',
+            'psu' => 'wattage число ватт из названия (500/650/850).',
+            'storage_ssd' => 'ram_gb = объём в ГБ (256/512/1024), avito_model из названия.',
             default => 'заполни бренд/модель по названию.',
         };
 
@@ -236,13 +280,59 @@ PROMPT;
         );
     }
 
+    /**
+     * @return Collection<int, StoreSupplierCatalogProduct>
+     */
+    private function inCategory(string $type): Collection
+    {
+        $q = StoreSupplierCatalogProduct::query();
+        $ids = $this->categoryIds($type);
+        if (is_array($ids)) {
+            if ($ids === []) {
+                return collect();
+            }
+            $q->whereIn('category_external_id', $ids);
+        }
+
+        return $q->orderBy('sku')->limit(8000)->get();
+    }
+
+    /**
+     * @return list<int>|null
+     */
+    private function categoryIds(string $type): ?array
+    {
+        try {
+            return $this->search->categoryIdsForType($type);
+        } catch (\Throwable $e) {
+            Log::warning('Avito attrs categories: '.$e->getMessage());
+
+            return null;
+        }
+    }
+
+    private function rowComplete(string $type, StoreAvitoProductAttr $row): bool
+    {
+        return $this->isComplete($type, [
+            'avito_brand' => $row->avito_brand,
+            'avito_model' => $row->avito_model,
+            'avito_code' => $row->avito_code,
+            'socket' => $row->socket,
+            'ddr' => $row->ddr,
+            'ram_gb' => $row->ram_gb,
+            'wattage' => $row->wattage,
+        ]);
+    }
+
     private function isComplete(string $type, array $parsed): bool
     {
         return match ($type) {
             'cpu' => filled($parsed['avito_brand']) && filled($parsed['avito_model']) && filled($parsed['avito_code']) && filled($parsed['socket']),
-            'gpu' => filled($parsed['avito_brand']) && filled($parsed['avito_model']),
+            'gpu' => filled($parsed['avito_brand']) && filled($parsed['avito_model']) && filled($parsed['avito_code']),
             'ram' => (int) ($parsed['ram_gb'] ?? 0) > 0 && filled($parsed['ddr']),
-            'motherboard' => filled($parsed['socket']) && filled($parsed['avito_brand']),
+            'motherboard' => filled($parsed['socket']) && filled($parsed['ddr']) && filled($parsed['avito_brand']),
+            'psu' => (int) ($parsed['wattage'] ?? 0) > 0,
+            'storage_ssd', 'ssd' => (int) ($parsed['ram_gb'] ?? 0) > 0 || filled($parsed['avito_model']),
             default => filled($parsed['avito_model']),
         };
     }

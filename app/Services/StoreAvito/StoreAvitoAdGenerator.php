@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\Cache;
 class StoreAvitoAdGenerator
 {
     public function __construct(
-        private readonly StoreAvitoCatalogAttrService $attrs,
         private readonly StoreAvitoBuildComposer $composer,
         private readonly StoreAvitoPricer $pricer,
         private readonly StoreAvitoCopywriter $copywriter,
@@ -18,7 +17,7 @@ class StoreAvitoAdGenerator
     /**
      * @return array{created:int, skipped:int, enriched:int, error:?string}
      */
-    public function generate(?int $count = null, bool $enrich = true): array
+    public function generate(?int $count = null, bool $enrich = false): array
     {
         @set_time_limit(0);
         $lock = Cache::lock('store-avito-generate', 2400);
@@ -38,20 +37,13 @@ class StoreAvitoAdGenerator
      */
     private function generateLocked(?int $count, bool $enrich): array
     {
+        unset($enrich);
         $settings = StoreAvitoSetting::current();
         $count ??= max(1, (int) $settings->ads_per_hour);
         $error = null;
         $enriched = 0;
         $startedAt = now()->toIso8601String();
         $this->mark($settings, 'compose', $count, $startedAt);
-
-        if ($enrich) {
-            try {
-                $enriched = $this->attrs->enrichPool(useLlm: false);
-            } catch (\Throwable $e) {
-                $error = $e->getMessage();
-            }
-        }
 
         $this->mark($settings, 'copy', $count, $startedAt);
         $builds = $this->composer->compose($count, $settings);

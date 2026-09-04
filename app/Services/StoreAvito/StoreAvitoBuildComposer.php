@@ -208,23 +208,27 @@ class StoreAvitoBuildComposer
         $code = mb_strtolower((string) ($part?->avito_code ?? ''));
         $socket = $part?->socket;
 
-        return $cpus->filter(function (array $c) use ($code, $socket) {
-            if ($socket && ($c['socket'] ?? null) !== $socket) {
-                return false;
-            }
-            if ($code === '') {
-                return true;
-            }
-            $attr = mb_strtolower((string) ($c['avito_code'] ?? ''));
-            if ($attr === $code) {
-                return true;
-            }
-            $hay = mb_strtolower(($c['name'] ?? '').' '.($c['part'] ?? '').' '.($c['avito_code'] ?? ''));
-            $needle = preg_replace('/\s+/u', '', $code) ?? $code;
-            $hayCompact = preg_replace('/\s+/u', '', $hay) ?? $hay;
+        return $cpus->filter(fn (array $c) => $this->cpuMatches($c, $code, $socket))->values();
+    }
 
-            return (bool) preg_match('/(?<![0-9a-z])'.preg_quote($needle, '/').'(?![0-9a-z])/u', $hayCompact);
-        })->values();
+    /**
+     * @param  array<string, mixed>  $cpu
+     */
+    private function cpuMatches(array $cpu, string $code, ?string $socket): bool
+    {
+        if ($socket && filled($cpu['socket'] ?? null) && $cpu['socket'] !== $socket) {
+            return false;
+        }
+        if ($code === '') {
+            return true;
+        }
+        $attr = mb_strtolower(trim((string) ($cpu['avito_code'] ?? '')));
+        if ($attr === $code) {
+            return true;
+        }
+        $hay = mb_strtolower(($cpu['name'] ?? '').' '.($cpu['part'] ?? '').' '.$attr);
+
+        return (bool) preg_match('/(?<![0-9a-zа-яё])'.preg_quote($code, '/').'(?![0-9a-zа-яё])/u', $hay);
     }
 
     /**
@@ -246,13 +250,25 @@ class StoreAvitoBuildComposer
      */
     private function gpuChipMatches(array $gpu, string $code): bool
     {
+        $code = mb_strtolower(trim($code));
+        $attr = mb_strtolower(trim((string) ($gpu['avito_code'] ?? '')));
+        if ($attr !== '') {
+            if ($attr === $code) {
+                return true;
+            }
+            if (! str_contains($code, 'ti') && preg_match('/^'.preg_quote($code, '/').'\s+ti\b/u', $attr)) {
+                return false;
+            }
+            if (! str_contains($code, 'super') && preg_match('/^'.preg_quote($code, '/').'\s+super\b/u', $attr)) {
+                return false;
+            }
+        }
         $hay = mb_strtolower(implode(' ', array_filter([
             $gpu['name'] ?? null,
             $gpu['part'] ?? null,
             $gpu['avito_code'] ?? null,
             $gpu['avito_model'] ?? null,
         ])));
-        $code = mb_strtolower(trim($code));
         $tokens = preg_split('/\s+/', $code) ?: [];
         if ($tokens === []) {
             return false;
@@ -471,9 +487,6 @@ class StoreAvitoBuildComposer
             }
             $price = (float) ($p->price ?: $p->rrp ?: 0);
             if ($price <= 0) {
-                return null;
-            }
-            if ($p->stock_qty !== null && (int) $p->stock_qty <= 0) {
                 return null;
             }
 

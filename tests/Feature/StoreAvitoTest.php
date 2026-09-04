@@ -388,6 +388,81 @@ class StoreAvitoTest extends TestCase
         $this->assertStringContainsString('выключен', (string) $result['error']);
     }
 
+    public function test_classifies_7500f_and_skips_already_complete(): void
+    {
+        config(['ai_assistant.deepseek.api_key' => 'sk-deepseek-test']);
+        StoreSupplierCatalogProduct::query()->create([
+            'sku' => 10718447,
+            'name' => 'Процессор AMD Ryzen 5 7500F Soc-AM5 3.7GHz OEM',
+            'part' => '100-000000597',
+            'vendor' => 'AMD',
+            'price' => 12000,
+            'stock_qty' => 0,
+        ]);
+        $svc = app(\App\Services\StoreAvito\StoreAvitoCatalogAttrService::class);
+        $first = $svc->classifyProducts(
+            'cpu',
+            StoreSupplierCatalogProduct::query()->where('sku', 10718447)->get(),
+            false,
+            false,
+        );
+        $this->assertSame(1, $first['classified']);
+        $attr = StoreAvitoProductAttr::query()->where('sku', 10718447)->first();
+        $this->assertNotNull($attr);
+        $this->assertSame('7500F', $attr->avito_code);
+        $this->assertSame('AM5', $attr->socket);
+
+        \Illuminate\Support\Facades\Http::fake();
+        $again = $svc->classifyProducts(
+            'cpu',
+            StoreSupplierCatalogProduct::query()->where('sku', 10718447)->get(),
+            false,
+            true,
+        );
+        $this->assertSame(0, $again['pending_before']);
+        \Illuminate\Support\Facades\Http::assertNothingSent();
+    }
+
+    public function test_generator_matches_ryzen_5_7500f_catalog_name(): void
+    {
+        $this->seed(StoreAvitoPartsSeeder::class);
+        $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 7500F Soc-AM5 3.7GHz OEM', 'AMD', 12000, [
+            'socket' => 'AM5',
+            'avito_brand' => 'AMD',
+            'avito_model' => 'Ryzen 5',
+            'avito_code' => '7500F',
+        ]);
+        $this->addCatalogRow(221, 'motherboard', 'MSI B650 GAMING DDR5', 'MSI', 14000, [
+            'socket' => 'AM5',
+            'ddr' => 'DDR5',
+            'avito_brand' => 'MSI',
+        ]);
+        $this->addCatalogRow(321, 'ram', 'Kingston DDR5 32GB', 'Kingston', 8000, [
+            'ddr' => 'DDR5',
+            'ram_gb' => 32,
+            'avito_code' => '32 ГБ',
+        ]);
+        $this->addCatalogRow(521, 'ssd', 'Kingston NV2 256GB', 'Kingston', 2500, ['ram_gb' => 256]);
+        $this->addCatalogRow(621, 'psu', 'Chieftec 500W', 'Chieftec', 4000, ['wattage' => 500]);
+        $this->addCatalogRow(421, 'gpu', 'Palit GeForce RTX 5060 8GB', 'Palit', 28000, [
+            'avito_brand' => 'Palit',
+            'avito_model' => 'Palit GeForce RTX 5060 8GB',
+            'avito_code' => 'RTX 5060',
+        ]);
+        $this->makeConfig('cpu-7500f', 'ram-ddr5-32', 'ssd-m2-256', 'psu-500', 'gpu-rtx-5060');
+        StoreAvitoSetting::current()->forceFill([
+            'address' => 'Москва, Тестовая 1',
+            'pc_type' => 'Игровой',
+        ])->save();
+
+        $result = app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
+        $this->assertSame(1, $result['created'], (string) ($result['error'] ?? ''));
+        $ad = StoreAvitoAd::query()->first();
+        $this->assertSame('7500F', $ad->xml['CodeProcessor'] ?? null);
+        $this->assertStringContainsString('7500F', $ad->description);
+        $this->assertStringContainsString('RTX 5060', implode(' ', array_column($ad->components, 'name')));
+    }
+
     private function makeConfig(string $cpu, string $ram, string $ssd, string $psu, string $gpu = 'gpu-rtx-4060-ti'): StoreAvitoConfig
     {
         $cpuPart = StoreAvitoPart::query()->where('code', $cpu)->firstOrFail();
