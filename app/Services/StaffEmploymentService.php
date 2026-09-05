@@ -21,6 +21,8 @@ class StaffEmploymentService
 
         return [
             'required' => $admin->needsEmployment(),
+            'status' => $profile->status ?: StaffEmploymentProfile::STATUS_DRAFT,
+            'rejection_reason' => $profile->isRejected() ? $profile->rejection_reason : null,
             'rules' => StaffEmploymentRules::all(),
             'accepted_ids' => $accepted,
             'rules_complete' => $this->rulesComplete($accepted),
@@ -37,9 +39,48 @@ class StaffEmploymentService
         ];
     }
 
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function staffCard(Admin $employee): ?array
+    {
+        $profile = $employee->employmentProfile;
+        if (! $profile && ! $employee->needsEmployment()) {
+            return null;
+        }
+
+        if (! $profile) {
+            return [
+                'status' => StaffEmploymentProfile::STATUS_DRAFT,
+                'submitted_at' => null,
+                'rejection_reason' => null,
+                'has_scan' => false,
+            ];
+        }
+
+        $card = [
+            'status' => $profile->status ?: StaffEmploymentProfile::STATUS_DRAFT,
+            'submitted_at' => $profile->submitted_at?->toIso8601String(),
+            'rejection_reason' => $profile->rejection_reason,
+            'has_scan' => filled($profile->passport_scan_path),
+        ];
+
+        if ($profile->isOnReview() || $profile->isRejected()) {
+            $card['full_name'] = $profile->full_name;
+            $card['passport_series'] = $profile->passport_series;
+            $card['passport_number'] = $profile->passport_number;
+            $card['issued_by'] = $profile->issued_by;
+            $card['issued_at'] = $profile->issued_at?->toDateString();
+            $card['department_code'] = $profile->department_code;
+            $card['birth_date'] = $profile->birth_date?->toDateString();
+        }
+
+        return $card;
+    }
+
     public function acceptRule(Admin $admin, int $ruleId): void
     {
-        $this->assertPending($admin);
+        $this->assertEditable($admin);
 
         if (! in_array($ruleId, StaffEmploymentRules::ids(), true)) {
             throw new RuntimeException('Такого правила нет.');
@@ -60,7 +101,7 @@ class StaffEmploymentService
      */
     public function saveProfile(Admin $admin, array $data, ?UploadedFile $scan = null): StaffEmploymentProfile
     {
-        $this->assertPending($admin);
+        $this->assertEditable($admin);
 
         $profile = $this->profile($admin);
         $profile->fill([
@@ -90,10 +131,8 @@ class StaffEmploymentService
     /**
      * @param  array<string, mixed>  $data
      */
-    public function hire(Admin $admin, array $data, ?UploadedFile $scan = null): void
+    public function submit(Admin $admin, array $data, ?UploadedFile $scan = null): void
     {
-        $this->assertPending($admin);
-
         $profile = $this->saveProfile($admin, $data, $scan);
 
         if (! $this->rulesComplete($profile->acceptedRuleIds())) {
@@ -104,12 +143,72 @@ class StaffEmploymentService
             throw new RuntimeException('Загрузите скан паспорта.');
         }
 
+        $profile->update([
+            'status' => StaffEmploymentProfile::STATUS_REVIEW,
+            'submitted_at' => now(),
+            'reviewed_at' => null,
+            'reviewed_by' => null,
+            'rejection_reason' => null,
+        ]);
+
         $admin->update([
             'name' => $profile->full_name,
+            'role' => Admin::ROLE_INTERN,
+        ]);
+    }
+
+    public function approve(Admin $reviewer, Admin $applicant): void
+    {
+        $this->assertReviewer($reviewer);
+
+        if (! $applicant->needsEmployment()) {
+            throw new RuntimeException('Анкета уже рассмотрена.');
+        }
+
+        $profile = $this->profile($applicant);
+        if (! $profile->isOnReview()) {
+            throw new RuntimeException('Анкета не на проверке.');
+        }
+
+        $profile->update([
+            'status' => StaffEmploymentProfile::STATUS_APPROVED,
+            'reviewed_at' => now(),
+            'reviewed_by' => $reviewer->id,
+            'rejection_reason' => null,
+        ]);
+
+        $applicant->update([
+            'name' => $profile->full_name ?: $applicant->name,
             'employment_pending' => false,
             'hired_at' => now(),
             'role' => Admin::ROLE_INTERN,
-            'pay_type' => $admin->pay_type ?: 'shift',
+            'pay_type' => $applicant->pay_type ?: 'shift',
+        ]);
+    }
+
+    public function reject(Admin $reviewer, Admin $applicant, string $reason): void
+    {
+        $this->assertReviewer($reviewer);
+
+        $reason = trim($reason);
+        if (mb_strlen($reason) < 5) {
+            throw new RuntimeException('Укажите причину отклонения.');
+        }
+
+        if (! $applicant->needsEmployment()) {
+            throw new RuntimeException('Анкета уже рассмотрена.');
+        }
+
+        $profile = $this->profile($applicant);
+        if (! $profile->isOnReview()) {
+            throw new RuntimeException('Анкета не на проверке.');
+        }
+
+        $profile->update([
+            'status' => StaffEmploymentProfile::STATUS_REJECTED,
+            'reviewed_at' => now(),
+            'reviewed_by' => $reviewer->id,
+            'rejection_reason' => $reason,
         ]);
     }
 
@@ -120,6 +219,7 @@ class StaffEmploymentService
             [
                 'full_name' => $admin->name,
                 'accepted_rule_ids' => [],
+                'status' => StaffEmploymentProfile::STATUS_DRAFT,
             ]
         );
     }
@@ -138,6 +238,23 @@ class StaffEmploymentService
     {
         if (! $admin->needsEmployment()) {
             throw new RuntimeException('Анкета устройства уже заполнена.');
+        }
+    }
+
+    private function assertEditable(Admin $admin): void
+    {
+        $this->assertPending($admin);
+
+        $profile = $this->profile($admin);
+        if ($profile->isOnReview()) {
+            throw new RuntimeException('Анкета на проверке — дождитесь решения.');
+        }
+    }
+
+    private function assertReviewer(Admin $reviewer): void
+    {
+        if (! $reviewer->canReviewEmployment()) {
+            throw new RuntimeException('Проверяет только владелец или управляющий.');
         }
     }
 }

@@ -117,12 +117,12 @@ class StaffPayrollController extends Controller
         $scan = $request->file('passport_scan');
 
         try {
-            $this->employment->hire($admin, $data, $scan);
+            $this->employment->submit($admin, $data, $scan);
         } catch (RuntimeException $e) {
             return back()->withErrors(['message' => $e->getMessage()]);
         }
 
-        return back()->with('success', 'Вы устроены. Добро пожаловать в смену.');
+        return back()->with('success', 'Анкета отправлена на проверку.');
     }
 
     /**

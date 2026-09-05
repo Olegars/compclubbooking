@@ -70,6 +70,8 @@ type Calendar = {
 
 type Employment = {
     required: boolean
+    status?: 'draft' | 'review' | 'rejected' | 'approved'
+    rejection_reason?: string | null
     rules: Array<{ id: number; title: string; body: string }>
     accepted_ids: number[]
     rules_complete: boolean
@@ -110,6 +112,8 @@ const props = withDefaults(defineProps<{
     }),
     employment: () => ({
         required: false,
+        status: 'draft',
+        rejection_reason: null,
         rules: [],
         accepted_ids: [],
         rules_complete: false,
@@ -363,6 +367,8 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                 :accepted-ids="employment.accepted_ids"
                 :rules-complete="employment.rules_complete"
                 :profile="employment.profile"
+                :status="employment.status || 'draft'"
+                :rejection-reason="employment.rejection_reason || null"
             />
 
             <template v-else>

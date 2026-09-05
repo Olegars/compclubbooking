@@ -131,7 +131,7 @@ const submitRegister = () => {
                     {{ registerForm.processing ? 'Регистрация...' : 'Перейти в кабинет' }}
                 </button>
                 <p class="text-[10px] uppercase tracking-widest text-white/30 font-black text-center">
-                    Дальше в кабинете: правила, паспорт, «Устроиться»
+                    Дальше: правила, паспорт, проверка владельцем
                 </p>
             </form>
         </div>

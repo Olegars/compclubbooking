@@ -510,12 +510,19 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::delete('/lights/{light}', [LightAdminController::class, 'destroyLight']);
     });
 
-    // УРОВЕНЬ: OWNER
-    Route::middleware(['role:owner'])->group(function () {
-        Route::get('/taxes', [TaxController::class, 'index'])->name('admin.taxes.index');
+    // УРОВЕНЬ: SUPERVISOR / OWNER — штат и проверка анкет
+    Route::middleware(['role:supervisor,owner'])->group(function () {
         Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
         Route::post('/staff/{admin}/fines', [StaffController::class, 'storeFine'])->name('admin.staff.fines.store');
         Route::post('/staff/{admin}/role', [StaffController::class, 'updateRole'])->name('admin.staff.role.update');
+        Route::get('/staff/{admin}/employment/scan', [StaffController::class, 'employmentScan'])->name('admin.staff.employment.scan');
+        Route::post('/staff/{admin}/employment/approve', [StaffController::class, 'approveEmployment'])->name('admin.staff.employment.approve');
+        Route::post('/staff/{admin}/employment/reject', [StaffController::class, 'rejectEmployment'])->name('admin.staff.employment.reject');
+    });
+
+    // УРОВЕНЬ: OWNER
+    Route::middleware(['role:owner'])->group(function () {
+        Route::get('/taxes', [TaxController::class, 'index'])->name('admin.taxes.index');
 
         Route::get('/store/locations', [StoreLocationController::class, 'index'])->name('admin.store.locations');
         Route::post('/store/locations', [StoreLocationController::class, 'store'])->name('admin.store.locations.store');

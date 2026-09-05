@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Admin;
+use App\Models\StaffEmploymentProfile;
 use App\Support\StaffEmploymentRules;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,11 +38,12 @@ class StaffEmploymentTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->component('Admin/Salary')
                 ->where('employment.required', true)
+                ->where('employment.status', 'draft')
                 ->has('employment.rules', 10)
             );
     }
 
-    public function test_cannot_hire_until_all_rules_and_passport_are_complete(): void
+    public function test_cannot_submit_until_all_rules_and_passport_are_complete(): void
     {
         $admin = $this->pendingIntern();
 
@@ -55,31 +57,19 @@ class StaffEmploymentTest extends TestCase
         $this->assertTrue($admin->fresh()->employment_pending);
     }
 
-    public function test_accepting_rules_then_hire_completes_employment(): void
+    public function test_submit_sends_application_to_review_without_hiring(): void
     {
         Storage::fake('local');
         $admin = $this->pendingIntern();
-
-        $this->actingAs($admin, 'admin')->withoutMiddleware(ValidateCsrfToken::class);
-
-        foreach (StaffEmploymentRules::ids() as $id) {
-            $this->from('/admin/salary')
-                ->post('/admin/salary/employment/rules', ['rule_id' => $id])
-                ->assertRedirect('/admin/salary');
-        }
-
-        $this->from('/admin/salary')
-            ->post('/admin/salary/employment/hire', $this->hirePayload([
-                'passport_scan' => UploadedFile::fake()->image('passport.jpg'),
-            ]))
-            ->assertRedirect('/admin/salary');
+        $this->submitComplete($admin);
 
         $admin->refresh();
-        $this->assertFalse((bool) $admin->employment_pending);
-        $this->assertNotNull($admin->hired_at);
+        $this->assertTrue((bool) $admin->employment_pending);
+        $this->assertNull($admin->hired_at);
         $this->assertSame('Иванов Иван Иванович', $admin->name);
         $this->assertDatabaseHas('staff_employment_profiles', [
             'admin_id' => $admin->id,
+            'status' => StaffEmploymentProfile::STATUS_REVIEW,
             'passport_series' => '1234',
             'passport_number' => '567890',
         ]);
@@ -87,7 +77,145 @@ class StaffEmploymentTest extends TestCase
         $this->actingAs($admin, 'admin')
             ->get('/admin/salary')
             ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('employment.required', true)
+                ->where('employment.status', 'review')
+            );
+    }
+
+    public function test_intern_cannot_edit_application_while_on_review(): void
+    {
+        Storage::fake('local');
+        $admin = $this->pendingIntern();
+        $this->submitComplete($admin);
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/salary')
+            ->post('/admin/salary/employment/rules', ['rule_id' => 1])
+            ->assertRedirect('/admin/salary')
+            ->assertSessionHasErrors();
+    }
+
+    public function test_owner_approves_employment_and_opens_cabinet(): void
+    {
+        Storage::fake('local');
+        $intern = $this->pendingIntern();
+        $this->submitComplete($intern);
+        $owner = $this->makeReviewer('owner');
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/staff')
+            ->post("/admin/staff/{$intern->id}/employment/approve")
+            ->assertRedirect('/admin/staff');
+
+        $intern->refresh();
+        $this->assertFalse((bool) $intern->employment_pending);
+        $this->assertNotNull($intern->hired_at);
+        $this->assertDatabaseHas('staff_employment_profiles', [
+            'admin_id' => $intern->id,
+            'status' => StaffEmploymentProfile::STATUS_APPROVED,
+            'reviewed_by' => $owner->id,
+        ]);
+
+        $this->actingAs($intern, 'admin')
+            ->get('/admin/salary')
+            ->assertOk()
             ->assertInertia(fn ($page) => $page->where('employment.required', false));
+    }
+
+    public function test_supervisor_can_reject_and_intern_sees_reason(): void
+    {
+        Storage::fake('local');
+        $intern = $this->pendingIntern();
+        $this->submitComplete($intern);
+        $supervisor = $this->makeReviewer('supervisor');
+
+        $this->actingAs($supervisor, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/staff')
+            ->post("/admin/staff/{$intern->id}/employment/reject", [
+                'reason' => 'Нечитаемый скан паспорта',
+            ])
+            ->assertRedirect('/admin/staff');
+
+        $intern->refresh();
+        $this->assertTrue((bool) $intern->employment_pending);
+        $this->assertNull($intern->hired_at);
+
+        $this->actingAs($intern, 'admin')
+            ->get('/admin/salary')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('employment.required', true)
+                ->where('employment.status', 'rejected')
+                ->where('employment.rejection_reason', 'Нечитаемый скан паспорта')
+            );
+    }
+
+    public function test_rejected_intern_can_resubmit(): void
+    {
+        Storage::fake('local');
+        $intern = $this->pendingIntern();
+        $this->submitComplete($intern);
+        $owner = $this->makeReviewer('owner');
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post("/admin/staff/{$intern->id}/employment/reject", [
+                'reason' => 'Нечитаемый скан паспорта',
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($intern, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/salary')
+            ->post('/admin/salary/employment/hire', $this->hirePayload([
+                'passport_scan' => UploadedFile::fake()->image('passport2.jpg'),
+            ]))
+            ->assertRedirect('/admin/salary');
+
+        $this->assertDatabaseHas('staff_employment_profiles', [
+            'admin_id' => $intern->id,
+            'status' => StaffEmploymentProfile::STATUS_REVIEW,
+            'rejection_reason' => null,
+        ]);
+    }
+
+    public function test_floor_admin_cannot_review_employment(): void
+    {
+        Storage::fake('local');
+        $intern = $this->pendingIntern();
+        $this->submitComplete($intern);
+        $admin = $this->makeReviewer('admin');
+        \App\Models\Shift::create([
+            'admin_id' => $admin->id,
+            'status' => 'open',
+            'started_at' => now()->subHour(),
+            'cash_start' => 0,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post("/admin/staff/{$intern->id}/employment/approve")
+            ->assertForbidden();
+    }
+
+    public function test_supervisor_can_open_staff_page_with_review_queue(): void
+    {
+        Storage::fake('local');
+        $intern = $this->pendingIntern();
+        $this->submitComplete($intern);
+        $supervisor = $this->makeReviewer('supervisor');
+
+        $this->actingAs($supervisor, 'admin')
+            ->get('/admin/staff')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/Staff')
+                ->has('staff')
+            );
     }
 
     public function test_existing_staff_skips_employment(): void
@@ -119,6 +247,36 @@ class StaffEmploymentTest extends TestCase
             'pay_type' => 'shift',
             'employment_pending' => true,
         ]);
+    }
+
+    private function makeReviewer(string $role): Admin
+    {
+        return Admin::create([
+            'name' => ucfirst($role),
+            'email' => $role.'.'.uniqid().'@slots.test',
+            'password' => 'password',
+            'role' => $role,
+            'base_rate' => 3000,
+            'pay_type' => 'shift',
+            'employment_pending' => false,
+        ]);
+    }
+
+    private function submitComplete(Admin $admin): void
+    {
+        $this->actingAs($admin, 'admin')->withoutMiddleware(ValidateCsrfToken::class);
+
+        foreach (StaffEmploymentRules::ids() as $id) {
+            $this->from('/admin/salary')
+                ->post('/admin/salary/employment/rules', ['rule_id' => $id])
+                ->assertRedirect('/admin/salary');
+        }
+
+        $this->from('/admin/salary')
+            ->post('/admin/salary/employment/hire', $this->hirePayload([
+                'passport_scan' => UploadedFile::fake()->image('passport.jpg'),
+            ]))
+            ->assertRedirect('/admin/salary');
     }
 
     /**

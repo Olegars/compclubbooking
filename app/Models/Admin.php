@@ -151,6 +151,11 @@ class Admin extends Authenticatable
         return in_array($this->role, [self::ROLE_OWNER, self::ROLE_SUPERVISOR], true);
     }
 
+    public function canReviewEmployment(): bool
+    {
+        return in_array($this->role, [self::ROLE_OWNER, self::ROLE_SUPERVISOR], true);
+    }
+
     /** Неактивный админ и стажёр видят только личный кабинет. */
     public function isSalaryOnly(): bool
     {

@@ -25,6 +25,8 @@ const formatMoney = (val: number | string | null) => {
 
 const roleClass = (duty: string, role: string) => {
     if (duty === 'active') return 'bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30'
+    if (duty === 'review') return 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+    if (duty === 'rejected') return 'bg-red-500/10 text-red-400 border-red-500/30'
     if (duty === 'intern') return 'bg-amber-500/10 text-amber-400 border-amber-500/30'
     if (duty === 'inactive') return 'bg-white/5 text-white/40 border-white/10'
     if (role === 'owner') return 'bg-purple-500/10 text-purple-500 border-purple-500/30'
@@ -53,11 +55,20 @@ const roleTabs = [
 const activeTab = ref('all')
 
 const countByRole = (role: string) => props.staff.filter((person) => person.role === role).length
+const reviewCount = computed(() => props.staff.filter((person) => person.employment?.status === 'review').length)
 
 const visibleStaff = computed(() => {
+    if (activeTab.value === 'review') {
+        return props.staff.filter((person) => person.employment?.status === 'review')
+    }
     if (activeTab.value === 'all') return props.staff
     return props.staff.filter((person) => person.role === activeTab.value)
 })
+
+const isPendingHire = (person: any) => {
+    const status = person.employment?.status
+    return status === 'draft' || status === 'review' || status === 'rejected'
+}
 
 const roleBusyId = ref<number | null>(null)
 
@@ -117,6 +128,57 @@ const submitFine = () => {
         },
     })
 }
+
+const reviewBusyId = ref<number | null>(null)
+const rejectTarget = ref<any>(null)
+const rejectReason = ref('')
+const rejectProcessing = ref(false)
+
+const approveHire = (person: any) => {
+    if (reviewBusyId.value || person.employment?.status !== 'review') return
+    reviewBusyId.value = person.id
+    router.post(`/admin/staff/${person.id}/employment/approve`, {}, {
+        preserveScroll: true,
+        onFinish: () => { reviewBusyId.value = null },
+        onError: (errors) => {
+            error((errors as any).employment || 'Не удалось одобрить анкету')
+        },
+    })
+}
+
+const openReject = (person: any) => {
+    if (person.employment?.status !== 'review') return
+    rejectTarget.value = person
+    rejectReason.value = ''
+}
+
+const closeReject = () => {
+    if (rejectProcessing.value) return
+    rejectTarget.value = null
+}
+
+const submitReject = () => {
+    if (!rejectTarget.value || rejectProcessing.value) return
+    const reason = rejectReason.value.trim()
+    if (reason.length < 5) {
+        error('Укажите причину отклонения')
+        return
+    }
+
+    rejectProcessing.value = true
+    router.post(`/admin/staff/${rejectTarget.value.id}/employment/reject`, { reason }, {
+        preserveScroll: true,
+        onFinish: () => {
+            rejectProcessing.value = false
+        },
+        onSuccess: () => {
+            rejectTarget.value = null
+        },
+        onError: (errors) => {
+            error((errors as any).reason || 'Не удалось отклонить анкету')
+        },
+    })
+}
 </script>
 
 <template>
@@ -143,6 +205,12 @@ const submitFine = () => {
                         @click="activeTab = 'all'">
                     Все {{ staff.length }}
                 </button>
+                <button type="button"
+                        class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                        :class="activeTab === 'review' ? 'bg-amber-400 text-black' : 'border border-amber-500/30 text-amber-400/80 hover:text-amber-300'"
+                        @click="activeTab = 'review'">
+                    На проверке {{ reviewCount }}
+                </button>
                 <button v-for="tab in roleTabs" :key="tab.value" type="button"
                         class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
                         :class="activeTab === tab.value ? 'bg-purple-500 text-black' : 'border border-white/10 text-white/50 hover:text-white'"
@@ -153,7 +221,9 @@ const submitFine = () => {
 
             <div v-if="visibleStaff.length === 0" class="py-20 text-center">
                 <div class="text-white/10 text-xl font-black uppercase tracking-widest italic mb-2">Нет сотрудников</div>
-                <div class="text-white/30 text-[10px] uppercase tracking-widest">В этой роли пока никого нет</div>
+                <div class="text-white/30 text-[10px] uppercase tracking-widest">
+                    {{ activeTab === 'review' ? 'Анкет на проверке нет' : 'В этой роли пока никого нет' }}
+                </div>
             </div>
 
             <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -200,14 +270,44 @@ const submitFine = () => {
                         </div>
                     </div>
 
-                    <button v-if="person.id !== currentAdminId"
+                    <div v-if="person.employment?.status === 'review'" class="mt-6 space-y-3 pt-6 border-t border-amber-500/20">
+                        <div class="text-[9px] text-amber-400 uppercase font-black tracking-widest">Анкета устройства</div>
+                        <div class="text-white text-xs font-bold">{{ person.employment.full_name }}</div>
+                        <div class="text-white/50 text-[11px] font-bold space-y-1">
+                            <div>Паспорт {{ person.employment.passport_series }} {{ person.employment.passport_number }}</div>
+                            <div>{{ person.employment.issued_by }}</div>
+                            <div>Выдан {{ person.employment.issued_at }} · код {{ person.employment.department_code }}</div>
+                            <div>Дата рождения {{ person.employment.birth_date }}</div>
+                        </div>
+                        <a v-if="person.employment.has_scan"
+                           :href="`/admin/staff/${person.id}/employment/scan`"
+                           target="_blank"
+                           class="inline-block text-[10px] uppercase font-black tracking-widest text-amber-400 hover:text-amber-300">
+                            Открыть скан паспорта
+                        </a>
+                        <div class="flex gap-2 pt-2">
+                            <button type="button"
+                                    :disabled="reviewBusyId === person.id"
+                                    class="flex-1 py-3 bg-[#22c55e] hover:bg-[#1ea34d] text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40"
+                                    @click="approveHire(person)">
+                                Одобрить
+                            </button>
+                            <button type="button"
+                                    class="flex-1 py-3 border border-red-500/30 text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                                    @click="openReject(person)">
+                                Отклонить
+                            </button>
+                        </div>
+                    </div>
+
+                    <button v-if="person.id !== currentAdminId && !isPendingHire(person)"
                             type="button"
                             @click="openFine(person)"
                             class="mt-6 w-full py-3 border border-red-500/20 hover:border-red-500/50 text-red-400/80 hover:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
                         Штраф
                     </button>
 
-                    <div v-if="person.is_floor_admin" class="mt-3">
+                    <div v-if="person.is_floor_admin && !isPendingHire(person)" class="mt-3">
                         <label class="text-[9px] text-white/30 uppercase font-black tracking-widest">Должность</label>
                         <select
                             class="mt-2 w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-[11px] font-black uppercase tracking-wider text-white outline-none"
@@ -253,6 +353,32 @@ const submitFine = () => {
                     <button type="button" @click="submitFine" :disabled="fineProcessing"
                             class="flex-1 py-4 bg-red-500 hover:bg-red-400 text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40">
                         Начислить
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="rejectTarget" class="fixed inset-0 z-[99998] flex items-center justify-center p-4 font-mono">
+            <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="closeReject"></div>
+            <div class="relative z-10 w-full max-w-md bg-[#0a0a0a] border border-red-500/30 rounded-[1rem] p-8 shadow-[0_0_80px_rgba(239,68,68,0.12)]">
+                <h3 class="text-xl font-black uppercase italic tracking-tighter text-white mb-2">Отклонить анкету</h3>
+                <p class="text-[10px] uppercase tracking-widest text-white/40 font-black mb-6">{{ rejectTarget.name }}</p>
+
+                <label class="text-[10px] text-white/30 uppercase font-black tracking-widest">Причина</label>
+                <textarea v-model="rejectReason"
+                          rows="4"
+                          maxlength="500"
+                          placeholder="Что нужно исправить…"
+                          class="mt-2 mb-6 w-full bg-black/40 border border-white/10 focus:border-red-500/40 rounded-2xl px-4 py-3 text-white text-sm outline-none resize-none"></textarea>
+
+                <div class="flex gap-3">
+                    <button type="button" @click="closeReject"
+                            class="flex-1 py-4 bg-white/5 border border-white/10 text-white/50 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest">
+                        Отмена
+                    </button>
+                    <button type="button" @click="submitReject" :disabled="rejectProcessing"
+                            class="flex-1 py-4 bg-red-500 hover:bg-red-400 text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40">
+                        Отклонить
                     </button>
                 </div>
             </div>
