@@ -137,7 +137,17 @@ class AdminDutyAccessTest extends TestCase
         $this->assertTrue($super->hasFullClubOps());
     }
 
-    private function makeAdmin(string $role, ?float $rate = 2000): Admin
+    public function test_owner_sees_club_ops_nav(): void
+    {
+        $owner = $this->makeAdmin('owner', null);
+
+        $this->actingAs($owner, 'admin')->get('/admin/salary')->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('can_access_club', true)
+                ->where('is_salary_only', false)
+                ->where('has_full_club_ops', true)
+            );
+    }
     {
         return Admin::create([
             'name' => ucfirst($role).' '.uniqid(),
