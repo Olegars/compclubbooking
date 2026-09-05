@@ -145,9 +145,9 @@ class ShiftSlotBookingTest extends TestCase
 
         $this->actingAs($owner, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
-            ->from('/admin/salary')
-            ->post('/admin/salary/shift-model', ['hours' => 24])
-            ->assertRedirect('/admin/salary');
+            ->from('/admin/config')
+            ->post('/admin/config/shifts', ['hours' => 24])
+            ->assertRedirect('/admin/config');
 
         $slot24 = $this->firstBookableSlot($admin);
         $this->assertSame(24, $slot24['duration_hours']);
@@ -161,9 +161,9 @@ class ShiftSlotBookingTest extends TestCase
 
         $this->actingAs($super, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
-            ->from('/admin/salary')
-            ->post('/admin/salary/shift-model', ['hours' => 24])
-            ->assertRedirect('/admin/salary');
+            ->from('/admin/config')
+            ->post('/admin/config/shifts', ['hours' => 24])
+            ->assertRedirect('/admin/config');
 
         $this->assertSame(24, app(ShiftSlotService::class)->calendar($admin, now()->addMonth()->format('Y-m'))['shift_hours']);
     }
@@ -175,9 +175,9 @@ class ShiftSlotBookingTest extends TestCase
 
         $this->actingAs($super, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
-            ->from('/admin/salary')
-            ->post('/admin/salary/shift-model', ['hours' => 12, 'starts_hour' => 12])
-            ->assertRedirect('/admin/salary');
+            ->from('/admin/config')
+            ->post('/admin/config/shifts', ['hours' => 12, 'starts_hour' => 12])
+            ->assertRedirect('/admin/config');
 
         $calendar = app(ShiftSlotService::class)->calendar($admin, now()->addMonth()->format('Y-m'));
         $this->assertSame(12, $calendar['starts_hour']);
@@ -201,8 +201,22 @@ class ShiftSlotBookingTest extends TestCase
 
         $this->actingAs($admin, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
-            ->post('/admin/salary/shift-model', ['hours' => 24])
-            ->assertForbidden();
+            ->post('/admin/config/shifts', ['hours' => 24])
+            ->assertRedirect('/admin/salary');
+    }
+
+    public function test_supervisor_opens_club_config(): void
+    {
+        $super = $this->makeAdmin('supervisor');
+
+        $this->actingAs($super, 'admin')
+            ->get('/admin/config')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/ClubConfig')
+                ->where('shift_hours', 12)
+                ->where('starts_hour', 10)
+            );
     }
 
     public function test_booked_12h_slot_survives_switch_to_24h(): void

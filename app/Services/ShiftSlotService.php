@@ -19,7 +19,7 @@ class ShiftSlotService
     public const CANCEL_BEFORE_HOURS = 48;
 
     /**
-     * @return array{month: string, cancel_before_hours: int, shift_hours: int, starts_hour: int, can_set_model: bool, days: array<string, mixed>, my_bookings: list<array<string, mixed>>}
+     * @return array{month: string, cancel_before_hours: int, shift_hours: int, starts_hour: int, days: array<string, mixed>, my_bookings: list<array<string, mixed>>}
      */
     public function calendar(Admin $admin, ?string $month = null): array
     {
@@ -93,7 +93,6 @@ class ShiftSlotService
             'cancel_before_hours' => self::CANCEL_BEFORE_HOURS,
             'shift_hours' => $hours,
             'starts_hour' => $startsHour,
-            'can_set_model' => $admin->canSetShiftModel(),
             'days' => $days,
             'my_bookings' => $my,
         ];

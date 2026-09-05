@@ -286,6 +286,11 @@ const switchLocation = (clubId: string | number) => {
                 <!-- СЕКЦИЯ: КОНФИГУРАЦИЯ (supervisor+) -->
                 <div v-if="canAccessClub && isSupervisorPlus" class="space-y-2">
                     <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Конфигурация</div>
+                    <Link href="/admin/config"
+                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
+                          :class="isActive('/admin/config') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                        <span>⚙️</span> Конфигурация
+                    </Link>
                     <Link href="/admin/zones"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/zones') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">

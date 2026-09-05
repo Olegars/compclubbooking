@@ -50,6 +50,7 @@ use App\Http\Controllers\Admin\AchievementAdminController;
 use App\Http\Controllers\Admin\OverlayAdminController;
 use App\Http\Controllers\Admin\VideoSurveillanceController;
 use App\Http\Controllers\Admin\BookingSettingsController;
+use App\Http\Controllers\Admin\ClubConfigController;
 use App\Http\Controllers\Admin\AiAssistantSettingsController;
 use App\Http\Controllers\Admin\SystemDocsController;
 use App\Http\Controllers\Admin\SupplierController;
@@ -238,9 +239,6 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
     Route::post('/salary/withdraw', [StaffPayrollController::class, 'withdraw'])->name('admin.salary.withdraw');
     Route::post('/salary/slots/{slot}/book', [StaffPayrollController::class, 'bookSlot'])->name('admin.salary.slots.book');
     Route::post('/salary/slots/{booking}/cancel', [StaffPayrollController::class, 'cancelSlot'])->name('admin.salary.slots.cancel');
-    Route::post('/salary/shift-model', [StaffPayrollController::class, 'setShiftModel'])
-        ->middleware('role:supervisor,owner')
-        ->name('admin.salary.shift-model');
     Route::post('/salary/employment/rules', [StaffPayrollController::class, 'acceptEmploymentRule'])->name('admin.salary.employment.rules');
     Route::post('/salary/employment/hire', [StaffPayrollController::class, 'hire'])->name('admin.salary.employment.hire');
     Route::post('/shifts/intern/join', [ShiftController::class, 'internJoin'])->name('admin.shift.intern.join');
@@ -386,6 +384,9 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::put('/suppliers/{supplier}', [SupplierController::class, 'update']);
         Route::post('/suppliers/invoices', [SupplierController::class, 'storeInvoice']);
         Route::post('/suppliers/invoices/{invoice}/pay', [SupplierController::class, 'payInvoice']);
+
+        Route::get('/config', [ClubConfigController::class, 'index'])->name('admin.config');
+        Route::post('/config/shifts', [ClubConfigController::class, 'updateShifts'])->name('admin.config.shifts');
 
         // КАРТА И ТАРИФЫ
         Route::get('/map-builder', fn() => Inertia::render('Admin/MapBuilder', [
