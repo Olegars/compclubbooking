@@ -114,6 +114,50 @@ class StaffPayrollService
         ]);
     }
 
+    /**
+     * Недостача на пересменке, которую сдающий не списал со склада.
+     *
+     * @param  list<array{name:string,expected:int,actual:int,cost:float,price:float}>  $lines
+     */
+    public function chargeHandoverShortage(Admin $outgoing, Admin $incoming, ?Shift $shift, array $lines): ?StaffLedger
+    {
+        $parts = [];
+        $total = 0.0;
+
+        foreach ($lines as $line) {
+            $missing = (int) $line['expected'] - (int) $line['actual'];
+            if ($missing <= 0) {
+                continue;
+            }
+
+            $unit = (float) $line['cost'] > 0 ? (float) $line['cost'] : (float) $line['price'];
+            $sum = round($missing * max(0, $unit), 2);
+            $total = round($total + $sum, 2);
+            $parts[] = $line['name'].' −'.$missing.($sum > 0 ? ' ('.$sum.' ₽)' : '');
+        }
+
+        if ($parts === []) {
+            return null;
+        }
+
+        $reason = 'Недостача при передаче смены: '.implode('; ', $parts);
+
+        $attrs = [
+            'admin_id' => $outgoing->id,
+            'type' => StaffLedger::TYPE_FINE,
+            'shift_id' => $shift?->id,
+        ];
+
+        return StaffLedger::query()->firstOrCreate(
+            $attrs,
+            [
+                'amount' => $total,
+                'reason' => $reason,
+                'created_by' => $incoming->id,
+            ]
+        );
+    }
+
     public function withdraw(Admin $admin, ?float $amount = null): StaffLedger
     {
         return DB::transaction(function () use ($admin, $amount) {

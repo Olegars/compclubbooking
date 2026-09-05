@@ -36,6 +36,7 @@ class Admin extends Authenticatable
         'name', 'email', 'password', 'role', 'club_id',
         'is_official_employee', 'base_rate', 'pay_type',
         'employment_pending', 'hired_at', 'fired_at', 'fired_by',
+        'shift_handed_over_at',
     ];
 
     protected $hidden = [
@@ -49,6 +50,7 @@ class Admin extends Authenticatable
         'employment_pending' => 'boolean',
         'hired_at' => 'datetime',
         'fired_at' => 'datetime',
+        'shift_handed_over_at' => 'datetime',
     ];
 
     public function club(): BelongsTo
@@ -149,7 +151,17 @@ class Admin extends Authenticatable
             return true;
         }
 
-        return $this->role === self::ROLE_ADMIN && $this->isShiftLead();
+        if ($this->role !== self::ROLE_ADMIN || ! $this->isShiftLead()) {
+            return false;
+        }
+
+        $shift = Shift::query()
+            ->where('status', '!=', 'closed')
+            ->where('admin_id', $this->id)
+            ->orderByDesc('id')
+            ->first();
+
+        return $shift !== null && $shift->status !== 'transferring';
     }
 
     public function canSetShiftModel(): bool

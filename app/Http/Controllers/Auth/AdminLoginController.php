@@ -85,6 +85,11 @@ class AdminLoginController extends Controller
     // Выход
     public function logout(Request $request)
     {
+        $admin = Auth::guard('admin')->user();
+        if ($admin && $admin->shift_handed_over_at) {
+            $admin->forceFill(['shift_handed_over_at' => null])->save();
+        }
+
         Auth::guard('admin')->logout();
 
         $request->session()->invalidate();

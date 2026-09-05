@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Link, router, usePage } from '@inertiajs/vue3'
-import { computed, watch, ref } from 'vue'
+import { computed, watch, ref, onMounted, onUnmounted } from 'vue'
+import axios from 'axios'
 import Toast from '@/Components/Toast.vue'
 import { useAdminAlerts } from '@/Composables/useAdminAlerts'
 import { useAdminBarcodeScanner } from '@/Composables/useAdminBarcodeScanner'
@@ -39,6 +40,9 @@ const showLocationSwitcher = computed(() => isOwner.value && locations.value.len
 
 const shift = computed(() => page.props.admin_shift as any)
 const shiftIsActive = computed(() => Boolean(shift.value?.is_mine || shift.value?.is_intern_on_shift || shift.value?.duty === 'active'))
+const overlay = ref<string | null>(shift.value?.overlay || null)
+const kicking = ref(false)
+let statusTimer: number | null = null
 
 const shiftLabel = computed(() => {
     const parts: string[] = []
@@ -49,10 +53,14 @@ const shiftLabel = computed(() => {
         return parts.join(' · ')
     }
 
+    if (shift.value?.duty === 'incoming') {
+        return dutyLabel
+    }
+
     if (!shift.value?.id) {
         parts.push('Смена закрыта')
     } else if (shift.value.is_mine) {
-        parts.push('Смена активна')
+        parts.push(shift.value.status === 'transferring' ? 'Передача смены' : 'Смена активна')
     } else {
         parts.push(`Смена: ${shift.value.admin_name || '—'}`)
     }
@@ -70,6 +78,42 @@ const switchLocation = (clubId: string | number) => {
         onFinish: () => { switching.value = false },
     })
 }
+
+watch(() => shift.value?.overlay, (next) => {
+    if (next) overlay.value = next
+}, { immediate: true })
+
+const kickOutgoing = () => {
+    if (kicking.value) return
+    kicking.value = true
+    router.post('/admin/logout')
+}
+
+const pollShiftStatus = async () => {
+    if (kicking.value) return
+    try {
+        const { data } = await axios.get('/admin/api/shifts/status')
+        const next = data?.admin_shift?.overlay || null
+        if (next) overlay.value = next
+        if (next === 'handed_over') {
+            window.setTimeout(kickOutgoing, 2800)
+        }
+    } catch {
+        /* сеть / 401 после кика */
+    }
+}
+
+onMounted(() => {
+    pollShiftStatus()
+    statusTimer = window.setInterval(pollShiftStatus, 2000)
+    if (overlay.value === 'handed_over') {
+        window.setTimeout(kickOutgoing, 2800)
+    }
+})
+
+onUnmounted(() => {
+    if (statusTimer) window.clearInterval(statusTimer)
+})
 </script>
 
 <template>
@@ -417,6 +461,25 @@ const switchLocation = (clubId: string | number) => {
         </div>
 
         <Toast />
+
+        <div v-if="overlay === 'transferring' || overlay === 'handed_over'"
+             class="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-8">
+            <div class="max-w-lg w-full bg-[#0a0a0a] border border-white/10 rounded-[1.5rem] p-10 text-center">
+                <div class="text-[10px] uppercase tracking-[0.4em] font-black text-white/30">Смена</div>
+                <div class="text-4xl font-black uppercase italic tracking-tighter mt-4"
+                     :class="overlay === 'handed_over' ? 'text-[#22c55e]' : 'text-amber-300'">
+                    {{ overlay === 'handed_over' ? 'Смена сдана' : 'Передача смены' }}
+                </div>
+                <p class="text-white/50 text-sm font-bold mt-4">
+                    <template v-if="overlay === 'handed_over'">
+                        Приём завершён. Сейчас выйдем из админки.
+                    </template>
+                    <template v-else>
+                        Операции остановлены. Заступающий админ считает холодильники.
+                    </template>
+                </p>
+            </div>
+        </div>
     </div>
 </template>
 

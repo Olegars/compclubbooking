@@ -12,16 +12,23 @@ class Shift extends Model
     protected $fillable = [
         'admin_id',
         'closed_by',
+        'incoming_admin_id',
         'started_at',
         'ended_at',
+        'transfer_started_at',
+        'presence_verified_at',
+        'presence_meta',
         'cash_start',
         'cash_end',
-        'status'
+        'status',
     ];
 
     protected $casts = [
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
+        'transfer_started_at' => 'datetime',
+        'presence_verified_at' => 'datetime',
+        'presence_meta' => 'array',
         'cash_start' => 'decimal:2',
         'cash_end' => 'decimal:2',
     ];
@@ -35,6 +42,11 @@ class Shift extends Model
     public function closedByAdmin(): BelongsTo
     {
         return $this->belongsTo(Admin::class, 'closed_by');
+    }
+
+    public function incomingAdmin(): BelongsTo
+    {
+        return $this->belongsTo(Admin::class, 'incoming_admin_id');
     }
 
     public function ledgerAccrual(): HasOne

@@ -242,6 +242,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
     Route::post('/salary/employment/rules', [StaffPayrollController::class, 'acceptEmploymentRule'])->name('admin.salary.employment.rules');
     Route::post('/salary/employment/fire-rules', [StaffPayrollController::class, 'acceptFireSafetyRule'])->name('admin.salary.employment.fire-rules');
     Route::post('/salary/employment/hire', [StaffPayrollController::class, 'hire'])->name('admin.salary.employment.hire');
+    Route::get('/api/shifts/status', [ShiftController::class, 'status']);
     Route::post('/shifts/intern/join', [ShiftController::class, 'internJoin'])->name('admin.shift.intern.join');
     Route::post('/shifts/intern/leave', [ShiftController::class, 'internLeave'])->name('admin.shift.intern.leave');
 
@@ -265,6 +266,9 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::get('/transactions/{transaction}/print-copy', [TransactionAdminController::class, 'printCopy'])
             ->name('admin.transactions.print-copy');
         Route::get('/shifts/transfer', [ShiftController::class, 'transferPage'])->name('admin.shift.transfer');
+        Route::post('/api/shifts/begin', [ShiftController::class, 'begin']);
+        Route::post('/api/shifts/scan', [ShiftController::class, 'scan']);
+        Route::post('/api/shifts/count', [ShiftController::class, 'countItem']);
         Route::post('/api/shifts/complete', [ShiftController::class, 'completeTransfer']);
         Route::get('/shifts/history', [ShiftController::class, 'history'])->name('admin.shift.history');
 

@@ -409,8 +409,11 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                  class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-8 shadow-2xl flex flex-col md:flex-row md:items-center gap-6">
                 <div class="flex-1">
                     <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Смена сейчас</div>
-                    <p v-if="shiftState?.can_take_shift" class="text-white text-sm font-bold mt-2">
-                        Чтобы получить доступ к админке, примите текущую смену.
+                    <p v-if="shiftState?.duty === 'incoming'" class="text-white text-sm font-bold mt-2">
+                        Приём уже начат. Продолжите скан холодильников.
+                    </p>
+                    <p v-else-if="shiftState?.can_take_shift" class="text-white text-sm font-bold mt-2">
+                        Подойдите к ресепшену, нажмите «Принять смену» и посмотрите в камеру.
                     </p>
                     <p v-else-if="shiftState?.can_join_as_intern" class="text-white text-sm font-bold mt-2">
                         Активный админ: {{ shiftState.admin_name }}. Выйдите в смену вместе с ним.
@@ -421,7 +424,7 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                 </div>
                 <button v-if="shiftState?.can_take_shift" type="button" @click="takeShift"
                         class="px-8 py-4 bg-[#22c55e] hover:bg-[#1ea34d] text-black rounded-2xl text-xs font-black uppercase tracking-widest">
-                    Принять смену
+                    {{ shiftState?.duty === 'incoming' ? 'Продолжить приём' : 'Принять смену' }}
                 </button>
                 <button v-else-if="shiftState?.can_join_as_intern" type="button" :disabled="dutyBusy" @click="internJoin"
                         class="px-8 py-4 bg-amber-500 hover:bg-amber-400 text-black rounded-2xl text-xs font-black uppercase tracking-widest disabled:opacity-40">
@@ -553,7 +556,7 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                     <div class="text-3xl font-black text-white tracking-tighter">{{ formatMoney(accrued_total) }}</div>
                 </div>
                 <div class="bg-[#050505] border border-red-500/20 p-8 rounded-[0.875rem] shadow-xl">
-                    <div class="text-[10px] text-red-400 uppercase font-black tracking-widest mb-2">Штрафы</div>
+                    <div class="text-[10px] text-red-400 uppercase font-black tracking-widest mb-2">Штрафы и убытки</div>
                     <div class="text-3xl font-black text-red-400 tracking-tighter">{{ formatMoney(fines_total) }}</div>
                 </div>
                 <div class="bg-[#050505] border border-white/5 p-8 rounded-[0.875rem] shadow-xl">
@@ -652,7 +655,7 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
 
             <div class="bg-[#050505] border border-white/5 rounded-[0.875rem] overflow-hidden shadow-xl">
                 <div class="p-6 border-b border-white/10">
-                    <h2 class="text-sm font-black uppercase italic tracking-widest text-white/70">Штрафы</h2>
+                        <h2 class="text-sm font-black uppercase italic tracking-widest text-white/70">Штрафы и убытки</h2>
                 </div>
                 <table class="w-full text-left border-collapse">
                     <thead>

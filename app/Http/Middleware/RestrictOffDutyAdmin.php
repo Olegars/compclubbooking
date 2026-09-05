@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\AdminShift;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -32,6 +33,10 @@ class RestrictOffDutyAdmin
                 ->with('error', 'Аккаунт уволен. Вход закрыт.');
         }
 
+        if ($frozen = $this->frozenHandoverResponse($request, $admin)) {
+            return $frozen;
+        }
+
         if ($admin->hasFullClubOps()) {
             return $next($request);
         }
@@ -60,6 +65,7 @@ class RestrictOffDutyAdmin
             '/admin/salary',
             '/admin/salary/withdraw',
             '/admin/logout',
+            '/admin/api/shifts/status',
         ];
 
         if ($this->matches($path, $shared)) {
@@ -76,8 +82,41 @@ class RestrictOffDutyAdmin
         // Неактивный админ может принять смену (пересменка) — иначе никто не станет активным.
         return $this->matches($path, [
             '/admin/shifts/transfer',
+            '/admin/api/shifts/begin',
+            '/admin/api/shifts/scan',
+            '/admin/api/shifts/count',
             '/admin/api/shifts/complete',
+            '/admin/api/shifts/status',
         ]);
+    }
+
+    private function frozenHandoverResponse(Request $request, $admin): ?Response
+    {
+        $shift = AdminShift::openShift();
+        if (! $shift || $shift->status !== 'transferring') {
+            return null;
+        }
+        if ((int) $shift->admin_id !== (int) $admin->id) {
+            return null;
+        }
+        if ($shift->incoming_admin_id && (int) $shift->incoming_admin_id === (int) $admin->id) {
+            return null;
+        }
+
+        $path = '/'.ltrim($request->path(), '/');
+        if ($this->matches($path, ['/admin/logout', '/admin/api/shifts/status'])) {
+            return null;
+        }
+
+        if ($request->isMethod('GET') || $request->isMethod('HEAD')) {
+            return null;
+        }
+
+        if ($request->expectsJson()) {
+            abort(423, 'Идёт передача смены.');
+        }
+
+        return back()->with('error', 'Идёт передача смены — операции остановлены.');
     }
 
     /**
