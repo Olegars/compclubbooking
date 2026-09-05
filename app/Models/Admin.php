@@ -5,6 +5,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -34,6 +35,7 @@ class Admin extends Authenticatable
     protected $fillable = [
         'name', 'email', 'password', 'role', 'club_id',
         'is_official_employee', 'base_rate', 'pay_type',
+        'employment_pending', 'hired_at',
     ];
 
     protected $hidden = [
@@ -44,6 +46,8 @@ class Admin extends Authenticatable
         'password' => 'hashed',
         'is_official_employee' => 'boolean',
         'base_rate' => 'decimal:2',
+        'employment_pending' => 'boolean',
+        'hired_at' => 'datetime',
     ];
 
     public function club(): BelongsTo
@@ -69,6 +73,16 @@ class Admin extends Authenticatable
     public function internShifts(): HasMany
     {
         return $this->hasMany(ShiftIntern::class, 'admin_id');
+    }
+
+    public function employmentProfile(): HasOne
+    {
+        return $this->hasOne(StaffEmploymentProfile::class, 'admin_id');
+    }
+
+    public function needsEmployment(): bool
+    {
+        return (bool) $this->employment_pending;
     }
 
     public function isStoreRole(): bool

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AdminConfirm from '@/Components/AdminConfirm.vue'
+import StaffEmployment from '@/Components/StaffEmployment.vue'
 import { useClubName } from '@/Composables/useClubName'
 import { useToast } from '@/Composables/useToast'
 
@@ -67,6 +68,23 @@ type Calendar = {
     my_bookings: MyBooking[]
 }
 
+type Employment = {
+    required: boolean
+    rules: Array<{ id: number; title: string; body: string }>
+    accepted_ids: number[]
+    rules_complete: boolean
+    profile: {
+        full_name: string | null
+        passport_series: string | null
+        passport_number: string | null
+        issued_by: string | null
+        issued_at: string | null
+        department_code: string | null
+        birth_date: string | null
+        has_scan: boolean
+    }
+}
+
 const props = withDefaults(defineProps<{
     pay_type: 'shift' | 'monthly' | null
     base_rate: number | null
@@ -80,6 +98,7 @@ const props = withDefaults(defineProps<{
     payouts: LedgerRow[]
     monthly_accruals: LedgerRow[]
     calendar?: Calendar
+    employment?: Employment
 }>(), {
     calendar: () => ({
         month: '',
@@ -88,6 +107,22 @@ const props = withDefaults(defineProps<{
         can_set_model: false,
         days: {},
         my_bookings: [],
+    }),
+    employment: () => ({
+        required: false,
+        rules: [],
+        accepted_ids: [],
+        rules_complete: false,
+        profile: {
+            full_name: '',
+            passport_series: '',
+            passport_number: '',
+            issued_by: '',
+            issued_at: '',
+            department_code: '',
+            birth_date: '',
+            has_scan: false,
+        },
     }),
 })
 
@@ -333,6 +368,15 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
 
+            <StaffEmployment
+                v-if="employment.required"
+                :rules="employment.rules"
+                :accepted-ids="employment.accepted_ids"
+                :rules-complete="employment.rules_complete"
+                :profile="employment.profile"
+            />
+
+            <template v-else>
             <div class="flex justify-between items-end mb-4 border-b border-white/10 pb-6">
                 <div>
                     <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">
@@ -678,6 +722,8 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                     </tbody>
                 </table>
             </div>
+
+            </template>
 
         </div>
 

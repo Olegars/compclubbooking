@@ -1,9 +1,11 @@
 <script setup>
+import { ref } from 'vue'
 import { Head, useForm } from '@inertiajs/vue3';
 import { useClubName } from '@/Composables/useClubName';
 import AvatarWatermarkBg from '@/Components/AvatarWatermarkBg.vue';
 
 const clubName = useClubName();
+const mode = ref('login')
 
 const form = useForm({
     email: '',
@@ -11,16 +13,28 @@ const form = useForm({
     remember: false,
 });
 
+const registerForm = useForm({
+    name: '',
+    email: '',
+    password: '',
+    password_confirmation: '',
+})
+
 const submit = () => {
-    // Функция route() подхватится автоматически из глобального плагина
     form.post(route('admin.login'), {
         onFinish: () => form.reset('password'),
     });
 };
+
+const submitRegister = () => {
+    registerForm.post(route('admin.register'), {
+        onFinish: () => registerForm.reset('password', 'password_confirmation'),
+    })
+}
 </script>
 
 <template>
-    <Head :title="`${clubName} | Вход в систему`" />
+    <Head :title="`${clubName} | ${mode === 'register' ? 'Устройство на работу' : 'Вход в систему'}`" />
     <div class="admin-ui min-h-screen bg-[#020202] flex flex-col justify-center items-center p-6 font-sans text-white selection:bg-[#22c55e] selection:text-black relative">
         <AvatarWatermarkBg />
 
@@ -32,11 +46,26 @@ const submit = () => {
                     {{ clubName }} <span class="text-[#22c55e]">Ctrl</span>
                 </h1>
             </div>
-            <p class="text-white/40 text-xs uppercase tracking-[0.16em] font-semibold mb-10">
-                Вход для администраторов и операторов
+            <p class="text-white/40 text-xs uppercase tracking-[0.16em] font-semibold mb-8">
+                {{ mode === 'register' ? 'Регистрация сотрудника' : 'Вход для администраторов и операторов' }}
             </p>
 
-            <form @submit.prevent="submit" class="space-y-6">
+            <div class="grid grid-cols-2 gap-2 mb-8">
+                <button type="button"
+                        class="py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                        :class="mode === 'login' ? 'bg-[#22c55e] text-black' : 'border border-white/10 text-white/50'"
+                        @click="mode = 'login'">
+                    Вход
+                </button>
+                <button type="button"
+                        class="py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                        :class="mode === 'register' ? 'bg-[#22c55e] text-black' : 'border border-white/10 text-white/50'"
+                        @click="mode = 'register'">
+                    Устроиться
+                </button>
+            </div>
+
+            <form v-if="mode === 'login'" @submit.prevent="submit" class="space-y-6">
                 <div>
                     <label class="text-xs uppercase text-white/50 tracking-wider font-semibold mb-2 block">Email</label>
                     <input
@@ -71,6 +100,39 @@ const submit = () => {
                 >
                     {{ form.processing ? 'Вход...' : 'Войти в систему' }}
                 </button>
+            </form>
+
+            <form v-else @submit.prevent="submitRegister" class="space-y-6">
+                <div>
+                    <label class="text-xs uppercase text-white/50 tracking-wider font-semibold mb-2 block">Имя</label>
+                    <input v-model="registerForm.name" type="text" autocomplete="name"
+                           class="w-full bg-black border-2 border-white/5 rounded-2xl px-5 py-4 text-white font-semibold focus:border-[#22c55e] outline-none">
+                    <div v-if="registerForm.errors.name" class="text-red-500 text-xs uppercase font-semibold tracking-wider mt-2">{{ registerForm.errors.name }}</div>
+                </div>
+                <div>
+                    <label class="text-xs uppercase text-white/50 tracking-wider font-semibold mb-2 block">Email</label>
+                    <input v-model="registerForm.email" type="email" autocomplete="email"
+                           class="w-full bg-black border-2 border-white/5 rounded-2xl px-5 py-4 text-white font-semibold focus:border-[#22c55e] outline-none">
+                    <div v-if="registerForm.errors.email" class="text-red-500 text-xs uppercase font-semibold tracking-wider mt-2">{{ registerForm.errors.email }}</div>
+                </div>
+                <div>
+                    <label class="text-xs uppercase text-white/50 tracking-wider font-semibold mb-2 block">Пароль</label>
+                    <input v-model="registerForm.password" type="password" autocomplete="new-password"
+                           class="w-full bg-black border-2 border-white/5 rounded-2xl px-5 py-4 text-white font-semibold focus:border-[#22c55e] outline-none">
+                    <div v-if="registerForm.errors.password" class="text-red-500 text-xs uppercase font-semibold tracking-wider mt-2">{{ registerForm.errors.password }}</div>
+                </div>
+                <div>
+                    <label class="text-xs uppercase text-white/50 tracking-wider font-semibold mb-2 block">Повтор пароля</label>
+                    <input v-model="registerForm.password_confirmation" type="password" autocomplete="new-password"
+                           class="w-full bg-black border-2 border-white/5 rounded-2xl px-5 py-4 text-white font-semibold focus:border-[#22c55e] outline-none">
+                </div>
+                <button :disabled="registerForm.processing"
+                        class="w-full py-5 bg-[#22c55e] hover:bg-[#1ea34d] text-black font-bold uppercase text-sm tracking-wider rounded-2xl transition-all shadow-[0_0_30px_rgba(34,197,94,0.2)] active:scale-95 disabled:opacity-50">
+                    {{ registerForm.processing ? 'Регистрация...' : 'Перейти в кабинет' }}
+                </button>
+                <p class="text-[10px] uppercase tracking-widest text-white/30 font-black text-center">
+                    Дальше в кабинете: правила, паспорт, «Устроиться»
+                </p>
             </form>
         </div>
 

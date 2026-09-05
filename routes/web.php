@@ -225,6 +225,7 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware('guest:admin')->prefix('admin')->group(function () {
     Route::get('/login', [AdminLoginController::class, 'showLoginForm'])->name('admin.login');
     Route::post('/login', [AdminLoginController::class, 'login']);
+    Route::post('/register', [AdminLoginController::class, 'register'])->name('admin.register');
 });
 
 Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(function () {
@@ -240,6 +241,8 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
     Route::post('/salary/shift-model', [StaffPayrollController::class, 'setShiftModel'])
         ->middleware('role:owner')
         ->name('admin.salary.shift-model');
+    Route::post('/salary/employment/rules', [StaffPayrollController::class, 'acceptEmploymentRule'])->name('admin.salary.employment.rules');
+    Route::post('/salary/employment/hire', [StaffPayrollController::class, 'hire'])->name('admin.salary.employment.hire');
     Route::post('/shifts/intern/join', [ShiftController::class, 'internJoin'])->name('admin.shift.intern.join');
     Route::post('/shifts/intern/leave', [ShiftController::class, 'internLeave'])->name('admin.shift.intern.leave');
 

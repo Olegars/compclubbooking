@@ -183,6 +183,10 @@ class ShiftController extends Controller
             abort(403, 'В смену к активному админу выходит только стажёр.');
         }
 
+        if ($admin->needsEmployment()) {
+            return back()->withErrors(['message' => 'Сначала завершите устройство на работу.']);
+        }
+
         $shift = Shift::query()
             ->with('admin:id,name')
             ->where('status', '!=', 'closed')
