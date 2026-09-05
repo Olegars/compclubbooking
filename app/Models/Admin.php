@@ -194,7 +194,7 @@ class Admin extends Authenticatable
             return true;
         }
 
-        return $this->role === self::ROLE_ADMIN && ! $this->isShiftLead();
+        return $this->role === self::ROLE_ADMIN && ! $this->hasFullClubOps();
     }
 
     public function canManageStoreCatalog(): bool

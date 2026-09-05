@@ -97,11 +97,42 @@ class AdminDutyAccessTest extends TestCase
         ]);
     }
 
-    public function test_supervisor_is_not_salary_only(): void
+    public function test_inactive_admin_salary_page_has_no_club_ops_nav(): void
+    {
+        $admin = $this->makeAdmin('admin');
+
+        $this->actingAs($admin, 'admin')->get('/admin/salary')->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('can_access_club', false)
+                ->where('is_salary_only', true)
+                ->where('has_full_club_ops', false)
+            );
+    }
+
+    public function test_active_admin_on_shift_sees_club_ops_nav(): void
+    {
+        $admin = $this->makeAdmin('admin');
+        $this->openShift($admin);
+
+        $this->actingAs($admin, 'admin')->get('/admin/salary')->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('can_access_club', true)
+                ->where('is_salary_only', false)
+                ->where('has_full_club_ops', true)
+            );
+    }
+
+    public function test_supervisor_keeps_management_access_without_floor_ops_nav(): void
     {
         $super = $this->makeAdmin('supervisor', 3000);
 
         $this->actingAs($super, 'admin')->get('/admin/docs')->assertOk();
+        $this->actingAs($super, 'admin')->get('/admin/salary')->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('can_access_club', false)
+                ->where('is_salary_only', false)
+                ->where('has_full_club_ops', true)
+            );
         $this->assertFalse($super->isSalaryOnly());
         $this->assertTrue($super->hasFullClubOps());
     }

@@ -26,7 +26,7 @@ class HandleInertiaRequests extends Middleware
         $balance = $user ? $user->availableBalance() : 0.0;
         $location = $admin ? AdminLocation::resolve($admin) : null;
         $isOwner = $admin && $admin->role === 'owner';
-        $canAccessClub = $admin ? ($isOwner || $admin->hasFullClubOps()) : false;
+        $canAccessClub = (bool) ($admin && $admin->role === 'admin' && $admin->hasFullClubOps());
         $canAccessStore = $admin && (
             $isOwner
             || ($admin->canAccessStore() && $location && $location->hasStore() && ! $admin->isSalaryOnly())

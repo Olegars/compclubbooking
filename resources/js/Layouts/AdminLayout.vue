@@ -30,7 +30,7 @@ const adminName = computed(() => admin.value?.name || admin.value?.email || 'О�
 const adminRole = computed(() => admin.value?.role || null)
 const isOwner = computed(() => adminRole.value === 'owner')
 const isSupervisorPlus = computed(() => adminRole.value === 'supervisor' || adminRole.value === 'owner')
-const canAccessClub = computed(() => isOwner.value || Boolean(page.props.can_access_club))
+const canAccessClub = computed(() => Boolean(page.props.can_access_club))
 const canAccessStore = computed(() => isOwner.value || Boolean(page.props.can_access_store))
 const isSalaryOnly = computed(() => Boolean(page.props.is_salary_only))
 const location = computed(() => page.props.admin_location as any)
@@ -189,11 +189,6 @@ onUnmounted(() => {
                           :class="isActive('/admin/inventory') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>📦</span> Склад
                     </Link>
-                    <Link v-if="isSupervisorPlus" href="/admin/suppliers"
-                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
-                          :class="isActive('/admin/suppliers') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
-                        <span>🚚</span> Поставщики
-                    </Link>
                     <Link href="/admin/shifts/transfer"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/shifts/transfer') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
@@ -261,7 +256,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- СЕКЦИЯ: КИБЕРСПОРТ (supervisor+) -->
-                <div v-if="canAccessClub && isSupervisorPlus" class="space-y-2">
+                <div v-if="isSupervisorPlus" class="space-y-2">
                     <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Киберспорт</div>
                     <Link href="/admin/tournaments"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
@@ -296,7 +291,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- СЕКЦИЯ: ЭКОНОМИКА (supervisor+ / owner) -->
-                <div v-if="canAccessClub && isSupervisorPlus" class="space-y-2">
+                <div v-if="isSupervisorPlus" class="space-y-2">
                     <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Экономика</div>
                     <Link href="/admin/tariffs"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
@@ -313,6 +308,11 @@ onUnmounted(() => {
                           :class="isActive('/admin/analytics') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>📊</span> Аналитика
                     </Link>
+                    <Link href="/admin/suppliers"
+                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
+                          :class="isActive('/admin/suppliers') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🚚</span> Поставщики
+                    </Link>
                     <Link v-if="isOwner"
                           href="/admin/taxes"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
@@ -328,7 +328,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- СЕКЦИЯ: КОНФИГУРАЦИЯ (supervisor+) -->
-                <div v-if="canAccessClub && isSupervisorPlus" class="space-y-2">
+                <div v-if="isSupervisorPlus" class="space-y-2">
                     <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Конфигурация</div>
                     <Link href="/admin/config"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
