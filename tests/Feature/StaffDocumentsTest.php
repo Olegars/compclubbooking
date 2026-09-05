@@ -17,10 +17,10 @@ class StaffDocumentsTest extends TestCase
     public function test_config_page_lists_default_documents(): void
     {
         $this->actingAs($this->makeAdmin('supervisor'), 'admin')
-            ->get('/admin/config')
+            ->get('/admin/config/documents')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->component('Admin/ClubConfig')
+                ->component('Admin/ClubDocuments')
                 ->has('documents', 2)
                 ->where('documents.0.title', 'Условия работы администратора')
                 ->where('documents.0.kind', 'employment')
@@ -40,7 +40,7 @@ class StaffDocumentsTest extends TestCase
 
         $this->actingAs($supervisor, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
-            ->from('/admin/config?tab=documents')
+            ->from('/admin/config/documents')
             ->put("/admin/config/documents/{$document->id}", [
                 'title' => 'Условия работы администратора',
                 'kind' => 'employment',
@@ -52,7 +52,7 @@ class StaffDocumentsTest extends TestCase
                     ];
                 })->all(),
             ])
-            ->assertRedirect(route('admin.config', ['tab' => 'documents']));
+            ->assertRedirect(route('admin.config.documents'));
 
         $intern = $this->makeAdmin('intern');
         $intern->update(['employment_pending' => true]);
@@ -84,17 +84,17 @@ class StaffDocumentsTest extends TestCase
 
         $this->actingAs($this->makeAdmin('supervisor'), 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
-            ->from('/admin/config?tab=documents')
+            ->from('/admin/config/documents')
             ->put("/admin/config/documents/{$document->id}", [
                 'title' => $document->title,
                 'kind' => 'employment',
                 'sections' => $sections,
             ])
-            ->assertRedirect(route('admin.config', ['tab' => 'documents']));
+            ->assertRedirect(route('admin.config.documents'));
 
         $this->assertSame(11, count(StaffEmploymentRules::ids()));
 
-        $this->from('/admin/config?tab=documents')
+        $this->from('/admin/config/documents')
             ->post('/admin/config/documents', [
                 'title' => 'Кодекс формы',
                 'kind' => 'employment',
@@ -102,7 +102,7 @@ class StaffDocumentsTest extends TestCase
                     ['title' => 'Форма', 'body' => 'На смене чёрный верх и бейдж.'],
                 ],
             ])
-            ->assertRedirect(route('admin.config', ['tab' => 'documents']));
+            ->assertRedirect(route('admin.config.documents'));
 
         $this->assertDatabaseHas('staff_documents', [
             'title' => 'Кодекс формы',
@@ -118,9 +118,9 @@ class StaffDocumentsTest extends TestCase
 
         $this->actingAs($this->makeAdmin('supervisor'), 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
-            ->from('/admin/config?tab=documents')
+            ->from('/admin/config/documents')
             ->delete("/admin/config/documents/{$document->id}")
-            ->assertRedirect(route('admin.config', ['tab' => 'documents']))
+            ->assertRedirect(route('admin.config.documents'))
             ->assertSessionHasErrors('message');
 
         $this->assertDatabaseHas('staff_documents', ['id' => $document->id]);
@@ -143,7 +143,7 @@ class StaffDocumentsTest extends TestCase
 
     private function employmentDocument(): StaffDocument
     {
-        $this->actingAs($this->makeAdmin('supervisor'), 'admin')->get('/admin/config');
+        $this->actingAs($this->makeAdmin('supervisor'), 'admin')->get('/admin/config/documents');
 
         return StaffDocument::query()->where('slug', StaffDocument::SLUG_EMPLOYMENT)->firstOrFail();
     }

@@ -216,7 +216,6 @@ class ShiftSlotBookingTest extends TestCase
                 ->component('Admin/ClubConfig')
                 ->where('shift_hours', 12)
                 ->where('starts_hour', 10)
-                ->has('documents', 2)
             );
     }
 

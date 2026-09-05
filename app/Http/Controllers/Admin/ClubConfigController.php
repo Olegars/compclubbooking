@@ -27,6 +27,12 @@ class ClubConfigController extends Controller
         return Inertia::render('Admin/ClubConfig', [
             'shift_hours' => ShiftSlotSetting::hoursFor($clubId),
             'starts_hour' => ShiftSlotSetting::startsHourFor($clubId),
+        ]);
+    }
+
+    public function documents()
+    {
+        return Inertia::render('Admin/ClubDocuments', [
             'documents' => $this->documents->configPayload(),
         ]);
     }
@@ -83,7 +89,7 @@ class ClubConfigController extends Controller
         }
 
         return redirect()
-            ->route('admin.config', ['tab' => 'documents'])
+            ->route('admin.config.documents')
             ->with('success', 'Документ «'.$saved->title.'» сохранён');
     }
 
@@ -96,7 +102,7 @@ class ClubConfigController extends Controller
         }
 
         return redirect()
-            ->route('admin.config', ['tab' => 'documents'])
+            ->route('admin.config.documents')
             ->with('success', 'Документ удалён');
     }
 }

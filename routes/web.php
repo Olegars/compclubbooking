@@ -392,6 +392,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
 
         Route::get('/config', [ClubConfigController::class, 'index'])->name('admin.config');
         Route::post('/config/shifts', [ClubConfigController::class, 'updateShifts'])->name('admin.config.shifts');
+        Route::get('/config/documents', [ClubConfigController::class, 'documents'])->name('admin.config.documents');
         Route::post('/config/documents', [ClubConfigController::class, 'saveDocument'])->name('admin.config.documents.store');
         Route::put('/config/documents/{document}', [ClubConfigController::class, 'saveDocument'])->name('admin.config.documents.update');
         Route::delete('/config/documents/{document}', [ClubConfigController::class, 'destroyDocument'])->name('admin.config.documents.destroy');
