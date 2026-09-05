@@ -109,6 +109,16 @@ const roleTabs = [
 ]
 
 const activeTab = ref('all')
+const expandedIds = ref<Set<number>>(new Set())
+
+const isExpanded = (id: number) => expandedIds.value.has(id)
+
+const toggleCard = (id: number) => {
+    const next = new Set(expandedIds.value)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    expandedIds.value = next
+}
 
 const workingStaff = computed(() => props.staff.filter((person) => !person.is_fired))
 const firedCount = computed(() => props.staff.filter((person) => person.is_fired).length)
@@ -504,14 +514,18 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
 
             <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div v-for="person in visibleStaff" :key="person.id"
-                     class="bg-[#050505] border border-white/5 rounded-[0.875rem] p-8 relative group hover:border-purple-500/30 transition-all shadow-xl">
+                     class="bg-[#050505] border border-white/5 rounded-[0.875rem] p-8 relative group hover:border-purple-500/30 transition-all shadow-xl cursor-pointer"
+                     @click="toggleCard(person.id)">
 
-                    <div class="absolute top-6 right-6 text-[9px] uppercase font-black tracking-widest px-3 py-1 rounded-full border"
-                         :class="roleClass(person.duty, person.role)">
-                        {{ person.duty_label || person.role_label || person.role }}
+                    <div class="absolute top-6 right-6 flex items-center gap-2">
+                        <span class="text-[9px] uppercase font-black tracking-widest px-3 py-1 rounded-full border"
+                              :class="roleClass(person.duty, person.role)">
+                            {{ person.duty_label || person.role_label || person.role }}
+                        </span>
+                        <span class="text-white/25 text-xs font-black">{{ isExpanded(person.id) ? '▴' : '▾' }}</span>
                     </div>
 
-                    <div class="flex items-center gap-4 mb-8">
+                    <div class="flex items-center gap-4" :class="isExpanded(person.id) ? 'mb-8 pr-24' : 'pr-24'">
                         <div class="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-xl font-black text-white group-hover:bg-purple-500/20 group-hover:text-purple-500 transition-colors">
                             {{ person.name.charAt(0) }}
                         </div>
@@ -520,6 +534,8 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                             <div class="text-[10px] text-white/30 mt-1">{{ person.email }}</div>
                         </div>
                     </div>
+
+                    <div v-show="isExpanded(person.id)" @click.stop>
 
                     <div class="space-y-4 pt-6 border-t border-white/5">
                         <div class="flex justify-between items-center text-xs">
@@ -666,6 +682,7 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                             class="mt-3 w-full py-3 border border-white/10 hover:border-red-500/50 text-white/40 hover:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
                         Удалить сотрудника
                     </button>
+                    </div>
                 </div>
             </div>
 
