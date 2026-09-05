@@ -40,6 +40,25 @@ const floorRoleOptions = [
     { value: 'intern', label: 'Стажёр' },
 ]
 
+const roleTabs = [
+    { value: 'admin', label: 'Админ' },
+    { value: 'intern', label: 'Стажёр' },
+    { value: 'supervisor', label: 'Управляющий' },
+    { value: 'owner', label: 'Владелец' },
+    { value: 'store_manager', label: 'Менеджер магазина' },
+    { value: 'assembler', label: 'Сборщик' },
+    { value: 'senior_manager', label: 'Старший менеджер' },
+]
+
+const activeTab = ref('all')
+
+const countByRole = (role: string) => props.staff.filter((person) => person.role === role).length
+
+const visibleStaff = computed(() => {
+    if (activeTab.value === 'all') return props.staff
+    return props.staff.filter((person) => person.role === activeTab.value)
+})
+
 const roleBusyId = ref<number | null>(null)
 
 const changeFloorRole = (person: any, role: string) => {
@@ -117,8 +136,28 @@ const submitFine = () => {
                 </button>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div v-for="person in staff" :key="person.id"
+            <div class="flex flex-wrap gap-2">
+                <button type="button"
+                        class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                        :class="activeTab === 'all' ? 'bg-purple-500 text-black' : 'border border-white/10 text-white/50 hover:text-white'"
+                        @click="activeTab = 'all'">
+                    Все {{ staff.length }}
+                </button>
+                <button v-for="tab in roleTabs" :key="tab.value" type="button"
+                        class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                        :class="activeTab === tab.value ? 'bg-purple-500 text-black' : 'border border-white/10 text-white/50 hover:text-white'"
+                        @click="activeTab = tab.value">
+                    {{ tab.label }} {{ countByRole(tab.value) }}
+                </button>
+            </div>
+
+            <div v-if="visibleStaff.length === 0" class="py-20 text-center">
+                <div class="text-white/10 text-xl font-black uppercase tracking-widest italic mb-2">Нет сотрудников</div>
+                <div class="text-white/30 text-[10px] uppercase tracking-widest">В этой роли пока никого нет</div>
+            </div>
+
+            <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div v-for="person in visibleStaff" :key="person.id"
                      class="bg-[#050505] border border-white/5 rounded-[0.875rem] p-8 relative group hover:border-purple-500/30 transition-all shadow-xl">
 
                     <div class="absolute top-6 right-6 text-[9px] uppercase font-black tracking-widest px-3 py-1 rounded-full border"
