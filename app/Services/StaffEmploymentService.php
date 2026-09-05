@@ -3,15 +3,19 @@
 namespace App\Services;
 
 use App\Models\Admin;
+use App\Models\StaffDocument;
 use App\Models\StaffEmploymentProfile;
-use App\Support\StaffEmploymentRules;
-use App\Support\StaffFireSafetyRules;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 class StaffEmploymentService
 {
+    public function __construct(
+        private readonly StaffDocumentService $documents,
+    ) {
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -26,10 +30,12 @@ class StaffEmploymentService
             'status' => $profile->status ?: StaffEmploymentProfile::STATUS_DRAFT,
             'rejection_reason' => $profile->isRejected() ? $profile->rejection_reason : null,
             'appointment_at' => $profile->appointment_at?->toIso8601String(),
-            'rules' => StaffEmploymentRules::all(),
+            'rules_title' => $this->documents->titleFor(StaffDocument::KIND_EMPLOYMENT),
+            'rules' => $this->documents->sectionsFor(StaffDocument::KIND_EMPLOYMENT),
             'accepted_ids' => $accepted,
             'rules_complete' => $this->rulesComplete($accepted),
-            'fire_rules' => StaffFireSafetyRules::all(),
+            'fire_rules_title' => $this->documents->titleFor(StaffDocument::KIND_FIRE_SAFETY),
+            'fire_rules' => $this->documents->sectionsFor(StaffDocument::KIND_FIRE_SAFETY),
             'accepted_fire_ids' => $fireAccepted,
             'fire_rules_complete' => $this->fireRulesComplete($fireAccepted),
             'profile' => [
@@ -111,7 +117,7 @@ class StaffEmploymentService
     {
         $this->assertEditable($admin);
 
-        if (! in_array($ruleId, StaffEmploymentRules::ids(), true)) {
+        if (! in_array($ruleId, $this->documents->sectionIdsFor(StaffDocument::KIND_EMPLOYMENT), true)) {
             throw new RuntimeException('Такого правила нет.');
         }
 
@@ -134,7 +140,7 @@ class StaffEmploymentService
             throw new RuntimeException('Сначала нужно пройти биометрию в клубе.');
         }
 
-        if (! in_array($ruleId, StaffFireSafetyRules::ids(), true)) {
+        if (! in_array($ruleId, $this->documents->sectionIdsFor(StaffDocument::KIND_FIRE_SAFETY), true)) {
             throw new RuntimeException('Такого правила нет.');
         }
 
@@ -305,9 +311,9 @@ class StaffEmploymentService
      */
     public function rulesComplete(array $accepted): bool
     {
-        $need = StaffEmploymentRules::ids();
+        $need = $this->documents->sectionIdsFor(StaffDocument::KIND_EMPLOYMENT);
 
-        return count(array_intersect($need, $accepted)) === count($need);
+        return $need !== [] && count(array_intersect($need, $accepted)) === count($need);
     }
 
     /**
@@ -315,9 +321,9 @@ class StaffEmploymentService
      */
     public function fireRulesComplete(array $accepted): bool
     {
-        $need = StaffFireSafetyRules::ids();
+        $need = $this->documents->sectionIdsFor(StaffDocument::KIND_FIRE_SAFETY);
 
-        return count(array_intersect($need, $accepted)) === count($need);
+        return $need !== [] && count(array_intersect($need, $accepted)) === count($need);
     }
 
     private function hireApplicant(Admin $admin, StaffEmploymentProfile $profile): void

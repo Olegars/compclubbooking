@@ -40,6 +40,7 @@ class StaffEmploymentTest extends TestCase
                 ->component('Admin/Salary')
                 ->where('employment.required', true)
                 ->where('employment.status', 'draft')
+                ->where('employment.rules_title', 'Условия работы администратора')
                 ->has('employment.rules', 10)
             );
     }

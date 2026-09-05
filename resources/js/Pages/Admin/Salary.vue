@@ -76,7 +76,9 @@ type Employment = {
     rules: Array<{ id: number; title: string; body: string }>
     accepted_ids: number[]
     rules_complete: boolean
+    rules_title?: string
     fire_rules?: Array<{ id: number; title: string; body: string }>
+    fire_rules_title?: string
     accepted_fire_ids?: number[]
     fire_rules_complete?: boolean
     profile: {
@@ -374,11 +376,13 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                 :rules="employment.rules"
                 :accepted-ids="employment.accepted_ids"
                 :rules-complete="employment.rules_complete"
+                :rules-title="employment.rules_title || 'Условия работы администратора'"
                 :profile="employment.profile"
                 :status="employment.status || 'draft'"
                 :rejection-reason="employment.rejection_reason || null"
                 :appointment-at="employment.appointment_at || null"
                 :fire-rules="employment.fire_rules || []"
+                :fire-rules-title="employment.fire_rules_title || 'Техника пожарной безопасности'"
                 :accepted-fire-ids="employment.accepted_fire_ids || []"
                 :fire-rules-complete="employment.fire_rules_complete || false"
             />

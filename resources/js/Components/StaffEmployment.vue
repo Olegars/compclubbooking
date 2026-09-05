@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { router, useForm } from '@inertiajs/vue3'
+import StaffDocumentAccordion from '@/Components/StaffDocumentAccordion.vue'
 
 type Rule = { id: number; title: string; body: string }
 
@@ -25,14 +26,18 @@ const props = withDefaults(defineProps<{
     status?: Status
     rejectionReason?: string | null
     appointmentAt?: string | null
+    rulesTitle?: string
     fireRules?: Rule[]
+    fireRulesTitle?: string
     acceptedFireIds?: number[]
     fireRulesComplete?: boolean
 }>(), {
     status: 'draft',
     rejectionReason: null,
     appointmentAt: null,
+    rulesTitle: 'Условия работы администратора',
     fireRules: () => [],
+    fireRulesTitle: 'Техника пожарной безопасности',
     acceptedFireIds: () => [],
     fireRulesComplete: false,
 })
@@ -286,24 +291,18 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
     <div v-if="rulesOpen && canEdit" class="fixed inset-0 z-[99998] flex items-center justify-center p-4 font-mono">
         <div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
         <div class="relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1rem] p-8 shadow-[0_0_80px_rgba(34,197,94,0.12)]">
-            <h3 class="text-xl font-black uppercase italic tracking-tighter text-white mb-2">Правила клуба</h3>
+            <h3 class="text-xl font-black uppercase italic tracking-tighter text-white mb-2">{{ rulesTitle }}</h3>
             <p class="text-[10px] uppercase tracking-widest text-white/40 font-black mb-6">
-                Каждое правило нужно принять отдельно. {{ acceptedCount }} из {{ rules.length }}
+                Откройте раздел и нажмите «Принимаю». {{ acceptedCount }} из {{ rules.length }}
             </p>
 
-            <div class="space-y-4">
-                <div v-for="rule in rules" :key="rule.id" class="border border-white/10 rounded-2xl p-5">
-                    <div class="text-white text-sm font-black uppercase italic">{{ rule.id }}. {{ rule.title }}</div>
-                    <p class="text-white/50 text-xs font-bold leading-relaxed mt-2">{{ rule.body }}</p>
-                    <button v-if="!acceptedSet.has(rule.id)" type="button" @click="acceptRule(rule.id)"
-                            class="mt-4 px-5 py-3 bg-[#22c55e] text-black rounded-xl text-[10px] font-black uppercase tracking-widest">
-                        Принимаю
-                    </button>
-                    <div v-else class="mt-4 text-[10px] uppercase font-black tracking-widest text-[#22c55e]">
-                        Принято
-                    </div>
-                </div>
-            </div>
+            <StaffDocumentAccordion
+                :sections="rules"
+                :accepted-ids="acceptedIds"
+                :can-accept="canEdit"
+                :busy="form.processing"
+                @accept="acceptRule"
+            />
 
             <button v-if="rulesComplete" type="button" @click="rulesOpen = false"
                     class="mt-6 w-full py-4 bg-[#22c55e] text-black rounded-2xl text-xs font-black uppercase tracking-widest">
@@ -318,24 +317,17 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
     <div v-if="fireOpen && needsFireSafety" class="fixed inset-0 z-[99998] flex items-center justify-center p-4 font-mono">
         <div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
         <div class="relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#0a0a0a] border border-amber-500/30 rounded-[1rem] p-8 shadow-[0_0_80px_rgba(245,158,11,0.12)]">
-            <h3 class="text-xl font-black uppercase italic tracking-tighter text-white mb-2">Пожарная безопасность</h3>
+            <h3 class="text-xl font-black uppercase italic tracking-tighter text-white mb-2">{{ fireRulesTitle }}</h3>
             <p class="text-[10px] uppercase tracking-widest text-white/40 font-black mb-6">
-                Каждый пункт нужно принять отдельно. {{ fireAcceptedCount }} из {{ fireRules.length }}
+                Откройте раздел и нажмите «Принимаю». {{ fireAcceptedCount }} из {{ fireRules.length }}
             </p>
 
-            <div class="space-y-4">
-                <div v-for="rule in fireRules" :key="rule.id" class="border border-white/10 rounded-2xl p-5">
-                    <div class="text-white text-sm font-black uppercase italic">{{ rule.id }}. {{ rule.title }}</div>
-                    <p class="text-white/50 text-xs font-bold leading-relaxed mt-2">{{ rule.body }}</p>
-                    <button v-if="!fireAcceptedSet.has(rule.id)" type="button" @click="acceptFireRule(rule.id)"
-                            class="mt-4 px-5 py-3 bg-[#22c55e] text-black rounded-xl text-[10px] font-black uppercase tracking-widest">
-                        Принять
-                    </button>
-                    <div v-else class="mt-4 text-[10px] uppercase font-black tracking-widest text-[#22c55e]">
-                        Принято
-                    </div>
-                </div>
-            </div>
+            <StaffDocumentAccordion
+                :sections="fireRules"
+                :accepted-ids="acceptedFireIds"
+                :busy="form.processing"
+                @accept="acceptFireRule"
+            />
 
             <p v-if="!fireRulesComplete" class="mt-6 text-center text-[10px] uppercase font-black tracking-widest text-white/30">
                 Кабинет откроется, когда примете все пункты

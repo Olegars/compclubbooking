@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ShiftSlotSetting;
+use App\Models\StaffDocument;
 use App\Services\ShiftSlotService;
+use App\Services\StaffDocumentService;
 use App\Support\AdminLocation;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -14,6 +16,7 @@ class ClubConfigController extends Controller
 {
     public function __construct(
         private readonly ShiftSlotService $slots,
+        private readonly StaffDocumentService $documents,
     ) {
     }
 
@@ -24,6 +27,7 @@ class ClubConfigController extends Controller
         return Inertia::render('Admin/ClubConfig', [
             'shift_hours' => ShiftSlotSetting::hoursFor($clubId),
             'starts_hour' => ShiftSlotSetting::startsHourFor($clubId),
+            'documents' => $this->documents->configPayload(),
         ]);
     }
 
@@ -55,5 +59,44 @@ class ClubConfigController extends Controller
             : sprintf('смены по 12 часов с %02d:00', $startsHour);
 
         return back()->with('success', 'Конфигурация смен: '.$label);
+    }
+
+    public function saveDocument(Request $request, ?StaffDocument $document = null)
+    {
+        $data = $request->validate([
+            'title' => ['required', 'string', 'max:180'],
+            'kind' => ['required', 'string', 'in:employment,fire_safety'],
+            'sections' => ['required', 'array', 'min:1'],
+            'sections.*.id' => ['nullable', 'integer'],
+            'sections.*.title' => ['required', 'string', 'max:180'],
+            'sections.*.body' => ['required', 'string', 'max:20000'],
+        ]);
+
+        try {
+            $saved = $this->documents->saveDocument($document, [
+                'title' => $data['title'],
+                'kind' => $data['kind'],
+                'sections' => $data['sections'],
+            ]);
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['message' => $e->getMessage()]);
+        }
+
+        return redirect()
+            ->route('admin.config', ['tab' => 'documents'])
+            ->with('success', 'Документ «'.$saved->title.'» сохранён');
+    }
+
+    public function destroyDocument(StaffDocument $document)
+    {
+        try {
+            $this->documents->deleteDocument($document);
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['message' => $e->getMessage()]);
+        }
+
+        return redirect()
+            ->route('admin.config', ['tab' => 'documents'])
+            ->with('success', 'Документ удалён');
     }
 }
