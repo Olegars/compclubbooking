@@ -28,9 +28,47 @@ watch(flashSuccess, (msg) => {
     if (msg) success(msg)
 }, { immediate: true })
 
-const formatMoney = (val: number | string | null) => {
-    if (val === null || val === undefined || val === '') return '—'
-    return Number(val).toLocaleString('ru-RU') + ' ₽'
+const formatDate = (iso: string | null | undefined) => {
+    if (!iso) return '—'
+    const date = new Date(iso)
+    if (Number.isNaN(date.getTime())) return iso
+    return date.toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    })
+}
+
+const formatDay = (iso: string | null | undefined) => {
+    if (!iso) return '—'
+    const date = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso)
+    if (Number.isNaN(date.getTime())) return iso
+    return date.toLocaleDateString('ru-RU', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+    })
+}
+
+const hasPassport = (person: any) => {
+    const emp = person?.employment
+    if (!emp) return false
+    return Boolean(
+        emp.has_scan
+        || emp.passport_series
+        || emp.passport_number
+        || emp.full_name
+        || emp.birth_date
+        || emp.issued_by
+    )
+}
+
+const payTypeLabel = (type: string | null | undefined) => {
+    if (type === 'shift') return 'За смену'
+    if (type === 'monthly') return 'Оклад'
+    return '—'
 }
 
 const roleClass = (duty: string, role: string) => {
@@ -268,7 +306,7 @@ const scanUrl = computed(() => scanTarget.value ? `/admin/staff/${scanTarget.val
 const scanIsPdf = computed(() => scanTarget.value?.employment?.scan_kind === 'pdf')
 
 const openScan = (person: any) => {
-    if (!person?.employment?.has_scan) return
+    if (!hasPassport(person)) return
     scanTarget.value = person
 }
 
@@ -480,6 +518,10 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
 
                     <div class="space-y-4 pt-6 border-t border-white/5">
                         <div class="flex justify-between items-center text-xs">
+                            <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">Должность</span>
+                            <span class="text-white font-bold text-[11px]">{{ person.role_label || person.role }}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-xs">
                             <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">Локация</span>
                             <span class="text-white font-bold text-[11px]">{{ person.club_name || (person.role === 'owner' ? 'Все' : '—') }}</span>
                         </div>
@@ -493,33 +535,61 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                         </div>
                         <div class="flex justify-between items-center text-xs">
                             <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">Тип оплаты</span>
-                            <span class="text-white font-black uppercase text-[11px]">
-                                {{ person.pay_type === 'shift' ? 'За смену' : (person.pay_type === 'monthly' ? 'Оклад' : '—') }}
-                            </span>
+                            <span class="text-white font-black uppercase text-[11px]">{{ payTypeLabel(person.pay_type) }}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">Начислено</span>
+                            <span class="text-white font-black">{{ formatMoney(person.accrued_total) }}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">Штрафы / убытки</span>
+                            <span class="font-black" :class="Number(person.fines_total) > 0 ? 'text-red-400' : 'text-white'">{{ formatMoney(person.fines_total) }}</span>
                         </div>
                         <div class="flex justify-between items-center text-xs">
                             <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">К выводу</span>
                             <span class="text-[#22c55e] font-black">{{ formatMoney(person.available) }}</span>
                         </div>
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">В штате с</span>
+                            <span class="text-white font-bold text-[11px]">{{ formatDate(person.hired_at || person.created_at) }}</span>
+                        </div>
+                        <div v-if="person.fired_at" class="flex justify-between items-center text-xs">
+                            <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">Уволен</span>
+                            <span class="text-red-400 font-bold text-[11px]">{{ formatDate(person.fired_at) }}</span>
+                        </div>
+                    </div>
+
+                    <div v-if="person.employment" class="mt-6 space-y-3 pt-6 border-t border-white/5">
+                        <div class="text-[9px] text-white/30 uppercase font-black tracking-widest">Документы</div>
+                        <div class="text-white text-xs font-bold">{{ person.employment.full_name || person.name }}</div>
+                        <div class="text-white/50 text-[11px] font-bold space-y-1">
+                            <div>Статус: {{ person.employment.status_label || person.employment.status }}</div>
+                            <div v-if="person.employment.birth_date">Дата рождения {{ formatDay(person.employment.birth_date) }}</div>
+                            <div v-if="person.employment.passport_series || person.employment.passport_number">
+                                Паспорт {{ person.employment.passport_series }} {{ person.employment.passport_number }}
+                            </div>
+                            <div v-if="person.employment.issued_by">{{ person.employment.issued_by }}</div>
+                            <div v-if="person.employment.issued_at || person.employment.department_code">
+                                Выдан {{ person.employment.issued_at ? formatDay(person.employment.issued_at) : '—' }}
+                                <span v-if="person.employment.department_code"> · код {{ person.employment.department_code }}</span>
+                            </div>
+                            <div v-if="person.employment.submitted_at">Анкета {{ formatDate(person.employment.submitted_at) }}</div>
+                            <div v-if="person.employment.appointment_at">Визит {{ formatAppointment(person.employment.appointment_at) }}</div>
+                            <div v-if="person.employment.biometrics_captured_at">Биометрия {{ formatDate(person.employment.biometrics_captured_at) }}</div>
+                            <div v-if="person.employment.reviewer_name">Проверил {{ person.employment.reviewer_name }}</div>
+                            <div v-if="person.employment.rejection_reason" class="text-red-400">{{ person.employment.rejection_reason }}</div>
+                        </div>
+                        <button v-if="hasPassport(person)"
+                                type="button"
+                                class="w-full py-3 border border-amber-500/30 hover:border-amber-400/60 text-amber-400 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                                @click="openScan(person)">
+                            {{ person.employment.has_scan ? 'Открыть паспорт' : 'Паспортные данные' }}
+                        </button>
                     </div>
 
                     <div v-if="isPipeline(person) && !person.is_fired" class="mt-6 space-y-3 pt-6 border-t border-amber-500/20">
                         <div class="text-[9px] text-amber-400 uppercase font-black tracking-widest">Анкета устройства</div>
-                        <div class="text-white text-xs font-bold">{{ person.employment.full_name }}</div>
-                        <div class="text-white/50 text-[11px] font-bold space-y-1">
-                            <div>Паспорт {{ person.employment.passport_series }} {{ person.employment.passport_number }}</div>
-                            <div>{{ person.employment.issued_by }}</div>
-                            <div>Выдан {{ person.employment.issued_at }} · код {{ person.employment.department_code }}</div>
-                            <div>Дата рождения {{ person.employment.birth_date }}</div>
-                            <div v-if="person.employment.appointment_at">Визит {{ formatAppointment(person.employment.appointment_at) }}</div>
-                        </div>
-                        <button v-if="person.employment.has_scan"
-                                type="button"
-                                class="text-[10px] uppercase font-black tracking-widest text-amber-400 hover:text-amber-300"
-                                @click="openScan(person)">
-                            Открыть скан паспорта
-                        </button>
-                        <div v-if="person.employment.status === 'review'" class="flex gap-2 pt-2">
+                        <div v-if="person.employment.status === 'review'" class="flex gap-2">
                             <button type="button"
                                     class="flex-1 py-3 bg-[#22c55e] hover:bg-[#1ea34d] text-black rounded-xl text-[10px] font-black uppercase tracking-widest"
                                     @click="openAppointment(person)">
@@ -601,7 +671,7 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
             <div class="relative z-10 w-full max-w-4xl max-h-[92vh] flex flex-col bg-[#0a0a0a] border border-amber-500/30 rounded-[1rem] p-5 shadow-[0_0_80px_rgba(245,158,11,0.12)]">
                 <div class="flex items-start justify-between gap-4 mb-4">
                     <div>
-                        <h3 class="text-xl font-black uppercase italic tracking-tighter text-white">Скан паспорта</h3>
+                        <h3 class="text-xl font-black uppercase italic tracking-tighter text-white">Паспорт</h3>
                         <p class="text-[10px] uppercase tracking-widest text-white/40 font-black mt-1">{{ scanTarget.name }}</p>
                     </div>
                     <button type="button"
@@ -610,15 +680,44 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                         Закрыть
                     </button>
                 </div>
-                <div class="min-h-[50vh] flex-1 overflow-auto rounded-2xl border border-white/10 bg-black/60">
-                    <iframe v-if="scanIsPdf"
+                <div v-if="scanTarget.employment" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 text-[11px] font-bold">
+                    <div>
+                        <div class="text-[9px] uppercase tracking-widest text-white/30 font-black">ФИО</div>
+                        <div class="text-white mt-1">{{ scanTarget.employment.full_name || scanTarget.name }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[9px] uppercase tracking-widest text-white/30 font-black">Дата рождения</div>
+                        <div class="text-white mt-1">{{ formatDay(scanTarget.employment.birth_date) }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[9px] uppercase tracking-widest text-white/30 font-black">Серия и номер</div>
+                        <div class="text-white mt-1">{{ scanTarget.employment.passport_series }} {{ scanTarget.employment.passport_number }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[9px] uppercase tracking-widest text-white/30 font-black">Код подразделения</div>
+                        <div class="text-white mt-1">{{ scanTarget.employment.department_code || '—' }}</div>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <div class="text-[9px] uppercase tracking-widest text-white/30 font-black">Кем выдан</div>
+                        <div class="text-white mt-1">{{ scanTarget.employment.issued_by || '—' }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[9px] uppercase tracking-widest text-white/30 font-black">Дата выдачи</div>
+                        <div class="text-white mt-1">{{ formatDay(scanTarget.employment.issued_at) }}</div>
+                    </div>
+                </div>
+                <div class="min-h-[40vh] flex-1 overflow-auto rounded-2xl border border-white/10 bg-black/60">
+                    <iframe v-if="scanTarget.employment?.has_scan && scanIsPdf"
                             :src="scanUrl"
                             title="Скан паспорта"
                             class="w-full h-[70vh] border-0 rounded-2xl bg-white"></iframe>
-                    <img v-else
+                    <img v-else-if="scanTarget.employment?.has_scan"
                          :src="scanUrl"
                          alt="Скан паспорта"
                          class="mx-auto max-h-[70vh] w-auto max-w-full object-contain">
+                    <div v-else class="h-[30vh] flex items-center justify-center text-white/30 text-[10px] uppercase font-black tracking-widest">
+                        Скан не загружен
+                    </div>
                 </div>
             </div>
         </div>

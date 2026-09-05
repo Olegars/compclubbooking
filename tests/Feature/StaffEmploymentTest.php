@@ -184,6 +184,19 @@ class StaffEmploymentTest extends TestCase
             ->get('/admin/salary')
             ->assertOk()
             ->assertInertia(fn ($page) => $page->where('employment.required', false));
+
+        $this->actingAs($owner, 'admin')
+            ->get('/admin/staff')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('staff', function ($staff) use ($intern) {
+                $row = collect($staff)->firstWhere('id', $intern->id);
+
+                return $row
+                    && data_get($row, 'employment.status') === StaffEmploymentProfile::STATUS_APPROVED
+                    && data_get($row, 'employment.full_name') === 'Иванов Иван Иванович'
+                    && data_get($row, 'employment.passport_number') === '567890'
+                    && data_get($row, 'employment.has_scan') === true;
+            }));
     }
 
     public function test_cannot_reject_after_biometrics(): void

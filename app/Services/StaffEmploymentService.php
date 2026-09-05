@@ -58,35 +58,53 @@ class StaffEmploymentService
         if (! $profile) {
             return [
                 'status' => StaffEmploymentProfile::STATUS_DRAFT,
+                'status_label' => 'Анкета',
                 'submitted_at' => null,
                 'rejection_reason' => null,
                 'has_scan' => false,
+                'scan_kind' => 'image',
                 'appointment_at' => null,
+                'full_name' => $employee->name,
+                'passport_series' => null,
+                'passport_number' => null,
+                'issued_by' => null,
+                'issued_at' => null,
+                'department_code' => null,
+                'birth_date' => null,
+                'reviewed_at' => null,
+                'reviewer_name' => null,
+                'biometrics_captured_at' => null,
             ];
         }
 
         $ext = strtolower(pathinfo((string) $profile->passport_scan_path, PATHINFO_EXTENSION));
 
-        $card = [
+        return [
             'status' => $profile->status ?: StaffEmploymentProfile::STATUS_DRAFT,
+            'status_label' => match ($profile->status) {
+                StaffEmploymentProfile::STATUS_REVIEW => 'На проверке',
+                StaffEmploymentProfile::STATUS_INVITED => 'Приглашён',
+                StaffEmploymentProfile::STATUS_FIRE_SAFETY => 'Правила ПБ',
+                StaffEmploymentProfile::STATUS_REJECTED => 'Отклонено',
+                StaffEmploymentProfile::STATUS_APPROVED => 'Оформлен',
+                default => 'Анкета',
+            },
             'submitted_at' => $profile->submitted_at?->toIso8601String(),
             'rejection_reason' => $profile->rejection_reason,
             'has_scan' => filled($profile->passport_scan_path),
             'scan_kind' => $ext === 'pdf' ? 'pdf' : 'image',
             'appointment_at' => $profile->appointment_at?->toIso8601String(),
+            'full_name' => $profile->full_name ?: $employee->name,
+            'passport_series' => $profile->passport_series,
+            'passport_number' => $profile->passport_number,
+            'issued_by' => $profile->issued_by,
+            'issued_at' => $profile->issued_at?->toDateString(),
+            'department_code' => $profile->department_code,
+            'birth_date' => $profile->birth_date?->toDateString(),
+            'reviewed_at' => $profile->reviewed_at?->toIso8601String(),
+            'reviewer_name' => $profile->reviewer?->name,
+            'biometrics_captured_at' => $profile->biometrics_captured_at?->toIso8601String(),
         ];
-
-        if ($profile->isInPipeline() || $profile->isRejected()) {
-            $card['full_name'] = $profile->full_name;
-            $card['passport_series'] = $profile->passport_series;
-            $card['passport_number'] = $profile->passport_number;
-            $card['issued_by'] = $profile->issued_by;
-            $card['issued_at'] = $profile->issued_at?->toDateString();
-            $card['department_code'] = $profile->department_code;
-            $card['birth_date'] = $profile->birth_date?->toDateString();
-        }
-
-        return $card;
     }
 
     public function acceptRule(Admin $admin, int $ruleId): void

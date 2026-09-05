@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Admin;
 use App\Models\Club;
 use App\Models\ShiftIntern;
+use App\Models\StaffLedger;
 use App\Services\StaffEmploymentService;
 use App\Services\StaffPayrollService;
 use App\Support\AdminLocation;
@@ -36,10 +37,22 @@ class StaffController extends Controller
         $ownerCount = Admin::query()->where('role', Admin::ROLE_OWNER)->count();
         $hireRoles = $actor->hireableRoles();
 
-        $staff = Admin::query()->with(['club:id,name', 'employmentProfile'])->orderBy('name')->get()->map(function ($employee) use ($open, $internIds, $actor, $ownerCount) {
+        $staff = Admin::query()
+            ->with(['club:id,name', 'employmentProfile.reviewer:id,name'])
+            ->orderBy('name')
+            ->get()
+            ->map(function ($employee) use ($open, $internIds, $actor, $ownerCount) {
             $this->payroll->syncFor($employee);
             $balance = $this->payroll->balance($employee);
             $duty = $this->dutyFor($employee, $open, $internIds);
+            $accruedTotal = (float) StaffLedger::query()
+                ->where('admin_id', $employee->id)
+                ->where('type', StaffLedger::TYPE_ACCRUAL)
+                ->sum('amount');
+            $finesTotal = (float) StaffLedger::query()
+                ->where('admin_id', $employee->id)
+                ->where('type', StaffLedger::TYPE_FINE)
+                ->sum('amount');
 
             return [
                 'id' => $employee->id,
@@ -57,6 +70,10 @@ class StaffController extends Controller
                 'pay_type' => $employee->pay_type,
                 'available' => max(0, $balance),
                 'balance' => $balance,
+                'accrued_total' => $accruedTotal,
+                'fines_total' => $finesTotal,
+                'hired_at' => $employee->hired_at?->toIso8601String(),
+                'created_at' => $employee->created_at?->toIso8601String(),
                 'employment' => $this->employment->staffCard($employee),
                 'is_fired' => $employee->isFired(),
                 'fired_at' => $employee->fired_at?->toIso8601String(),
