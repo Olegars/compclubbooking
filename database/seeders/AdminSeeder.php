@@ -38,6 +38,16 @@ class AdminSeeder extends Seeder
                 'pay_type' => 'shift',
             ],
             [
+                'email' => 'intern@0451.space',
+                'legacy_emails' => ['intern@reactor.club'],
+                'name' => 'стажёр',
+                'role' => 'intern',
+                'club_id' => $club->id,
+                'is_official_employee' => false,
+                'base_rate' => 1500.00,
+                'pay_type' => 'shift',
+            ],
+            [
                 'email' => 'super@0451.space',
                 'legacy_emails' => ['super@reactor.club'],
                 'name' => 'управляющий',

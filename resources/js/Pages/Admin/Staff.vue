@@ -23,14 +23,35 @@ const formatMoney = (val: number | string | null) => {
     return Number(val).toLocaleString('ru-RU') + ' ₽'
 }
 
-const roleClass = (role: string) => {
+const roleClass = (duty: string, role: string) => {
+    if (duty === 'active') return 'bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30'
+    if (duty === 'intern') return 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+    if (duty === 'inactive') return 'bg-white/5 text-white/40 border-white/10'
     if (role === 'owner') return 'bg-purple-500/10 text-purple-500 border-purple-500/30'
     if (role === 'supervisor') return 'bg-blue-500/10 text-blue-500 border-blue-500/30'
-    if (role === 'admin') return 'bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30'
     if (role === 'senior_manager') return 'bg-amber-500/10 text-amber-400 border-amber-500/30'
     if (role === 'store_manager') return 'bg-orange-500/10 text-orange-400 border-orange-500/30'
     if (role === 'assembler') return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
     return 'bg-white/5 text-white/50 border-white/10'
+}
+
+const floorRoleOptions = [
+    { value: 'admin', label: 'Админ' },
+    { value: 'intern', label: 'Стажёр' },
+]
+
+const roleBusyId = ref<number | null>(null)
+
+const changeFloorRole = (person: any, role: string) => {
+    if (!person?.is_floor_admin || person.role === role || roleBusyId.value) return
+    roleBusyId.value = person.id
+    router.post(`/admin/staff/${person.id}/role`, { role }, {
+        preserveScroll: true,
+        onFinish: () => { roleBusyId.value = null },
+        onError: (errors) => {
+            error((errors as any).role || 'Не удалось сменить роль')
+        },
+    })
 }
 
 const currentAdminId = computed(() => (page.props.admin_user as any)?.id)
@@ -101,8 +122,8 @@ const submitFine = () => {
                      class="bg-[#050505] border border-white/5 rounded-[0.875rem] p-8 relative group hover:border-purple-500/30 transition-all shadow-xl">
 
                     <div class="absolute top-6 right-6 text-[9px] uppercase font-black tracking-widest px-3 py-1 rounded-full border"
-                         :class="roleClass(person.role)">
-                        {{ person.role }}
+                         :class="roleClass(person.duty, person.role)">
+                        {{ person.duty_label || person.role_label || person.role }}
                     </div>
 
                     <div class="flex items-center gap-4 mb-8">
@@ -146,6 +167,20 @@ const submitFine = () => {
                             class="mt-6 w-full py-3 border border-red-500/20 hover:border-red-500/50 text-red-400/80 hover:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
                         Штраф
                     </button>
+
+                    <div v-if="person.is_floor_admin" class="mt-3">
+                        <label class="text-[9px] text-white/30 uppercase font-black tracking-widest">Должность</label>
+                        <select
+                            class="mt-2 w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-[11px] font-black uppercase tracking-wider text-white outline-none"
+                            :value="person.role"
+                            :disabled="roleBusyId === person.id"
+                            @change="changeFloorRole(person, ($event.target as HTMLSelectElement).value)"
+                        >
+                            <option v-for="opt in floorRoleOptions" :key="opt.value" :value="opt.value">
+                                {{ opt.label }}
+                            </option>
+                        </select>
+                    </div>
                 </div>
             </div>
 

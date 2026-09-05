@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Shift;
+use App\Models\ShiftIntern;
 use App\Services\ProductStockService;
 use App\Services\StaffPayrollService;
 use Illuminate\Http\Request;
@@ -44,6 +45,12 @@ class ShiftController extends Controller
 
         $admin = auth()->user();
 
+        if ($admin?->isIntern()) {
+            return back()->withErrors([
+                'message' => 'Стажёр не принимает смену. Выйдите в смену вместе с активным админом.',
+            ]);
+        }
+
         foreach ($data['items'] as $item) {
             if ((int) $item['actual'] === (int) $item['stock']) {
                 continue;
@@ -77,11 +84,19 @@ class ShiftController extends Controller
             ]);
 
             if ($closingIds->isNotEmpty()) {
+                ShiftIntern::query()
+                    ->whereIn('shift_id', $closingIds)
+                    ->whereNull('left_at')
+                    ->update(['left_at' => now()]);
+
                 Shift::query()
                     ->whereIn('id', $closingIds)
-                    ->with('admin')
+                    ->with(['admin', 'internSlots.admin'])
                     ->get()
-                    ->each(fn (Shift $closed) => $payroll->accrueClosedShift($closed));
+                    ->each(function (Shift $closed) use ($payroll) {
+                        $payroll->accrueClosedShift($closed);
+                        $payroll->accrueClosedShiftInterns($closed);
+                    });
             }
 
             // 2. Создаем новую смену
@@ -159,5 +174,56 @@ class ShiftController extends Controller
         return Inertia::render('Admin/ShiftHistory', [
             'shifts' => $shifts,
         ]);
+    }
+
+    public function internJoin()
+    {
+        $admin = auth('admin')->user();
+        if (! $admin?->isIntern()) {
+            abort(403, 'В смену к активному админу выходит только стажёр.');
+        }
+
+        $shift = Shift::query()
+            ->with('admin:id,name')
+            ->where('status', '!=', 'closed')
+            ->orderByDesc('id')
+            ->first();
+        if (! $shift) {
+            return back()->withErrors(['message' => 'Нет активной смены — сначала админ должен принять смену.']);
+        }
+
+        ShiftIntern::query()->firstOrCreate(
+            [
+                'shift_id' => $shift->id,
+                'admin_id' => $admin->id,
+            ],
+            [
+                'joined_at' => now(),
+            ]
+        );
+
+        ShiftIntern::query()
+            ->where('shift_id', $shift->id)
+            ->where('admin_id', $admin->id)
+            ->whereNotNull('left_at')
+            ->update(['left_at' => null, 'joined_at' => now()]);
+
+        return back()->with('success', 'Вы вышли в смену вместе с '.$shift->admin?->name);
+    }
+
+    public function internLeave()
+    {
+        $admin = auth('admin')->user();
+        if (! $admin?->isIntern()) {
+            abort(403);
+        }
+
+        ShiftIntern::query()
+            ->where('admin_id', $admin->id)
+            ->whereNull('left_at')
+            ->whereHas('shift', fn ($q) => $q->where('status', '!=', 'closed'))
+            ->update(['left_at' => now()]);
+
+        return back()->with('success', 'Вы ушли со смены.');
     }
 }

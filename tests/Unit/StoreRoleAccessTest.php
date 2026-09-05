@@ -24,6 +24,18 @@ class StoreRoleAccessTest extends TestCase
         $this->assertTrue($owner->canAccessStore());
     }
 
+    public function test_intern_is_salary_only_and_not_store(): void
+    {
+        $intern = new Admin(['role' => 'intern']);
+
+        $this->assertTrue($intern->canAccessClub());
+        $this->assertTrue($intern->isIntern());
+        $this->assertTrue($intern->isSalaryOnly());
+        $this->assertFalse($intern->hasFullClubOps());
+        $this->assertFalse($intern->canAccessStore());
+        $this->assertSame('admin.salary', $intern->homeRoute());
+    }
+
     public function test_store_roles_cannot_access_club(): void
     {
         foreach (['store_manager', 'assembler', 'senior_manager'] as $role) {

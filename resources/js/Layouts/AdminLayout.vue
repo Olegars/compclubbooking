@@ -31,18 +31,25 @@ const isOwner = computed(() => adminRole.value === 'owner')
 const isSupervisorPlus = computed(() => adminRole.value === 'supervisor' || adminRole.value === 'owner')
 const canAccessClub = computed(() => isOwner.value || Boolean(page.props.can_access_club))
 const canAccessStore = computed(() => isOwner.value || Boolean(page.props.can_access_store))
+const isSalaryOnly = computed(() => Boolean(page.props.is_salary_only))
 const location = computed(() => page.props.admin_location as any)
 const locations = computed(() => (page.props.admin_locations as any[]) || [])
 const switching = ref(false)
 const showLocationSwitcher = computed(() => isOwner.value && locations.value.length > 0)
 
 const shift = computed(() => page.props.admin_shift as any)
-const shiftIsActive = computed(() => Boolean(shift.value?.is_mine))
+const shiftIsActive = computed(() => Boolean(shift.value?.is_mine || shift.value?.is_intern_on_shift || shift.value?.duty === 'active'))
 
 const shiftLabel = computed(() => {
     const parts: string[] = []
+    const dutyLabel = shift.value?.duty_label || admin.value?.role_label || adminRole.value
 
-    if (!shift.value) {
+    if (shift.value?.duty === 'intern') {
+        parts.push(dutyLabel)
+        return parts.join(' · ')
+    }
+
+    if (!shift.value?.id) {
         parts.push('Смена закрыта')
     } else if (shift.value.is_mine) {
         parts.push('Смена активна')
@@ -50,7 +57,7 @@ const shiftLabel = computed(() => {
         parts.push(`Смена: ${shift.value.admin_name || '—'}`)
     }
 
-    if (adminRole.value) parts.push(adminRole.value)
+    if (dutyLabel) parts.push(dutyLabel)
 
     return parts.join(' · ')
 })
@@ -101,6 +108,15 @@ const switchLocation = (clubId: string | number) => {
             </div>
 
             <div class="flex-1 overflow-y-auto py-8 px-6 space-y-8 custom-scrollbar">
+
+                <div v-if="isSalaryOnly" class="space-y-2">
+                    <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Личное</div>
+                    <Link href="/admin/salary"
+                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
+                          :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e] shadow-[0_0_30px_rgba(34,197,94,0.05)]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                        <span>💰</span> Моя зарплата
+                    </Link>
+                </div>
 
                 <!-- СЕКЦИЯ: ОПЕРАЦИИ КЛУБА -->
                 <div v-if="canAccessClub" class="space-y-2">
@@ -333,7 +349,7 @@ const switchLocation = (clubId: string | number) => {
                 </div>
 
                 <!-- СЕКЦИЯ: СПРАВКА -->
-                <div class="space-y-2">
+                <div v-if="!isSalaryOnly" class="space-y-2">
                     <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Справка</div>
                     <Link v-if="!canAccessClub" href="/admin/salary"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"

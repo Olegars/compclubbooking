@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Head, useForm, usePage } from '@inertiajs/vue3'
+import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AdminConfirm from '@/Components/AdminConfirm.vue'
 import { useClubName } from '@/Composables/useClubName'
@@ -51,6 +51,37 @@ watch(flashSuccess, (msg) => {
 watch(() => formErrors.value?.amount, (msg) => {
     if (msg) error(msg)
 }, { immediate: true })
+watch(() => formErrors.value?.message, (msg) => {
+    if (msg) error(msg)
+}, { immediate: true })
+watch(() => (page.props as any).flash?.error as string | undefined, (msg) => {
+    if (msg) error(msg)
+}, { immediate: true })
+
+const shiftState = computed(() => page.props.admin_shift as any)
+const dutyBusy = ref(false)
+
+const takeShift = () => {
+    router.get('/admin/shifts/transfer')
+}
+
+const internJoin = () => {
+    if (dutyBusy.value) return
+    dutyBusy.value = true
+    router.post('/admin/shifts/intern/join', {}, {
+        preserveScroll: true,
+        onFinish: () => { dutyBusy.value = false },
+    })
+}
+
+const internLeave = () => {
+    if (dutyBusy.value) return
+    dutyBusy.value = true
+    router.post('/admin/shifts/intern/leave', {}, {
+        preserveScroll: true,
+        onFinish: () => { dutyBusy.value = false },
+    })
+}
 
 const formatMoney = (value: number | string | null | undefined) => {
     return Number(value ?? 0).toLocaleString('ru-RU', {
@@ -131,10 +162,43 @@ const confirmWithdraw = () => {
                     </p>
                 </div>
                 <div class="text-right">
-                    <div class="text-[10px] uppercase font-black tracking-widest text-white/30">Тип оплаты</div>
-                    <div class="text-sm font-black uppercase text-white mt-1">{{ payTypeLabel }}</div>
+                    <div class="text-[10px] uppercase font-black tracking-widest text-white/30">Статус</div>
+                    <div class="text-sm font-black uppercase text-white mt-1">{{ shiftState?.duty_label || payTypeLabel }}</div>
                     <div class="text-[11px] text-white/40 mt-1">ставка {{ formatMoney(base_rate) }}</div>
                 </div>
+            </div>
+
+            <div v-if="shiftState?.duty === 'intern' && !shiftState?.id"
+                 class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-8 text-sm text-white/60 font-bold">
+                Нет активной смены. Стажёр выходит в смену вместе с активным админом, когда тот её примет.
+            </div>
+
+            <div v-if="shiftState?.can_take_shift || shiftState?.can_join_as_intern || shiftState?.can_leave_as_intern"
+                 class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-8 shadow-2xl flex flex-col md:flex-row md:items-center gap-6">
+                <div class="flex-1">
+                    <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Смена</div>
+                    <p v-if="shiftState?.can_take_shift" class="text-white text-sm font-bold mt-2">
+                        Чтобы получить доступ к админке, примите смену.
+                    </p>
+                    <p v-else-if="shiftState?.can_join_as_intern" class="text-white text-sm font-bold mt-2">
+                        Активный админ: {{ shiftState.admin_name }}. Выйдите в смену вместе с ним.
+                    </p>
+                    <p v-else class="text-white text-sm font-bold mt-2">
+                        Вы на смене вместе с {{ shiftState.admin_name }}.
+                    </p>
+                </div>
+                <button v-if="shiftState?.can_take_shift" type="button" @click="takeShift"
+                        class="px-8 py-4 bg-[#22c55e] hover:bg-[#1ea34d] text-black rounded-2xl text-xs font-black uppercase tracking-widest">
+                    Принять смену
+                </button>
+                <button v-else-if="shiftState?.can_join_as_intern" type="button" :disabled="dutyBusy" @click="internJoin"
+                        class="px-8 py-4 bg-amber-500 hover:bg-amber-400 text-black rounded-2xl text-xs font-black uppercase tracking-widest disabled:opacity-40">
+                    Выйти в смену
+                </button>
+                <button v-else-if="shiftState?.can_leave_as_intern" type="button" :disabled="dutyBusy" @click="internLeave"
+                        class="px-8 py-4 border border-white/15 text-white/70 hover:text-white rounded-2xl text-xs font-black uppercase tracking-widest disabled:opacity-40">
+                    Уйти со смены
+                </button>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">

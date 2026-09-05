@@ -40,7 +40,18 @@ class Shift extends Model
     public function ledgerAccrual(): HasOne
     {
         return $this->hasOne(StaffLedger::class, 'shift_id')
-            ->where('type', StaffLedger::TYPE_ACCRUAL);
+            ->where('type', StaffLedger::TYPE_ACCRUAL)
+            ->whereColumn('staff_ledgers.admin_id', 'shifts.admin_id');
+    }
+
+    public function internSlots(): HasMany
+    {
+        return $this->hasMany(ShiftIntern::class);
+    }
+
+    public function activeInterns(): HasMany
+    {
+        return $this->hasMany(ShiftIntern::class)->whereNull('left_at');
     }
 
     // Связь с записями инвентаризации этой смены

@@ -12,7 +12,18 @@ class Admin extends Authenticatable
 {
     use Notifiable;
 
-    public const CLUB_ROLES = ['admin', 'supervisor', 'owner'];
+    public const ROLE_ADMIN = 'admin';
+
+    public const ROLE_INTERN = 'intern';
+
+    public const ROLE_SUPERVISOR = 'supervisor';
+
+    public const ROLE_OWNER = 'owner';
+
+    /** Должность смены: обычный админ или стажёр. Активный/неактивный считается по текущей смене. */
+    public const FLOOR_ADMIN_ROLES = ['admin', 'intern'];
+
+    public const CLUB_ROLES = ['admin', 'intern', 'supervisor', 'owner'];
 
     public const STORE_ROLES = ['store_manager', 'assembler', 'senior_manager', 'owner'];
 
@@ -55,14 +66,29 @@ class Admin extends Authenticatable
         return $this->hasMany(StaffLedger::class, 'admin_id');
     }
 
+    public function internShifts(): HasMany
+    {
+        return $this->hasMany(ShiftIntern::class, 'admin_id');
+    }
+
     public function isStoreRole(): bool
     {
         return in_array($this->role, self::STORE_ONLY_ROLES, true);
     }
 
+    public function isIntern(): bool
+    {
+        return $this->role === self::ROLE_INTERN;
+    }
+
     public function isClubRole(): bool
     {
-        return in_array($this->role, ['admin', 'supervisor'], true);
+        return in_array($this->role, ['admin', 'intern', 'supervisor'], true);
+    }
+
+    public function isFloorAdminFamily(): bool
+    {
+        return in_array($this->role, self::FLOOR_ADMIN_ROLES, true);
     }
 
     public function canAccessClub(): bool
@@ -73,6 +99,47 @@ class Admin extends Authenticatable
     public function canAccessStore(): bool
     {
         return in_array($this->role, self::STORE_ROLES, true);
+    }
+
+    public function isShiftLead(): bool
+    {
+        return Shift::query()
+            ->where('status', '!=', 'closed')
+            ->where('admin_id', $this->id)
+            ->exists();
+    }
+
+    public function isInternOnOpenShift(): bool
+    {
+        if (! $this->isIntern()) {
+            return false;
+        }
+
+        return ShiftIntern::query()
+            ->where('admin_id', $this->id)
+            ->whereNull('left_at')
+            ->whereHas('shift', fn ($q) => $q->where('status', '!=', 'closed'))
+            ->exists();
+    }
+
+    /** Полный функционал клуба: управляющий/владелец или админ, который принял смену. */
+    public function hasFullClubOps(): bool
+    {
+        if (in_array($this->role, [self::ROLE_OWNER, self::ROLE_SUPERVISOR], true)) {
+            return true;
+        }
+
+        return $this->role === self::ROLE_ADMIN && $this->isShiftLead();
+    }
+
+    /** Неактивный админ и стажёр видят только «Моя зарплата». */
+    public function isSalaryOnly(): bool
+    {
+        if ($this->isIntern()) {
+            return true;
+        }
+
+        return $this->role === self::ROLE_ADMIN && ! $this->isShiftLead();
     }
 
     public function canManageStoreCatalog(): bool
@@ -97,10 +164,33 @@ class Admin extends Authenticatable
 
     public function homeRoute(): string
     {
+        if ($this->isSalaryOnly()) {
+            return 'admin.salary';
+        }
+
         if ($this->canAccessClub()) {
             return 'admin.dashboard';
         }
 
         return 'admin.store.warehouse';
+    }
+
+    public function roleLabel(): string
+    {
+        return self::labelForRole($this->role);
+    }
+
+    public static function labelForRole(?string $role): string
+    {
+        return match ($role) {
+            self::ROLE_ADMIN => 'Админ',
+            self::ROLE_INTERN => 'Стажёр',
+            self::ROLE_SUPERVISOR => 'Управляющий',
+            self::ROLE_OWNER => 'Владелец',
+            'store_manager' => 'Менеджер магазина',
+            'assembler' => 'Сборщик',
+            'senior_manager' => 'Старший менеджер',
+            default => $role ?: '—',
+        };
     }
 }

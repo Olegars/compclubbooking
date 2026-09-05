@@ -227,7 +227,7 @@ Route::middleware('guest:admin')->prefix('admin')->group(function () {
     Route::post('/login', [AdminLoginController::class, 'login']);
 });
 
-Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
+Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(function () {
 
     // Справка — всем ролям
     Route::get('/docs', [SystemDocsController::class, 'index'])->name('admin.docs');
@@ -235,6 +235,8 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
     // Личная зарплата — любой сотрудник (клуб и магазин)
     Route::get('/salary', [StaffPayrollController::class, 'index'])->name('admin.salary');
     Route::post('/salary/withdraw', [StaffPayrollController::class, 'withdraw'])->name('admin.salary.withdraw');
+    Route::post('/shifts/intern/join', [ShiftController::class, 'internJoin'])->name('admin.shift.intern.join');
+    Route::post('/shifts/intern/leave', [ShiftController::class, 'internLeave'])->name('admin.shift.intern.leave');
 
     // Переключение локации (owner без привязки)
     Route::post('/store/location/switch', [StoreLocationController::class, 'switch'])
@@ -504,6 +506,7 @@ Route::middleware(['auth:admin'])->prefix('admin')->group(function () {
         Route::get('/taxes', [TaxController::class, 'index'])->name('admin.taxes.index');
         Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
         Route::post('/staff/{admin}/fines', [StaffController::class, 'storeFine'])->name('admin.staff.fines.store');
+        Route::post('/staff/{admin}/role', [StaffController::class, 'updateRole'])->name('admin.staff.role.update');
 
         Route::get('/store/locations', [StoreLocationController::class, 'index'])->name('admin.store.locations');
         Route::post('/store/locations', [StoreLocationController::class, 'store'])->name('admin.store.locations.store');

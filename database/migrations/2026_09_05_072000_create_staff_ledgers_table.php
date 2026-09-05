@@ -19,7 +19,7 @@ return new class extends Migration
             $table->foreignId('created_by')->nullable()->constrained('admins')->nullOnDelete();
             $table->timestamps();
 
-            $table->unique('shift_id');
+            $table->unique(['admin_id', 'shift_id']);
             $table->index(['admin_id', 'type']);
             $table->index(['admin_id', 'type', 'period_key']);
         });

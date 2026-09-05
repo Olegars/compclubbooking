@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Admin;
 use App\Models\Shift;
+use App\Models\ShiftIntern;
 use App\Models\StaffLedger;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -13,6 +14,7 @@ class StaffPayrollService
     public function syncFor(Admin $admin): void
     {
         $this->accrueClosedShifts($admin);
+        $this->accrueClosedInternShifts($admin);
         $this->accrueMonthlyPeriods($admin);
     }
 
@@ -42,6 +44,47 @@ class StaffPayrollService
             [
                 'amount' => $rate,
                 'reason' => 'Смена #'.$shift->id,
+            ]
+        );
+    }
+
+    public function accrueClosedShiftInterns(Shift $shift): void
+    {
+        $shift->loadMissing('internSlots.admin');
+
+        foreach ($shift->internSlots as $slot) {
+            $intern = $slot->admin;
+            if (! $intern) {
+                continue;
+            }
+            $this->accrueForParticipant($intern, $shift, 'Стажировка · смена #'.$shift->id);
+        }
+    }
+
+    public function accrueForParticipant(Admin $admin, Shift $shift, string $reason): ?StaffLedger
+    {
+        if ($shift->status !== 'closed' || ! $shift->ended_at) {
+            return null;
+        }
+
+        if ($admin->pay_type !== 'shift') {
+            return null;
+        }
+
+        $rate = round((float) $admin->base_rate, 2);
+        if ($rate <= 0) {
+            return null;
+        }
+
+        return StaffLedger::query()->firstOrCreate(
+            [
+                'admin_id' => $admin->id,
+                'shift_id' => $shift->id,
+                'type' => StaffLedger::TYPE_ACCRUAL,
+            ],
+            [
+                'amount' => $rate,
+                'reason' => $reason,
             ]
         );
     }
@@ -141,34 +184,9 @@ class StaffPayrollService
     {
         $this->syncFor($admin);
 
-        $shifts = Shift::query()
-            ->where('admin_id', $admin->id)
-            ->with('ledgerAccrual')
-            ->orderByDesc('started_at')
-            ->orderByDesc('id')
-            ->limit(100)
-            ->get()
-            ->map(function (Shift $shift) {
-                $started = $shift->started_at;
-                $ended = $shift->ended_at;
-                $isOpen = $shift->status !== 'closed';
-                $endForDuration = $ended ?? ($isOpen ? now() : null);
-                $minutes = ($started && $endForDuration)
-                    ? (int) $started->diffInMinutes($endForDuration)
-                    : null;
-
-                return [
-                    'id' => $shift->id,
-                    'started_at' => $started?->toIso8601String(),
-                    'ended_at' => $ended?->toIso8601String(),
-                    'status' => $shift->status,
-                    'is_open' => $isOpen,
-                    'duration_minutes' => $minutes,
-                    'accrued' => $shift->ledgerAccrual ? (float) $shift->ledgerAccrual->amount : 0.0,
-                ];
-            })
-            ->values()
-            ->all();
+        $shifts = $admin->isIntern()
+            ? $this->internShiftRows($admin)
+            : $this->leadShiftRows($admin);
 
         $mapEntry = function (StaffLedger $row) {
             return [
@@ -252,6 +270,102 @@ class StaffPayrollService
             ->with('admin')
             ->get()
             ->each(fn (Shift $shift) => $this->accrueClosedShift($shift));
+    }
+
+    private function accrueClosedInternShifts(Admin $admin): void
+    {
+        if ($admin->pay_type !== 'shift' || ! $admin->isIntern()) {
+            return;
+        }
+
+        ShiftIntern::query()
+            ->where('admin_id', $admin->id)
+            ->whereHas('shift', fn ($q) => $q->where('status', 'closed')->whereNotNull('ended_at'))
+            ->with('shift')
+            ->get()
+            ->each(function (ShiftIntern $slot) use ($admin) {
+                if ($slot->shift) {
+                    $this->accrueForParticipant($admin, $slot->shift, 'Стажировка · смена #'.$slot->shift_id);
+                }
+            });
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function leadShiftRows(Admin $admin): array
+    {
+        return Shift::query()
+            ->where('admin_id', $admin->id)
+            ->with('ledgerAccrual')
+            ->orderByDesc('started_at')
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get()
+            ->map(fn (Shift $shift) => $this->mapShiftRow(
+                $shift,
+                $shift->started_at,
+                $shift->ended_at,
+                $shift->ledgerAccrual ? (float) $shift->ledgerAccrual->amount : 0.0
+            ))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function internShiftRows(Admin $admin): array
+    {
+        return ShiftIntern::query()
+            ->where('admin_id', $admin->id)
+            ->with(['shift.ledgerAccrual'])
+            ->orderByDesc('joined_at')
+            ->limit(100)
+            ->get()
+            ->map(function (ShiftIntern $slot) use ($admin) {
+                $shift = $slot->shift;
+                $accrual = StaffLedger::query()
+                    ->where('admin_id', $admin->id)
+                    ->where('shift_id', $slot->shift_id)
+                    ->where('type', StaffLedger::TYPE_ACCRUAL)
+                    ->first();
+
+                return $this->mapShiftRow(
+                    $shift,
+                    $slot->joined_at,
+                    $slot->left_at ?? $shift?->ended_at,
+                    $accrual ? (float) $accrual->amount : 0.0,
+                    $shift?->status ?? 'open'
+                );
+            })
+            ->values()
+            ->all();
+    }
+
+    private function mapShiftRow(
+        ?Shift $shift,
+        $started,
+        $ended,
+        float $accrued,
+        ?string $status = null,
+    ): array {
+        $status = $status ?? $shift?->status ?? 'closed';
+        $isOpen = $status !== 'closed';
+        $endForDuration = $ended ?? ($isOpen ? now() : null);
+        $minutes = ($started && $endForDuration)
+            ? (int) $started->diffInMinutes($endForDuration)
+            : null;
+
+        return [
+            'id' => $shift?->id,
+            'started_at' => $started?->toIso8601String(),
+            'ended_at' => $ended?->toIso8601String(),
+            'status' => $status,
+            'is_open' => $isOpen,
+            'duration_minutes' => $minutes,
+            'accrued' => $accrued,
+        ];
     }
 
     private function accrueMonthlyPeriods(Admin $admin): void
