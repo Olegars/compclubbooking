@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Admin;
 use App\Models\StaffEmploymentProfile;
 use App\Support\StaffEmploymentRules;
+use App\Support\StaffFireSafetyRules;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -18,14 +19,19 @@ class StaffEmploymentService
     {
         $profile = $this->profile($admin);
         $accepted = $profile->acceptedRuleIds();
+        $fireAccepted = $profile->acceptedFireRuleIds();
 
         return [
             'required' => $admin->needsEmployment(),
             'status' => $profile->status ?: StaffEmploymentProfile::STATUS_DRAFT,
             'rejection_reason' => $profile->isRejected() ? $profile->rejection_reason : null,
+            'appointment_at' => $profile->appointment_at?->toIso8601String(),
             'rules' => StaffEmploymentRules::all(),
             'accepted_ids' => $accepted,
             'rules_complete' => $this->rulesComplete($accepted),
+            'fire_rules' => StaffFireSafetyRules::all(),
+            'accepted_fire_ids' => $fireAccepted,
+            'fire_rules_complete' => $this->fireRulesComplete($fireAccepted),
             'profile' => [
                 'full_name' => $profile->full_name ?: $admin->name,
                 'passport_series' => $profile->passport_series,
@@ -55,6 +61,7 @@ class StaffEmploymentService
                 'submitted_at' => null,
                 'rejection_reason' => null,
                 'has_scan' => false,
+                'appointment_at' => null,
             ];
         }
 
@@ -66,9 +73,10 @@ class StaffEmploymentService
             'rejection_reason' => $profile->rejection_reason,
             'has_scan' => filled($profile->passport_scan_path),
             'scan_kind' => $ext === 'pdf' ? 'pdf' : 'image',
+            'appointment_at' => $profile->appointment_at?->toIso8601String(),
         ];
 
-        if ($profile->isOnReview() || $profile->isRejected()) {
+        if ($profile->isInPipeline() || $profile->isRejected()) {
             $card['full_name'] = $profile->full_name;
             $card['passport_series'] = $profile->passport_series;
             $card['passport_number'] = $profile->passport_number;
@@ -97,6 +105,32 @@ class StaffEmploymentService
         }
 
         $profile->update(['accepted_rule_ids' => $ids]);
+    }
+
+    public function acceptFireRule(Admin $admin, int $ruleId): void
+    {
+        $this->assertPending($admin);
+
+        $profile = $this->profile($admin);
+        if (! $profile->needsFireSafety()) {
+            throw new RuntimeException('Сначала нужно пройти биометрию в клубе.');
+        }
+
+        if (! in_array($ruleId, StaffFireSafetyRules::ids(), true)) {
+            throw new RuntimeException('Такого правила нет.');
+        }
+
+        $ids = $profile->acceptedFireRuleIds();
+        if (! in_array($ruleId, $ids, true)) {
+            $ids[] = $ruleId;
+            sort($ids);
+        }
+
+        $profile->update(['accepted_fire_rule_ids' => $ids]);
+
+        if ($this->fireRulesComplete($ids)) {
+            $this->hireApplicant($admin, $profile);
+        }
     }
 
     /**
@@ -152,6 +186,10 @@ class StaffEmploymentService
             'reviewed_at' => null,
             'reviewed_by' => null,
             'rejection_reason' => null,
+            'appointment_at' => null,
+            'biometrics_captured_at' => null,
+            'biometrics_payload' => null,
+            'accepted_fire_rule_ids' => [],
         ]);
 
         $admin->update([
@@ -160,32 +198,46 @@ class StaffEmploymentService
         ]);
     }
 
-    public function approve(Admin $reviewer, Admin $applicant): void
+    public function scheduleAppointment(Admin $reviewer, Admin $applicant, string $appointmentAt): void
     {
         $this->assertReviewer($reviewer);
-
-        if (! $applicant->needsEmployment()) {
-            throw new RuntimeException('Анкета уже рассмотрена.');
-        }
+        $this->assertPendingApplicant($applicant);
 
         $profile = $this->profile($applicant);
         if (! $profile->isOnReview()) {
-            throw new RuntimeException('Анкета не на проверке.');
+            throw new RuntimeException('Сначала анкета должна быть на проверке.');
         }
 
         $profile->update([
-            'status' => StaffEmploymentProfile::STATUS_APPROVED,
+            'status' => StaffEmploymentProfile::STATUS_INVITED,
+            'appointment_at' => $appointmentAt,
             'reviewed_at' => now(),
             'reviewed_by' => $reviewer->id,
             'rejection_reason' => null,
         ]);
+    }
 
-        $applicant->update([
-            'name' => $profile->full_name ?: $applicant->name,
-            'employment_pending' => false,
-            'hired_at' => now(),
-            'role' => Admin::ROLE_INTERN,
-            'pay_type' => $applicant->pay_type ?: 'shift',
+    public function captureBiometrics(Admin $reviewer, Admin $applicant): void
+    {
+        $this->assertReviewer($reviewer);
+        $this->assertPendingApplicant($applicant);
+
+        $profile = $this->profile($applicant);
+        if (! $profile->isInvited()) {
+            throw new RuntimeException('Сначала назначьте дату визита.');
+        }
+
+        $profile->update([
+            'status' => StaffEmploymentProfile::STATUS_FIRE_SAFETY,
+            'biometrics_captured_at' => now(),
+            'biometrics_payload' => [
+                'stub' => true,
+                'camera' => 'club-front',
+                'note' => 'Заглушка биометрии: съёмка с камеры клуба ещё не подключена.',
+                'captured_at' => now()->toIso8601String(),
+                'reviewer_id' => $reviewer->id,
+            ],
+            'reviewed_by' => $reviewer->id,
         ]);
     }
 
@@ -198,13 +250,14 @@ class StaffEmploymentService
             throw new RuntimeException('Укажите причину отклонения.');
         }
 
-        if (! $applicant->needsEmployment()) {
-            throw new RuntimeException('Анкета уже рассмотрена.');
-        }
+        $this->assertPendingApplicant($applicant);
 
         $profile = $this->profile($applicant);
-        if (! $profile->isOnReview()) {
-            throw new RuntimeException('Анкета не на проверке.');
+        if (! in_array($profile->status, [
+            StaffEmploymentProfile::STATUS_REVIEW,
+            StaffEmploymentProfile::STATUS_INVITED,
+        ], true)) {
+            throw new RuntimeException('На этом шаге анкету уже нельзя отклонить.');
         }
 
         $profile->update([
@@ -212,6 +265,7 @@ class StaffEmploymentService
             'reviewed_at' => now(),
             'reviewed_by' => $reviewer->id,
             'rejection_reason' => $reason,
+            'appointment_at' => null,
         ]);
     }
 
@@ -222,6 +276,7 @@ class StaffEmploymentService
             [
                 'full_name' => $admin->name,
                 'accepted_rule_ids' => [],
+                'accepted_fire_rule_ids' => [],
                 'status' => StaffEmploymentProfile::STATUS_DRAFT,
             ]
         );
@@ -237,10 +292,44 @@ class StaffEmploymentService
         return count(array_intersect($need, $accepted)) === count($need);
     }
 
+    /**
+     * @param  list<int>  $accepted
+     */
+    public function fireRulesComplete(array $accepted): bool
+    {
+        $need = StaffFireSafetyRules::ids();
+
+        return count(array_intersect($need, $accepted)) === count($need);
+    }
+
+    private function hireApplicant(Admin $admin, StaffEmploymentProfile $profile): void
+    {
+        $profile->update([
+            'status' => StaffEmploymentProfile::STATUS_APPROVED,
+            'reviewed_at' => now(),
+            'rejection_reason' => null,
+        ]);
+
+        $admin->update([
+            'name' => $profile->full_name ?: $admin->name,
+            'employment_pending' => false,
+            'hired_at' => now(),
+            'role' => Admin::ROLE_INTERN,
+            'pay_type' => $admin->pay_type ?: 'shift',
+        ]);
+    }
+
     private function assertPending(Admin $admin): void
     {
         if (! $admin->needsEmployment()) {
             throw new RuntimeException('Анкета устройства уже заполнена.');
+        }
+    }
+
+    private function assertPendingApplicant(Admin $applicant): void
+    {
+        if (! $applicant->needsEmployment()) {
+            throw new RuntimeException('Анкета уже рассмотрена.');
         }
     }
 
@@ -249,7 +338,7 @@ class StaffEmploymentService
         $this->assertPending($admin);
 
         $profile = $this->profile($admin);
-        if ($profile->isOnReview()) {
+        if (! $profile->canEdit()) {
             throw new RuntimeException('Анкета на проверке — дождитесь решения.');
         }
     }

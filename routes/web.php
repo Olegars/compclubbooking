@@ -240,6 +240,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
     Route::post('/salary/slots/{slot}/book', [StaffPayrollController::class, 'bookSlot'])->name('admin.salary.slots.book');
     Route::post('/salary/slots/{booking}/cancel', [StaffPayrollController::class, 'cancelSlot'])->name('admin.salary.slots.cancel');
     Route::post('/salary/employment/rules', [StaffPayrollController::class, 'acceptEmploymentRule'])->name('admin.salary.employment.rules');
+    Route::post('/salary/employment/fire-rules', [StaffPayrollController::class, 'acceptFireSafetyRule'])->name('admin.salary.employment.fire-rules');
     Route::post('/salary/employment/hire', [StaffPayrollController::class, 'hire'])->name('admin.salary.employment.hire');
     Route::post('/shifts/intern/join', [ShiftController::class, 'internJoin'])->name('admin.shift.intern.join');
     Route::post('/shifts/intern/leave', [ShiftController::class, 'internLeave'])->name('admin.shift.intern.leave');
@@ -517,7 +518,8 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::post('/staff/{admin}/fines', [StaffController::class, 'storeFine'])->name('admin.staff.fines.store');
         Route::post('/staff/{admin}/role', [StaffController::class, 'updateRole'])->name('admin.staff.role.update');
         Route::get('/staff/{admin}/employment/scan', [StaffController::class, 'employmentScan'])->name('admin.staff.employment.scan');
-        Route::post('/staff/{admin}/employment/approve', [StaffController::class, 'approveEmployment'])->name('admin.staff.employment.approve');
+        Route::post('/staff/{admin}/employment/appointment', [StaffController::class, 'scheduleEmployment'])->name('admin.staff.employment.appointment');
+        Route::post('/staff/{admin}/employment/biometrics', [StaffController::class, 'captureEmploymentBiometrics'])->name('admin.staff.employment.biometrics');
         Route::post('/staff/{admin}/employment/reject', [StaffController::class, 'rejectEmployment'])->name('admin.staff.employment.reject');
         Route::post('/staff/{admin}/fire', [StaffController::class, 'fire'])->name('admin.staff.fire');
         Route::post('/staff/{admin}/restore', [StaffController::class, 'restore'])->name('admin.staff.restore');

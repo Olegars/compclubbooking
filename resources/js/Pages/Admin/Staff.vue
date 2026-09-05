@@ -37,6 +37,8 @@ const roleClass = (duty: string, role: string) => {
     if (duty === 'fired') return 'bg-red-500/10 text-red-400 border-red-500/30'
     if (duty === 'active') return 'bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30'
     if (duty === 'review') return 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+    if (duty === 'invited') return 'bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30'
+    if (duty === 'fire_safety') return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
     if (duty === 'rejected') return 'bg-red-500/10 text-red-400 border-red-500/30'
     if (duty === 'intern') return 'bg-amber-500/10 text-amber-400 border-amber-500/30'
     if (duty === 'inactive') return 'bg-white/5 text-white/40 border-white/10'
@@ -68,14 +70,16 @@ const activeTab = ref('all')
 const workingStaff = computed(() => props.staff.filter((person) => !person.is_fired))
 const firedCount = computed(() => props.staff.filter((person) => person.is_fired).length)
 const countByRole = (role: string) => workingStaff.value.filter((person) => person.role === role).length
-const reviewCount = computed(() => workingStaff.value.filter((person) => person.employment?.status === 'review').length)
+const pipelineStatuses = ['review', 'invited', 'fire_safety']
+const isPipeline = (person: any) => pipelineStatuses.includes(person.employment?.status)
+const reviewCount = computed(() => workingStaff.value.filter((person) => isPipeline(person)).length)
 
 const visibleStaff = computed(() => {
     if (activeTab.value === 'fired') {
         return props.staff.filter((person) => person.is_fired)
     }
     if (activeTab.value === 'review') {
-        return workingStaff.value.filter((person) => person.employment?.status === 'review')
+        return workingStaff.value.filter((person) => isPipeline(person))
     }
     if (activeTab.value === 'all') return workingStaff.value
     return workingStaff.value.filter((person) => person.role === activeTab.value)
@@ -83,7 +87,19 @@ const visibleStaff = computed(() => {
 
 const isPendingHire = (person: any) => {
     const status = person.employment?.status
-    return status === 'draft' || status === 'review' || status === 'rejected'
+    return status === 'draft' || status === 'review' || status === 'invited' || status === 'fire_safety' || status === 'rejected'
+}
+
+const formatAppointment = (iso: string | null | undefined) => {
+    if (!iso) return ''
+    const date = new Date(iso)
+    if (Number.isNaN(date.getTime())) return iso
+    return date.toLocaleString('ru-RU', {
+        day: 'numeric',
+        month: 'long',
+        hour: '2-digit',
+        minute: '2-digit',
+    })
 }
 
 const roleBusyId = ref<number | null>(null)
@@ -145,25 +161,76 @@ const submitFine = () => {
     })
 }
 
-const reviewBusyId = ref<number | null>(null)
 const rejectTarget = ref<any>(null)
 const rejectReason = ref('')
 const rejectProcessing = ref(false)
+const appointmentTarget = ref<any>(null)
+const appointmentAt = ref('')
+const appointmentProcessing = ref(false)
+const biometricsTarget = ref<any>(null)
+const biometricsBusy = ref(false)
 
-const approveHire = (person: any) => {
-    if (reviewBusyId.value || person.employment?.status !== 'review') return
-    reviewBusyId.value = person.id
-    router.post(`/admin/staff/${person.id}/employment/approve`, {}, {
+const openAppointment = (person: any) => {
+    if (person.employment?.status !== 'review') return
+    const next = new Date()
+    next.setDate(next.getDate() + 1)
+    next.setHours(12, 0, 0, 0)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    appointmentAt.value = `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}T${pad(next.getHours())}:${pad(next.getMinutes())}`
+    appointmentTarget.value = person
+}
+
+const closeAppointment = () => {
+    if (appointmentProcessing.value) return
+    appointmentTarget.value = null
+}
+
+const submitAppointment = () => {
+    if (!appointmentTarget.value || appointmentProcessing.value || !appointmentAt.value) {
+        error('Укажите дату и время')
+        return
+    }
+    appointmentProcessing.value = true
+    router.post(`/admin/staff/${appointmentTarget.value.id}/employment/appointment`, {
+        appointment_at: appointmentAt.value,
+    }, {
         preserveScroll: true,
-        onFinish: () => { reviewBusyId.value = null },
+        onFinish: () => { appointmentProcessing.value = false },
+        onSuccess: () => { appointmentTarget.value = null },
         onError: (errors) => {
-            error((errors as any).employment || 'Не удалось одобрить анкету')
+            error((errors as any).appointment_at || (errors as any).employment || 'Не удалось назначить дату')
         },
     })
 }
 
+const startBiometrics = (person: any) => {
+    if (biometricsBusy.value || person.employment?.status !== 'invited') return
+    biometricsTarget.value = person
+}
+
+const closeBiometrics = () => {
+    if (biometricsBusy.value) return
+    biometricsTarget.value = null
+}
+
+const confirmBiometrics = () => {
+    if (!biometricsTarget.value || biometricsBusy.value) return
+    const applicantId = biometricsTarget.value.id
+    biometricsBusy.value = true
+    window.setTimeout(() => {
+        router.post(`/admin/staff/${applicantId}/employment/biometrics`, {}, {
+            preserveScroll: true,
+            onFinish: () => { biometricsBusy.value = false },
+            onSuccess: () => { biometricsTarget.value = null },
+            onError: (errors) => {
+                error((errors as any).employment || 'Не удалось снять биометрию')
+            },
+        })
+    }, 1200)
+}
+
 const openReject = (person: any) => {
-    if (person.employment?.status !== 'review') return
+    if (!['review', 'invited'].includes(person.employment?.status)) return
     rejectTarget.value = person
     rejectReason.value = ''
 }
@@ -436,7 +503,7 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                         </div>
                     </div>
 
-                    <div v-if="person.employment?.status === 'review' && !person.is_fired" class="mt-6 space-y-3 pt-6 border-t border-amber-500/20">
+                    <div v-if="isPipeline(person) && !person.is_fired" class="mt-6 space-y-3 pt-6 border-t border-amber-500/20">
                         <div class="text-[9px] text-amber-400 uppercase font-black tracking-widest">Анкета устройства</div>
                         <div class="text-white text-xs font-bold">{{ person.employment.full_name }}</div>
                         <div class="text-white/50 text-[11px] font-bold space-y-1">
@@ -444,6 +511,7 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                             <div>{{ person.employment.issued_by }}</div>
                             <div>Выдан {{ person.employment.issued_at }} · код {{ person.employment.department_code }}</div>
                             <div>Дата рождения {{ person.employment.birth_date }}</div>
+                            <div v-if="person.employment.appointment_at">Визит {{ formatAppointment(person.employment.appointment_at) }}</div>
                         </div>
                         <button v-if="person.employment.has_scan"
                                 type="button"
@@ -451,18 +519,33 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                                 @click="openScan(person)">
                             Открыть скан паспорта
                         </button>
-                        <div class="flex gap-2 pt-2">
+                        <div v-if="person.employment.status === 'review'" class="flex gap-2 pt-2">
                             <button type="button"
-                                    :disabled="reviewBusyId === person.id"
-                                    class="flex-1 py-3 bg-[#22c55e] hover:bg-[#1ea34d] text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40"
-                                    @click="approveHire(person)">
-                                Одобрить
+                                    class="flex-1 py-3 bg-[#22c55e] hover:bg-[#1ea34d] text-black rounded-xl text-[10px] font-black uppercase tracking-widest"
+                                    @click="openAppointment(person)">
+                                Назначить дату
                             </button>
                             <button type="button"
                                     class="flex-1 py-3 border border-red-500/30 text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest"
                                     @click="openReject(person)">
                                 Отклонить
                             </button>
+                        </div>
+                        <div v-else-if="person.employment.status === 'invited'" class="flex gap-2 pt-2">
+                            <button type="button"
+                                    :disabled="biometricsBusy"
+                                    class="flex-1 py-3 bg-cyan-500 hover:bg-cyan-400 text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40"
+                                    @click="startBiometrics(person)">
+                                Биометрия
+                            </button>
+                            <button type="button"
+                                    class="flex-1 py-3 border border-red-500/30 text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                                    @click="openReject(person)">
+                                Отклонить
+                            </button>
+                        </div>
+                        <div v-else class="pt-2 text-[10px] uppercase font-black tracking-widest text-white/40">
+                            Ждём согласие с правилами ПБ
                         </div>
                     </div>
 
@@ -568,6 +651,63 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                     <button type="button" @click="submitFine" :disabled="fineProcessing"
                             class="flex-1 py-4 bg-red-500 hover:bg-red-400 text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40">
                         Начислить
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="appointmentTarget" class="fixed inset-0 z-[99998] flex items-center justify-center p-4 font-mono">
+            <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="closeAppointment"></div>
+            <div class="relative z-10 w-full max-w-md bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1rem] p-8 shadow-[0_0_80px_rgba(34,197,94,0.12)]">
+                <h3 class="text-xl font-black uppercase italic tracking-tighter text-white mb-2">Назначить дату</h3>
+                <p class="text-[10px] uppercase tracking-widest text-white/40 font-black mb-6">{{ appointmentTarget.name }}</p>
+                <p class="text-white/50 text-xs font-bold mb-5">Кандидат придёт в клуб подписать документы в это время.</p>
+
+                <label class="text-[10px] text-white/30 uppercase font-black tracking-widest">Дата и время</label>
+                <input v-model="appointmentAt"
+                       type="datetime-local"
+                       class="mt-2 mb-6 w-full bg-black/40 border border-white/10 focus:border-[#22c55e]/40 rounded-2xl px-4 py-3 text-white font-black outline-none">
+
+                <div class="flex gap-3">
+                    <button type="button" @click="closeAppointment"
+                            class="flex-1 py-4 bg-white/5 border border-white/10 text-white/50 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest">
+                        Отмена
+                    </button>
+                    <button type="button" @click="submitAppointment" :disabled="appointmentProcessing"
+                            class="flex-1 py-4 bg-[#22c55e] hover:bg-[#1ea34d] text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40">
+                        Назначить
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="biometricsTarget" class="fixed inset-0 z-[99998] flex items-center justify-center p-4 font-mono">
+            <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="closeBiometrics"></div>
+            <div class="relative z-10 w-full max-w-md bg-[#0a0a0a] border border-cyan-500/30 rounded-[1rem] p-8 shadow-[0_0_80px_rgba(6,182,212,0.12)]">
+                <h3 class="text-xl font-black uppercase italic tracking-tighter text-white mb-2">Биометрия</h3>
+                <p class="text-[10px] uppercase tracking-widest text-white/40 font-black mb-4">{{ biometricsTarget.name }}</p>
+                <p class="text-white/50 text-xs font-bold mb-5">Попросите кандидата посмотреть в камеру клуба. Съёмка пока заглушка.</p>
+
+                <div class="relative mb-6 overflow-hidden rounded-2xl border border-cyan-500/30 bg-black aspect-video">
+                    <div class="absolute inset-6 border border-cyan-400/40 rounded-xl"></div>
+                    <div class="absolute left-8 right-8 h-px bg-cyan-400/80 animate-pulse"
+                         :class="biometricsBusy ? 'top-1/2' : 'top-8'"></div>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <div class="text-[10px] uppercase font-black tracking-widest"
+                             :class="biometricsBusy ? 'text-cyan-300' : 'text-white/30'">
+                            {{ biometricsBusy ? 'Съёмка…' : 'Камера клуба' }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-3">
+                    <button type="button" @click="closeBiometrics" :disabled="biometricsBusy"
+                            class="flex-1 py-4 bg-white/5 border border-white/10 text-white/50 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40">
+                        Отмена
+                    </button>
+                    <button type="button" @click="confirmBiometrics" :disabled="biometricsBusy"
+                            class="flex-1 py-4 bg-cyan-500 hover:bg-cyan-400 text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40">
+                        {{ biometricsBusy ? 'Снимаем…' : 'Снять' }}
                     </button>
                 </div>
             </div>

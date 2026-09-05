@@ -107,6 +107,26 @@ class StaffPayrollController extends Controller
         return back();
     }
 
+    public function acceptFireSafetyRule(Request $request)
+    {
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer'],
+        ]);
+
+        try {
+            $this->employment->acceptFireRule(auth('admin')->user(), (int) $data['rule_id']);
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['message' => $e->getMessage()]);
+        }
+
+        $admin = auth('admin')->user()->fresh();
+        if (! $admin->needsEmployment()) {
+            return back()->with('success', 'Вы приняты. Личный кабинет открыт.');
+        }
+
+        return back();
+    }
+
     public function hire(Request $request)
     {
         $admin = auth('admin')->user();

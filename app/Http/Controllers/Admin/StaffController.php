@@ -204,15 +204,37 @@ class StaffController extends Controller
         return back()->with('success', $admin->name.': '.$admin->roleLabel());
     }
 
-    public function approveEmployment(Admin $admin)
+    public function scheduleEmployment(Request $request, Admin $admin)
     {
+        $data = $request->validate([
+            'appointment_at' => ['required', 'date', 'after:now'],
+        ], [
+            'appointment_at.required' => 'Укажите дату и время визита',
+            'appointment_at.after' => 'Дата должна быть в будущем',
+        ]);
+
         try {
-            $this->employment->approve(auth('admin')->user(), $admin);
+            $this->employment->scheduleAppointment(
+                auth('admin')->user(),
+                $admin,
+                $data['appointment_at']
+            );
         } catch (RuntimeException $e) {
             return back()->withErrors(['employment' => $e->getMessage()]);
         }
 
-        return back()->with('success', $admin->fresh()->name.': принят на работу');
+        return back()->with('success', $admin->fresh()->name.': дата визита назначена');
+    }
+
+    public function captureEmploymentBiometrics(Admin $admin)
+    {
+        try {
+            $this->employment->captureBiometrics(auth('admin')->user(), $admin);
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['employment' => $e->getMessage()]);
+        }
+
+        return back()->with('success', $admin->name.': биометрия снята (заглушка)');
     }
 
     public function rejectEmployment(Request $request, Admin $admin)
@@ -305,6 +327,8 @@ class StaffController extends Controller
 
                 return match ($status) {
                     'review' => ['status' => 'review', 'label' => 'На проверке'],
+                    'invited' => ['status' => 'invited', 'label' => 'Приглашён'],
+                    'fire_safety' => ['status' => 'fire_safety', 'label' => 'Правила ПБ'],
                     'rejected' => ['status' => 'rejected', 'label' => 'Отклонено'],
                     default => ['status' => 'intern', 'label' => 'Анкета'],
                 };

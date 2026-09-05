@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Admin;
 use App\Models\StaffEmploymentProfile;
 use App\Support\StaffEmploymentRules;
+use App\Support\StaffFireSafetyRules;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -83,6 +84,20 @@ class StaffEmploymentTest extends TestCase
             );
     }
 
+    public function test_intern_cannot_accept_fire_rules_before_biometrics(): void
+    {
+        Storage::fake('local');
+        $admin = $this->pendingIntern();
+        $this->submitComplete($admin);
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/salary')
+            ->post('/admin/salary/employment/fire-rules', ['rule_id' => 1])
+            ->assertRedirect('/admin/salary')
+            ->assertSessionHasErrors();
+    }
+
     public function test_intern_cannot_edit_application_while_on_review(): void
     {
         Storage::fake('local');
@@ -97,18 +112,65 @@ class StaffEmploymentTest extends TestCase
             ->assertSessionHasErrors();
     }
 
-    public function test_owner_approves_employment_and_opens_cabinet(): void
+    public function test_owner_pipeline_hires_after_appointment_biometrics_and_fire_rules(): void
     {
         Storage::fake('local');
         $intern = $this->pendingIntern();
         $this->submitComplete($intern);
         $owner = $this->makeReviewer('owner');
+        $visitAt = now()->addDay()->format('Y-m-d H:i:s');
 
         $this->actingAs($owner, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
             ->from('/admin/staff')
-            ->post("/admin/staff/{$intern->id}/employment/approve")
+            ->post("/admin/staff/{$intern->id}/employment/appointment", [
+                'appointment_at' => $visitAt,
+            ])
             ->assertRedirect('/admin/staff');
+
+        $this->assertDatabaseHas('staff_employment_profiles', [
+            'admin_id' => $intern->id,
+            'status' => StaffEmploymentProfile::STATUS_INVITED,
+            'reviewed_by' => $owner->id,
+        ]);
+        $this->assertTrue((bool) $intern->fresh()->employment_pending);
+
+        $this->actingAs($intern, 'admin')
+            ->get('/admin/salary')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('employment.required', true)
+                ->where('employment.status', 'invited')
+                ->has('employment.appointment_at')
+            );
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/staff')
+            ->post("/admin/staff/{$intern->id}/employment/biometrics")
+            ->assertRedirect('/admin/staff');
+
+        $this->assertDatabaseHas('staff_employment_profiles', [
+            'admin_id' => $intern->id,
+            'status' => StaffEmploymentProfile::STATUS_FIRE_SAFETY,
+        ]);
+        $this->assertTrue((bool) $intern->fresh()->employment_pending);
+
+        $this->actingAs($intern, 'admin')
+            ->get('/admin/salary')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('employment.required', true)
+                ->where('employment.status', 'fire_safety')
+                ->has('employment.fire_rules', 8)
+            );
+
+        $this->actingAs($intern, 'admin')->withoutMiddleware(ValidateCsrfToken::class);
+        foreach (StaffFireSafetyRules::ids() as $id) {
+            $this->from('/admin/salary')
+                ->post('/admin/salary/employment/fire-rules', ['rule_id' => $id])
+                ->assertRedirect('/admin/salary');
+        }
 
         $intern->refresh();
         $this->assertFalse((bool) $intern->employment_pending);
@@ -116,13 +178,40 @@ class StaffEmploymentTest extends TestCase
         $this->assertDatabaseHas('staff_employment_profiles', [
             'admin_id' => $intern->id,
             'status' => StaffEmploymentProfile::STATUS_APPROVED,
-            'reviewed_by' => $owner->id,
         ]);
 
         $this->actingAs($intern, 'admin')
             ->get('/admin/salary')
             ->assertOk()
             ->assertInertia(fn ($page) => $page->where('employment.required', false));
+    }
+
+    public function test_cannot_reject_after_biometrics(): void
+    {
+        Storage::fake('local');
+        $intern = $this->pendingIntern();
+        $this->submitComplete($intern);
+        $owner = $this->makeReviewer('owner');
+
+        $this->actingAs($owner, 'admin')->withoutMiddleware(ValidateCsrfToken::class)
+            ->post("/admin/staff/{$intern->id}/employment/appointment", [
+                'appointment_at' => now()->addDay()->format('Y-m-d H:i:s'),
+            ])
+            ->assertRedirect();
+
+        $this->post("/admin/staff/{$intern->id}/employment/biometrics")->assertRedirect();
+
+        $this->from('/admin/staff')
+            ->post("/admin/staff/{$intern->id}/employment/reject", [
+                'reason' => 'Передумал после биометрии',
+            ])
+            ->assertRedirect('/admin/staff')
+            ->assertSessionHasErrors();
+
+        $this->assertDatabaseHas('staff_employment_profiles', [
+            'admin_id' => $intern->id,
+            'status' => StaffEmploymentProfile::STATUS_FIRE_SAFETY,
+        ]);
     }
 
     public function test_supervisor_can_reject_and_intern_sees_reason(): void
@@ -198,7 +287,9 @@ class StaffEmploymentTest extends TestCase
 
         $this->actingAs($admin, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
-            ->post("/admin/staff/{$intern->id}/employment/approve")
+            ->post("/admin/staff/{$intern->id}/employment/appointment", [
+                'appointment_at' => now()->addDay()->format('Y-m-d H:i:s'),
+            ])
             ->assertForbidden();
     }
 

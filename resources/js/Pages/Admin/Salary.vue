@@ -70,11 +70,15 @@ type Calendar = {
 
 type Employment = {
     required: boolean
-    status?: 'draft' | 'review' | 'rejected' | 'approved'
+    status?: 'draft' | 'review' | 'invited' | 'fire_safety' | 'rejected' | 'approved'
     rejection_reason?: string | null
+    appointment_at?: string | null
     rules: Array<{ id: number; title: string; body: string }>
     accepted_ids: number[]
     rules_complete: boolean
+    fire_rules?: Array<{ id: number; title: string; body: string }>
+    accepted_fire_ids?: number[]
+    fire_rules_complete?: boolean
     profile: {
         full_name: string | null
         passport_series: string | null
@@ -114,9 +118,13 @@ const props = withDefaults(defineProps<{
         required: false,
         status: 'draft',
         rejection_reason: null,
+        appointment_at: null,
         rules: [],
         accepted_ids: [],
         rules_complete: false,
+        fire_rules: [],
+        accepted_fire_ids: [],
+        fire_rules_complete: false,
         profile: {
             full_name: '',
             passport_series: '',
@@ -369,6 +377,10 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                 :profile="employment.profile"
                 :status="employment.status || 'draft'"
                 :rejection-reason="employment.rejection_reason || null"
+                :appointment-at="employment.appointment_at || null"
+                :fire-rules="employment.fire_rules || []"
+                :accepted-fire-ids="employment.accepted_fire_ids || []"
+                :fire-rules-complete="employment.fire_rules_complete || false"
             />
 
             <template v-else>

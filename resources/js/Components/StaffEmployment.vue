@@ -15,27 +15,46 @@ type Profile = {
     has_scan: boolean
 }
 
+type Status = 'draft' | 'review' | 'invited' | 'fire_safety' | 'rejected' | 'approved'
+
 const props = withDefaults(defineProps<{
     rules: Rule[]
     acceptedIds: number[]
     rulesComplete: boolean
     profile: Profile
-    status?: 'draft' | 'review' | 'rejected' | 'approved'
+    status?: Status
     rejectionReason?: string | null
+    appointmentAt?: string | null
+    fireRules?: Rule[]
+    acceptedFireIds?: number[]
+    fireRulesComplete?: boolean
 }>(), {
     status: 'draft',
     rejectionReason: null,
+    appointmentAt: null,
+    fireRules: () => [],
+    acceptedFireIds: () => [],
+    fireRulesComplete: false,
 })
 
 const onReview = computed(() => props.status === 'review')
+const isInvited = computed(() => props.status === 'invited')
+const needsFireSafety = computed(() => props.status === 'fire_safety')
 const isRejected = computed(() => props.status === 'rejected')
-const canEdit = computed(() => !onReview.value)
+const waiting = computed(() => onReview.value || isInvited.value || needsFireSafety.value)
+const canEdit = computed(() => !waiting.value)
 
 const rulesOpen = ref(!props.rulesComplete && canEdit.value)
+const fireOpen = ref(props.acceptedFireIds.length > 0)
+
+watch(() => props.acceptedFireIds.length, (n) => {
+    if (needsFireSafety.value && n > 0) fireOpen.value = true
+})
+
 const scanName = ref('')
 
-watch(() => [props.rulesComplete, onReview.value], () => {
-    if (onReview.value) {
+watch(() => [props.rulesComplete, waiting.value], () => {
+    if (waiting.value) {
         rulesOpen.value = false
         return
     }
@@ -44,6 +63,21 @@ watch(() => [props.rulesComplete, onReview.value], () => {
 
 const acceptedSet = computed(() => new Set(props.acceptedIds))
 const acceptedCount = computed(() => props.acceptedIds.length)
+const fireAcceptedSet = computed(() => new Set(props.acceptedFireIds))
+const fireAcceptedCount = computed(() => props.acceptedFireIds.length)
+
+const appointmentLabel = computed(() => {
+    if (!props.appointmentAt) return ''
+    const date = new Date(props.appointmentAt)
+    if (Number.isNaN(date.getTime())) return props.appointmentAt
+    return date.toLocaleString('ru-RU', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    })
+})
 
 const form = useForm({
     full_name: props.profile.full_name || '',
@@ -86,6 +120,11 @@ const acceptRule = (id: number) => {
     router.post('/admin/salary/employment/rules', { rule_id: id }, { preserveScroll: true })
 }
 
+const acceptFireRule = (id: number) => {
+    if (fireAcceptedSet.value.has(id)) return
+    router.post('/admin/salary/employment/fire-rules', { rule_id: id }, { preserveScroll: true })
+}
+
 const onScan = (event: Event) => {
     const file = (event.target as HTMLInputElement).files?.[0] || null
     form.passport_scan = file
@@ -111,7 +150,7 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                     Устройство <span class="text-[#22c55e]">на работу</span>
                 </h1>
                 <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">
-                    Правила, анкета, проверка владельцем
+                    Правила, анкета, визит в клуб
                 </p>
             </div>
             <div class="text-right">
@@ -124,8 +163,31 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
             <div class="text-[10px] uppercase font-black tracking-[0.4em] text-amber-400">Статус</div>
             <h2 class="text-3xl font-black uppercase italic text-white tracking-tighter mt-3">На проверке</h2>
             <p class="text-white/50 text-sm font-bold mt-4 max-w-lg mx-auto">
-                Анкета отправлена владельцу или управляющему. Личный кабинет откроется после одобрения.
+                Анкета у управляющего. Дождитесь назначения даты визита в клуб.
             </p>
+        </div>
+
+        <div v-else-if="isInvited" class="bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1.125rem] p-10 text-center">
+            <div class="text-[10px] uppercase font-black tracking-[0.4em] text-[#22c55e]">Вакансия</div>
+            <h2 class="text-3xl font-black uppercase italic text-white tracking-tighter mt-3">Вы подходите</h2>
+            <p class="text-white/50 text-sm font-bold mt-4 max-w-lg mx-auto">
+                Приглашаем подписать документы в клубе
+                <span v-if="appointmentLabel" class="text-white"> {{ appointmentLabel }}</span>.
+                Возьмите паспорт.
+            </p>
+        </div>
+
+        <div v-else-if="needsFireSafety" class="bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1.125rem] p-10 text-center">
+            <div class="text-[10px] uppercase font-black tracking-[0.4em] text-[#22c55e]">Статус</div>
+            <h2 class="text-3xl font-black uppercase italic text-white tracking-tighter mt-3">Вы приняты</h2>
+            <p class="text-white/50 text-sm font-bold mt-4 max-w-lg mx-auto">
+                Ознакомьтесь и согласитесь с правилами пожарной безопасности. После этого откроется личный кабинет.
+            </p>
+            <button type="button"
+                    class="mt-8 px-8 py-4 bg-[#22c55e] text-black rounded-2xl text-xs font-black uppercase tracking-widest"
+                    @click="fireOpen = true">
+                Ознакомиться
+            </button>
         </div>
 
         <template v-else>
@@ -226,7 +288,7 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
         <div class="relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1rem] p-8 shadow-[0_0_80px_rgba(34,197,94,0.12)]">
             <h3 class="text-xl font-black uppercase italic tracking-tighter text-white mb-2">Правила клуба</h3>
             <p class="text-[10px] uppercase tracking-widest text-white/40 font-black mb-6">
-                Заглушка. Каждое правило нужно принять отдельно. {{ acceptedCount }} из {{ rules.length }}
+                Каждое правило нужно принять отдельно. {{ acceptedCount }} из {{ rules.length }}
             </p>
 
             <div class="space-y-4">
@@ -248,7 +310,35 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                 Дальше — анкета
             </button>
             <p v-else class="mt-6 text-center text-[10px] uppercase font-black tracking-widest text-white/30">
-                Попап закроется, когда примете все 10 правил
+                Попап закроется, когда примете все правила
+            </p>
+        </div>
+    </div>
+
+    <div v-if="fireOpen && needsFireSafety" class="fixed inset-0 z-[99998] flex items-center justify-center p-4 font-mono">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
+        <div class="relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#0a0a0a] border border-amber-500/30 rounded-[1rem] p-8 shadow-[0_0_80px_rgba(245,158,11,0.12)]">
+            <h3 class="text-xl font-black uppercase italic tracking-tighter text-white mb-2">Пожарная безопасность</h3>
+            <p class="text-[10px] uppercase tracking-widest text-white/40 font-black mb-6">
+                Каждый пункт нужно принять отдельно. {{ fireAcceptedCount }} из {{ fireRules.length }}
+            </p>
+
+            <div class="space-y-4">
+                <div v-for="rule in fireRules" :key="rule.id" class="border border-white/10 rounded-2xl p-5">
+                    <div class="text-white text-sm font-black uppercase italic">{{ rule.id }}. {{ rule.title }}</div>
+                    <p class="text-white/50 text-xs font-bold leading-relaxed mt-2">{{ rule.body }}</p>
+                    <button v-if="!fireAcceptedSet.has(rule.id)" type="button" @click="acceptFireRule(rule.id)"
+                            class="mt-4 px-5 py-3 bg-[#22c55e] text-black rounded-xl text-[10px] font-black uppercase tracking-widest">
+                        Принять
+                    </button>
+                    <div v-else class="mt-4 text-[10px] uppercase font-black tracking-widest text-[#22c55e]">
+                        Принято
+                    </div>
+                </div>
+            </div>
+
+            <p v-if="!fireRulesComplete" class="mt-6 text-center text-[10px] uppercase font-black tracking-widest text-white/30">
+                Кабинет откроется, когда примете все пункты
             </p>
         </div>
     </div>
