@@ -512,9 +512,9 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                 </div>
             </div>
 
-            <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
                 <div v-for="person in visibleStaff" :key="person.id"
-                     class="bg-[#050505] border border-white/5 rounded-[0.875rem] p-8 relative group hover:border-purple-500/30 transition-all shadow-xl cursor-pointer"
+                     class="bg-[#050505] border border-white/5 rounded-[0.875rem] p-8 relative group hover:border-purple-500/30 transition-all shadow-xl cursor-pointer self-start"
                      @click="toggleCard(person.id)">
 
                     <div class="absolute top-6 right-6 flex items-center gap-2">
