@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Неактивный админ и стажёр — только «Моя зарплата» (плюс приёмка смены / выход в смену).
+ * Неактивный админ и стажёр — только личный кабинет (плюс приёмка смены / выход в смену).
  */
 class RestrictOffDutyAdmin
 {
@@ -31,7 +31,7 @@ class RestrictOffDutyAdmin
         }
 
         return redirect()->route('admin.salary')
-            ->with('error', 'Сейчас доступна только страница «Моя зарплата».');
+            ->with('error', 'Сейчас доступен только личный кабинет.');
     }
 
     private function isAllowed(Request $request, $admin): bool

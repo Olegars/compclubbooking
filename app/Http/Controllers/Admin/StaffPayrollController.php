@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ShiftSlot;
+use App\Models\ShiftSlotBooking;
+use App\Services\ShiftSlotService;
 use App\Services\StaffPayrollService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -12,14 +15,18 @@ class StaffPayrollController extends Controller
 {
     public function __construct(
         private readonly StaffPayrollService $payroll,
+        private readonly ShiftSlotService $slots,
     ) {
     }
 
-    public function index()
+    public function index(Request $request)
     {
         $admin = auth('admin')->user();
 
-        return Inertia::render('Admin/Salary', $this->payroll->snapshot($admin));
+        return Inertia::render('Admin/Salary', array_merge(
+            $this->payroll->snapshot($admin),
+            ['calendar' => $this->slots->calendar($admin, $request->string('month')->toString() ?: null)]
+        ));
     }
 
     public function withdraw(Request $request)
@@ -40,5 +47,27 @@ class StaffPayrollController extends Controller
         $formatted = number_format((float) $entry->amount, 2, ',', ' ');
 
         return back()->with('success', "Выведено {$formatted} ₽");
+    }
+
+    public function bookSlot(ShiftSlot $slot)
+    {
+        try {
+            $this->slots->book(auth('admin')->user(), $slot);
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['message' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Смена выбрана');
+    }
+
+    public function cancelSlot(ShiftSlotBooking $booking)
+    {
+        try {
+            $this->slots->cancel(auth('admin')->user(), $booking);
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['message' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Смена отменена');
     }
 }

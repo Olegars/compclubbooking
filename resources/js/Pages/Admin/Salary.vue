@@ -24,7 +24,47 @@ type LedgerRow = {
     author?: string | null
 }
 
-const props = defineProps<{
+type SlotRow = {
+    id: number
+    name: string
+    starts_at: string
+    ends_at: string
+    lead_taken: boolean
+    lead_name?: string | null
+    intern_taken: number
+    intern_capacity: number
+    is_mine: boolean
+    my_kind?: string | null
+    booking_id?: number | null
+    can_book: boolean
+    can_cancel: boolean
+    started: boolean
+}
+
+type DayRow = {
+    date: string
+    has_free: boolean
+    slots: SlotRow[]
+}
+
+type MyBooking = {
+    id: number
+    slot_id: number
+    name: string
+    starts_at: string | null
+    ends_at: string | null
+    kind: string
+    can_cancel: boolean
+}
+
+type Calendar = {
+    month: string
+    cancel_before_hours: number
+    days: Record<string, DayRow>
+    my_bookings: MyBooking[]
+}
+
+const props = withDefaults(defineProps<{
     pay_type: 'shift' | 'monthly' | null
     base_rate: number | null
     accrued_total: number
@@ -36,7 +76,15 @@ const props = defineProps<{
     fines: LedgerRow[]
     payouts: LedgerRow[]
     monthly_accruals: LedgerRow[]
-}>()
+    calendar?: Calendar
+}>(), {
+    calendar: () => ({
+        month: '',
+        cancel_before_hours: 48,
+        days: {},
+        my_bookings: [],
+    }),
+})
 
 const clubName = useClubName()
 const page = usePage()
@@ -60,6 +108,62 @@ watch(() => (page.props as any).flash?.error as string | undefined, (msg) => {
 
 const shiftState = computed(() => page.props.admin_shift as any)
 const dutyBusy = ref(false)
+const slotBusy = ref(false)
+const selectedDate = ref('')
+const confirmOpen = ref(false)
+const cancelConfirmOpen = ref(false)
+const pendingCancelId = ref<number | null>(null)
+const processing = ref(false)
+
+const weekDays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+
+const localToday = () => {
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, '0')
+    const d = String(now.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+}
+
+const pickDefaultDate = (cal: Calendar) => {
+    const today = localToday()
+    if (cal.days[today]) return today
+    const free = Object.values(cal.days).find((day) => day.has_free)
+    if (free) return free.date
+    return Object.keys(cal.days)[0] || ''
+}
+
+watch(() => props.calendar, (cal) => {
+    if (selectedDate.value && cal.days[selectedDate.value]) return
+    selectedDate.value = pickDefaultDate(cal)
+}, { immediate: true })
+
+const monthLabel = computed(() => {
+    if (!props.calendar.month) return ''
+    const [y, m] = props.calendar.month.split('-').map(Number)
+    return new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
+})
+
+const monthGrid = computed(() => {
+    const cal = props.calendar
+    if (!cal.month) return [] as Array<DayRow | null>
+    const [y, m] = cal.month.split('-').map(Number)
+    const pad = (new Date(y, m - 1, 1).getDay() + 6) % 7
+    const cells: Array<DayRow | null> = Array.from({ length: pad }, () => null)
+    Object.keys(cal.days).sort().forEach((date) => cells.push(cal.days[date]))
+    while (cells.length % 7 !== 0) cells.push(null)
+    return cells
+})
+
+const selectedDay = computed(() => props.calendar.days[selectedDate.value] || null)
+
+const goMonth = (delta: number) => {
+    if (!props.calendar.month) return
+    const [y, m] = props.calendar.month.split('-').map(Number)
+    const next = new Date(y, m - 1 + delta, 1)
+    const month = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
+    router.get('/admin/salary', { month }, { preserveScroll: true, preserveState: false })
+}
 
 const takeShift = () => {
     router.get('/admin/shifts/transfer')
@@ -83,6 +187,33 @@ const internLeave = () => {
     })
 }
 
+const bookSlot = (slot: SlotRow) => {
+    if (slotBusy.value || !slot.can_book) return
+    slotBusy.value = true
+    router.post(`/admin/salary/slots/${slot.id}/book`, {}, {
+        preserveScroll: true,
+        onFinish: () => { slotBusy.value = false },
+    })
+}
+
+const askCancel = (id: number) => {
+    pendingCancelId.value = id
+    cancelConfirmOpen.value = true
+}
+
+const confirmCancel = () => {
+    if (slotBusy.value || !pendingCancelId.value) return
+    slotBusy.value = true
+    router.post(`/admin/salary/slots/${pendingCancelId.value}/cancel`, {}, {
+        preserveScroll: true,
+        onFinish: () => {
+            slotBusy.value = false
+            cancelConfirmOpen.value = false
+            pendingCancelId.value = null
+        },
+    })
+}
+
 const formatMoney = (value: number | string | null | undefined) => {
     return Number(value ?? 0).toLocaleString('ru-RU', {
         minimumFractionDigits: 2,
@@ -98,6 +229,32 @@ const formatDate = (dateString: string | null | undefined) => {
         year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
+    })
+}
+
+const formatHm = (dateString: string | null | undefined) => {
+    if (!dateString) return '—'
+    return new Date(dateString).toLocaleTimeString('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit',
+    })
+}
+
+const formatRange = (start: string | null | undefined, end: string | null | undefined) => {
+    if (!start || !end) return '—'
+    const s = new Date(start)
+    const e = new Date(end)
+    const sameDay = s.toDateString() === e.toDateString()
+    if (sameDay) return `${formatHm(start)}–${formatHm(end)}`
+    return `${formatDate(start)} — ${formatDate(end)}`
+}
+
+const formatDayLabel = (date: string) => {
+    const [y, m, d] = date.split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString('ru-RU', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
     })
 }
 
@@ -124,9 +281,6 @@ watch(() => props.available, (next) => {
     withdrawForm.amount = Number(next || 0).toFixed(2)
 })
 
-const confirmOpen = ref(false)
-const processing = ref(false)
-
 const canWithdraw = computed(() => Number(props.available) > 0 && Number(withdrawForm.amount) > 0)
 
 const openWithdraw = () => {
@@ -145,17 +299,19 @@ const confirmWithdraw = () => {
         },
     })
 }
+
+const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'стажёр' : 'админ'
 </script>
 
 <template>
-    <Head :title="`${clubName} | Моя зарплата`" />
+    <Head :title="`${clubName} | Личный кабинет`" />
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
 
             <div class="flex justify-between items-end mb-4 border-b border-white/10 pb-6">
                 <div>
                     <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">
-                        My <span class="text-[#22c55e]">Payroll</span>
+                        Личный <span class="text-[#22c55e]">кабинет</span>
                     </h1>
                     <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">
                         Смены, начисления, штрафы и вывод
@@ -176,9 +332,9 @@ const confirmWithdraw = () => {
             <div v-if="shiftState?.can_take_shift || shiftState?.can_join_as_intern || shiftState?.can_leave_as_intern"
                  class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-8 shadow-2xl flex flex-col md:flex-row md:items-center gap-6">
                 <div class="flex-1">
-                    <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Смена</div>
+                    <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Смена сейчас</div>
                     <p v-if="shiftState?.can_take_shift" class="text-white text-sm font-bold mt-2">
-                        Чтобы получить доступ к админке, примите смену.
+                        Чтобы получить доступ к админке, примите текущую смену.
                     </p>
                     <p v-else-if="shiftState?.can_join_as_intern" class="text-white text-sm font-bold mt-2">
                         Активный админ: {{ shiftState.admin_name }}. Выйдите в смену вместе с ним.
@@ -199,6 +355,116 @@ const confirmWithdraw = () => {
                         class="px-8 py-4 border border-white/15 text-white/70 hover:text-white rounded-2xl text-xs font-black uppercase tracking-widest disabled:opacity-40">
                     Уйти со смены
                 </button>
+            </div>
+
+            <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-8 shadow-2xl space-y-8">
+                <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+                    <div>
+                        <h2 class="text-sm font-black uppercase italic tracking-widest text-white">Выбрать смену</h2>
+                        <p class="text-white/40 text-xs font-bold mt-2">
+                            Свободный слот можно взять, если место есть. Отмена — не позднее чем за {{ calendar.cancel_before_hours }} часов до начала.
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button type="button" @click="goMonth(-1)"
+                                class="px-4 py-3 border border-white/10 rounded-2xl text-white/60 hover:text-white text-xs font-black uppercase tracking-widest">
+                            ←
+                        </button>
+                        <div class="min-w-[10rem] text-center text-sm font-black uppercase italic text-white">
+                            {{ monthLabel }}
+                        </div>
+                        <button type="button" @click="goMonth(1)"
+                                class="px-4 py-3 border border-white/10 rounded-2xl text-white/60 hover:text-white text-xs font-black uppercase tracking-widest">
+                            →
+                        </button>
+                    </div>
+                </div>
+
+                <div v-if="calendar.my_bookings.length" class="grid gap-3">
+                    <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Мои слоты</div>
+                    <div v-for="row in calendar.my_bookings" :key="row.id"
+                         class="flex flex-col md:flex-row md:items-center gap-3 bg-black/40 border border-white/10 rounded-2xl px-5 py-4">
+                        <div class="flex-1">
+                            <div class="text-white text-sm font-black uppercase italic">{{ row.name }} · {{ kindLabel(row.kind) }}</div>
+                            <div class="text-white/50 text-xs mt-1">{{ formatRange(row.starts_at, row.ends_at) }}</div>
+                        </div>
+                        <button v-if="row.can_cancel" type="button" :disabled="slotBusy" @click="askCancel(row.id)"
+                                class="px-5 py-3 border border-white/15 text-white/70 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40">
+                            Отменить
+                        </button>
+                        <div v-else class="text-[10px] uppercase font-black tracking-widest text-white/30">
+                            Отмена недоступна
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-7 gap-2">
+                    <div v-for="label in weekDays" :key="label"
+                         class="text-center text-[10px] uppercase font-black tracking-widest text-white/30 py-1">
+                        {{ label }}
+                    </div>
+                    <button v-for="(day, idx) in monthGrid" :key="day?.date || `empty-${idx}`"
+                            type="button"
+                            :disabled="!day"
+                            class="min-h-[4.5rem] rounded-2xl border p-2 text-left transition-all disabled:border-transparent disabled:bg-transparent"
+                            :class="!day
+                                ? ''
+                                : day.date === selectedDate
+                                    ? 'border-[#22c55e]/50 bg-[#22c55e]/10'
+                                    : day.has_free
+                                        ? 'border-white/10 bg-white/[0.03] hover:border-[#22c55e]/30'
+                                        : 'border-white/5 bg-black/20 opacity-60'"
+                            @click="day && (selectedDate = day.date)">
+                        <template v-if="day">
+                            <div class="text-sm font-black" :class="day.date === localToday() ? 'text-[#22c55e]' : 'text-white'">
+                                {{ Number(day.date.slice(-2)) }}
+                            </div>
+                            <div class="mt-1 text-[9px] uppercase font-black tracking-widest"
+                                 :class="day.has_free ? 'text-[#22c55e]' : 'text-white/25'">
+                                {{ day.has_free ? 'есть слот' : (day.slots.length ? 'занято' : '—') }}
+                            </div>
+                        </template>
+                    </button>
+                </div>
+
+                <div v-if="selectedDay">
+                    <div class="text-[10px] text-white/30 uppercase font-black tracking-widest mb-4">
+                        {{ formatDayLabel(selectedDay.date) }}
+                    </div>
+                    <div v-if="selectedDay.slots.length === 0" class="text-white/40 text-sm font-bold">
+                        На этот день слотов нет.
+                    </div>
+                    <div v-else class="grid gap-3">
+                        <div v-for="slot in selectedDay.slots" :key="slot.id"
+                             class="flex flex-col lg:flex-row lg:items-center gap-4 bg-black/40 border border-white/10 rounded-2xl px-5 py-5">
+                            <div class="flex-1">
+                                <div class="text-white text-sm font-black uppercase italic tracking-wider">{{ slot.name }}</div>
+                                <div class="text-white/50 text-xs mt-1">{{ formatRange(slot.starts_at, slot.ends_at) }}</div>
+                                <div class="text-[10px] uppercase font-black tracking-widest mt-2"
+                                     :class="slot.is_mine ? 'text-[#22c55e]' : slot.can_book ? 'text-white/50' : 'text-white/30'">
+                                    <span v-if="slot.is_mine">Вы записаны ({{ kindLabel(slot.my_kind) }})</span>
+                                    <span v-else-if="slot.started">Смена уже началась</span>
+                                    <span v-else>
+                                        Админ: {{ slot.lead_taken ? (slot.lead_name || 'занято') : 'свободно' }}
+                                        · стажёр {{ slot.intern_taken }}/{{ slot.intern_capacity }}
+                                    </span>
+                                </div>
+                            </div>
+                            <button v-if="slot.can_book" type="button" :disabled="slotBusy" @click="bookSlot(slot)"
+                                    class="px-8 py-4 bg-[#22c55e] hover:bg-[#1ea34d] text-black rounded-2xl text-xs font-black uppercase tracking-widest disabled:opacity-40">
+                                Выбрать смену
+                            </button>
+                            <button v-else-if="slot.can_cancel && slot.booking_id" type="button" :disabled="slotBusy"
+                                    @click="askCancel(slot.booking_id)"
+                                    class="px-8 py-4 border border-white/15 text-white/70 hover:text-white rounded-2xl text-xs font-black uppercase tracking-widest disabled:opacity-40">
+                                Отменить
+                            </button>
+                            <div v-else class="text-[10px] uppercase font-black tracking-widest text-white/25">
+                                {{ slot.is_mine ? 'Отмена только за 48 часов' : 'Слот занят' }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
@@ -368,6 +634,17 @@ const confirmWithdraw = () => {
             :is-processing="processing || withdrawForm.processing"
             @close="confirmOpen = false"
             @confirm="confirmWithdraw"
+        />
+
+        <AdminConfirm
+            :is-open="cancelConfirmOpen"
+            title="Отменить смену"
+            message="Слот снова станет свободным. Отменить можно только не позднее чем за 48 часов до начала."
+            confirm-text="Отменить смену"
+            cancel-text="Назад"
+            :is-processing="slotBusy"
+            @close="cancelConfirmOpen = false; pendingCancelId = null"
+            @confirm="confirmCancel"
         />
     </AdminLayout>
 </template>

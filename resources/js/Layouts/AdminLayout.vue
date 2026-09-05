@@ -114,7 +114,7 @@ const switchLocation = (clubId: string | number) => {
                     <Link href="/admin/salary"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e] shadow-[0_0_30px_rgba(34,197,94,0.05)]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
-                        <span>💰</span> Моя зарплата
+                        <span>👤</span> Личный кабинет
                     </Link>
                 </div>
 
@@ -163,7 +163,7 @@ const switchLocation = (clubId: string | number) => {
                     <Link href="/admin/salary"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
-                        <span>💰</span> Моя зарплата
+                        <span>👤</span> Личный кабинет
                     </Link>
                 </div>
 
@@ -354,7 +354,7 @@ const switchLocation = (clubId: string | number) => {
                     <Link v-if="!canAccessClub" href="/admin/salary"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
-                        <span>💰</span> Моя зарплата
+                        <span>👤</span> Личный кабинет
                     </Link>
                     <Link href="/admin/docs"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"

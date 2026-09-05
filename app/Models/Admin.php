@@ -132,7 +132,7 @@ class Admin extends Authenticatable
         return $this->role === self::ROLE_ADMIN && $this->isShiftLead();
     }
 
-    /** Неактивный админ и стажёр видят только «Моя зарплата». */
+    /** Неактивный админ и стажёр видят только личный кабинет. */
     public function isSalaryOnly(): bool
     {
         if ($this->isIntern()) {
