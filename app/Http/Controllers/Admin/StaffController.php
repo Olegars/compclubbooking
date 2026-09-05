@@ -244,10 +244,20 @@ class StaffController extends Controller
             abort(404, 'Файл скана не найден.');
         }
 
-        return Storage::disk('local')->response(
-            $profile->passport_scan_path,
-            'passport.'.pathinfo($profile->passport_scan_path, PATHINFO_EXTENSION)
-        );
+        $path = $profile->passport_scan_path;
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION) ?: 'jpg');
+        $mime = match ($ext) {
+            'pdf' => 'application/pdf',
+            'png' => 'image/png',
+            'webp' => 'image/webp',
+            'jpg', 'jpeg' => 'image/jpeg',
+            default => 'application/octet-stream',
+        };
+
+        return Storage::disk('local')->response($path, 'passport.'.$ext, [
+            'Content-Type' => $mime,
+            'Content-Disposition' => 'inline; filename="passport.'.$ext.'"',
+        ]);
     }
 
     public function destroy(Admin $admin)

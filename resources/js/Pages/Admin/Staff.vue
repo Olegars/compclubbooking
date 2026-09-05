@@ -196,6 +196,19 @@ const submitReject = () => {
     })
 }
 
+const scanTarget = ref<any>(null)
+const scanUrl = computed(() => scanTarget.value ? `/admin/staff/${scanTarget.value.id}/employment/scan` : '')
+const scanIsPdf = computed(() => scanTarget.value?.employment?.scan_kind === 'pdf')
+
+const openScan = (person: any) => {
+    if (!person?.employment?.has_scan) return
+    scanTarget.value = person
+}
+
+const closeScan = () => {
+    scanTarget.value = null
+}
+
 const deleteTarget = ref<any>(null)
 const deleteProcessing = ref(false)
 
@@ -432,12 +445,12 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                             <div>Выдан {{ person.employment.issued_at }} · код {{ person.employment.department_code }}</div>
                             <div>Дата рождения {{ person.employment.birth_date }}</div>
                         </div>
-                        <a v-if="person.employment.has_scan"
-                           :href="`/admin/staff/${person.id}/employment/scan`"
-                           target="_blank"
-                           class="inline-block text-[10px] uppercase font-black tracking-widest text-amber-400 hover:text-amber-300">
+                        <button v-if="person.employment.has_scan"
+                                type="button"
+                                class="text-[10px] uppercase font-black tracking-widest text-amber-400 hover:text-amber-300"
+                                @click="openScan(person)">
                             Открыть скан паспорта
-                        </a>
+                        </button>
                         <div class="flex gap-2 pt-2">
                             <button type="button"
                                     :disabled="reviewBusyId === person.id"
@@ -498,6 +511,33 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                 </div>
             </div>
 
+        </div>
+
+        <div v-if="scanTarget" class="fixed inset-0 z-[99999] flex items-center justify-center p-4 font-mono">
+            <div class="absolute inset-0 bg-black/85 backdrop-blur-sm" @click="closeScan"></div>
+            <div class="relative z-10 w-full max-w-4xl max-h-[92vh] flex flex-col bg-[#0a0a0a] border border-amber-500/30 rounded-[1rem] p-5 shadow-[0_0_80px_rgba(245,158,11,0.12)]">
+                <div class="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                        <h3 class="text-xl font-black uppercase italic tracking-tighter text-white">Скан паспорта</h3>
+                        <p class="text-[10px] uppercase tracking-widest text-white/40 font-black mt-1">{{ scanTarget.name }}</p>
+                    </div>
+                    <button type="button"
+                            class="px-4 py-2 border border-white/10 text-white/50 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
+                            @click="closeScan">
+                        Закрыть
+                    </button>
+                </div>
+                <div class="min-h-[50vh] flex-1 overflow-auto rounded-2xl border border-white/10 bg-black/60">
+                    <iframe v-if="scanIsPdf"
+                            :src="scanUrl"
+                            title="Скан паспорта"
+                            class="w-full h-[70vh] border-0 rounded-2xl bg-white"></iframe>
+                    <img v-else
+                         :src="scanUrl"
+                         alt="Скан паспорта"
+                         class="mx-auto max-h-[70vh] w-auto max-w-full object-contain">
+                </div>
+            </div>
         </div>
 
         <div v-if="fineTarget" class="fixed inset-0 z-[99998] flex items-center justify-center p-4 font-mono">

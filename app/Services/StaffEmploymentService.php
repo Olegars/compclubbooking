@@ -58,11 +58,14 @@ class StaffEmploymentService
             ];
         }
 
+        $ext = strtolower(pathinfo((string) $profile->passport_scan_path, PATHINFO_EXTENSION));
+
         $card = [
             'status' => $profile->status ?: StaffEmploymentProfile::STATUS_DRAFT,
             'submitted_at' => $profile->submitted_at?->toIso8601String(),
             'rejection_reason' => $profile->rejection_reason,
             'has_scan' => filled($profile->passport_scan_path),
+            'scan_kind' => $ext === 'pdf' ? 'pdf' : 'image',
         ];
 
         if ($profile->isOnReview() || $profile->isRejected()) {
