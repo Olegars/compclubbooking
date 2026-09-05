@@ -522,6 +522,8 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
 
     // УРОВЕНЬ: OWNER
     Route::middleware(['role:owner'])->group(function () {
+        Route::delete('/staff/{admin}', [StaffController::class, 'destroy'])->name('admin.staff.destroy');
+
         Route::get('/taxes', [TaxController::class, 'index'])->name('admin.taxes.index');
 
         Route::get('/store/locations', [StoreLocationController::class, 'index'])->name('admin.store.locations');

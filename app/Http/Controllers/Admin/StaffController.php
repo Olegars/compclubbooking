@@ -7,6 +7,7 @@ use App\Models\Admin;
 use App\Services\StaffEmploymentService;
 use App\Services\StaffPayrollService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use RuntimeException;
@@ -27,7 +28,10 @@ class StaffController extends Controller
             ? $open->activeInterns->pluck('admin_id')->map(fn ($id) => (int) $id)->all()
             : [];
 
-        $staff = Admin::query()->with(['club:id,name', 'employmentProfile'])->orderBy('name')->get()->map(function ($employee) use ($open, $internIds) {
+        $actor = auth('admin')->user();
+        $ownerCount = Admin::query()->where('role', Admin::ROLE_OWNER)->count();
+
+        $staff = Admin::query()->with(['club:id,name', 'employmentProfile'])->orderBy('name')->get()->map(function ($employee) use ($open, $internIds, $actor, $ownerCount) {
             $this->payroll->syncFor($employee);
             $balance = $this->payroll->balance($employee);
             $duty = $this->dutyFor($employee, $open, $internIds);
@@ -49,6 +53,7 @@ class StaffController extends Controller
                 'available' => max(0, $balance),
                 'balance' => $balance,
                 'employment' => $this->employment->staffCard($employee),
+                'can_delete' => $this->canDelete($actor, $employee, $open, $ownerCount),
             ];
         });
 
@@ -139,6 +144,35 @@ class StaffController extends Controller
         );
     }
 
+    public function destroy(Admin $admin)
+    {
+        $actor = auth('admin')->user();
+        $open = \App\Support\AdminShift::openShift();
+        $ownerCount = Admin::query()->where('role', Admin::ROLE_OWNER)->count();
+
+        if (! $this->canDelete($actor, $admin, $open, $ownerCount)) {
+            return back()->withErrors(['staff' => $this->deleteBlockReason($actor, $admin, $open, $ownerCount)]);
+        }
+
+        $name = $admin->name;
+        $admin->load('employmentProfile');
+
+        try {
+            DB::transaction(function () use ($admin) {
+                $scan = $admin->employmentProfile?->passport_scan_path;
+                if (filled($scan)) {
+                    Storage::disk('local')->delete($scan);
+                }
+                Storage::disk('local')->deleteDirectory('employment/'.$admin->id);
+                $admin->delete();
+            });
+        } catch (\Throwable $e) {
+            return back()->withErrors(['staff' => 'Не удалось удалить сотрудника.']);
+        }
+
+        return back()->with('success', 'Сотрудник удалён: '.$name);
+    }
+
     /**
      * @param  list<int>  $internIds
      * @return array{status: string, label: string}
@@ -173,5 +207,31 @@ class StaffController extends Controller
         }
 
         return ['status' => $employee->role, 'label' => $employee->roleLabel()];
+    }
+
+    private function canDelete(?Admin $actor, Admin $employee, $open, int $ownerCount): bool
+    {
+        return $this->deleteBlockReason($actor, $employee, $open, $ownerCount) === null;
+    }
+
+    private function deleteBlockReason(?Admin $actor, Admin $employee, $open, int $ownerCount): ?string
+    {
+        if (! $actor || $actor->role !== Admin::ROLE_OWNER) {
+            return 'Удаляет только владелец.';
+        }
+
+        if ((int) $actor->id === (int) $employee->id) {
+            return 'Нельзя удалить свой аккаунт.';
+        }
+
+        if ($employee->role === Admin::ROLE_OWNER && $ownerCount < 2) {
+            return 'Нельзя удалить единственного владельца.';
+        }
+
+        if ($open && (int) $open->admin_id === (int) $employee->id) {
+            return 'Сначала сдайте смену этого сотрудника.';
+        }
+
+        return null;
     }
 }

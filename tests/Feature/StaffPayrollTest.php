@@ -167,6 +167,88 @@ class StaffPayrollTest extends TestCase
         ]);
     }
 
+    public function test_owner_can_delete_employee(): void
+    {
+        $owner = $this->makeAdmin('owner', null, null);
+        $intern = $this->makeAdmin('intern', 1500, 'shift');
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/staff')
+            ->delete("/admin/staff/{$intern->id}")
+            ->assertRedirect('/admin/staff');
+
+        $this->assertDatabaseMissing('admins', ['id' => $intern->id]);
+    }
+
+    public function test_owner_cannot_delete_self(): void
+    {
+        $owner = $this->makeAdmin('owner', null, null);
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/staff')
+            ->delete("/admin/staff/{$owner->id}")
+            ->assertRedirect('/admin/staff')
+            ->assertSessionHasErrors('staff');
+
+        $this->assertDatabaseHas('admins', ['id' => $owner->id]);
+    }
+
+    public function test_cannot_delete_admin_on_open_shift(): void
+    {
+        $owner = $this->makeAdmin('owner', null, null);
+        $admin = $this->makeAdmin('admin', 2000, 'shift');
+        Shift::create([
+            'admin_id' => $admin->id,
+            'status' => 'open',
+            'started_at' => now()->subHour(),
+            'cash_start' => 0,
+        ]);
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/staff')
+            ->delete("/admin/staff/{$admin->id}")
+            ->assertRedirect('/admin/staff')
+            ->assertSessionHasErrors('staff');
+
+        $this->assertDatabaseHas('admins', ['id' => $admin->id]);
+    }
+
+    public function test_supervisor_cannot_delete_employee(): void
+    {
+        $supervisor = $this->makeAdmin('supervisor', 3000, 'shift');
+        $intern = $this->makeAdmin('intern', 1500, 'shift');
+
+        $this->actingAs($supervisor, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->delete("/admin/staff/{$intern->id}")
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('admins', ['id' => $intern->id]);
+    }
+
+    public function test_owner_can_delete_employee_with_closed_shifts(): void
+    {
+        $owner = $this->makeAdmin('owner', null, null);
+        $admin = $this->makeAdmin('admin', 2000, 'shift');
+        $shift = $this->makeClosedShift($admin);
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/staff')
+            ->delete("/admin/staff/{$admin->id}")
+            ->assertRedirect('/admin/staff');
+
+        $this->assertDatabaseMissing('admins', ['id' => $admin->id]);
+        $this->assertDatabaseHas('shifts', [
+            'id' => $shift->id,
+            'admin_id' => null,
+            'closed_by' => null,
+        ]);
+    }
+
     private function makeAdmin(string $role, ?float $rate, ?string $payType): Admin
     {
         return Admin::create([

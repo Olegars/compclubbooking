@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { Head, router, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
+import AdminConfirm from '@/Components/AdminConfirm.vue'
 import { useClubName } from '@/Composables/useClubName'
 import { useToast } from '@/Composables/useToast'
 
@@ -179,6 +180,36 @@ const submitReject = () => {
         },
     })
 }
+
+const deleteTarget = ref<any>(null)
+const deleteProcessing = ref(false)
+
+const openDelete = (person: any) => {
+    if (!person?.can_delete || deleteProcessing.value) return
+    deleteTarget.value = person
+}
+
+const closeDelete = () => {
+    if (deleteProcessing.value) return
+    deleteTarget.value = null
+}
+
+const confirmDelete = () => {
+    if (!deleteTarget.value || deleteProcessing.value) return
+    deleteProcessing.value = true
+    router.delete(`/admin/staff/${deleteTarget.value.id}`, {
+        preserveScroll: true,
+        onFinish: () => {
+            deleteProcessing.value = false
+        },
+        onSuccess: () => {
+            deleteTarget.value = null
+        },
+        onError: (errors) => {
+            error((errors as any).staff || 'Не удалось удалить сотрудника')
+        },
+    })
+}
 </script>
 
 <template>
@@ -320,6 +351,13 @@ const submitReject = () => {
                             </option>
                         </select>
                     </div>
+
+                    <button v-if="person.can_delete"
+                            type="button"
+                            @click="openDelete(person)"
+                            class="mt-3 w-full py-3 border border-white/10 hover:border-red-500/50 text-white/40 hover:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
+                        Удалить сотрудника
+                    </button>
                 </div>
             </div>
 
@@ -383,5 +421,17 @@ const submitReject = () => {
                 </div>
             </div>
         </div>
+
+        <AdminConfirm
+            :is-open="!!deleteTarget"
+            title="Удалить сотрудника"
+            :message="deleteTarget ? `${deleteTarget.name} потеряет доступ. Смены в архиве останутся.` : ''"
+            confirm-text="Удалить"
+            cancel-text="Отмена"
+            :is-processing="deleteProcessing"
+            @close="closeDelete"
+            @confirm="confirmDelete"
+        />
     </AdminLayout>
 </template>
+
