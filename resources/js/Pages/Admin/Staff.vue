@@ -28,6 +28,11 @@ watch(flashSuccess, (msg) => {
     if (msg) success(msg)
 }, { immediate: true })
 
+const formatMoney = (val: number | string | null) => {
+    if (val === null || val === undefined || val === '') return '—'
+    return Number(val).toLocaleString('ru-RU') + ' ₽'
+}
+
 const formatDate = (iso: string | null | undefined) => {
     if (!iso) return '—'
     const date = new Date(iso)
