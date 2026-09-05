@@ -30,9 +30,17 @@ class AdminLoginController extends Controller
 
         // Пытаемся авторизовать именно через guard 'admin'
         if (Auth::guard('admin')->attempt($credentials, $request->boolean('remember'))) {
+            $admin = Auth::guard('admin')->user();
+            if ($admin?->isFired()) {
+                Auth::guard('admin')->logout();
+
+                throw ValidationException::withMessages([
+                    'email' => 'Аккаунт уволен. Вход закрыт.',
+                ]);
+            }
+
             $request->session()->regenerate();
 
-            $admin = Auth::guard('admin')->user();
             $home = $admin?->homeRoute() ?: 'admin.dashboard';
 
             return redirect()->intended(route($home));

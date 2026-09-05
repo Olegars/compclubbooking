@@ -35,7 +35,7 @@ class Admin extends Authenticatable
     protected $fillable = [
         'name', 'email', 'password', 'role', 'club_id',
         'is_official_employee', 'base_rate', 'pay_type',
-        'employment_pending', 'hired_at',
+        'employment_pending', 'hired_at', 'fired_at', 'fired_by',
     ];
 
     protected $hidden = [
@@ -48,6 +48,7 @@ class Admin extends Authenticatable
         'base_rate' => 'decimal:2',
         'employment_pending' => 'boolean',
         'hired_at' => 'datetime',
+        'fired_at' => 'datetime',
     ];
 
     public function club(): BelongsTo
@@ -83,6 +84,11 @@ class Admin extends Authenticatable
     public function needsEmployment(): bool
     {
         return (bool) $this->employment_pending;
+    }
+
+    public function isFired(): bool
+    {
+        return $this->fired_at !== null;
     }
 
     public function isStoreRole(): bool
@@ -156,6 +162,19 @@ class Admin extends Authenticatable
         return in_array($this->role, [self::ROLE_OWNER, self::ROLE_SUPERVISOR], true);
     }
 
+    /**
+     * @return list<string>
+     */
+    public function hireableRoles(): array
+    {
+        $roles = ['admin', 'intern', 'store_manager', 'assembler', 'senior_manager'];
+        if ($this->role === self::ROLE_OWNER) {
+            $roles[] = self::ROLE_SUPERVISOR;
+        }
+
+        return $roles;
+    }
+
     /** Неактивный админ и стажёр видят только личный кабинет. */
     public function isSalaryOnly(): bool
     {
@@ -215,6 +234,19 @@ class Admin extends Authenticatable
             'assembler' => 'Сборщик',
             'senior_manager' => 'Старший менеджер',
             default => $role ?: '—',
+        };
+    }
+
+    public static function defaultRateFor(string $role): ?float
+    {
+        return match ($role) {
+            self::ROLE_INTERN => 1500,
+            self::ROLE_ADMIN => 2000,
+            self::ROLE_SUPERVISOR => 3000,
+            'store_manager' => 2500,
+            'assembler' => 2200,
+            'senior_manager' => 3500,
+            default => null,
         };
     }
 }

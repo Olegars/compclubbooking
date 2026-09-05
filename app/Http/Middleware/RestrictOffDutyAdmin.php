@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -14,7 +15,24 @@ class RestrictOffDutyAdmin
     public function handle(Request $request, Closure $next): Response
     {
         $admin = auth('admin')->user();
-        if (! $admin || $admin->hasFullClubOps()) {
+        if (! $admin) {
+            return $next($request);
+        }
+
+        if ($admin->isFired()) {
+            Auth::guard('admin')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            if ($request->expectsJson()) {
+                abort(403, 'Аккаунт уволен.');
+            }
+
+            return redirect()->route('admin.login')
+                ->with('error', 'Аккаунт уволен. Вход закрыт.');
+        }
+
+        if ($admin->hasFullClubOps()) {
             return $next($request);
         }
 

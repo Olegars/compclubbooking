@@ -513,11 +513,14 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
     // УРОВЕНЬ: SUPERVISOR / OWNER — штат и проверка анкет
     Route::middleware(['role:supervisor,owner'])->group(function () {
         Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
+        Route::post('/staff', [StaffController::class, 'store'])->name('admin.staff.store');
         Route::post('/staff/{admin}/fines', [StaffController::class, 'storeFine'])->name('admin.staff.fines.store');
         Route::post('/staff/{admin}/role', [StaffController::class, 'updateRole'])->name('admin.staff.role.update');
         Route::get('/staff/{admin}/employment/scan', [StaffController::class, 'employmentScan'])->name('admin.staff.employment.scan');
         Route::post('/staff/{admin}/employment/approve', [StaffController::class, 'approveEmployment'])->name('admin.staff.employment.approve');
         Route::post('/staff/{admin}/employment/reject', [StaffController::class, 'rejectEmployment'])->name('admin.staff.employment.reject');
+        Route::post('/staff/{admin}/fire', [StaffController::class, 'fire'])->name('admin.staff.fire');
+        Route::post('/staff/{admin}/restore', [StaffController::class, 'restore'])->name('admin.staff.restore');
     });
 
     // УРОВЕНЬ: OWNER

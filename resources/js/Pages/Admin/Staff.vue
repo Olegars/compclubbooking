@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Head, router, usePage } from '@inertiajs/vue3'
+import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AdminConfirm from '@/Components/AdminConfirm.vue'
 import { useClubName } from '@/Composables/useClubName'
@@ -10,9 +10,18 @@ const clubName = useClubName()
 const page = usePage()
 const { success, error } = useToast()
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
     staff: any[]
-}>()
+    can_hire?: boolean
+    hire_roles?: Array<{ value: string; label: string }>
+    clubs?: Array<{ id: number; name: string }>
+    default_club_id?: number | null
+}>(), {
+    can_hire: false,
+    hire_roles: () => [],
+    clubs: () => [],
+    default_club_id: null,
+})
 
 const flashSuccess = computed(() => (page.props as any).flash?.success as string | undefined)
 watch(flashSuccess, (msg) => {
@@ -25,6 +34,7 @@ const formatMoney = (val: number | string | null) => {
 }
 
 const roleClass = (duty: string, role: string) => {
+    if (duty === 'fired') return 'bg-red-500/10 text-red-400 border-red-500/30'
     if (duty === 'active') return 'bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/30'
     if (duty === 'review') return 'bg-amber-500/10 text-amber-400 border-amber-500/30'
     if (duty === 'rejected') return 'bg-red-500/10 text-red-400 border-red-500/30'
@@ -55,15 +65,20 @@ const roleTabs = [
 
 const activeTab = ref('all')
 
-const countByRole = (role: string) => props.staff.filter((person) => person.role === role).length
-const reviewCount = computed(() => props.staff.filter((person) => person.employment?.status === 'review').length)
+const workingStaff = computed(() => props.staff.filter((person) => !person.is_fired))
+const firedCount = computed(() => props.staff.filter((person) => person.is_fired).length)
+const countByRole = (role: string) => workingStaff.value.filter((person) => person.role === role).length
+const reviewCount = computed(() => workingStaff.value.filter((person) => person.employment?.status === 'review').length)
 
 const visibleStaff = computed(() => {
-    if (activeTab.value === 'review') {
-        return props.staff.filter((person) => person.employment?.status === 'review')
+    if (activeTab.value === 'fired') {
+        return props.staff.filter((person) => person.is_fired)
     }
-    if (activeTab.value === 'all') return props.staff
-    return props.staff.filter((person) => person.role === activeTab.value)
+    if (activeTab.value === 'review') {
+        return workingStaff.value.filter((person) => person.employment?.status === 'review')
+    }
+    if (activeTab.value === 'all') return workingStaff.value
+    return workingStaff.value.filter((person) => person.role === activeTab.value)
 })
 
 const isPendingHire = (person: any) => {
@@ -210,6 +225,107 @@ const confirmDelete = () => {
         },
     })
 }
+
+const fireTarget = ref<any>(null)
+const fireProcessing = ref(false)
+
+const openFire = (person: any) => {
+    if (!person?.can_fire || fireProcessing.value) return
+    fireTarget.value = person
+}
+
+const closeFire = () => {
+    if (fireProcessing.value) return
+    fireTarget.value = null
+}
+
+const confirmFire = () => {
+    if (!fireTarget.value || fireProcessing.value) return
+    fireProcessing.value = true
+    router.post(`/admin/staff/${fireTarget.value.id}/fire`, {}, {
+        preserveScroll: true,
+        onFinish: () => { fireProcessing.value = false },
+        onSuccess: () => { fireTarget.value = null },
+        onError: (errors) => {
+            error((errors as any).staff || 'Не удалось уволить сотрудника')
+        },
+    })
+}
+
+const restoreBusyId = ref<number | null>(null)
+const restoreEmployee = (person: any) => {
+    if (!person?.can_restore || restoreBusyId.value) return
+    restoreBusyId.value = person.id
+    router.post(`/admin/staff/${person.id}/restore`, {}, {
+        preserveScroll: true,
+        onFinish: () => { restoreBusyId.value = null },
+        onError: (errors) => {
+            error((errors as any).staff || 'Не удалось вернуть сотрудника')
+        },
+    })
+}
+
+const hireOpen = ref(false)
+const defaultRates: Record<string, number> = {
+    intern: 1500,
+    admin: 2000,
+    supervisor: 3000,
+    store_manager: 2500,
+    assembler: 2200,
+    senior_manager: 3500,
+}
+
+const hireForm = useForm({
+    name: '',
+    email: '',
+    password: '',
+    password_confirmation: '',
+    role: 'intern',
+    club_id: props.default_club_id as number | string | null,
+    base_rate: 1500 as number | string,
+    pay_type: 'shift',
+    is_official_employee: false,
+})
+
+const openHire = () => {
+    if (!props.can_hire) return
+    const firstRole = props.hire_roles[0]?.value || 'intern'
+    hireForm.reset()
+    hireForm.clearErrors()
+    hireForm.role = firstRole
+    hireForm.club_id = props.default_club_id || props.clubs[0]?.id || null
+    hireForm.base_rate = defaultRates[firstRole] ?? 1500
+    hireForm.pay_type = firstRole === 'senior_manager' ? 'monthly' : 'shift'
+    hireForm.is_official_employee = false
+    hireOpen.value = true
+}
+
+watch(() => hireForm.role, (role) => {
+    if (defaultRates[role] !== undefined) {
+        hireForm.base_rate = defaultRates[role]
+    }
+    hireForm.pay_type = role === 'senior_manager' ? 'monthly' : 'shift'
+})
+
+const closeHire = () => {
+    if (hireForm.processing) return
+    hireOpen.value = false
+}
+
+const submitHire = () => {
+    hireForm.post('/admin/staff', {
+        preserveScroll: true,
+        onSuccess: () => {
+            hireOpen.value = false
+            hireForm.reset()
+        },
+        onError: (errors) => {
+            error((errors as any).email || (errors as any).role || (errors as any).message || 'Не удалось нанять сотрудника')
+        },
+    })
+}
+
+const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-purple-500/40 rounded-2xl px-4 py-3 text-sm text-white outline-none'
 </script>
 
 <template>
@@ -222,10 +338,10 @@ const confirmDelete = () => {
                     <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">Staff <span class="text-purple-500">Directory</span></h1>
                     <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">Управление персоналом и ставками</p>
                 </div>
-                <button disabled
-                        title="Найм через панель пока недоступен — сотрудники добавляются через сидер / БД"
-                        class="px-6 py-4 bg-white/5 border border-white/10 text-white/20 font-black uppercase tracking-widest text-[10px] rounded-2xl cursor-not-allowed">
-                    + Нанять сотрудника <span class="opacity-60">(скоро)</span>
+                <button v-if="can_hire" type="button"
+                        class="px-6 py-4 bg-purple-500 hover:bg-purple-400 text-black font-black uppercase tracking-widest text-[10px] rounded-2xl"
+                        @click="openHire">
+                    + Нанять сотрудника
                 </button>
             </div>
 
@@ -234,13 +350,19 @@ const confirmDelete = () => {
                         class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
                         :class="activeTab === 'all' ? 'bg-purple-500 text-black' : 'border border-white/10 text-white/50 hover:text-white'"
                         @click="activeTab = 'all'">
-                    Все {{ staff.length }}
+                    Все {{ workingStaff.length }}
                 </button>
                 <button type="button"
                         class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
                         :class="activeTab === 'review' ? 'bg-amber-400 text-black' : 'border border-amber-500/30 text-amber-400/80 hover:text-amber-300'"
                         @click="activeTab = 'review'">
                     На проверке {{ reviewCount }}
+                </button>
+                <button type="button"
+                        class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                        :class="activeTab === 'fired' ? 'bg-red-500 text-black' : 'border border-red-500/30 text-red-400/80 hover:text-red-300'"
+                        @click="activeTab = 'fired'">
+                    Уволенные {{ firedCount }}
                 </button>
                 <button v-for="tab in roleTabs" :key="tab.value" type="button"
                         class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
@@ -253,7 +375,7 @@ const confirmDelete = () => {
             <div v-if="visibleStaff.length === 0" class="py-20 text-center">
                 <div class="text-white/10 text-xl font-black uppercase tracking-widest italic mb-2">Нет сотрудников</div>
                 <div class="text-white/30 text-[10px] uppercase tracking-widest">
-                    {{ activeTab === 'review' ? 'Анкет на проверке нет' : 'В этой роли пока никого нет' }}
+                    {{ activeTab === 'review' ? 'Анкет на проверке нет' : (activeTab === 'fired' ? 'Уволенных нет' : 'В этой роли пока никого нет') }}
                 </div>
             </div>
 
@@ -301,7 +423,7 @@ const confirmDelete = () => {
                         </div>
                     </div>
 
-                    <div v-if="person.employment?.status === 'review'" class="mt-6 space-y-3 pt-6 border-t border-amber-500/20">
+                    <div v-if="person.employment?.status === 'review' && !person.is_fired" class="mt-6 space-y-3 pt-6 border-t border-amber-500/20">
                         <div class="text-[9px] text-amber-400 uppercase font-black tracking-widest">Анкета устройства</div>
                         <div class="text-white text-xs font-bold">{{ person.employment.full_name }}</div>
                         <div class="text-white/50 text-[11px] font-bold space-y-1">
@@ -331,14 +453,14 @@ const confirmDelete = () => {
                         </div>
                     </div>
 
-                    <button v-if="person.id !== currentAdminId && !isPendingHire(person)"
+                    <button v-if="person.id !== currentAdminId && !isPendingHire(person) && !person.is_fired"
                             type="button"
                             @click="openFine(person)"
                             class="mt-6 w-full py-3 border border-red-500/20 hover:border-red-500/50 text-red-400/80 hover:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
                         Штраф
                     </button>
 
-                    <div v-if="person.is_floor_admin && !isPendingHire(person)" class="mt-3">
+                    <div v-if="person.is_floor_admin && !isPendingHire(person) && !person.is_fired" class="mt-3">
                         <label class="text-[9px] text-white/30 uppercase font-black tracking-widest">Должность</label>
                         <select
                             class="mt-2 w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-[11px] font-black uppercase tracking-wider text-white outline-none"
@@ -351,6 +473,21 @@ const confirmDelete = () => {
                             </option>
                         </select>
                     </div>
+
+                    <button v-if="person.can_fire"
+                            type="button"
+                            @click="openFire(person)"
+                            class="mt-3 w-full py-3 border border-red-500/20 hover:border-red-500/50 text-red-400/80 hover:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
+                        Уволить сотрудника
+                    </button>
+
+                    <button v-if="person.can_restore"
+                            type="button"
+                            :disabled="restoreBusyId === person.id"
+                            @click="restoreEmployee(person)"
+                            class="mt-3 w-full py-3 border border-[#22c55e]/30 hover:border-[#22c55e]/60 text-[#22c55e] rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-40">
+                        Вернуть на работу
+                    </button>
 
                     <button v-if="person.can_delete"
                             type="button"
@@ -432,6 +569,92 @@ const confirmDelete = () => {
             @close="closeDelete"
             @confirm="confirmDelete"
         />
+
+        <AdminConfirm
+            :is-open="!!fireTarget"
+            title="Уволить сотрудника"
+            :message="fireTarget ? `${fireTarget.name} останется в штате, но вход будет закрыт.` : ''"
+            confirm-text="Уволить"
+            cancel-text="Отмена"
+            :is-processing="fireProcessing"
+            @close="closeFire"
+            @confirm="confirmFire"
+        />
+
+        <div v-if="hireOpen" class="fixed inset-0 z-[99998] flex items-center justify-center p-4 font-mono">
+            <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="closeHire"></div>
+            <div class="relative z-10 w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[#0a0a0a] border border-purple-500/30 rounded-[1rem] p-8 shadow-[0_0_80px_rgba(168,85,247,0.12)]">
+                <h3 class="text-xl font-black uppercase italic tracking-tighter text-white mb-2">Нанять сотрудника</h3>
+                <p class="text-[10px] uppercase tracking-widest text-white/40 font-black mb-6">Доступ сразу, без анкеты устройства</p>
+
+                <form class="space-y-4" @submit.prevent="submitHire">
+                    <label class="block">
+                        <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">ФИО</span>
+                        <input v-model="hireForm.name" type="text" :class="inputClass" placeholder="Иванов Иван">
+                        <p v-if="hireForm.errors.name" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ hireForm.errors.name }}</p>
+                    </label>
+                    <label class="block">
+                        <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Email</span>
+                        <input v-model="hireForm.email" type="email" :class="inputClass" placeholder="staff@club.local">
+                        <p v-if="hireForm.errors.email" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ hireForm.errors.email }}</p>
+                    </label>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label class="block">
+                            <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Пароль</span>
+                            <input v-model="hireForm.password" type="password" :class="inputClass">
+                            <p v-if="hireForm.errors.password" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ hireForm.errors.password }}</p>
+                        </label>
+                        <label class="block">
+                            <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Повтор пароля</span>
+                            <input v-model="hireForm.password_confirmation" type="password" :class="inputClass">
+                        </label>
+                    </div>
+                    <label class="block">
+                        <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Должность</span>
+                        <select v-model="hireForm.role" :class="inputClass">
+                            <option v-for="opt in hire_roles" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                        </select>
+                        <p v-if="hireForm.errors.role" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ hireForm.errors.role }}</p>
+                    </label>
+                    <label v-if="clubs.length > 1" class="block">
+                        <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Локация</span>
+                        <select v-model="hireForm.club_id" :class="inputClass">
+                            <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.name }}</option>
+                        </select>
+                        <p v-if="hireForm.errors.club_id" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ hireForm.errors.club_id }}</p>
+                    </label>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label class="block">
+                            <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Ставка, ₽</span>
+                            <input v-model="hireForm.base_rate" type="number" min="0" step="0.01" :class="inputClass">
+                            <p v-if="hireForm.errors.base_rate" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ hireForm.errors.base_rate }}</p>
+                        </label>
+                        <label class="block">
+                            <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Тип оплаты</span>
+                            <select v-model="hireForm.pay_type" :class="inputClass">
+                                <option value="shift">За смену</option>
+                                <option value="monthly">Оклад</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label class="flex items-center gap-3 text-[10px] uppercase font-black tracking-widest text-white/50">
+                        <input v-model="hireForm.is_official_employee" type="checkbox" class="rounded border-white/20 bg-black">
+                        Оформлен по ТК РФ
+                    </label>
+
+                    <div class="flex gap-3 pt-2">
+                        <button type="button" @click="closeHire"
+                                class="flex-1 py-4 bg-white/5 border border-white/10 text-white/50 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest">
+                            Отмена
+                        </button>
+                        <button type="submit" :disabled="hireForm.processing"
+                                class="flex-1 py-4 bg-purple-500 hover:bg-purple-400 text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40">
+                            {{ hireForm.processing ? 'Сохранение…' : 'Нанять' }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </AdminLayout>
 </template>
 
