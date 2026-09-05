@@ -68,12 +68,12 @@ const apply = () => {
 </script>
 
 <template>
-    <Head :title="`${clubName} | Конфигурация`" />
+    <Head :title="`${clubName} | Конфигурация смен`" />
     <AdminLayout>
         <div class="max-w-3xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
             <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-2xl">
                 <h1 class="text-3xl font-black uppercase italic text-cyan-400 tracking-tighter">
-                    Конфигура<span class="text-white">ция</span>
+                    Конфигурация <span class="text-white">смен</span>
                 </h1>
                 <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">
                     Смены клуба · 12 / 24 часа · начало
@@ -133,7 +133,7 @@ const apply = () => {
         <AdminConfirm
             :is-open="confirmOpen"
             tone="primary"
-            title="Сохранить конфигурацию"
+            title="Сохранить конфигурацию смен"
             :message="`Схема: ${windowLabel(pendingHours, pendingStartHour)}. Свободные слоты другой схемы снимутся, уже выбранные смены останутся.`"
             confirm-text="Применить"
             cancel-text="Назад"

@@ -54,6 +54,6 @@ class ClubConfigController extends Controller
             ? sprintf('сутки с %02d:00 до %02d:00', $startsHour, $endHour)
             : sprintf('смены по 12 часов с %02d:00', $startsHour);
 
-        return back()->with('success', 'Конфигурация: '.$label);
+        return back()->with('success', 'Конфигурация смен: '.$label);
     }
 }

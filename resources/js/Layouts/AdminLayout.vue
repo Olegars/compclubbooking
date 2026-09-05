@@ -289,7 +289,7 @@ const switchLocation = (clubId: string | number) => {
                     <Link href="/admin/config"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/config') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
-                        <span>⚙️</span> Конфигурация
+                        <span>⚙️</span> Конфигурация смен
                     </Link>
                     <Link href="/admin/zones"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
