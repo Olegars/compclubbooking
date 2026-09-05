@@ -27,6 +27,7 @@ class ShiftSlotBookingTest extends TestCase
                 ->component('Admin/Salary')
                 ->has('calendar.days')
                 ->where('calendar.cancel_before_hours', 48)
+                ->where('calendar.shift_hours', 12)
             );
 
         $this->actingAs($admin, 'admin')
@@ -131,6 +132,50 @@ class ShiftSlotBookingTest extends TestCase
 
         $this->assertDatabaseHas('shift_slot_bookings', [
             'id' => $booking->id,
+            'status' => ShiftSlotBooking::STATUS_BOOKED,
+        ]);
+    }
+
+    public function test_owner_can_switch_calendar_to_24_hour_shifts(): void
+    {
+        $owner = $this->makeAdmin('owner');
+        $admin = $this->makeAdmin('admin');
+        $slot12 = $this->firstBookableSlot($admin);
+        $this->assertSame(12, $slot12['duration_hours']);
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/salary')
+            ->post('/admin/salary/shift-model', ['hours' => 24])
+            ->assertRedirect('/admin/salary');
+
+        $slot24 = $this->firstBookableSlot($admin);
+        $this->assertSame(24, $slot24['duration_hours']);
+        $this->assertSame(24, app(ShiftSlotService::class)->calendar($admin, now()->addMonth()->format('Y-m'))['shift_hours']);
+    }
+
+    public function test_admin_cannot_change_shift_model(): void
+    {
+        $admin = $this->makeAdmin('admin');
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/salary/shift-model', ['hours' => 24])
+            ->assertForbidden();
+    }
+
+    public function test_booked_12h_slot_survives_switch_to_24h(): void
+    {
+        $owner = $this->makeAdmin('owner');
+        $admin = $this->makeAdmin('admin');
+        $slot = $this->firstBookableSlot($admin);
+        app(ShiftSlotService::class)->book($admin, ShiftSlot::query()->findOrFail($slot['id']));
+
+        app(ShiftSlotService::class)->setHours($owner, 24);
+
+        $this->assertDatabaseHas('shift_slot_bookings', [
+            'shift_slot_id' => $slot['id'],
+            'admin_id' => $admin->id,
             'status' => ShiftSlotBooking::STATUS_BOOKED,
         ]);
     }

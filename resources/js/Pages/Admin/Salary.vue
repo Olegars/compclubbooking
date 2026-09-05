@@ -29,6 +29,7 @@ type SlotRow = {
     name: string
     starts_at: string
     ends_at: string
+    duration_hours?: number
     lead_taken: boolean
     lead_name?: string | null
     intern_taken: number
@@ -60,6 +61,8 @@ type MyBooking = {
 type Calendar = {
     month: string
     cancel_before_hours: number
+    shift_hours: 12 | 24
+    can_set_model: boolean
     days: Record<string, DayRow>
     my_bookings: MyBooking[]
 }
@@ -81,6 +84,8 @@ const props = withDefaults(defineProps<{
     calendar: () => ({
         month: '',
         cancel_before_hours: 48,
+        shift_hours: 12,
+        can_set_model: false,
         days: {},
         my_bookings: [],
     }),
@@ -113,6 +118,8 @@ const selectedDate = ref('')
 const confirmOpen = ref(false)
 const cancelConfirmOpen = ref(false)
 const pendingCancelId = ref<number | null>(null)
+const modelConfirmOpen = ref(false)
+const pendingHours = ref<12 | 24>(12)
 const processing = ref(false)
 
 const weekDays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
@@ -210,6 +217,24 @@ const confirmCancel = () => {
             slotBusy.value = false
             cancelConfirmOpen.value = false
             pendingCancelId.value = null
+        },
+    })
+}
+
+const askSetHours = (hours: 12 | 24) => {
+    if (!props.calendar.can_set_model || hours === props.calendar.shift_hours || slotBusy.value) return
+    pendingHours.value = hours
+    modelConfirmOpen.value = true
+}
+
+const confirmSetHours = () => {
+    if (slotBusy.value) return
+    slotBusy.value = true
+    router.post('/admin/salary/shift-model', { hours: pendingHours.value }, {
+        preserveScroll: true,
+        onFinish: () => {
+            slotBusy.value = false
+            modelConfirmOpen.value = false
         },
     })
 }
@@ -363,6 +388,8 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                         <h2 class="text-sm font-black uppercase italic tracking-widest text-white">Выбрать смену</h2>
                         <p class="text-white/40 text-xs font-bold mt-2">
                             Свободный слот можно взять, если место есть. Отмена — не позднее чем за {{ calendar.cancel_before_hours }} часов до начала.
+                            <span v-if="calendar.shift_hours === 24"> Модель: сутки с 10:00.</span>
+                            <span v-else> Модель: день 10:00–22:00 и ночь 22:00–10:00.</span>
                         </p>
                     </div>
                     <div class="flex items-center gap-3">
@@ -376,6 +403,33 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                         <button type="button" @click="goMonth(1)"
                                 class="px-4 py-3 border border-white/10 rounded-2xl text-white/60 hover:text-white text-xs font-black uppercase tracking-widest">
                             →
+                        </button>
+                    </div>
+                </div>
+
+                <div v-if="calendar.can_set_model" class="flex flex-col sm:flex-row sm:items-center gap-3 bg-black/40 border border-white/10 rounded-2xl px-5 py-4">
+                    <div class="flex-1">
+                        <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Модель смен</div>
+                        <div class="text-white/60 text-xs font-bold mt-1">Только владелец. Уже выбранные смены сохраняются.</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="button"
+                                :disabled="slotBusy"
+                                class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                                :class="calendar.shift_hours === 12
+                                    ? 'bg-[#22c55e] text-black'
+                                    : 'border border-white/15 text-white/60 hover:text-white'"
+                                @click="askSetHours(12)">
+                            12 часов
+                        </button>
+                        <button type="button"
+                                :disabled="slotBusy"
+                                class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                                :class="calendar.shift_hours === 24
+                                    ? 'bg-[#22c55e] text-black'
+                                    : 'border border-white/15 text-white/60 hover:text-white'"
+                                @click="askSetHours(24)">
+                            24 часа
                         </button>
                     </div>
                 </div>
@@ -438,7 +492,10 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                         <div v-for="slot in selectedDay.slots" :key="slot.id"
                              class="flex flex-col lg:flex-row lg:items-center gap-4 bg-black/40 border border-white/10 rounded-2xl px-5 py-5">
                             <div class="flex-1">
-                                <div class="text-white text-sm font-black uppercase italic tracking-wider">{{ slot.name }}</div>
+                                <div class="text-white text-sm font-black uppercase italic tracking-wider">
+                                    {{ slot.name }}
+                                    <span class="text-white/30 not-italic">· {{ slot.duration_hours || calendar.shift_hours }} ч</span>
+                                </div>
                                 <div class="text-white/50 text-xs mt-1">{{ formatRange(slot.starts_at, slot.ends_at) }}</div>
                                 <div class="text-[10px] uppercase font-black tracking-widest mt-2"
                                      :class="slot.is_mine ? 'text-[#22c55e]' : slot.can_book ? 'text-white/50' : 'text-white/30'">
@@ -645,6 +702,20 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
             :is-processing="slotBusy"
             @close="cancelConfirmOpen = false; pendingCancelId = null"
             @confirm="confirmCancel"
+        />
+
+        <AdminConfirm
+            :is-open="modelConfirmOpen"
+            tone="primary"
+            title="Сменить модель смен"
+            :message="pendingHours === 24
+                ? 'Календарь станет суточным с 10:00. Свободные слоты по 12 часов снимутся, уже выбранные смены останутся.'
+                : 'Календарь станет день/ночь по 12 часов. Свободные суточные слоты снимутся, уже выбранные смены останутся.'"
+            confirm-text="Применить"
+            cancel-text="Назад"
+            :is-processing="slotBusy"
+            @close="modelConfirmOpen = false"
+            @confirm="confirmSetHours"
         />
     </AdminLayout>
 </template>

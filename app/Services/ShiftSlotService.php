@@ -5,10 +5,12 @@ namespace App\Services;
 use App\Models\Admin;
 use App\Models\ShiftSlot;
 use App\Models\ShiftSlotBooking;
+use App\Models\ShiftSlotSetting;
 use App\Models\ShiftSlotTemplate;
 use App\Support\AdminLocation;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -17,7 +19,7 @@ class ShiftSlotService
     public const CANCEL_BEFORE_HOURS = 48;
 
     /**
-     * @return array{month: string, cancel_before_hours: int, days: array<string, mixed>, my_bookings: list<array<string, mixed>>}
+     * @return array{month: string, cancel_before_hours: int, shift_hours: int, can_set_model: bool, days: array<string, mixed>, my_bookings: list<array<string, mixed>>}
      */
     public function calendar(Admin $admin, ?string $month = null): array
     {
@@ -26,14 +28,15 @@ class ShiftSlotService
         $rangeEnd = $monthStart->copy()->endOfMonth();
 
         $clubId = AdminLocation::id($admin);
-        $this->ensureTemplates($clubId);
+        $hours = ShiftSlotSetting::hoursFor($clubId);
+        $this->syncTemplates($clubId, $hours);
+        $this->pruneInactiveUnbooked($clubId);
         $this->ensureSlots($clubId, $rangeStart->copy()->subDay(), $rangeEnd->copy()->addWeeks(2));
 
         $slots = ShiftSlot::query()
-            ->with(['template:id,name', 'activeBookings.admin:id,name'])
-            ->where(function ($q) use ($clubId) {
-                $q->where('club_id', $clubId)->orWhereNull('club_id');
-            })
+            ->with(['template:id,name,duration_hours', 'activeBookings.admin:id,name'])
+            ->whereHas('template', fn ($q) => $q->where('is_active', true))
+            ->tap(fn (Builder $q) => $this->scopeClub($q, $clubId))
             ->where('starts_at', '>=', $rangeStart)
             ->where('starts_at', '<=', $rangeEnd)
             ->orderBy('starts_at')
@@ -87,9 +90,24 @@ class ShiftSlotService
         return [
             'month' => $monthStart->format('Y-m'),
             'cancel_before_hours' => self::CANCEL_BEFORE_HOURS,
+            'shift_hours' => $hours,
+            'can_set_model' => $admin->role === Admin::ROLE_OWNER,
             'days' => $days,
             'my_bookings' => $my,
         ];
+    }
+
+    public function setHours(Admin $admin, int $hours): void
+    {
+        if ($admin->role !== Admin::ROLE_OWNER) {
+            throw new RuntimeException('Модель смен задаёт только владелец.');
+        }
+
+        $clubId = AdminLocation::id($admin);
+        ShiftSlotSetting::put($clubId, $hours);
+        $this->syncTemplates($clubId, $hours);
+        $this->pruneInactiveUnbooked($clubId);
+        $this->ensureSlots($clubId, now(), now()->addMonths(6)->endOfMonth());
     }
 
     public function book(Admin $admin, ShiftSlot $slot): ShiftSlotBooking
@@ -170,36 +188,37 @@ class ShiftSlotService
         return now()->lte($startsAt->copy()->subHours(self::CANCEL_BEFORE_HOURS));
     }
 
-    public function ensureTemplates(?int $clubId): void
+    public function syncTemplates(?int $clubId, ?int $hours = null): void
     {
-        $defaults = [
-            ['name' => 'День', 'starts_time' => '10:00:00', 'duration_hours' => 12, 'intern_capacity' => 1],
-            ['name' => 'Ночь', 'starts_time' => '22:00:00', 'duration_hours' => 12, 'intern_capacity' => 1],
-        ];
+        $hours = $hours ?? ShiftSlotSetting::hoursFor($clubId);
+        $wanted = $this->templateDefs($hours);
+        $wantedNames = array_column($wanted, 'name');
 
-        foreach ($defaults as $row) {
-            ShiftSlotTemplate::query()->firstOrCreate(
-                [
-                    'club_id' => $clubId,
-                    'name' => $row['name'],
-                ],
-                [
-                    'starts_time' => $row['starts_time'],
-                    'duration_hours' => $row['duration_hours'],
-                    'intern_capacity' => $row['intern_capacity'],
-                    'is_active' => true,
-                ]
-            );
+        foreach ($wanted as $row) {
+            $template = ShiftSlotTemplate::query()->firstOrNew([
+                'club_id' => $clubId,
+                'name' => $row['name'],
+            ]);
+            $template->fill([
+                'starts_time' => $row['starts_time'],
+                'duration_hours' => $row['duration_hours'],
+                'intern_capacity' => $row['intern_capacity'],
+                'is_active' => true,
+            ]);
+            $template->save();
         }
+
+        ShiftSlotTemplate::query()
+            ->tap(fn (Builder $q) => $this->scopeClub($q, $clubId))
+            ->whereNotIn('name', $wantedNames)
+            ->update(['is_active' => false]);
     }
 
     public function ensureSlots(?int $clubId, CarbonInterface $from, CarbonInterface $to): void
     {
         $templates = ShiftSlotTemplate::query()
             ->where('is_active', true)
-            ->where(function ($q) use ($clubId) {
-                $q->where('club_id', $clubId)->orWhereNull('club_id');
-            })
+            ->tap(fn (Builder $q) => $this->scopeClub($q, $clubId))
             ->get();
 
         $startDay = Carbon::parse($from)->startOfDay();
@@ -210,6 +229,10 @@ class ShiftSlotService
                 $starts = $day->copy()->setTimeFromTimeString((string) $template->starts_time);
                 $ends = $starts->copy()->addHours((int) $template->duration_hours);
                 if ($ends->lte(now())) {
+                    continue;
+                }
+
+                if ($this->hasBookedOverlap($clubId, $starts, $ends, (int) $template->id)) {
                     continue;
                 }
 
@@ -253,12 +276,15 @@ class ShiftSlotService
 
         $bookingId = $mine?->id;
         $canCancel = (bool) ($mine && $this->canCancel($slot->starts_at));
+        $duration = (int) ($slot->template?->duration_hours
+            ?: round($slot->starts_at->diffInHours($slot->ends_at)));
 
         return [
             'id' => $slot->id,
             'name' => $slot->template?->name ?: 'Смена',
             'starts_at' => $slot->starts_at->toIso8601String(),
             'ends_at' => $slot->ends_at->toIso8601String(),
+            'duration_hours' => $duration,
             'lead_taken' => (bool) $lead,
             'lead_name' => $lead?->admin?->name,
             'intern_taken' => $internTaken,
@@ -270,6 +296,51 @@ class ShiftSlotService
             'can_cancel' => $canCancel,
             'started' => $started,
         ];
+    }
+
+    /**
+     * @return list<array{name: string, starts_time: string, duration_hours: int, intern_capacity: int}>
+     */
+    private function templateDefs(int $hours): array
+    {
+        if ($hours === ShiftSlotSetting::HOURS_24) {
+            return [
+                ['name' => 'Сутки', 'starts_time' => '10:00:00', 'duration_hours' => 24, 'intern_capacity' => 1],
+            ];
+        }
+
+        return [
+            ['name' => 'День', 'starts_time' => '10:00:00', 'duration_hours' => 12, 'intern_capacity' => 1],
+            ['name' => 'Ночь', 'starts_time' => '22:00:00', 'duration_hours' => 12, 'intern_capacity' => 1],
+        ];
+    }
+
+    private function pruneInactiveUnbooked(?int $clubId): void
+    {
+        ShiftSlot::query()
+            ->tap(fn (Builder $q) => $this->scopeClub($q, $clubId))
+            ->where('starts_at', '>', now())
+            ->whereDoesntHave('activeBookings')
+            ->whereHas('template', fn ($q) => $q->where('is_active', false))
+            ->delete();
+    }
+
+    private function hasBookedOverlap(?int $clubId, CarbonInterface $starts, CarbonInterface $ends, int $templateId): bool
+    {
+        return ShiftSlot::query()
+            ->tap(fn (Builder $q) => $this->scopeClub($q, $clubId))
+            ->where('template_id', '!=', $templateId)
+            ->where('starts_at', '<', $ends)
+            ->where('ends_at', '>', $starts)
+            ->whereHas('activeBookings')
+            ->exists();
+    }
+
+    private function scopeClub(Builder $query, ?int $clubId): Builder
+    {
+        return $clubId === null
+            ? $query->whereNull('club_id')
+            : $query->where('club_id', $clubId);
     }
 
     private function assertSlotForClub(Admin $admin, ShiftSlot $slot): void

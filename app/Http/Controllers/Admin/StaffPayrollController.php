@@ -70,4 +70,21 @@ class StaffPayrollController extends Controller
 
         return back()->with('success', 'Смена отменена');
     }
+
+    public function setShiftModel(Request $request)
+    {
+        $data = $request->validate([
+            'hours' => ['required', 'integer', 'in:12,24'],
+        ]);
+
+        try {
+            $this->slots->setHours(auth('admin')->user(), (int) $data['hours']);
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['message' => $e->getMessage()]);
+        }
+
+        $label = (int) $data['hours'] === 24 ? 'смены по 24 часа' : 'смены по 12 часов';
+
+        return back()->with('success', 'Модель: '.$label);
+    }
 }
