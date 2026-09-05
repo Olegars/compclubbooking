@@ -239,7 +239,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
     Route::post('/salary/slots/{slot}/book', [StaffPayrollController::class, 'bookSlot'])->name('admin.salary.slots.book');
     Route::post('/salary/slots/{booking}/cancel', [StaffPayrollController::class, 'cancelSlot'])->name('admin.salary.slots.cancel');
     Route::post('/salary/shift-model', [StaffPayrollController::class, 'setShiftModel'])
-        ->middleware('role:owner')
+        ->middleware('role:supervisor,owner')
         ->name('admin.salary.shift-model');
     Route::post('/salary/employment/rules', [StaffPayrollController::class, 'acceptEmploymentRule'])->name('admin.salary.employment.rules');
     Route::post('/salary/employment/hire', [StaffPayrollController::class, 'hire'])->name('admin.salary.employment.hire');

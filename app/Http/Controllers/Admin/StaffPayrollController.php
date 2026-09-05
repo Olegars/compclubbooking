@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\ShiftSlot;
 use App\Models\ShiftSlotBooking;
+use App\Models\ShiftSlotSetting;
 use App\Services\ShiftSlotService;
 use App\Services\StaffEmploymentService;
 use App\Services\StaffPayrollService;
+use App\Support\AdminLocation;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use RuntimeException;
@@ -31,6 +33,7 @@ class StaffPayrollController extends Controller
                 'month' => now()->format('Y-m'),
                 'cancel_before_hours' => ShiftSlotService::CANCEL_BEFORE_HOURS,
                 'shift_hours' => 12,
+                'starts_hour' => 10,
                 'can_set_model' => false,
                 'days' => [],
                 'my_bookings' => [],
@@ -95,16 +98,29 @@ class StaffPayrollController extends Controller
     public function setShiftModel(Request $request)
     {
         $data = $request->validate([
-            'hours' => ['required', 'integer', 'in:12,24'],
+            'hours' => ['nullable', 'integer', 'in:12,24'],
+            'starts_hour' => ['nullable', 'integer', 'min:0', 'max:23'],
         ]);
 
+        $admin = auth('admin')->user();
+        $clubId = AdminLocation::id($admin);
+        $hours = array_key_exists('hours', $data) && $data['hours'] !== null
+            ? (int) $data['hours']
+            : ShiftSlotSetting::hoursFor($clubId);
+        $startsHour = array_key_exists('starts_hour', $data) && $data['starts_hour'] !== null
+            ? (int) $data['starts_hour']
+            : ShiftSlotSetting::startsHourFor($clubId);
+
         try {
-            $this->slots->setHours(auth('admin')->user(), (int) $data['hours']);
+            $this->slots->setHours($admin, $hours, $startsHour);
         } catch (RuntimeException $e) {
             return back()->withErrors(['message' => $e->getMessage()]);
         }
 
-        $label = (int) $data['hours'] === 24 ? 'смены по 24 часа' : 'смены по 12 часов';
+        $endHour = ($startsHour + $hours) % 24;
+        $label = $hours === 24
+            ? sprintf('сутки с %02d:00 до %02d:00', $startsHour, $endHour)
+            : sprintf('смены по 12 часов с %02d:00', $startsHour);
 
         return back()->with('success', 'Модель: '.$label);
     }

@@ -19,7 +19,7 @@ class ShiftSlotService
     public const CANCEL_BEFORE_HOURS = 48;
 
     /**
-     * @return array{month: string, cancel_before_hours: int, shift_hours: int, can_set_model: bool, days: array<string, mixed>, my_bookings: list<array<string, mixed>>}
+     * @return array{month: string, cancel_before_hours: int, shift_hours: int, starts_hour: int, can_set_model: bool, days: array<string, mixed>, my_bookings: list<array<string, mixed>>}
      */
     public function calendar(Admin $admin, ?string $month = null): array
     {
@@ -29,8 +29,9 @@ class ShiftSlotService
 
         $clubId = AdminLocation::id($admin);
         $hours = ShiftSlotSetting::hoursFor($clubId);
-        $this->syncTemplates($clubId, $hours);
-        $this->pruneInactiveUnbooked($clubId);
+        $startsHour = ShiftSlotSetting::startsHourFor($clubId);
+        $this->syncTemplates($clubId, $hours, $startsHour);
+        $this->pruneStaleUnbooked($clubId);
         $this->ensureSlots($clubId, $rangeStart->copy()->subDay(), $rangeEnd->copy()->addWeeks(2));
 
         $slots = ShiftSlot::query()
@@ -91,22 +92,24 @@ class ShiftSlotService
             'month' => $monthStart->format('Y-m'),
             'cancel_before_hours' => self::CANCEL_BEFORE_HOURS,
             'shift_hours' => $hours,
-            'can_set_model' => $admin->role === Admin::ROLE_OWNER,
+            'starts_hour' => $startsHour,
+            'can_set_model' => $admin->canSetShiftModel(),
             'days' => $days,
             'my_bookings' => $my,
         ];
     }
 
-    public function setHours(Admin $admin, int $hours): void
+    public function setHours(Admin $admin, int $hours, ?int $startsHour = null): void
     {
-        if ($admin->role !== Admin::ROLE_OWNER) {
-            throw new RuntimeException('Модель смен задаёт только владелец.');
+        if (! $admin->canSetShiftModel()) {
+            throw new RuntimeException('Модель смен задаёт владелец или управляющий.');
         }
 
         $clubId = AdminLocation::id($admin);
-        ShiftSlotSetting::put($clubId, $hours);
-        $this->syncTemplates($clubId, $hours);
-        $this->pruneInactiveUnbooked($clubId);
+        $startsHour ??= ShiftSlotSetting::startsHourFor($clubId);
+        ShiftSlotSetting::put($clubId, $hours, $startsHour);
+        $this->syncTemplates($clubId, $hours, $startsHour);
+        $this->pruneStaleUnbooked($clubId);
         $this->ensureSlots($clubId, now(), now()->addMonths(6)->endOfMonth());
     }
 
@@ -188,10 +191,11 @@ class ShiftSlotService
         return now()->lte($startsAt->copy()->subHours(self::CANCEL_BEFORE_HOURS));
     }
 
-    public function syncTemplates(?int $clubId, ?int $hours = null): void
+    public function syncTemplates(?int $clubId, ?int $hours = null, ?int $startsHour = null): void
     {
         $hours = $hours ?? ShiftSlotSetting::hoursFor($clubId);
-        $wanted = $this->templateDefs($hours);
+        $startsHour = $startsHour ?? ShiftSlotSetting::startsHourFor($clubId);
+        $wanted = $this->templateDefs($hours, $startsHour);
         $wantedNames = array_column($wanted, 'name');
 
         foreach ($wanted as $row) {
@@ -301,28 +305,54 @@ class ShiftSlotService
     /**
      * @return list<array{name: string, starts_time: string, duration_hours: int, intern_capacity: int}>
      */
-    private function templateDefs(int $hours): array
+    private function templateDefs(int $hours, int $startsHour): array
     {
+        $start = $this->hourTime($startsHour);
+
         if ($hours === ShiftSlotSetting::HOURS_24) {
             return [
-                ['name' => 'Сутки', 'starts_time' => '10:00:00', 'duration_hours' => 24, 'intern_capacity' => 1],
+                ['name' => 'Сутки', 'starts_time' => $start, 'duration_hours' => 24, 'intern_capacity' => 1],
             ];
         }
 
+        $night = $this->hourTime(($startsHour + 12) % 24);
+
         return [
-            ['name' => 'День', 'starts_time' => '10:00:00', 'duration_hours' => 12, 'intern_capacity' => 1],
-            ['name' => 'Ночь', 'starts_time' => '22:00:00', 'duration_hours' => 12, 'intern_capacity' => 1],
+            ['name' => 'День', 'starts_time' => $start, 'duration_hours' => 12, 'intern_capacity' => 1],
+            ['name' => 'Ночь', 'starts_time' => $night, 'duration_hours' => 12, 'intern_capacity' => 1],
         ];
     }
 
-    private function pruneInactiveUnbooked(?int $clubId): void
+    private function hourTime(int $hour): string
     {
-        ShiftSlot::query()
+        return sprintf('%02d:00:00', $hour);
+    }
+
+    private function pruneStaleUnbooked(?int $clubId): void
+    {
+        $slots = ShiftSlot::query()
+            ->with('template:id,starts_time,is_active,duration_hours')
             ->tap(fn (Builder $q) => $this->scopeClub($q, $clubId))
             ->where('starts_at', '>', now())
             ->whereDoesntHave('activeBookings')
-            ->whereHas('template', fn ($q) => $q->where('is_active', false))
-            ->delete();
+            ->get();
+
+        foreach ($slots as $slot) {
+            $template = $slot->template;
+            if (! $template || ! $template->is_active) {
+                $slot->delete();
+
+                continue;
+            }
+
+            $wantTime = Carbon::parse((string) $template->starts_time)->format('H:i:s');
+            $haveTime = $slot->starts_at->format('H:i:s');
+            $wantHours = (int) $template->duration_hours;
+            $haveHours = (int) round($slot->starts_at->diffInHours($slot->ends_at));
+            if ($wantTime !== $haveTime || $wantHours !== $haveHours) {
+                $slot->delete();
+            }
+        }
     }
 
     private function hasBookedOverlap(?int $clubId, CarbonInterface $starts, CarbonInterface $ends, int $templateId): bool

@@ -146,6 +146,11 @@ class Admin extends Authenticatable
         return $this->role === self::ROLE_ADMIN && $this->isShiftLead();
     }
 
+    public function canSetShiftModel(): bool
+    {
+        return in_array($this->role, [self::ROLE_OWNER, self::ROLE_SUPERVISOR], true);
+    }
+
     /** Неактивный админ и стажёр видят только личный кабинет. */
     public function isSalaryOnly(): bool
     {

@@ -154,6 +154,47 @@ class ShiftSlotBookingTest extends TestCase
         $this->assertSame(24, app(ShiftSlotService::class)->calendar($admin, now()->addMonth()->format('Y-m'))['shift_hours']);
     }
 
+    public function test_supervisor_can_switch_calendar_to_24_hour_shifts(): void
+    {
+        $super = $this->makeAdmin('supervisor');
+        $admin = $this->makeAdmin('admin');
+
+        $this->actingAs($super, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/salary')
+            ->post('/admin/salary/shift-model', ['hours' => 24])
+            ->assertRedirect('/admin/salary');
+
+        $this->assertSame(24, app(ShiftSlotService::class)->calendar($admin, now()->addMonth()->format('Y-m'))['shift_hours']);
+    }
+
+    public function test_supervisor_can_change_shift_start_hour(): void
+    {
+        $super = $this->makeAdmin('supervisor');
+        $admin = $this->makeAdmin('admin');
+
+        $this->actingAs($super, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/salary')
+            ->post('/admin/salary/shift-model', ['hours' => 12, 'starts_hour' => 12])
+            ->assertRedirect('/admin/salary');
+
+        $calendar = app(ShiftSlotService::class)->calendar($admin, now()->addMonth()->format('Y-m'));
+        $this->assertSame(12, $calendar['starts_hour']);
+
+        $daySlot = null;
+        foreach ($calendar['days'] as $day) {
+            foreach ($day['slots'] as $slot) {
+                if ($slot['name'] === 'День') {
+                    $daySlot = $slot;
+                    break 2;
+                }
+            }
+        }
+        $this->assertNotNull($daySlot);
+        $this->assertSame(12, (int) \Carbon\Carbon::parse($daySlot['starts_at'])->format('G'));
+    }
+
     public function test_admin_cannot_change_shift_model(): void
     {
         $admin = $this->makeAdmin('admin');

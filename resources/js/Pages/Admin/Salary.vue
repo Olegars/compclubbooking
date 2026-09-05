@@ -63,6 +63,7 @@ type Calendar = {
     month: string
     cancel_before_hours: number
     shift_hours: 12 | 24
+    starts_hour: number
     can_set_model: boolean
     days: Record<string, DayRow>
     my_bookings: MyBooking[]
@@ -104,6 +105,7 @@ const props = withDefaults(defineProps<{
         month: '',
         cancel_before_hours: 48,
         shift_hours: 12,
+        starts_hour: 10,
         can_set_model: false,
         days: {},
         my_bookings: [],
@@ -155,7 +157,18 @@ const cancelConfirmOpen = ref(false)
 const pendingCancelId = ref<number | null>(null)
 const modelConfirmOpen = ref(false)
 const pendingHours = ref<12 | 24>(12)
+const pendingStartHour = ref(10)
 const processing = ref(false)
+const hourOptions = Array.from({ length: 24 }, (_, hour) => hour)
+
+const formatClock = (hour: number) => `${String(((hour % 24) + 24) % 24).padStart(2, '0')}:00`
+
+const shiftWindowLabel = (hours: 12 | 24, start: number) => {
+    if (hours === 24) {
+        return `сутки ${formatClock(start)} — ${formatClock(start)}`
+    }
+    return `день ${formatClock(start)}–${formatClock(start + 12)}, ночь ${formatClock(start + 12)}–${formatClock(start)}`
+}
 
 const weekDays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
@@ -257,15 +270,28 @@ const confirmCancel = () => {
 }
 
 const askSetHours = (hours: 12 | 24) => {
-    if (!props.calendar.can_set_model || hours === props.calendar.shift_hours || slotBusy.value) return
+    if (!props.calendar.can_set_model || slotBusy.value) return
+    if (hours === props.calendar.shift_hours) return
     pendingHours.value = hours
+    pendingStartHour.value = props.calendar.starts_hour
+    modelConfirmOpen.value = true
+}
+
+const askSetStart = (hour: number) => {
+    if (!props.calendar.can_set_model || slotBusy.value) return
+    if (hour === props.calendar.starts_hour) return
+    pendingHours.value = props.calendar.shift_hours
+    pendingStartHour.value = hour
     modelConfirmOpen.value = true
 }
 
 const confirmSetHours = () => {
     if (slotBusy.value) return
     slotBusy.value = true
-    router.post('/admin/salary/shift-model', { hours: pendingHours.value }, {
+    router.post('/admin/salary/shift-model', {
+        hours: pendingHours.value,
+        starts_hour: pendingStartHour.value,
+    }, {
         preserveScroll: true,
         onFinish: () => {
             slotBusy.value = false
@@ -432,8 +458,7 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                         <h2 class="text-sm font-black uppercase italic tracking-widest text-white">Выбрать смену</h2>
                         <p class="text-white/40 text-xs font-bold mt-2">
                             Свободный слот можно взять, если место есть. Отмена — не позднее чем за {{ calendar.cancel_before_hours }} часов до начала.
-                            <span v-if="calendar.shift_hours === 24"> Модель: сутки с 10:00.</span>
-                            <span v-else> Модель: день 10:00–22:00 и ночь 22:00–10:00.</span>
+                            <span> Модель: {{ shiftWindowLabel(calendar.shift_hours, calendar.starts_hour) }}.</span>
                         </p>
                     </div>
                     <div class="flex items-center gap-3">
@@ -451,12 +476,12 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                     </div>
                 </div>
 
-                <div v-if="calendar.can_set_model" class="flex flex-col sm:flex-row sm:items-center gap-3 bg-black/40 border border-white/10 rounded-2xl px-5 py-4">
+                <div v-if="calendar.can_set_model" class="flex flex-col lg:flex-row lg:items-center gap-4 bg-black/40 border border-white/10 rounded-2xl px-5 py-4">
                     <div class="flex-1">
                         <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Модель смен</div>
-                        <div class="text-white/60 text-xs font-bold mt-1">Только владелец. Уже выбранные смены сохраняются.</div>
+                        <div class="text-white/60 text-xs font-bold mt-1">Владелец и управляющий. Уже выбранные смены сохраняются.</div>
                     </div>
-                    <div class="flex gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
                         <button type="button"
                                 :disabled="slotBusy"
                                 class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
@@ -475,6 +500,22 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                                 @click="askSetHours(24)">
                             24 часа
                         </button>
+                        <label class="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-white/50">
+                            Начало
+                            <select
+                                class="bg-black/60 border border-white/15 rounded-xl px-3 py-3 text-white outline-none"
+                                :value="calendar.starts_hour"
+                                :disabled="slotBusy"
+                                @change="askSetStart(Number(($event.target as HTMLSelectElement).value))"
+                            >
+                                <option v-for="hour in hourOptions" :key="hour" :value="hour">
+                                    {{ formatClock(hour) }}
+                                </option>
+                            </select>
+                        </label>
+                        <div class="text-[10px] font-black uppercase tracking-widest text-white/30">
+                            конец {{ formatClock(calendar.starts_hour + calendar.shift_hours) }}
+                        </div>
                     </div>
                 </div>
 
@@ -754,9 +795,7 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
             :is-open="modelConfirmOpen"
             tone="primary"
             title="Сменить модель смен"
-            :message="pendingHours === 24
-                ? 'Календарь станет суточным с 10:00. Свободные слоты по 12 часов снимутся, уже выбранные смены останутся.'
-                : 'Календарь станет день/ночь по 12 часов. Свободные суточные слоты снимутся, уже выбранные смены останутся.'"
+            :message="`Календарь: ${shiftWindowLabel(pendingHours, pendingStartHour)}. Свободные слоты другой схемы снимутся, уже выбранные смены останутся.`"
             confirm-text="Применить"
             cancel-text="Назад"
             :is-processing="slotBusy"
