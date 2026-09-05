@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Shift;
 use App\Services\ProductStockService;
+use App\Services\StaffPayrollService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -62,15 +63,26 @@ class ShiftController extends Controller
 
         return DB::transaction(function () use ($data, $admin, $stock) {
             $cashCounted = (float) $data['cash_counted'];
+            $payroll = app(StaffPayrollService::class);
 
             // 1. Закрываем смену, которую нам сдают. Пересчитанная касса — это одновременно
             // остаток на конец старой смены и начальный остаток новой.
+            $closingIds = Shift::where('status', '!=', 'closed')->pluck('id');
+
             Shift::where('status', '!=', 'closed')->update([
                 'status' => 'closed',
                 'closed_by' => $admin->id,
                 'ended_at' => now(),
                 'cash_end' => $cashCounted,
             ]);
+
+            if ($closingIds->isNotEmpty()) {
+                Shift::query()
+                    ->whereIn('id', $closingIds)
+                    ->with('admin')
+                    ->get()
+                    ->each(fn (Shift $closed) => $payroll->accrueClosedShift($closed));
+            }
 
             // 2. Создаем новую смену
             $shift = Shift::create([

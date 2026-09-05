@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Shift extends Model
@@ -29,6 +30,17 @@ class Shift extends Model
     public function admin(): BelongsTo
     {
         return $this->belongsTo(Admin::class, 'admin_id');
+    }
+
+    public function closedByAdmin(): BelongsTo
+    {
+        return $this->belongsTo(Admin::class, 'closed_by');
+    }
+
+    public function ledgerAccrual(): HasOne
+    {
+        return $this->hasOne(StaffLedger::class, 'shift_id')
+            ->where('type', StaffLedger::TYPE_ACCRUAL);
     }
 
     // Связь с записями инвентаризации этой смены

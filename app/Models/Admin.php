@@ -31,6 +31,8 @@ class Admin extends Authenticatable
 
     protected $casts = [
         'password' => 'hashed',
+        'is_official_employee' => 'boolean',
+        'base_rate' => 'decimal:2',
     ];
 
     public function club(): BelongsTo
@@ -41,6 +43,16 @@ class Admin extends Authenticatable
     public function payrolls(): HasMany
     {
         return $this->hasMany(Payroll::class, 'admin_id');
+    }
+
+    public function shifts(): HasMany
+    {
+        return $this->hasMany(Shift::class, 'admin_id');
+    }
+
+    public function ledgerEntries(): HasMany
+    {
+        return $this->hasMany(StaffLedger::class, 'admin_id');
     }
 
     public function isStoreRole(): bool

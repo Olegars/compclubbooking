@@ -144,6 +144,11 @@ const switchLocation = (clubId: string | number) => {
                           :class="isActive('/admin/shifts/history') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>📋</span> Архив смен
                     </Link>
+                    <Link href="/admin/salary"
+                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
+                          :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                        <span>💰</span> Моя зарплата
+                    </Link>
                 </div>
 
                 <!-- СЕКЦИЯ: МАГАЗИН ПРИ КЛУБЕ -->
@@ -330,6 +335,11 @@ const switchLocation = (clubId: string | number) => {
                 <!-- СЕКЦИЯ: СПРАВКА -->
                 <div class="space-y-2">
                     <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Справка</div>
+                    <Link v-if="!canAccessClub" href="/admin/salary"
+                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
+                          :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                        <span>💰</span> Моя зарплата
+                    </Link>
                     <Link href="/admin/docs"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/docs') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">

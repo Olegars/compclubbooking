@@ -1,16 +1,25 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3'
+import { computed, ref, watch } from 'vue'
+import { Head, router, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { useClubName } from '@/Composables/useClubName'
+import { useToast } from '@/Composables/useToast'
 
 const clubName = useClubName()
+const page = usePage()
+const { success, error } = useToast()
 
 const props = defineProps<{
     staff: any[]
 }>()
 
+const flashSuccess = computed(() => (page.props as any).flash?.success as string | undefined)
+watch(flashSuccess, (msg) => {
+    if (msg) success(msg)
+}, { immediate: true })
+
 const formatMoney = (val: number | string | null) => {
-    if (!val) return '—'
+    if (val === null || val === undefined || val === '') return '—'
     return Number(val).toLocaleString('ru-RU') + ' ₽'
 }
 
@@ -22,6 +31,51 @@ const roleClass = (role: string) => {
     if (role === 'store_manager') return 'bg-orange-500/10 text-orange-400 border-orange-500/30'
     if (role === 'assembler') return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
     return 'bg-white/5 text-white/50 border-white/10'
+}
+
+const currentAdminId = computed(() => (page.props.admin_user as any)?.id)
+const fineTarget = ref<any>(null)
+const fineAmount = ref('')
+const fineReason = ref('')
+const fineProcessing = ref(false)
+
+const openFine = (person: any) => {
+    if (person.id === currentAdminId.value) return
+    fineTarget.value = person
+    fineAmount.value = ''
+    fineReason.value = ''
+}
+
+const closeFine = () => {
+    if (fineProcessing.value) return
+    fineTarget.value = null
+}
+
+const submitFine = () => {
+    if (!fineTarget.value || fineProcessing.value) return
+    const amount = Number(fineAmount.value)
+    const reason = fineReason.value.trim()
+    if (!(amount > 0) || !reason) {
+        error('Укажите сумму и причину штрафа')
+        return
+    }
+
+    fineProcessing.value = true
+    router.post(`/admin/staff/${fineTarget.value.id}/fines`, {
+        amount,
+        reason,
+    }, {
+        preserveScroll: true,
+        onFinish: () => {
+            fineProcessing.value = false
+        },
+        onSuccess: () => {
+            fineTarget.value = null
+        },
+        onError: (errors) => {
+            error((errors as any).reason || (errors as any).amount || 'Не удалось выписать штраф')
+        },
+    })
 }
 </script>
 
@@ -80,10 +134,54 @@ const roleClass = (role: string) => {
                                 {{ person.pay_type === 'shift' ? 'За смену' : (person.pay_type === 'monthly' ? 'Оклад' : '—') }}
                             </span>
                         </div>
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">К выводу</span>
+                            <span class="text-[#22c55e] font-black">{{ formatMoney(person.available) }}</span>
+                        </div>
                     </div>
+
+                    <button v-if="person.id !== currentAdminId"
+                            type="button"
+                            @click="openFine(person)"
+                            class="mt-6 w-full py-3 border border-red-500/20 hover:border-red-500/50 text-red-400/80 hover:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
+                        Штраф
+                    </button>
                 </div>
             </div>
 
+        </div>
+
+        <div v-if="fineTarget" class="fixed inset-0 z-[99998] flex items-center justify-center p-4 font-mono">
+            <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="closeFine"></div>
+            <div class="relative z-10 w-full max-w-md bg-[#0a0a0a] border border-red-500/30 rounded-[1rem] p-8 shadow-[0_0_80px_rgba(239,68,68,0.12)]">
+                <h3 class="text-xl font-black uppercase italic tracking-tighter text-white mb-2">Штраф</h3>
+                <p class="text-[10px] uppercase tracking-widest text-white/40 font-black mb-6">{{ fineTarget.name }}</p>
+
+                <label class="text-[10px] text-white/30 uppercase font-black tracking-widest">Сумма, ₽</label>
+                <input v-model="fineAmount"
+                       type="number"
+                       min="0.01"
+                       step="0.01"
+                       class="mt-2 mb-5 w-full bg-black/40 border border-white/10 focus:border-red-500/40 rounded-2xl px-4 py-3 text-white font-black outline-none">
+
+                <label class="text-[10px] text-white/30 uppercase font-black tracking-widest">За что</label>
+                <textarea v-model="fineReason"
+                          rows="3"
+                          maxlength="255"
+                          placeholder="Опоздание, недостача кассы…"
+                          class="mt-2 mb-6 w-full bg-black/40 border border-white/10 focus:border-red-500/40 rounded-2xl px-4 py-3 text-white text-sm outline-none resize-none"></textarea>
+
+                <div class="flex gap-3">
+                    <button type="button" @click="closeFine"
+                            class="flex-1 py-4 bg-white/5 border border-white/10 text-white/50 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest">
+                        Отмена
+                    </button>
+                    <button type="button" @click="submitFine" :disabled="fineProcessing"
+                            class="flex-1 py-4 bg-red-500 hover:bg-red-400 text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40">
+                        Начислить
+                    </button>
+                </div>
+            </div>
         </div>
     </AdminLayout>
 </template>
