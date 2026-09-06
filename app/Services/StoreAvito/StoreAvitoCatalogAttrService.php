@@ -142,39 +142,58 @@ class StoreAvitoCatalogAttrService
     private function fillWithLlm(string $type, array $products): int
     {
         $updated = 0;
-        foreach (array_chunk($products, 20) as $chunk) {
-            try {
-                $rows = $this->askLlm($type, $chunk);
-            } catch (\Throwable $e) {
-                Log::warning('Avito attrs DeepSeek: '.$e->getMessage());
+        foreach (array_chunk($products, 8) as $chunk) {
+            $updated += $this->fillChunk($type, $chunk);
+        }
+
+        return $updated;
+    }
+
+    /**
+     * @param  list<StoreSupplierCatalogProduct>  $chunk
+     */
+    private function fillChunk(string $type, array $chunk): int
+    {
+        try {
+            $rows = $this->askLlm($type, $chunk);
+        } catch (\Throwable $e) {
+            $this->warnLlm($type, $e->getMessage(), count($chunk));
+            if (count($chunk) > 1) {
+                $mid = (int) ceil(count($chunk) / 2);
+
+                return $this->fillChunk($type, array_slice($chunk, 0, $mid))
+                    + $this->fillChunk($type, array_slice($chunk, $mid));
+            }
+
+            return 0;
+        }
+
+        $updated = 0;
+        foreach ($chunk as $product) {
+            $row = $rows[(int) $product->sku] ?? null;
+            if (! is_array($row)) {
                 continue;
             }
-            foreach ($chunk as $product) {
-                $row = $rows[(int) $product->sku] ?? null;
-                if (! is_array($row)) {
-                    continue;
-                }
-                $parsed = $this->parser->parse(
-                    $type,
-                    (string) $product->name,
-                    (string) ($product->part ?? ''),
-                    (string) ($product->vendor ?? ''),
-                );
-                $merged = array_merge($parsed, array_filter([
-                    'socket' => $row['socket'] ?? null,
-                    'ddr' => $row['ddr'] ?? null,
-                    'ram_gb' => isset($row['ram_gb']) ? (int) $row['ram_gb'] : null,
-                    'wattage' => isset($row['wattage']) ? (int) $row['wattage'] : null,
-                    'form' => $row['form'] ?? null,
-                    'avito_brand' => $row['avito_brand'] ?? null,
-                    'avito_model' => $row['avito_model'] ?? null,
-                    'avito_code' => $row['avito_code'] ?? null,
-                ], fn ($v) => $v !== null && $v !== ''));
-                $merged['type'] = $type === 'storage_ssd' ? 'ssd' : $type;
-                $merged = $this->clamp($type, $merged);
-                $this->upsert((int) $product->sku, $merged, 'deepseek');
-                $updated++;
-            }
+            $parsed = $this->parser->parse(
+                $type,
+                (string) $product->name,
+                (string) ($product->part ?? ''),
+                (string) ($product->vendor ?? ''),
+            );
+            $merged = array_merge($parsed, array_filter([
+                'socket' => $row['socket'] ?? null,
+                'ddr' => $row['ddr'] ?? null,
+                'ram_gb' => isset($row['ram_gb']) ? (int) $row['ram_gb'] : null,
+                'wattage' => isset($row['wattage']) ? (int) $row['wattage'] : null,
+                'form' => $row['form'] ?? null,
+                'avito_brand' => $row['avito_brand'] ?? null,
+                'avito_model' => $row['avito_model'] ?? null,
+                'avito_code' => $row['avito_code'] ?? null,
+            ], fn ($v) => $v !== null && $v !== ''));
+            $merged['type'] = $type === 'storage_ssd' ? 'ssd' : $type;
+            $merged = $this->clamp($type, $merged);
+            $this->upsert((int) $product->sku, $merged, 'deepseek');
+            $updated++;
         }
 
         return $updated;
@@ -209,7 +228,7 @@ class StoreAvitoCatalogAttrService
 
         $system = <<<PROMPT
 Ты размечаешь комплектующие ПК для XML Avito (системные блоки).
-Верни ТОЛЬКО JSON-массив:
+Верни ТОЛЬКО JSON-массив, без markdown и без текста вокруг:
 [{"sku":1,"socket":"AM5|AM4|LGA1700|LGA1851|null","ddr":"DDR4|DDR5|null","ram_gb":32,"wattage":650,"form":"atx|matx|itx|null","avito_brand":"...","avito_model":"...","avito_code":"..."}]
 Правила: {$dictHint}
 Не выдумывай поля, которых нет в названии — тогда null.
@@ -218,7 +237,7 @@ PROMPT;
         $body = [
             'model' => $settings->resolvedLlmModel(),
             'temperature' => 0.1,
-            'max_tokens' => 2500,
+            'max_tokens' => 4000,
             'messages' => [
                 ['role' => 'system', 'content' => $system],
                 ['role' => 'user', 'content' => json_encode($payload, JSON_UNESCAPED_UNICODE)],
@@ -228,7 +247,7 @@ PROMPT;
             $body['thinking'] = ['type' => 'disabled'];
         }
 
-        $response = Http::timeout(60)
+        $response = Http::timeout(90)
             ->withToken($settings->resolvedLlmApiKey())
             ->acceptJson()
             ->post($settings->resolvedLlmBaseUrl().'/chat/completions', $body);
@@ -238,17 +257,8 @@ PROMPT;
         }
 
         $message = data_get($response->json(), 'choices.0.message', []);
-        $text = trim((string) (is_array($message) ? ($message['content'] ?? '') : ''));
-        if ($text === '' && is_array($message)) {
-            $text = trim((string) ($message['reasoning_content'] ?? ''));
-        }
-        if (preg_match('/\[[\s\S]*\]/u', $text, $m)) {
-            $text = $m[0];
-        }
-        $decoded = json_decode($text, true);
-        if (! is_array($decoded)) {
-            throw new \RuntimeException('invalid JSON from LLM');
-        }
+        $text = $this->llmMessageText(is_array($message) ? $message : []);
+        $decoded = $this->decodeLlmRows($text);
 
         $bySku = [];
         foreach ($decoded as $row) {
@@ -258,6 +268,117 @@ PROMPT;
         }
 
         return $bySku;
+    }
+
+    /**
+     * @param  array<string, mixed>  $message
+     */
+    private function llmMessageText(array $message): string
+    {
+        $content = $message['content'] ?? '';
+        if (is_array($content)) {
+            $bits = [];
+            foreach ($content as $part) {
+                if (is_string($part)) {
+                    $bits[] = $part;
+                } elseif (is_array($part) && isset($part['text'])) {
+                    $bits[] = (string) $part['text'];
+                }
+            }
+            $content = implode('', $bits);
+        }
+        $text = trim((string) $content);
+        if ($text === '') {
+            $text = trim((string) ($message['reasoning_content'] ?? ''));
+        }
+
+        return $text;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function decodeLlmRows(string $text): array
+    {
+        $text = trim($text);
+        if ($text === '') {
+            throw new \RuntimeException('empty LLM content');
+        }
+        $text = preg_replace('/^```(?:json)?\s*/i', '', $text) ?? $text;
+        $text = preg_replace('/\s*```$/s', '', $text) ?? $text;
+        $candidates = [$text];
+        if (preg_match('/\[[\s\S]*\]/u', $text, $m)) {
+            array_unshift($candidates, $m[0]);
+        }
+        if (preg_match('/\{[\s\S]*\}/u', $text, $m)) {
+            $candidates[] = $m[0];
+        }
+        foreach ($candidates as $raw) {
+            $decoded = $this->tryJson($raw);
+            if (is_array($decoded)) {
+                return $this->rowsFromDecoded($decoded);
+            }
+        }
+
+        throw new \RuntimeException('invalid JSON from LLM');
+    }
+
+    /**
+     * @return array<string, mixed>|list<mixed>|null
+     */
+    private function tryJson(string $raw): ?array
+    {
+        $raw = preg_replace('/,\s*([}\]])/u', '$1', $raw) ?? $raw;
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+        $fix = preg_replace('/,\s*$/', '', rtrim($raw)) ?? $raw;
+        $braces = substr_count($fix, '{') - substr_count($fix, '}');
+        $brackets = substr_count($fix, '[') - substr_count($fix, ']');
+        if ($braces > 0 || $brackets > 0) {
+            $fix .= str_repeat('}', max(0, $braces)).str_repeat(']', max(0, $brackets));
+            $decoded = json_decode($fix, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>|list<mixed>  $decoded
+     * @return list<array<string, mixed>>
+     */
+    private function rowsFromDecoded(array $decoded): array
+    {
+        if (isset($decoded['sku'])) {
+            return [$decoded];
+        }
+        foreach (['rows', 'items', 'data', 'result'] as $key) {
+            if (isset($decoded[$key]) && is_array($decoded[$key])) {
+                $decoded = $decoded[$key];
+                break;
+            }
+        }
+        $out = [];
+        foreach ($decoded as $row) {
+            if (is_array($row) && isset($row['sku'])) {
+                $out[] = $row;
+            }
+        }
+
+        return $out;
+    }
+
+    private function warnLlm(string $type, string $message, int $n): void
+    {
+        try {
+            Log::warning("Avito attrs DeepSeek [{$type} x{$n}]: {$message}");
+        } catch (\Throwable) {
+            // artisan не от www-data часто не может писать storage/logs/laravel.log
+        }
     }
 
     private function upsert(int $sku, array $parsed, string $source): void

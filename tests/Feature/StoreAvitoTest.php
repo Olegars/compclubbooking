@@ -423,6 +423,37 @@ class StoreAvitoTest extends TestCase
         \Illuminate\Support\Facades\Http::assertNothingSent();
     }
 
+    public function test_classifies_llm_markdown_json_without_crashing(): void
+    {
+        config(['ai_assistant.deepseek.api_key' => 'sk-deepseek-test']);
+        StoreSupplierCatalogProduct::query()->create([
+            'sku' => 42,
+            'name' => 'Блок питания OEM ATX',
+            'vendor' => 'OEM',
+            'price' => 3000,
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*chat/completions' => \Illuminate\Support\Facades\Http::response([
+                'choices' => [[
+                    'message' => [
+                        'content' => "```json\n[{\"sku\":42,\"wattage\":500,\"avito_brand\":\"OEM\",\"avito_model\":\"500W\",\"avito_code\":\"500W\",}]\n```",
+                    ],
+                ]],
+            ]),
+        ]);
+        $svc = app(\App\Services\StoreAvito\StoreAvitoCatalogAttrService::class);
+        $svc->classifyProducts(
+            'psu',
+            StoreSupplierCatalogProduct::query()->where('sku', 42)->get(),
+            false,
+            true,
+        );
+        $attr = StoreAvitoProductAttr::query()->where('sku', 42)->first();
+        $this->assertNotNull($attr);
+        $this->assertSame(500, (int) $attr->wattage);
+        $this->assertSame('deepseek', $attr->source);
+    }
+
     public function test_generator_matches_ryzen_5_7500f_catalog_name(): void
     {
         $this->seed(StoreAvitoPartsSeeder::class);
