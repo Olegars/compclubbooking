@@ -59,7 +59,10 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_makes_unique_pc_ads_with_config_id(): void
     {
+        $this->seed(StoreAvitoPartsSeeder::class);
         $this->seedPcPool();
+        $this->makeConfig('cpu-12400f', 'ram-ddr4-32', 'ssd-m2-256', 'psu-650', 'gpu-rtx-4060-ti');
+        $this->makeConfig('cpu-14700f', 'ram-ddr4-32', 'ssd-m2-256', 'psu-650', 'gpu-rtx-4070');
         StoreAvitoSetting::current()->forceFill([
             'address' => 'Москва, Тестовая 1',
             'markup_percent' => 15,
@@ -78,6 +81,8 @@ class StoreAvitoTest extends TestCase
         $ad = $ads->first();
         $this->assertMatchesRegularExpression('/^[A-Z]{3}\d{5}$/', $ad->config_id);
         $this->assertStringContainsString($ad->config_id, $ad->title);
+        $this->assertStringStartsWith('ПК ', $ad->title);
+        $this->assertLessThanOrEqual(50, mb_strlen($ad->title));
         foreach ($ad->components as $row) {
             if (! empty($row['name'])) {
                 $this->assertStringContainsString((string) $row['name'], $ad->description);
@@ -95,11 +100,61 @@ class StoreAvitoTest extends TestCase
         $this->assertNotSame('NVIDIA', $ad->xml['BrandVideocard'] ?? null);
         $this->assertNotSame('GeForce RTX 4060', $ad->xml['ModelVideocard'] ?? null);
         $this->assertGreaterThan(0, $ad->price);
+        $types = array_column($ad->components, 'type');
+        $this->assertContains('gpu', $types);
+        $this->assertNotContains('cooler', $types);
+        $this->assertNotContains('case', $types);
+    }
+
+    public function test_generator_ignores_printer_drum_epyc_and_laptop_junk(): void
+    {
+        $this->seed(StoreAvitoPartsSeeder::class);
+        $this->seedPcPool();
+        $this->addCatalogRow(
+            901,
+            'gpu',
+            'Блок фотобарабана NVPrint совместимый NV-DK-8550 DU для Kyocera ECOSYS P4060/P8060',
+            'NVPrint',
+            4000,
+            ['avito_code' => 'RTX 4060 Ti'],
+        );
+        $this->addCatalogRow(
+            902,
+            'cpu',
+            'Процессор AMD EPYC 9175F Soc-SP5 4.2GHz OEM',
+            'AMD',
+            80000,
+            ['socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F'],
+        );
+        $this->addCatalogRow(903, 'cooler', 'Вентилятор (кулер) для ноутбука Dell Latitude 2100', 'Dell', 1500, []);
+        $this->addCatalogRow(904, 'case', 'Сменный бокс для HDD AgeStar SSMR2S SATA-SATA SATA металл серебристый 2.5"', 'AgeStar', 800, []);
+        $this->makeConfig('cpu-12400f', 'ram-ddr4-32', 'ssd-m2-256', 'psu-650', 'gpu-rtx-4060-ti');
+        StoreAvitoSetting::current()->forceFill([
+            'address' => 'Москва, Тестовая 1',
+            'pc_type' => 'Игровой',
+        ])->save();
+
+        $result = app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
+
+        $this->assertSame(1, $result['created']);
+        $ad = StoreAvitoAd::query()->first();
+        $names = implode("\n", array_column($ad->components, 'name'));
+        $this->assertStringNotContainsString('фотобарабан', $names);
+        $this->assertStringNotContainsString('EPYC', $names);
+        $this->assertStringNotContainsString('Latitude', $names);
+        $this->assertStringNotContainsString('AgeStar', $names);
+        $this->assertStringContainsString('RTX 4060 Ti', $names);
+        $this->assertStringContainsString('12400F', $names);
+        $this->assertStringStartsWith('ПК ', $ad->title);
+        $this->assertStringContainsString('• ', $ad->description);
+        $this->assertStringContainsString('Комплектация:', $ad->description);
     }
 
     public function test_xml_feed_contains_avito_pc_fields(): void
     {
+        $this->seed(StoreAvitoPartsSeeder::class);
         $this->seedPcPool();
+        $this->makeConfig('cpu-12400f', 'ram-ddr4-32', 'ssd-m2-256', 'psu-650', 'gpu-rtx-4060-ti');
         $settings = StoreAvitoSetting::current();
         $settings->forceFill(['address' => 'Москва, Тестовая 1'])->save();
         app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
@@ -119,7 +174,9 @@ class StoreAvitoTest extends TestCase
 
     public function test_webhook_replies_with_live_bom_for_config_id(): void
     {
+        $this->seed(StoreAvitoPartsSeeder::class);
         $this->seedPcPool();
+        $this->makeConfig('cpu-12400f', 'ram-ddr4-32', 'ssd-m2-256', 'psu-650', 'gpu-rtx-4060-ti');
         StoreAvitoSetting::current()->forceFill(['auto_reply_enabled' => false])->save();
         app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
         $ad = StoreAvitoAd::query()->first();
@@ -828,10 +885,11 @@ class StoreAvitoTest extends TestCase
             [202, 'motherboard', 'MSI B760 GAMING PLUS DDR4', 'MSI', 11000, ['socket' => 'LGA1700', 'ddr' => 'DDR4', 'avito_brand' => 'MSI', 'avito_model' => 'MSI B760 GAMING PLUS DDR4']],
             [301, 'ram', 'Kingston DDR4 32GB 2x16', 'Kingston', 7000, ['ddr' => 'DDR4', 'ram_gb' => 32, 'avito_code' => '32 ГБ']],
             [302, 'ram', 'ADATA DDR4 32GB', 'ADATA', 7500, ['ddr' => 'DDR4', 'ram_gb' => 32, 'avito_code' => '32 ГБ']],
-            [401, 'gpu', 'ZOTAC GAMING GEFORCE RTX 4060 Ti 16GB AMP', 'ZOTAC', 32000, ['avito_brand' => 'ZOTAC', 'avito_model' => 'ZOTAC GAMING GEFORCE RTX 4060 Ti 16GB AMP']],
-            [402, 'gpu', 'Palit GeForce RTX 4070 Dual 12GB', 'Palit', 54000, ['avito_brand' => 'Palit', 'avito_model' => 'Palit GeForce RTX 4070 Dual 12GB']],
+            [401, 'gpu', 'ZOTAC GAMING GEFORCE RTX 4060 Ti 16GB AMP', 'ZOTAC', 32000, ['avito_brand' => 'ZOTAC', 'avito_model' => 'ZOTAC GAMING GEFORCE RTX 4060 Ti 16GB AMP', 'avito_code' => 'RTX 4060 Ti']],
+            [402, 'gpu', 'Palit GeForce RTX 4070 Dual 12GB', 'Palit', 54000, ['avito_brand' => 'Palit', 'avito_model' => 'Palit GeForce RTX 4070 Dual 12GB', 'avito_code' => 'RTX 4070']],
             [501, 'ssd', 'Kingston NV2 1TB', 'Kingston', 6000, []],
             [502, 'ssd', 'Samsung 990 EVO 1TB', 'Samsung', 9000, []],
+            [503, 'ssd', 'Kingston NV2 256GB', 'Kingston', 3000, ['ram_gb' => 256]],
             [601, 'psu', 'Chieftec 650W', 'Chieftec', 5000, ['wattage' => 650]],
             [701, 'cooler', 'ID-COOLING SE-224', 'ID-COOLING', 2500, []],
             [801, 'case', 'Deepcool CC560', 'Deepcool', 4000, []],

@@ -27,6 +27,7 @@ class StoreAvitoBuildComposer
     {
         return $this->lastFailures;
     }
+
     /**
      * @return list<array{
      *   fingerprint: string,
@@ -39,7 +40,6 @@ class StoreAvitoBuildComposer
     {
         $this->lastFailures = [];
         $settings ??= StoreAvitoSetting::current();
-        $hasConfigs = StoreAvitoConfig::query()->exists();
         $templates = StoreAvitoConfig::query()
             ->enabled()
             ->with(['cpu', 'gpu', 'mb', 'ram', 'ssd', 'psu'])
@@ -48,22 +48,18 @@ class StoreAvitoBuildComposer
             ->get()
             ->values();
 
-        if ($hasConfigs && $templates->isEmpty()) {
-            $this->lastFailures[] = 'Конфигурации есть, но все выключены. Включи нужные кнопкой «Включить» — случайные сборки из каталога больше не создаются.';
+        if ($templates->isEmpty()) {
+            $this->lastFailures[] = 'Нет включённых конфигураций. Соберите шаблоны на вкладке «Конфигурации» — случайные сборки из каталога отключены.';
 
             return [];
         }
 
-        if ($templates->isNotEmpty()) {
-            $out = $this->composeFromTemplates($templates, $count, $settings);
-            if ($out === [] && $this->lastFailures === []) {
-                $this->lastFailures[] = 'Не удалось подобрать живые SKU из каталога под включённые конфигурации.';
-            }
-
-            return $out;
+        $out = $this->composeFromTemplates($templates, $count, $settings);
+        if ($out === [] && $this->lastFailures === []) {
+            $this->lastFailures[] = 'Не удалось подобрать живые SKU из каталога под включённые конфигурации.';
         }
 
-        return $this->composeRandom($count, $settings);
+        return $out;
     }
 
     /**
@@ -187,9 +183,7 @@ class StoreAvitoBuildComposer
             }
             $ssd = $ssds->random();
             $psu = $psus->isNotEmpty() ? $psus->random() : null;
-            $cooler = $pools['cooler']->isNotEmpty() ? $pools['cooler']->random() : null;
-            $case = $pools['case']->isNotEmpty() ? $pools['case']->random() : null;
-            $parts = array_values(array_filter([$cpu, $board, $ram, $gpu, $ssd, $psu, $cooler, $case]));
+            $parts = array_values(array_filter([$cpu, $board, $ram, $gpu, $ssd, $psu]));
             $fingerprint = $this->fingerprint($parts);
             if (isset($used[$fingerprint])) {
                 continue;
@@ -229,14 +223,13 @@ class StoreAvitoBuildComposer
         if ($socket && filled($cpu['socket'] ?? null) && $cpu['socket'] !== $socket) {
             return false;
         }
+        $hay = mb_strtolower(($cpu['name'] ?? '').' '.($cpu['part'] ?? ''));
+        if (preg_match('/epyc|threadripper|xeon|для ноут|ноутбук|laptop/iu', $hay)) {
+            return false;
+        }
         if ($code === '') {
             return true;
         }
-        $attr = mb_strtolower(trim((string) ($cpu['avito_code'] ?? '')));
-        if ($attr === $code) {
-            return true;
-        }
-        $hay = mb_strtolower(($cpu['name'] ?? '').' '.($cpu['part'] ?? '').' '.$attr);
 
         return (bool) preg_match('/(?<![0-9a-zа-яё])'.preg_quote($code, '/').'(?![0-9a-zа-яё])/u', $hay);
     }
@@ -566,6 +559,12 @@ class StoreAvitoBuildComposer
             ->where(function ($w) {
                 $w->where('price', '>', 0)->orWhere('rrp', '>', 0);
             })
+            ->where(function ($w) {
+                foreach (['rtx', 'geforce', 'radeon', 'видеокарт'] as $kw) {
+                    $w->orWhereRaw('LOWER(name) LIKE ?', ['%'.$kw.'%'])
+                        ->orWhereRaw('LOWER(COALESCE(part, \'\')) LIKE ?', ['%'.$kw.'%']);
+                }
+            })
             ->where(function ($w) use ($needle) {
                 $w->whereRaw('LOWER(name) LIKE ?', ['%'.$needle.'%'])
                     ->orWhereRaw('LOWER(COALESCE(part, \'\')) LIKE ?', ['%'.$needle.'%']);
@@ -662,67 +661,7 @@ class StoreAvitoBuildComposer
             'gpu' => $this->pool('gpu'),
             'ssd' => $this->pool('ssd'),
             'psu' => $this->pool('psu'),
-            'cooler' => $this->pool('cooler'),
-            'case' => $this->pool('case'),
         ];
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function composeRandom(int $count, StoreAvitoSetting $settings): array
-    {
-        $used = StoreAvitoAd::query()->pluck('fingerprint')->all();
-        $used = array_fill_keys($used, true);
-
-        $cpus = $this->pool('cpu');
-        $boards = $this->pool('motherboard');
-        $rams = $this->pool('ram');
-        $gpus = $this->pool('gpu');
-        $ssds = $this->pool('ssd');
-        $psus = $this->pool('psu');
-        $coolers = $this->pool('cooler');
-        $cases = $this->pool('case');
-
-        if ($cpus->isEmpty() || $boards->isEmpty() || $rams->isEmpty() || $ssds->isEmpty()) {
-            return [];
-        }
-
-        $needGpu = ($settings->pc_type ?: 'Игровой') !== 'Офисный';
-        $out = [];
-        $attempts = 0;
-        $maxAttempts = max(40, $count * 40);
-
-        while (count($out) < $count && $attempts < $maxAttempts) {
-            $attempts++;
-            $cpu = $cpus->random();
-            $board = $this->compatibleBoard($boards, $cpu) ?? $boards->random();
-            $ram = $this->compatibleRam($rams, $board) ?? $rams->random();
-            $gpu = $gpus->isNotEmpty() ? $gpus->random() : null;
-            if ($needGpu && ! $gpu) {
-                continue;
-            }
-            $ssd = $ssds->random();
-            $psu = $psus->isNotEmpty() ? $psus->random() : null;
-            $cooler = $coolers->isNotEmpty() ? $coolers->random() : null;
-            $case = $cases->isNotEmpty() ? $cases->random() : null;
-
-            $parts = array_values(array_filter([$cpu, $board, $ram, $gpu, $ssd, $psu, $cooler, $case]));
-            $fingerprint = $this->fingerprint($parts);
-            if (isset($used[$fingerprint])) {
-                continue;
-            }
-            $used[$fingerprint] = true;
-
-            $xml = $this->xmlFrom($settings, $cpu, $board, $ram, $gpu);
-            $out[] = [
-                'fingerprint' => $fingerprint,
-                'components' => $parts,
-                'xml' => $xml,
-            ];
-        }
-
-        return $out;
     }
 
     /**
@@ -744,7 +683,11 @@ class StoreAvitoBuildComposer
             if ($price <= 0) {
                 return null;
             }
-            if ($attr->type === 'gpu' && ! $this->parser->isAllowedAvitoGpu((string) $p->name.' '.(string) ($p->part ?? ''))) {
+            $hay = (string) $p->name.' '.(string) ($p->part ?? '');
+            if ($attr->type === 'gpu' && ! $this->parser->isAllowedAvitoGpu($hay)) {
+                return null;
+            }
+            if ($attr->type === 'cpu' && preg_match('/epyc|threadripper|xeon|для ноут|ноутбук|laptop/iu', $hay)) {
                 return null;
             }
 
@@ -765,37 +708,6 @@ class StoreAvitoBuildComposer
                 'has_image' => (bool) $p->has_image,
             ];
         })->filter()->values();
-    }
-
-    private function compatibleBoard(Collection $boards, array $cpu): ?array
-    {
-        $socket = $cpu['socket'] ?? null;
-        if (! $socket) {
-            return null;
-        }
-        $match = $boards->filter(fn ($b) => ($b['socket'] ?? null) === $socket);
-        if ($match->isEmpty()) {
-            return null;
-        }
-
-        return $match->random();
-    }
-
-    private function compatibleRam(Collection $rams, array $board): ?array
-    {
-        $ddr = $board['ddr'] ?? null;
-        $match = $rams;
-        if ($ddr) {
-            $filtered = $rams->filter(fn ($r) => ($r['ddr'] ?? null) === $ddr);
-            if ($filtered->isNotEmpty()) {
-                $match = $filtered;
-            }
-        }
-        if ($match->isEmpty()) {
-            return null;
-        }
-
-        return $match->random();
     }
 
     /**
@@ -842,14 +754,16 @@ class StoreAvitoBuildComposer
             $gpuBrand = $this->matcher->match('BrandVideocard', $gpuHay) ?: (string) ($gpu['avito_brand'] ?? '');
             $gpuModel = $this->matcher->match('ModelVideocard', $gpuHay, $gpuBrand)
                 ?: (string) ($gpu['avito_model'] ?? $gpu['name'] ?? '');
-            $gpuCode = $this->matcher->match('CodeVideocard', $gpuHay, $gpuModel);
+            $gpuCode = $this->matcher->match('CodeVideocard', $gpuHay, $gpuModel)
+                ?: $this->parser->allowedAvitoGpuChip($gpuHay)
+                ?: (string) ($gpu['avito_code'] ?? '');
             if ($gpuBrand !== '') {
                 $xml['BrandVideocard'] = $gpuBrand;
             }
             if ($gpuModel !== '') {
                 $xml['ModelVideocard'] = $gpuModel;
             }
-            if ($gpuCode) {
+            if ($gpuCode !== '' && $gpuCode !== StoreAvitoCatalogAttrParser::SKIP_GPU) {
                 $xml['CodeVideocard'] = $gpuCode;
             }
         }

@@ -6,7 +6,7 @@ use App\Models\StoreAvitoSetting;
 use Symfony\Component\Process\PhpExecutableFinder;
 
 /**
- * Запуск генерации вне HTTP: иначе nginx отдаёт 504, пока DeepSeek пишет 20 объявлений.
+ * Запуск генерации вне HTTP: иначе nginx отдаёт 504 на длинной сборке.
  */
 class StoreAvitoGenerateLauncher
 {

@@ -132,7 +132,10 @@ class StoreAvitoCatalogAttrParser
 
     public function allowedAvitoGpuChip(string $hay): ?string
     {
-        if ($this->isWorkstationGpu($hay)) {
+        if ($this->isWorkstationGpu($hay) || $this->isJunkGpuHay($hay)) {
+            return null;
+        }
+        if (! $this->looksLikeDesktopGpu($hay)) {
             return null;
         }
         $c = $this->compactGpuHay($hay);
@@ -150,9 +153,6 @@ class StoreAvitoCatalogAttrParser
 
             return $raw;
         }
-        if (preg_match('/(?<![0-9])(40|50)(\d{2})(ti)?(super)?(?![0-9])/', $c, $m)) {
-            return $this->formatRtxChip($m[1].$m[2], ! empty($m[3]), ! empty($m[4]));
-        }
 
         return null;
     }
@@ -162,8 +162,26 @@ class StoreAvitoCatalogAttrParser
         $c = $this->compactGpuHay($hay);
 
         return (bool) preg_match(
-            '/quadro|tesla|\bnvs\b|rtxa\d{3,4}|l40s?|nvidial4|rtx[456]000|a100|h100|h200|a800|\ba40\b|t400|t600|t1000|t2000/',
+            '/quadro|tesla|nvs|rtxa\d{3,4}|l40s|nvidial4|rtx[456]000ada|rtx[456]000|a100|h100|h200|a800|t400|t600|t1000|t2000/',
             $c
+        );
+    }
+
+    private function looksLikeDesktopGpu(string $hay): bool
+    {
+        $h = mb_strtolower($hay);
+        if ($this->isJunkGpuHay($h)) {
+            return false;
+        }
+
+        return (bool) preg_match('/rtx|geforce|radeon|видеокарт|videocard|vga\b/iu', $h);
+    }
+
+    private function isJunkGpuHay(string $hay): bool
+    {
+        return (bool) preg_match(
+            '/фотобарабан|drum.?unit|тонер|картридж|ecosys|taskalfa|kyocera|для ноут|ноутбук|laptop|hdd.?box|sata-sata|agestar|совместимый nv-/iu',
+            $hay
         );
     }
 
@@ -171,7 +189,7 @@ class StoreAvitoCatalogAttrParser
     {
         $h = mb_strtolower($hay);
         $h = str_replace(['™', '®', '©'], ' ', $h);
-        $h = preg_replace('/[^a-z0-9]+/u', '', $h) ?? $h;
+        $h = preg_replace('/[^\p{L}\p{N}]+/u', '', $h) ?? $h;
 
         return $h;
     }

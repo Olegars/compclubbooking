@@ -131,7 +131,7 @@ const generateHint = computed(() => {
     if (!r || r.status !== 'running') return ''
     const n = r.count || settingsForm.ads_per_hour
     if (r.stage === 'compose') return 'сборка сборок из каталога…'
-    if (r.stage === 'copy') return `DeepSeek пишет ${n} текст${n === 1 ? '' : 'а'} (один запрос)`
+    if (r.stage === 'copy') return 'сборка текста объявления…'
     return n <= 3 ? `генерация ${n} объявл…` : 'генерация…'
 })
 const dictSyncing = computed(() => props.settings?.last_dict_sync_result?.status === 'running')

@@ -78,12 +78,11 @@ class StoreAvitoParserTest extends TestCase
         $this->assertSame('RTX 4060', $a['avito_code']);
     }
 
-    public function test_parses_rtx_4060_from_compact_and_hyphen_names(): void
+    public function test_printer_drum_p4060_is_not_rtx_4060(): void
     {
-        $this->assertSame('RTX 4060', $this->parser->parse('gpu', 'Palit RTX4060 Dual 8GB', '', 'Palit')['avito_code']);
-        $this->assertSame('RTX 4060', $this->parser->parse('gpu', 'VGA Palit RTX-4060 Dual', '', 'Palit')['avito_code']);
-        $this->assertSame('RTX 4060', $this->parser->allowedAvitoGpuChip('ZOTAC GAMING GEFORCE RTX 4060 8GB'));
-        $this->assertTrue($this->parser->isAllowedAvitoGpu('Видеокарта Palit GeForce RTX 4060 StormX 8GB'));
+        $name = 'Блок фотобарабана NVPrint совместимый NV-DK-8550 DU для Kyocera ECOSYS P4060/P8060';
+        $this->assertNull($this->parser->allowedAvitoGpuChip($name));
+        $this->assertFalse($this->parser->isAllowedAvitoGpu($name));
     }
 
     public function test_does_not_parse_workstation_a400_as_rtx_4060(): void
@@ -178,5 +177,30 @@ class StoreAvitoParserTest extends TestCase
 
         $this->assertLessThanOrEqual(50, mb_strlen($title));
         $this->assertStringContainsString('DZK48190', $title);
+    }
+
+    public function test_copywriter_builds_title_and_bom_from_catalog_names(): void
+    {
+        $copy = new StoreAvitoCopywriter;
+        $out = $copy->write('DZK48190', [
+            ['type' => 'cpu', 'name' => 'Процессор Intel Core i5-12400F OEM'],
+            ['type' => 'motherboard', 'name' => 'GIGABYTE B760M GAMING X DDR4'],
+            ['type' => 'ram', 'name' => 'Kingston DDR4 32GB'],
+            ['type' => 'gpu', 'name' => 'ZOTAC GAMING GEFORCE RTX 4060 Ti 16GB AMP'],
+            ['type' => 'ssd', 'name' => 'Kingston NV2 256GB'],
+            ['type' => 'psu', 'name' => 'Chieftec 650W'],
+            ['type' => 'cooler', 'name' => 'Вентилятор для ноутбука Dell Latitude 2100'],
+        ], 89900, [
+            'CodeProcessor' => '12400F',
+            'CodeVideocard' => 'RTX 4060 Ti',
+            'RamSize' => '32 ГБ',
+        ]);
+
+        $this->assertStringStartsWith('ПК 12400F RTX 4060 Ti 32 ГБ DZK48190', $out['title']);
+        $this->assertLessThanOrEqual(50, mb_strlen($out['title']));
+        $this->assertStringContainsString("Комплектация:\n• Процессор Intel Core i5-12400F OEM", $out['description']);
+        $this->assertStringContainsString('• ZOTAC GAMING GEFORCE RTX 4060 Ti 16GB AMP', $out['description']);
+        $this->assertStringNotContainsString('Latitude', $out['description']);
+        $this->assertStringContainsString('ID:DZK48190', $out['description']);
     }
 }

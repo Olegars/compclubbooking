@@ -44,8 +44,6 @@ class StoreAvitoAdGenerator
         $enriched = 0;
         $startedAt = now()->toIso8601String();
         $this->mark($settings, 'compose', $count, $startedAt);
-
-        $this->mark($settings, 'copy', $count, $startedAt);
         $builds = $this->composer->compose($count, $settings);
         if ($builds === []) {
             $fail = implode(' ', $this->composer->lastFailures());
@@ -79,6 +77,7 @@ class StoreAvitoAdGenerator
             ];
         }
 
+        $this->mark($settings, 'copy', $count, $startedAt);
         $copies = $this->copywriter->writeMany($jobs);
         $created = 0;
         foreach ($jobs as $job) {
