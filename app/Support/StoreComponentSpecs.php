@@ -127,7 +127,7 @@ class StoreComponentSpecs
             'mb_brand' => ['ASUS', 'MSI', 'Gigabyte', 'ASRock', 'Biostar'],
             'mb_chipset' => [
                 'B450', 'B550', 'X570', 'A520',
-                'B650', 'B650E', 'X670', 'X670E', 'A620', 'X870', 'B850',
+                'B650', 'B650E', 'X670', 'X670E', 'A620', 'X870', 'X870E', 'B850',
                 'B760', 'Z790', 'H610', 'B660', 'Z690',
                 'B860', 'Z890', 'H810',
             ],

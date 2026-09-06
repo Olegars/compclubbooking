@@ -27,6 +27,7 @@ type Cfg = {
     enabled: boolean
     last_used_at?: string | null
     cpu?: string | null
+    mb?: string | null
     gpu?: string | null
     ram?: string | null
     ssd?: string | null
@@ -74,7 +75,7 @@ const props = defineProps<{
     canManage: boolean
     unread: number
     filters?: { q?: string | null }
-    parts?: { cpu: Part[], gpu: Part[], ram: Part[], ssd: Part[], psu: Part[] }
+    parts?: { cpu: Part[], gpu: Part[], motherboard: Part[], ram: Part[], ssd: Part[], psu: Part[] }
     configs?: Cfg[]
 }>()
 
@@ -165,6 +166,7 @@ const saveSettings = () => settingsForm.put('/admin/store/avito/settings')
 
 const createCfg = useForm({
     cpu_part_id: '' as string | number,
+    mb_part_id: '' as string | number,
     gpu_part_id: '' as string | number,
     ram_part_id: '' as string | number,
     ssd_part_id: '' as string | number,
@@ -181,11 +183,19 @@ const socketOpts = [
 ]
 const ddrOpts = ['DDR4', 'DDR5']
 
-const parts = computed(() => props.parts || { cpu: [], gpu: [], ram: [], ssd: [], psu: [] })
+const parts = computed(() => props.parts || { cpu: [], gpu: [], motherboard: [], ram: [], ssd: [], psu: [] })
 const allConfigs = computed(() => props.configs || [])
 
 const filteredCpus = computed(() => {
     const list = parts.value.cpu
+    if (!filterSockets.value.length) return list
+    return list.filter(p => p.socket && filterSockets.value.includes(p.socket))
+})
+const selectedCpu = computed(() => parts.value.cpu.find(p => p.id === Number(createCfg.cpu_part_id)))
+const filteredMbs = computed(() => {
+    const list = parts.value.motherboard || []
+    const sock = selectedCpu.value?.socket
+    if (sock) return list.filter(p => !p.socket || p.socket === sock)
     if (!filterSockets.value.length) return list
     return list.filter(p => p.socket && filterSockets.value.includes(p.socket))
 })
@@ -227,6 +237,11 @@ watch(filteredCpus, (list) => {
         createCfg.cpu_part_id = ''
     }
 })
+watch(filteredMbs, (list) => {
+    if (createCfg.mb_part_id && !list.some(p => p.id === Number(createCfg.mb_part_id))) {
+        createCfg.mb_part_id = ''
+    }
+})
 watch(filteredRams, (list) => {
     if (createCfg.ram_part_id && !list.some(p => p.id === Number(createCfg.ram_part_id))) {
         createCfg.ram_part_id = ''
@@ -243,6 +258,7 @@ const saveConfig = () => {
         onSuccess: () => {
             createCfg.reset()
             createCfg.cpu_part_id = ''
+            createCfg.mb_part_id = ''
             createCfg.gpu_part_id = ''
             createCfg.ram_part_id = ''
             createCfg.ssd_part_id = ''
@@ -384,14 +400,21 @@ const messageText = (m: Message) => m.content?.text || ''
 
                 <form v-if="canManage" class="border border-white/5 rounded-2xl p-5 bg-[#080808] space-y-4" @submit.prevent="saveConfig">
                     <div class="font-black uppercase italic text-sm">Новая конфигурация</div>
-                    <p v-if="!parts.cpu.length" class="text-[11px] text-amber-400/80">
+                    <p v-if="!parts.cpu.length || !parts.motherboard?.length" class="text-[11px] text-amber-400/80">
                         Абстрактные комплектующие пусты. На сервере: php artisan db:seed --class=StoreAvitoPartsSeeder
                     </p>
+                    <p v-if="createCfg.errors.mb_part_id" class="text-[11px] text-red-400">{{ createCfg.errors.mb_part_id }}</p>
                     <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
                         <label class="text-[10px] uppercase tracking-widest text-white/40">Процессор
                             <select v-model="createCfg.cpu_part_id" required class="mt-2 w-full bg-black border border-white/10 rounded-xl px-3 py-3 text-sm">
                                 <option value="">—</option>
                                 <option v-for="p in filteredCpus" :key="p.id" :value="p.id">{{ p.label }}</option>
+                            </select>
+                        </label>
+                        <label class="text-[10px] uppercase tracking-widest text-white/40">Чипсет
+                            <select v-model="createCfg.mb_part_id" required class="mt-2 w-full bg-black border border-white/10 rounded-xl px-3 py-3 text-sm">
+                                <option value="">—</option>
+                                <option v-for="p in filteredMbs" :key="p.id" :value="p.id">{{ p.avito_code || p.label }}</option>
                             </select>
                         </label>
                         <label class="text-[10px] uppercase tracking-widest text-white/40">Видеокарта
@@ -441,7 +464,7 @@ const messageText = (m: Message) => m.content?.text || ''
                                 <span v-else-if="c.id === nextConfigId" class="ml-2 text-amber-300">следующая</span>
                             </div>
                             <div class="font-black uppercase text-sm">{{ c.name }}</div>
-                            <div class="text-[11px] text-white/40">{{ c.cpu }} · {{ c.gpu }} · {{ c.ram }} · {{ c.ssd }} · {{ c.psu }}</div>
+                            <div class="text-[11px] text-white/40">{{ c.cpu }} · {{ c.mb }} · {{ c.gpu }} · {{ c.ram }} · {{ c.ssd }} · {{ c.psu }}</div>
                         </div>
                         <div v-if="canManage" class="flex gap-2 items-center shrink-0">
                             <button class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black"

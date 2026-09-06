@@ -86,6 +86,7 @@ class StoreAvitoParserTest extends TestCase
         $this->assertStringContainsString('B760M GAMING X DDR4', $a['avito_model']);
         $this->assertSame('LGA1700', $a['socket']);
         $this->assertSame('DDR4', $a['ddr']);
+        $this->assertSame('B760', $a['avito_code']);
     }
 
     public function test_parses_b650_board(): void
@@ -96,6 +97,15 @@ class StoreAvitoParserTest extends TestCase
         $this->assertStringContainsString('B650', $a['avito_model']);
         $this->assertSame('AM5', $a['socket']);
         $this->assertSame('DDR5', $a['ddr']);
+        $this->assertSame('B650', $a['avito_code']);
+    }
+
+    public function test_parses_b650e_not_as_b650(): void
+    {
+        $a = $this->parser->parse('motherboard', 'ASUS TUF GAMING B650E-PLUS WIFI', '', 'ASUS');
+
+        $this->assertSame('AM5', $a['socket']);
+        $this->assertSame('B650E', $a['avito_code']);
     }
 
     public function test_parses_psu_watts_from_model_and_vt(): void

@@ -16,6 +16,9 @@ class StoreAvitoPartsSeeder extends Seeder
         foreach ($this->gpus() as $row) {
             $this->upsert('gpu', $row, $order++);
         }
+        foreach ($this->motherboards() as $row) {
+            $this->upsert('motherboard', $row, $order++);
+        }
         foreach ($this->rams() as $row) {
             $this->upsert('ram', $row, $order++);
         }
@@ -124,6 +127,33 @@ class StoreAvitoPartsSeeder extends Seeder
                 'label' => $chip,
                 'avito_code' => $chip,
             ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function motherboards(): array
+    {
+        $bySocket = [
+            'AM4' => ['A520', 'B450', 'B550', 'X570'],
+            'AM5' => ['A620', 'B650', 'B650E', 'X670', 'X670E', 'B850', 'X870', 'X870E'],
+            'LGA1700' => ['H610', 'B660', 'Z690', 'B760', 'Z790'],
+            'LGA1851' => ['H810', 'B860', 'Z890'],
+        ];
+        $out = [];
+        foreach ($bySocket as $socket => $chips) {
+            foreach ($chips as $chip) {
+                $out[] = [
+                    'code' => 'mb-'.strtolower($chip),
+                    'label' => $chip.' · '.$socket,
+                    'socket' => $socket,
+                    'avito_code' => $chip,
+                    'avito_model' => $chip,
+                ];
+            }
         }
 
         return $out;

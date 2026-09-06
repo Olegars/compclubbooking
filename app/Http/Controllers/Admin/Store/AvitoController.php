@@ -14,6 +14,7 @@ use App\Services\StoreAvito\StoreAvitoGenerateLauncher;
 use App\Services\StoreAvito\StoreAvitoMessengerService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class AvitoController extends StoreController
@@ -123,6 +124,7 @@ class AvitoController extends StoreController
 
         $data = $request->validate([
             'cpu_part_id' => 'required|integer|exists:store_avito_parts,id',
+            'mb_part_id' => 'required|integer|exists:store_avito_parts,id',
             'gpu_part_id' => 'required|integer|exists:store_avito_parts,id',
             'ram_part_id' => 'required|integer|exists:store_avito_parts,id',
             'ssd_part_id' => 'required|integer|exists:store_avito_parts,id',
@@ -130,6 +132,12 @@ class AvitoController extends StoreController
         ]);
 
         $cpu = StoreAvitoPart::query()->where('type', 'cpu')->findOrFail($data['cpu_part_id']);
+        $mb = StoreAvitoPart::query()->where('type', 'motherboard')->findOrFail($data['mb_part_id']);
+        if ($mb->socket && $cpu->socket && $mb->socket !== $cpu->socket) {
+            throw ValidationException::withMessages([
+                'mb_part_id' => 'Чипсет '.$mb->avito_code.' не подходит к сокету '.$cpu->socket.'.',
+            ]);
+        }
         $gpu = StoreAvitoPart::query()->where('type', 'gpu')->findOrFail($data['gpu_part_id']);
         $ram = StoreAvitoPart::query()->where('type', 'ram')->findOrFail($data['ram_part_id']);
         $ssd = StoreAvitoPart::query()->where('type', 'ssd')->findOrFail($data['ssd_part_id']);
@@ -137,8 +145,9 @@ class AvitoController extends StoreController
 
         $next = ((int) StoreAvitoConfig::query()->max('sort_order')) + 1;
         StoreAvitoConfig::query()->create([
-            'name' => StoreAvitoConfig::makeName($cpu, $ram, $ssd, $psu, $gpu),
+            'name' => StoreAvitoConfig::makeName($cpu, $ram, $ssd, $psu, $gpu, $mb),
             'cpu_part_id' => $cpu->id,
+            'mb_part_id' => $mb->id,
             'gpu_part_id' => $gpu->id,
             'ram_part_id' => $ram->id,
             'ssd_part_id' => $ssd->id,
@@ -309,7 +318,7 @@ class AvitoController extends StoreController
     private function partsPayload(): array
     {
         if (! \Illuminate\Support\Facades\Schema::hasTable('store_avito_parts')) {
-            return ['cpu' => [], 'gpu' => [], 'ram' => [], 'ssd' => [], 'psu' => []];
+            return ['cpu' => [], 'gpu' => [], 'motherboard' => [], 'ram' => [], 'ssd' => [], 'psu' => []];
         }
 
         $grouped = StoreAvitoPart::query()
@@ -333,6 +342,7 @@ class AvitoController extends StoreController
         return [
             'cpu' => $map($grouped->get('cpu', collect())),
             'gpu' => $map($grouped->get('gpu', collect())),
+            'motherboard' => $map($grouped->get('motherboard', collect())),
             'ram' => $map($grouped->get('ram', collect())),
             'ssd' => $map($grouped->get('ssd', collect())),
             'psu' => $map($grouped->get('psu', collect())),
@@ -349,7 +359,7 @@ class AvitoController extends StoreController
         }
 
         return StoreAvitoConfig::query()
-            ->with(['cpu', 'gpu', 'ram', 'ssd', 'psu'])
+            ->with(['cpu', 'gpu', 'mb', 'ram', 'ssd', 'psu'])
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get()
@@ -363,6 +373,7 @@ class AvitoController extends StoreController
                 'enabled' => $c->enabled,
                 'last_used_at' => $c->last_used_at?->toIso8601String(),
                 'cpu' => $c->cpu?->label,
+                'mb' => $c->mb?->label,
                 'gpu' => $c->gpu?->label,
                 'ram' => $c->ram?->label,
                 'ssd' => $c->ssd?->label,

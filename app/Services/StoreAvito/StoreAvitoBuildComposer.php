@@ -42,7 +42,7 @@ class StoreAvitoBuildComposer
         $hasConfigs = StoreAvitoConfig::query()->exists();
         $templates = StoreAvitoConfig::query()
             ->enabled()
-            ->with(['cpu', 'gpu', 'ram', 'ssd', 'psu'])
+            ->with(['cpu', 'gpu', 'mb', 'ram', 'ssd', 'psu'])
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get()
@@ -163,12 +163,21 @@ class StoreAvitoBuildComposer
             return null;
         }
 
+        $chipset = strtoupper(trim((string) ($tpl->mb?->avito_code ?? '')));
+        $boards = $this->matchMotherboard($pools['motherboard'], $tpl);
+        if ($chipset !== '' && $boards->isEmpty()) {
+            $this->lastFailures[] = $label.': в каталоге нет платы '.$chipset;
+
+            return null;
+        }
+        $boardPool = $chipset !== '' ? $boards : $pools['motherboard'];
+
         $tries = 0;
         while ($tries < 24) {
             $tries++;
             $cpu = $cpus->random();
             $ram = $rams->random();
-            $board = $this->compatibleBoardFor($pools['motherboard'], $cpu, $ram);
+            $board = $this->compatibleBoardFor($boardPool, $cpu, $ram);
             if (! $board) {
                 continue;
             }
@@ -194,7 +203,7 @@ class StoreAvitoBuildComposer
             ];
         }
 
-        $this->lastFailures[] = $label.': нет уникальной сборки (плата '.$tpl->socket.' '.$tpl->ddr.' или повтор SKU)';
+        $this->lastFailures[] = $label.': нет уникальной сборки (плата '.($chipset !== '' ? $chipset : $tpl->socket).' '.$tpl->ddr.' или повтор SKU)';
 
         return null;
     }
@@ -244,6 +253,72 @@ class StoreAvitoBuildComposer
         }
 
         return $gpus->filter(fn (array $g) => $this->gpuChipMatches($g, $code))->values();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $boards
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function matchMotherboard(Collection $boards, StoreAvitoConfig $tpl): Collection
+    {
+        $part = $tpl->mb;
+        $code = strtoupper(trim((string) ($part?->avito_code ?? '')));
+        $socket = $part?->socket ?: $tpl->cpu?->socket ?: $tpl->socket;
+        $match = $boards;
+        if ($socket) {
+            $match = $match->filter(fn (array $b) => empty($b['socket']) || $b['socket'] === $socket);
+        }
+        if ($code !== '') {
+            $match = $match->filter(fn (array $b) => $this->chipsetMatches($b, $code));
+        }
+
+        return $match->values();
+    }
+
+    /**
+     * B650 совпадает с B650 / B650M / B650I, но не с B650E.
+     *
+     * @param  array<string, mixed>  $board
+     */
+    private function chipsetMatches(array $board, string $wanted): bool
+    {
+        $wanted = strtoupper(preg_replace('/\s+/', '', $wanted) ?? '');
+        if ($wanted === '') {
+            return true;
+        }
+        $attr = strtoupper(preg_replace('/\s+/', '', (string) ($board['avito_code'] ?? '')) ?? '');
+        if ($attr !== '' && $this->chipsetTokenEquals($attr, $wanted)) {
+            return true;
+        }
+        $hay = strtoupper(implode(' ', array_filter([
+            $board['name'] ?? null,
+            $board['part'] ?? null,
+            $board['avito_code'] ?? null,
+            $board['avito_model'] ?? null,
+        ])));
+
+        $quoted = preg_quote($wanted, '/');
+        if (preg_match('/^[A-Z]\d{3}E$/', $wanted)) {
+            $re = '/(?<![A-Z0-9])'.$quoted.'[MI]?(?![A-Z0-9])/u';
+        } else {
+            $re = '/(?<![A-Z0-9])'.$quoted.'(?!E)[MI]?(?![A-Z0-9])/u';
+        }
+
+        return (bool) preg_match($re, $hay);
+    }
+
+    private function chipsetTokenEquals(string $token, string $wanted): bool
+    {
+        $token = strtoupper(preg_replace('/[^A-Z0-9]/', '', $token) ?? '');
+        $wanted = strtoupper(preg_replace('/[^A-Z0-9]/', '', $wanted) ?? '');
+        if (preg_match('/^([A-Z]\d{3}E?)[MI]?$/', $token, $m)) {
+            $token = $m[1];
+        }
+        if (preg_match('/^([A-Z]\d{3}E?)[MI]?$/', $wanted, $m)) {
+            $wanted = $m[1];
+        }
+
+        return $token === $wanted;
     }
 
     /**

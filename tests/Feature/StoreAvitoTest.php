@@ -295,6 +295,10 @@ class StoreAvitoTest extends TestCase
         $this->assertSame(8, StoreAvitoPart::query()->where('type', 'psu')->count());
         $this->assertGreaterThan(20, StoreAvitoPart::query()->where('type', 'cpu')->count());
         $this->assertGreaterThan(10, StoreAvitoPart::query()->where('type', 'gpu')->where('enabled', true)->count());
+        $this->assertGreaterThan(15, StoreAvitoPart::query()->where('type', 'motherboard')->count());
+        $this->assertTrue(StoreAvitoPart::query()->where('code', 'mb-b550')->exists());
+        $this->assertTrue(StoreAvitoPart::query()->where('code', 'mb-b650')->exists());
+        $this->assertTrue(StoreAvitoPart::query()->where('code', 'mb-b850')->exists());
         $this->assertFalse(StoreAvitoPart::query()->where('code', 'gpu-rtx-3060')->where('enabled', true)->exists());
         $owner = Admin::create([
             'name' => 'Owner',
@@ -308,6 +312,7 @@ class StoreAvitoTest extends TestCase
             ->withoutMiddleware(ValidateCsrfToken::class)
             ->post('/admin/store/avito/configs', [
                 'cpu_part_id' => StoreAvitoPart::query()->where('code', 'cpu-12400f')->value('id'),
+                'mb_part_id' => StoreAvitoPart::query()->where('code', 'mb-b760')->value('id'),
                 'gpu_part_id' => StoreAvitoPart::query()->where('code', 'gpu-rtx-4060-ti')->value('id'),
                 'ram_part_id' => StoreAvitoPart::query()->where('code', 'ram-ddr5-16')->value('id'),
                 'ssd_part_id' => StoreAvitoPart::query()->where('code', 'ssd-m2-256')->value('id'),
@@ -321,7 +326,12 @@ class StoreAvitoTest extends TestCase
         $this->assertSame('LGA1700', $cfg->socket);
         $this->assertSame('DDR5', $cfg->ddr);
         $this->assertStringContainsString('12400F', $cfg->name);
+        $this->assertStringContainsString('B760', $cfg->name);
         $this->assertStringContainsString('4060 Ti', $cfg->name);
+        $this->assertSame(
+            StoreAvitoPart::query()->where('code', 'mb-b760')->value('id'),
+            $cfg->mb_part_id
+        );
     }
 
     public function test_generator_walks_configs_in_order(): void
@@ -526,18 +536,75 @@ class StoreAvitoTest extends TestCase
         $this->assertStringContainsString('GPS-500A8', $names);
     }
 
-    private function makeConfig(string $cpu, string $ram, string $ssd, string $psu, string $gpu = 'gpu-rtx-4060-ti'): StoreAvitoConfig
+    public function test_generator_picks_b650_board_not_b650e(): void
+    {
+        $this->seed(StoreAvitoPartsSeeder::class);
+        $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 7500F Soc-AM5', 'AMD', 12000, [
+            'socket' => 'AM5', 'avito_brand' => 'AMD', 'avito_model' => 'Ryzen 5', 'avito_code' => '7500F',
+        ]);
+        $this->addCatalogRow(221, 'motherboard', 'MSI B650M GAMING DDR5', 'MSI', 14000, [
+            'socket' => 'AM5', 'ddr' => 'DDR5', 'avito_brand' => 'MSI', 'avito_code' => 'B650',
+        ]);
+        $this->addCatalogRow(222, 'motherboard', 'ASUS TUF GAMING B650E-PLUS WIFI', 'ASUS', 18000, [
+            'socket' => 'AM5', 'ddr' => 'DDR5', 'avito_brand' => 'ASUS', 'avito_code' => 'B650E',
+        ]);
+        $this->addCatalogRow(321, 'ram', 'Kingston DDR5 32GB', 'Kingston', 8000, [
+            'ddr' => 'DDR5', 'ram_gb' => 32, 'avito_code' => '32 ГБ',
+        ]);
+        $this->addCatalogRow(521, 'ssd', 'Kingston NV2 256GB', 'Kingston', 2500, ['ram_gb' => 256]);
+        $this->addCatalogRow(621, 'psu', 'Chieftec 500W', 'Chieftec', 4000, ['wattage' => 500]);
+        $this->addCatalogRow(421, 'gpu', 'Palit GeForce RTX 5060 8GB', 'Palit', 28000, [
+            'avito_brand' => 'Palit', 'avito_model' => 'Palit GeForce RTX 5060 8GB', 'avito_code' => 'RTX 5060',
+        ]);
+        $this->makeConfig('cpu-7500f', 'ram-ddr5-32', 'ssd-m2-256', 'psu-500', 'gpu-rtx-5060', 'mb-b650');
+        StoreAvitoSetting::current()->forceFill(['address' => 'Москва', 'pc_type' => 'Игровой'])->save();
+
+        $result = app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
+        $this->assertSame(1, $result['created'], (string) ($result['error'] ?? ''));
+        $names = implode(' ', array_column(StoreAvitoAd::query()->first()->components, 'name'));
+        $this->assertStringContainsString('B650M', $names);
+        $this->assertStringNotContainsString('B650E', $names);
+    }
+
+    public function test_generator_fails_when_only_b650e_for_b650_config(): void
+    {
+        $this->seed(StoreAvitoPartsSeeder::class);
+        $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 7500F Soc-AM5', 'AMD', 12000, [
+            'socket' => 'AM5', 'avito_brand' => 'AMD', 'avito_model' => 'Ryzen 5', 'avito_code' => '7500F',
+        ]);
+        $this->addCatalogRow(222, 'motherboard', 'ASUS TUF GAMING B650E-PLUS WIFI', 'ASUS', 18000, [
+            'socket' => 'AM5', 'ddr' => 'DDR5', 'avito_brand' => 'ASUS', 'avito_code' => 'B650E',
+        ]);
+        $this->addCatalogRow(321, 'ram', 'Kingston DDR5 32GB', 'Kingston', 8000, [
+            'ddr' => 'DDR5', 'ram_gb' => 32, 'avito_code' => '32 ГБ',
+        ]);
+        $this->addCatalogRow(521, 'ssd', 'Kingston NV2 256GB', 'Kingston', 2500, ['ram_gb' => 256]);
+        $this->addCatalogRow(621, 'psu', 'Chieftec 500W', 'Chieftec', 4000, ['wattage' => 500]);
+        $this->addCatalogRow(421, 'gpu', 'Palit GeForce RTX 5060 8GB', 'Palit', 28000, [
+            'avito_brand' => 'Palit', 'avito_model' => 'Palit GeForce RTX 5060 8GB', 'avito_code' => 'RTX 5060',
+        ]);
+        $this->makeConfig('cpu-7500f', 'ram-ddr5-32', 'ssd-m2-256', 'psu-500', 'gpu-rtx-5060', 'mb-b650');
+        StoreAvitoSetting::current()->forceFill(['address' => 'Москва', 'pc_type' => 'Игровой'])->save();
+
+        $result = app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
+        $this->assertSame(0, $result['created']);
+        $this->assertStringContainsString('нет платы B650', (string) ($result['error'] ?? ''));
+    }
+
+    private function makeConfig(string $cpu, string $ram, string $ssd, string $psu, string $gpu = 'gpu-rtx-4060-ti', ?string $mb = null): StoreAvitoConfig
     {
         $cpuPart = StoreAvitoPart::query()->where('code', $cpu)->firstOrFail();
         $gpuPart = StoreAvitoPart::query()->where('code', $gpu)->firstOrFail();
         $ramPart = StoreAvitoPart::query()->where('code', $ram)->firstOrFail();
         $ssdPart = StoreAvitoPart::query()->where('code', $ssd)->firstOrFail();
         $psuPart = StoreAvitoPart::query()->where('code', $psu)->firstOrFail();
+        $mbPart = $mb ? StoreAvitoPart::query()->where('code', $mb)->firstOrFail() : null;
         $next = ((int) StoreAvitoConfig::query()->max('sort_order')) + 1;
 
         return StoreAvitoConfig::query()->create([
-            'name' => StoreAvitoConfig::makeName($cpuPart, $ramPart, $ssdPart, $psuPart, $gpuPart),
+            'name' => StoreAvitoConfig::makeName($cpuPart, $ramPart, $ssdPart, $psuPart, $gpuPart, $mbPart),
             'cpu_part_id' => $cpuPart->id,
+            'mb_part_id' => $mbPart?->id,
             'gpu_part_id' => $gpuPart->id,
             'ram_part_id' => $ramPart->id,
             'ssd_part_id' => $ssdPart->id,

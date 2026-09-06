@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class StoreAvitoPart extends Model
 {
-    public const TYPES = ['cpu', 'gpu', 'ram', 'ssd', 'psu'];
+    public const TYPES = ['cpu', 'gpu', 'motherboard', 'ram', 'ssd', 'psu'];
 
     protected $fillable = [
         'type', 'code', 'label', 'socket', 'ddr', 'ram_gb', 'capacity_gb', 'wattage',
