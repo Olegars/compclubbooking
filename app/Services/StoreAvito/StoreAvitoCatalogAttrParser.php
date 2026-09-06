@@ -118,6 +118,9 @@ class StoreAvitoCatalogAttrParser
 
     private function psu(string $hay, string $vendor, array $attrs): array
     {
+        if (empty($attrs['wattage'])) {
+            $attrs['wattage'] = $this->psuWattFromModel($hay);
+        }
         $attrs['avito_brand'] = $vendor !== '' ? $vendor : $this->firstWord($hay);
         $attrs['avito_model'] = $attrs['wattage'] ? $attrs['wattage'].'W' : mb_substr($hay, 0, 80);
         $attrs['avito_code'] = $attrs['avito_model'];
@@ -281,11 +284,31 @@ class StoreAvitoCatalogAttrParser
         return null;
     }
 
+    private const PSU_WATTS = [
+        300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900,
+        1000, 1050, 1200, 1300, 1600, 2000,
+    ];
+
     private function wattage(string $hay): ?int
     {
-        if (preg_match('/\b(\d{3,4})\s*(w|вт|watt)\b/iu', $hay, $m)) {
+        if (preg_match('/(\d{3,4})\s*(w|вт|watt|ватт)\b/iu', $hay, $m)) {
             $n = (int) $m[1];
             if ($n >= 300 && $n <= 2000) {
+                return $n;
+            }
+        }
+
+        return null;
+    }
+
+    private function psuWattFromModel(string $hay): ?int
+    {
+        if (! preg_match_all('/\d{3,4}/u', $hay, $m)) {
+            return null;
+        }
+        foreach ($m[0] as $raw) {
+            $n = (int) $raw;
+            if (in_array($n, self::PSU_WATTS, true)) {
                 return $n;
             }
         }

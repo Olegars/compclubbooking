@@ -202,7 +202,7 @@ class StoreAvitoCatalogAttrService
             'gpu' => 'avito_brand — производитель карты (ZOTAC, Palit, MSI, ASUS, Gigabyte), НЕ NVIDIA/AMD. avito_model — полное имя из прайса. avito_code — чип: RTX 5060, RTX 5060 Ti, RX 9070 XT (Ti/Super только если есть в названии).',
             'ram' => 'ram_gb число комплекта, ddr DDR4|DDR5, avito_code вида «32 ГБ».',
             'motherboard' => 'socket AM4|AM5|LGA1700|LGA1851, ddr DDR4|DDR5, avito_brand ASUS|MSI|Gigabyte|ASRock, avito_model — полное имя платы.',
-            'psu' => 'wattage число ватт из названия (500/650/850).',
+            'psu' => 'wattage — ваттность блока (500, 550, 650, 750, 850). Из «GPS-500A8», «500Вт», «500 W» бери 500. Не путай с 80 PLUS.',
             'storage_ssd' => 'ram_gb = объём в ГБ (256/512/1024), avito_model из названия.',
             default => 'заполни бренд/модель по названию.',
         };
@@ -287,14 +287,28 @@ PROMPT;
     {
         $q = StoreSupplierCatalogProduct::query();
         $ids = $this->categoryIds($type);
-        if (is_array($ids)) {
-            if ($ids === []) {
-                return collect();
-            }
+        if (is_array($ids) && $ids !== []) {
             $q->whereIn('category_external_id', $ids);
+        } elseif (! $this->applyNameFallback($q, $type)) {
+            return collect();
         }
 
         return $q->orderBy('sku')->limit(8000)->get();
+    }
+
+    private function applyNameFallback($query, string $type): bool
+    {
+        $includes = $this->search->typeRules()[$type]['name_include'] ?? [];
+        if ($includes === []) {
+            return false;
+        }
+        $query->where(function ($w) use ($includes) {
+            foreach ($includes as $kw) {
+                $w->orWhereRaw('LOWER(name) LIKE ?', ['%'.mb_strtolower($kw).'%']);
+            }
+        });
+
+        return true;
     }
 
     /**

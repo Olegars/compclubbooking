@@ -17,6 +17,7 @@ class StoreAvitoBuildComposer
 
     public function __construct(
         private readonly StoreAvitoDictMatcher $matcher,
+        private readonly StoreAvitoCatalogAttrParser $parser,
     ) {}
 
     /**
@@ -332,19 +333,105 @@ class StoreAvitoBuildComposer
     private function matchPsu(Collection $psus, StoreAvitoConfig $tpl): Collection
     {
         $want = (int) ($tpl->psu?->wattage ?? 0);
-        if ($want <= 0 || $psus->isEmpty()) {
+        if ($want <= 0) {
             return $psus;
         }
-        $exact = $psus->filter(fn (array $p) => (int) ($p['wattage'] ?? 0) === $want)->values();
+        $picked = $this->pickPsuWatts($psus, $want);
+        if ($picked->isNotEmpty()) {
+            return $picked;
+        }
+
+        return $this->pickPsuWatts($this->catalogPsus(), $want);
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $psus
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function pickPsuWatts(Collection $psus, int $want): Collection
+    {
+        $withW = $psus->map(function (array $p) {
+            $p['wattage'] = $this->psuWatts($p);
+
+            return $p;
+        })->filter(fn (array $p) => (int) $p['wattage'] > 0)->values();
+
+        $exact = $withW->filter(fn (array $p) => (int) $p['wattage'] === $want)->values();
         if ($exact->isNotEmpty()) {
             return $exact;
         }
+        $near = $withW->filter(fn (array $p) => abs((int) $p['wattage'] - $want) <= 50)->values();
+        if ($near->isNotEmpty()) {
+            return $near;
+        }
 
-        return $psus->filter(function (array $p) use ($want) {
-            $w = (int) ($p['wattage'] ?? 0);
+        return $withW
+            ->filter(fn (array $p) => (int) $p['wattage'] >= $want && (int) $p['wattage'] <= $want + 200)
+            ->sortBy(fn (array $p) => (int) $p['wattage'])
+            ->values();
+    }
 
-            return $w > 0 && abs($w - $want) <= 50;
-        })->values();
+    /**
+     * @param  array<string, mixed>  $psu
+     */
+    private function psuWatts(array $psu): int
+    {
+        $w = (int) ($psu['wattage'] ?? 0);
+        if ($w > 0) {
+            return $w;
+        }
+
+        return (int) ($this->parser->parse(
+            'psu',
+            (string) ($psu['name'] ?? ''),
+            (string) ($psu['part'] ?? ''),
+            (string) ($psu['vendor'] ?? ''),
+        )['wattage'] ?? 0);
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function catalogPsus(): Collection
+    {
+        return StoreSupplierCatalogProduct::query()
+            ->where(function ($w) {
+                $w->where('price', '>', 0)->orWhere('rrp', '>', 0);
+            })
+            ->where(function ($w) {
+                foreach (['блок питания', 'бп ', 'psu', 'power supply'] as $kw) {
+                    $w->orWhereRaw('LOWER(name) LIKE ?', ['%'.$kw.'%']);
+                }
+            })
+            ->orderBy('price')
+            ->limit(400)
+            ->get()
+            ->map(function (StoreSupplierCatalogProduct $p) {
+                $parsed = $this->parser->parse('psu', (string) $p->name, (string) ($p->part ?? ''), (string) ($p->vendor ?? ''));
+                $price = (float) ($p->price ?: $p->rrp ?: 0);
+                if ($price <= 0) {
+                    return null;
+                }
+
+                return [
+                    'type' => 'psu',
+                    'sku' => (int) $p->sku,
+                    'name' => (string) $p->name,
+                    'part' => (string) ($p->part ?? ''),
+                    'purchase' => $price,
+                    'socket' => null,
+                    'ddr' => null,
+                    'ram_gb' => null,
+                    'wattage' => $parsed['wattage'] ?? null,
+                    'avito_brand' => $parsed['avito_brand'] ?? null,
+                    'avito_model' => $parsed['avito_model'] ?? null,
+                    'avito_code' => $parsed['avito_code'] ?? null,
+                    'vendor' => (string) ($p->vendor ?? ''),
+                    'has_image' => (bool) $p->has_image,
+                ];
+            })
+            ->filter()
+            ->values();
     }
 
     /**

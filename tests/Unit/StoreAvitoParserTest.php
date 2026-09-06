@@ -98,6 +98,18 @@ class StoreAvitoParserTest extends TestCase
         $this->assertSame('DDR5', $a['ddr']);
     }
 
+    public function test_parses_psu_watts_from_model_and_vt(): void
+    {
+        $a = $this->parser->parse('psu', 'Блок питания Chieftec GPS-500A8', '', 'Chieftec');
+        $this->assertSame(500, $a['wattage']);
+
+        $b = $this->parser->parse('psu', 'AeroCool VX PLUS 500Вт', '', 'AeroCool');
+        $this->assertSame(500, $b['wattage']);
+
+        $c = $this->parser->parse('psu', 'Deepcool PK650D 80 PLUS Bronze', '', 'Deepcool');
+        $this->assertSame(650, $c['wattage']);
+    }
+
     public function test_title_keeps_config_id_within_50_chars(): void
     {
         $copy = new StoreAvitoCopywriter;

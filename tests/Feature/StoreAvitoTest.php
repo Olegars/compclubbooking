@@ -463,6 +463,38 @@ class StoreAvitoTest extends TestCase
         $this->assertStringContainsString('RTX 5060', implode(' ', array_column($ad->components, 'name')));
     }
 
+    public function test_generator_reads_500w_from_psu_model_name(): void
+    {
+        $this->seed(StoreAvitoPartsSeeder::class);
+        $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 7500F Soc-AM5 3.7GHz OEM', 'AMD', 12000, [
+            'socket' => 'AM5', 'avito_brand' => 'AMD', 'avito_model' => 'Ryzen 5', 'avito_code' => '7500F',
+        ]);
+        $this->addCatalogRow(221, 'motherboard', 'MSI B650 GAMING DDR5', 'MSI', 14000, [
+            'socket' => 'AM5', 'ddr' => 'DDR5', 'avito_brand' => 'MSI',
+        ]);
+        $this->addCatalogRow(321, 'ram', 'Kingston DDR5 32GB', 'Kingston', 8000, [
+            'ddr' => 'DDR5', 'ram_gb' => 32, 'avito_code' => '32 ГБ',
+        ]);
+        $this->addCatalogRow(521, 'ssd', 'Kingston NV2 256GB', 'Kingston', 2500, ['ram_gb' => 256]);
+        $this->addCatalogRow(421, 'gpu', 'Palit GeForce RTX 5060 8GB', 'Palit', 28000, [
+            'avito_brand' => 'Palit', 'avito_model' => 'Palit GeForce RTX 5060 8GB', 'avito_code' => 'RTX 5060',
+        ]);
+        StoreSupplierCatalogProduct::query()->create([
+            'sku' => 9001,
+            'name' => 'Блок питания Chieftec GPS-500A8',
+            'vendor' => 'Chieftec',
+            'price' => 4500,
+            'stock_qty' => 3,
+        ]);
+        $this->makeConfig('cpu-7500f', 'ram-ddr5-32', 'ssd-m2-256', 'psu-500', 'gpu-rtx-5060');
+        StoreAvitoSetting::current()->forceFill(['address' => 'Москва', 'pc_type' => 'Игровой'])->save();
+
+        $result = app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
+        $this->assertSame(1, $result['created'], (string) ($result['error'] ?? ''));
+        $names = implode(' ', array_column(StoreAvitoAd::query()->first()->components, 'name'));
+        $this->assertStringContainsString('GPS-500A8', $names);
+    }
+
     private function makeConfig(string $cpu, string $ram, string $ssd, string $psu, string $gpu = 'gpu-rtx-4060-ti'): StoreAvitoConfig
     {
         $cpuPart = StoreAvitoPart::query()->where('code', $cpu)->firstOrFail();
