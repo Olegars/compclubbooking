@@ -248,11 +248,16 @@ class StoreAvitoBuildComposer
     private function matchGpu(Collection $gpus, StoreAvitoConfig $tpl): Collection
     {
         $code = trim((string) ($tpl->gpu?->avito_code ?? ''));
+        $live = $gpus->filter(fn (array $g) => $this->isAllowedGpuRow($g))->values();
         if ($code === '') {
-            return $gpus->filter(fn (array $g) => $this->isAllowedGpuRow($g))->values();
+            return $live;
+        }
+        $matched = $live->filter(fn (array $g) => $this->gpuChipMatches($g, $code))->values();
+        if ($matched->isNotEmpty()) {
+            return $matched;
         }
 
-        return $gpus->filter(fn (array $g) => $this->gpuChipMatches($g, $code))->values();
+        return $this->catalogGpus($code)->filter(fn (array $g) => $this->gpuChipMatches($g, $code))->values();
     }
 
     /**
@@ -358,11 +363,13 @@ class StoreAvitoBuildComposer
      */
     private function isSkippedGpuRow(array $gpu): bool
     {
-        if (($gpu['avito_code'] ?? '') === StoreAvitoCatalogAttrParser::SKIP_GPU) {
-            return true;
+        $hay = trim(($gpu['name'] ?? '').' '.($gpu['part'] ?? ''));
+        if ($this->parser->isAllowedAvitoGpu($hay)) {
+            return false;
         }
 
-        return $this->parser->isSkippedAvitoGpu(trim(($gpu['name'] ?? '').' '.($gpu['part'] ?? '')));
+        return ($gpu['avito_code'] ?? '') === StoreAvitoCatalogAttrParser::SKIP_GPU
+            || $this->parser->isSkippedAvitoGpu($hay);
     }
 
     /**
@@ -370,52 +377,26 @@ class StoreAvitoBuildComposer
      */
     private function gpuChipParts(string $hay): ?array
     {
-        if ($this->parser->isSkippedAvitoGpu($hay) || ! $this->parser->isAllowedAvitoGpu($hay)) {
+        $chip = $this->parser->allowedAvitoGpuChip($hay);
+        if ($chip === null) {
             return null;
         }
-        if (preg_match('/rtx\s*(\d{4})\s*(ti)?\s*(super)?/iu', $hay, $m)) {
-            return [
-                'fam' => 'rtx',
-                'num' => $m[1],
-                'ti' => ! empty($m[2]),
-                'super' => ! empty($m[3]),
-                'suffix' => '',
-            ];
-        }
-        if (preg_match('/(?<![0-9])(40|50)(\d{2})\s*(ti)?\s*(super)?(?![0-9])/iu', $hay, $m)) {
+        if (preg_match('/^RTX (40|50)(\d{2})(?:\s+Ti)?(?:\s+Super)?$/i', $chip, $m)) {
             return [
                 'fam' => 'rtx',
                 'num' => $m[1].$m[2],
-                'ti' => ! empty($m[3]),
-                'super' => ! empty($m[4]),
+                'ti' => (bool) preg_match('/\bTi\b/i', $chip),
+                'super' => (bool) preg_match('/\bSuper\b/i', $chip),
                 'suffix' => '',
             ];
         }
-        if (preg_match('/gtx\s*(\d{3,4})\s*(ti)?\s*(super)?/iu', $hay, $m)) {
-            return [
-                'fam' => 'gtx',
-                'num' => preg_replace('/\s+/', '', $m[1]) ?? $m[1],
-                'ti' => ! empty($m[2]),
-                'super' => ! empty($m[3]),
-                'suffix' => '',
-            ];
-        }
-        if (preg_match('/rx\s*(\d{3,4})\s*(xtx|xt|gre)?/iu', $hay, $m)) {
+        if (preg_match('/^RX ([79]\d{3})(?:\s+(XTX|XT|GRE))?$/i', $chip, $m)) {
             return [
                 'fam' => 'rx',
                 'num' => $m[1],
                 'ti' => false,
                 'super' => false,
                 'suffix' => strtolower($m[2] ?? ''),
-            ];
-        }
-        if (preg_match('/arc\s*([ab]\d{3})/iu', $hay, $m)) {
-            return [
-                'fam' => 'arc',
-                'num' => strtolower($m[1]),
-                'ti' => false,
-                'super' => false,
-                'suffix' => '',
             ];
         }
 
@@ -557,6 +538,59 @@ class StoreAvitoBuildComposer
                     'ddr' => null,
                     'ram_gb' => null,
                     'wattage' => $parsed['wattage'] ?? null,
+                    'avito_brand' => $parsed['avito_brand'] ?? null,
+                    'avito_model' => $parsed['avito_model'] ?? null,
+                    'avito_code' => $parsed['avito_code'] ?? null,
+                    'vendor' => (string) ($p->vendor ?? ''),
+                    'has_image' => (bool) $p->has_image,
+                ];
+            })
+            ->filter()
+            ->values();
+    }
+
+    /**
+     * Живые GPU из прайса, если разметка attrs пустая или поставила SKIP.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function catalogGpus(string $code): Collection
+    {
+        $parts = $this->gpuChipParts($code);
+        $needle = $parts['num'] ?? '';
+        if ($needle === '') {
+            return collect();
+        }
+
+        return StoreSupplierCatalogProduct::query()
+            ->where(function ($w) {
+                $w->where('price', '>', 0)->orWhere('rrp', '>', 0);
+            })
+            ->where(function ($w) use ($needle) {
+                $w->whereRaw('LOWER(name) LIKE ?', ['%'.$needle.'%'])
+                    ->orWhereRaw('LOWER(COALESCE(part, \'\')) LIKE ?', ['%'.$needle.'%']);
+            })
+            ->orderBy('price')
+            ->limit(400)
+            ->get()
+            ->map(function (StoreSupplierCatalogProduct $p) {
+                $price = (float) ($p->price ?: $p->rrp ?: 0);
+                $hay = (string) $p->name.' '.(string) ($p->part ?? '');
+                if ($price <= 0 || ! $this->parser->isAllowedAvitoGpu($hay)) {
+                    return null;
+                }
+                $parsed = $this->parser->parse('gpu', (string) $p->name, (string) ($p->part ?? ''), (string) ($p->vendor ?? ''));
+
+                return [
+                    'type' => 'gpu',
+                    'sku' => (int) $p->sku,
+                    'name' => (string) $p->name,
+                    'part' => (string) ($p->part ?? ''),
+                    'purchase' => $price,
+                    'socket' => null,
+                    'ddr' => null,
+                    'ram_gb' => null,
+                    'wattage' => null,
                     'avito_brand' => $parsed['avito_brand'] ?? null,
                     'avito_model' => $parsed['avito_model'] ?? null,
                     'avito_code' => $parsed['avito_code'] ?? null,

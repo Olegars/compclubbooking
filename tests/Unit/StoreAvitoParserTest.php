@@ -61,12 +61,29 @@ class StoreAvitoParserTest extends TestCase
         $this->assertSame('RTX 4060 Ti', $a['avito_code']);
     }
 
+    public function test_parses_rtx_4060_from_compact_and_hyphen_names(): void
+    {
+        $this->assertSame('RTX 4060', $this->parser->parse('gpu', 'Palit RTX4060 Dual 8GB', '', 'Palit')['avito_code']);
+        $this->assertSame('RTX 4060', $this->parser->parse('gpu', 'VGA Palit RTX-4060 Dual', '', 'Palit')['avito_code']);
+        $this->assertSame('RTX 4060', $this->parser->allowedAvitoGpuChip('ZOTAC GAMING GEFORCE RTX 4060 8GB'));
+        $this->assertTrue($this->parser->isAllowedAvitoGpu('Видеокарта Palit GeForce RTX 4060 StormX 8GB'));
+    }
+
     public function test_parses_palit_gpu_brand(): void
     {
         $a = $this->parser->parse('gpu', 'Palit GeForce RTX 4060 Dual 8GB', '', 'Palit');
 
         $this->assertSame('Palit', $a['avito_brand']);
         $this->assertStringContainsString('RTX 4060', $a['avito_model']);
+        $this->assertSame('RTX 4060', $a['avito_code']);
+    }
+
+    public function test_parses_rtx_4060_from_compact_and_hyphen_names(): void
+    {
+        $this->assertSame('RTX 4060', $this->parser->parse('gpu', 'Palit RTX4060 Dual 8GB', '', 'Palit')['avito_code']);
+        $this->assertSame('RTX 4060', $this->parser->parse('gpu', 'VGA Palit RTX-4060 Dual', '', 'Palit')['avito_code']);
+        $this->assertSame('RTX 4060', $this->parser->allowedAvitoGpuChip('ZOTAC GAMING GEFORCE RTX 4060 8GB'));
+        $this->assertTrue($this->parser->isAllowedAvitoGpu('Видеокарта Palit GeForce RTX 4060 StormX 8GB'));
     }
 
     public function test_does_not_parse_workstation_a400_as_rtx_4060(): void

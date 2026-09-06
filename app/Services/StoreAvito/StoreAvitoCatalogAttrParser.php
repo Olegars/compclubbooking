@@ -113,17 +113,17 @@ class StoreAvitoCatalogAttrParser
         if ($this->isWorkstationGpu($hay)) {
             return true;
         }
-        $h = mb_strtolower($hay);
-        if (preg_match('/rtx\s*(20|30)\d{2}/iu', $h)) {
+        $c = $this->compactGpuHay($hay);
+        if (preg_match('/rtx(20|30)\d{2}/', $c)) {
             return true;
         }
-        if (preg_match('/\bgtx\s*\d/iu', $h)) {
+        if (preg_match('/gtx\d/', $c)) {
             return true;
         }
-        if (preg_match('/\brx\s*[56]\d{3}/iu', $h)) {
+        if (preg_match('/rx[56]\d{3}/', $c)) {
             return true;
         }
-        if (preg_match('/\barc\s*[ab]\d{3}/iu', $h)) {
+        if (preg_match('/arc[ab]\d{3}/', $c)) {
             return true;
         }
 
@@ -135,15 +135,23 @@ class StoreAvitoCatalogAttrParser
         if ($this->isWorkstationGpu($hay)) {
             return null;
         }
-        $chip = $this->gpuChip($hay);
-        if ($chip === null) {
-            return null;
+        $c = $this->compactGpuHay($hay);
+        if (preg_match('/rtx(40|50)(\d{2})(ti)?(super)?/', $c, $m)) {
+            return $this->formatRtxChip($m[1].$m[2], ! empty($m[3]), ! empty($m[4]));
         }
-        if (preg_match('/^RTX (40|50)\d{2}(\s+Ti)?(\s+Super)?$/i', $chip)) {
-            return $chip;
+        if (preg_match('/geforce(40|50)(\d{2})(ti)?(super)?/', $c, $m)) {
+            return $this->formatRtxChip($m[1].$m[2], ! empty($m[3]), ! empty($m[4]));
         }
-        if (preg_match('/^RX [79]\d{3}(\s+(XTX|XT|GRE))?$/i', $chip)) {
-            return $chip;
+        if (preg_match('/rx([79]\d{3})(xtx|xt|gre)?/', $c, $m)) {
+            $raw = 'RX '.strtoupper($m[1]);
+            if (! empty($m[2])) {
+                $raw .= ' '.strtoupper($m[2]);
+            }
+
+            return $raw;
+        }
+        if (preg_match('/(?<![0-9])(40|50)(\d{2})(ti)?(super)?(?![0-9])/', $c, $m)) {
+            return $this->formatRtxChip($m[1].$m[2], ! empty($m[3]), ! empty($m[4]));
         }
 
         return null;
@@ -151,12 +159,34 @@ class StoreAvitoCatalogAttrParser
 
     public function isWorkstationGpu(string $hay): bool
     {
-        $h = mb_strtolower($hay);
+        $c = $this->compactGpuHay($hay);
 
         return (bool) preg_match(
-            '/\b(quadro|tesla|nvs)\b|\brtx\s*a\d{3,4}\b|\bl40s?\b|\bnvidia\s+l4\b|\brtx\s*[456]000(\s+ada)?\b|\b(a100|h100|h200|a800|a40)\b|\bt(?:400|600|1000|2000)\b/iu',
-            $h
+            '/quadro|tesla|\bnvs\b|rtxa\d{3,4}|l40s?|nvidial4|rtx[456]000|a100|h100|h200|a800|\ba40\b|t400|t600|t1000|t2000/',
+            $c
         );
+    }
+
+    private function compactGpuHay(string $hay): string
+    {
+        $h = mb_strtolower($hay);
+        $h = str_replace(['™', '®', '©'], ' ', $h);
+        $h = preg_replace('/[^a-z0-9]+/u', '', $h) ?? $h;
+
+        return $h;
+    }
+
+    private function formatRtxChip(string $num, bool $ti, bool $super): string
+    {
+        $raw = 'RTX '.$num;
+        if ($ti) {
+            $raw .= ' Ti';
+        }
+        if ($super) {
+            $raw .= ' Super';
+        }
+
+        return $raw;
     }
 
     private function ram(string $hay, array $attrs): array
@@ -236,23 +266,17 @@ class StoreAvitoCatalogAttrParser
 
     private function gpuChip(string $hay): ?string
     {
+        return $this->allowedAvitoGpuChip($hay) ?: $this->legacyGpuChip($hay);
+    }
+
+    private function legacyGpuChip(string $hay): ?string
+    {
         if (preg_match('/(?:rtx|geforce)\s*(\d{4})\s*(ti)?\s*(super)?/iu', $hay, $m)) {
             $raw = 'RTX '.$m[1];
             if (! empty($m[2])) {
                 $raw .= ' Ti';
             }
             if (! empty($m[3])) {
-                $raw .= ' Super';
-            }
-
-            return $raw;
-        }
-        if (preg_match('/(?<![0-9])(40|50)(\d{2})\s*(ti)?\s*(super)?(?![0-9])/iu', $hay, $m)) {
-            $raw = 'RTX '.$m[1].$m[2];
-            if (! empty($m[3])) {
-                $raw .= ' Ti';
-            }
-            if (! empty($m[4])) {
                 $raw .= ' Super';
             }
 
