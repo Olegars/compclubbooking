@@ -111,6 +111,24 @@ onMounted(() => {
     }
 })
 
+type AdminMenuId = 'personal' | 'operations' | 'store' | 'esports' | 'economy' | 'config' | 'security' | 'docs'
+
+const adminSidebarMenu = (() => {
+    if (typeof window === 'undefined') return { open: null as AdminMenuId | null }
+    const w = window as Window & { __adminSidebarMenu?: { open: AdminMenuId | null } }
+    if (!w.__adminSidebarMenu) w.__adminSidebarMenu = { open: null }
+    return w.__adminSidebarMenu
+})()
+
+const openMenu = ref<AdminMenuId | null>(adminSidebarMenu.open)
+
+const isMenuOpen = (id: AdminMenuId) => openMenu.value === id
+
+const toggleMenu = (id: AdminMenuId) => {
+    openMenu.value = openMenu.value === id ? null : id
+    adminSidebarMenu.open = openMenu.value
+}
+
 onUnmounted(() => {
     if (statusTimer) window.clearInterval(statusTimer)
 })
@@ -153,18 +171,42 @@ onUnmounted(() => {
 
             <div class="flex-1 overflow-y-auto py-8 px-6 space-y-8 custom-scrollbar">
 
-                <div v-if="isSalaryOnly" class="space-y-2">
-                    <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Личное</div>
-                    <Link href="/admin/salary"
-                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
-                          :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e] shadow-[0_0_30px_rgba(34,197,94,0.05)]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
-                        <span>👤</span> Личный кабинет
-                    </Link>
+                <div v-if="isSalaryOnly">
+                    <button type="button"
+                            class="w-full flex items-center justify-between cursor-pointer text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 pr-2 py-1.5 rounded-xl hover:text-white/70 hover:bg-white/[0.02] transition-colors"
+                            :aria-expanded="isMenuOpen('personal')"
+                            @click="toggleMenu('personal')">
+                        <span>Личное</span>
+                        <span class="text-white/25 transition-transform duration-200" :class="isMenuOpen('personal') ? 'rotate-90' : ''">▸</span>
+                    </button>
+                    <div class="grid transition-[grid-template-rows] duration-200 ease-out" :class="isMenuOpen('personal') ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
+                        <div class="overflow-hidden min-h-0 space-y-2 mt-2">
+                            <Link href="/admin/salary"
+                                  class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
+                                  :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e] shadow-[0_0_30px_rgba(34,197,94,0.05)]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                                <span>👤</span> Личный кабинет
+                            </Link>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- СЕКЦИЯ: ОПЕРАЦИИ КЛУБА -->
-                <div v-if="canAccessClub" class="space-y-2">
-                    <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Операции</div>
+                <div v-if="canAccessClub">
+                    <button type="button"
+                            class="w-full flex items-center justify-between cursor-pointer text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 pr-2 py-1.5 rounded-xl hover:text-white/70 hover:bg-white/[0.02] transition-colors"
+                            :aria-expanded="isMenuOpen('operations')"
+                            @click="toggleMenu('operations')">
+                        <span>Операции</span>
+                        <span class="flex items-center gap-2">
+                            <span v-if="counts.pending_orders > 0 && !isMenuOpen('operations')"
+                                  class="min-w-[18px] px-1.5 py-0.5 rounded-full bg-amber-500 text-black text-[9px] font-black tabular-nums text-center">
+                                {{ counts.pending_orders }}
+                            </span>
+                            <span class="text-white/25 transition-transform duration-200" :class="isMenuOpen('operations') ? 'rotate-90' : ''">▸</span>
+                        </span>
+                    </button>
+                    <div class="grid transition-[grid-template-rows] duration-200 ease-out" :class="isMenuOpen('operations') ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
+                        <div class="overflow-hidden min-h-0 space-y-2 mt-2">
                     <Link href="/admin/dashboard"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/dashboard') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e] shadow-[0_0_30px_rgba(34,197,94,0.05)]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
@@ -204,11 +246,27 @@ onUnmounted(() => {
                           :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>👤</span> Личный кабинет
                     </Link>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- СЕКЦИЯ: МАГАЗИН ПРИ КЛУБЕ -->
-                <div v-if="canAccessStore || isOwner" class="space-y-2">
-                    <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Магазин</div>
+                <div v-if="canAccessStore || isOwner">
+                    <button type="button"
+                            class="w-full flex items-center justify-between cursor-pointer text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 pr-2 py-1.5 rounded-xl hover:text-white/70 hover:bg-white/[0.02] transition-colors"
+                            :aria-expanded="isMenuOpen('store')"
+                            @click="toggleMenu('store')">
+                        <span>Магазин</span>
+                        <span class="flex items-center gap-2">
+                            <span v-if="counts.avito_unread > 0 && !isMenuOpen('store')"
+                                  class="min-w-[18px] px-1.5 py-0.5 rounded-full bg-amber-500 text-black text-[9px] font-black tabular-nums text-center">
+                                {{ counts.avito_unread }}
+                            </span>
+                            <span class="text-white/25 transition-transform duration-200" :class="isMenuOpen('store') ? 'rotate-90' : ''">▸</span>
+                        </span>
+                    </button>
+                    <div class="grid transition-[grid-template-rows] duration-200 ease-out" :class="isMenuOpen('store') ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
+                        <div class="overflow-hidden min-h-0 space-y-2 mt-2">
                     <Link v-if="canAccessStore || isOwner" href="/admin/store/warehouse"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/store/warehouse') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
@@ -253,11 +311,21 @@ onUnmounted(() => {
                           :class="isActive('/admin/store/locations') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>📍</span> Локации
                     </Link>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- СЕКЦИЯ: КИБЕРСПОРТ (supervisor+) -->
-                <div v-if="isSupervisorPlus" class="space-y-2">
-                    <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Киберспорт</div>
+                <div v-if="isSupervisorPlus">
+                    <button type="button"
+                            class="w-full flex items-center justify-between cursor-pointer text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 pr-2 py-1.5 rounded-xl hover:text-white/70 hover:bg-white/[0.02] transition-colors"
+                            :aria-expanded="isMenuOpen('esports')"
+                            @click="toggleMenu('esports')">
+                        <span>Киберспорт</span>
+                        <span class="text-white/25 transition-transform duration-200" :class="isMenuOpen('esports') ? 'rotate-90' : ''">▸</span>
+                    </button>
+                    <div class="grid transition-[grid-template-rows] duration-200 ease-out" :class="isMenuOpen('esports') ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
+                        <div class="overflow-hidden min-h-0 space-y-2 mt-2">
                     <Link href="/admin/tournaments"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/tournaments') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
@@ -288,11 +356,21 @@ onUnmounted(() => {
                           :class="isActive('/admin/bonus-logs') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>📜</span> Реестр бонусов
                     </Link>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- СЕКЦИЯ: ЭКОНОМИКА (supervisor+ / owner) -->
-                <div v-if="isSupervisorPlus" class="space-y-2">
-                    <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Экономика</div>
+                <div v-if="isSupervisorPlus">
+                    <button type="button"
+                            class="w-full flex items-center justify-between cursor-pointer text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 pr-2 py-1.5 rounded-xl hover:text-white/70 hover:bg-white/[0.02] transition-colors"
+                            :aria-expanded="isMenuOpen('economy')"
+                            @click="toggleMenu('economy')">
+                        <span>Экономика</span>
+                        <span class="text-white/25 transition-transform duration-200" :class="isMenuOpen('economy') ? 'rotate-90' : ''">▸</span>
+                    </button>
+                    <div class="grid transition-[grid-template-rows] duration-200 ease-out" :class="isMenuOpen('economy') ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
+                        <div class="overflow-hidden min-h-0 space-y-2 mt-2">
                     <Link href="/admin/tariffs"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/tariffs') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
@@ -325,11 +403,21 @@ onUnmounted(() => {
                           :class="isActive('/admin/staff') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>👥</span> Штат
                     </Link>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- СЕКЦИЯ: КОНФИГУРАЦИЯ (supervisor+) -->
-                <div v-if="isSupervisorPlus" class="space-y-2">
-                    <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Конфигурация</div>
+                <div v-if="isSupervisorPlus">
+                    <button type="button"
+                            class="w-full flex items-center justify-between cursor-pointer text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 pr-2 py-1.5 rounded-xl hover:text-white/70 hover:bg-white/[0.02] transition-colors"
+                            :aria-expanded="isMenuOpen('config')"
+                            @click="toggleMenu('config')">
+                        <span>Конфигурация</span>
+                        <span class="text-white/25 transition-transform duration-200" :class="isMenuOpen('config') ? 'rotate-90' : ''">▸</span>
+                    </button>
+                    <div class="grid transition-[grid-template-rows] duration-200 ease-out" :class="isMenuOpen('config') ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
+                        <div class="overflow-hidden min-h-0 space-y-2 mt-2">
                     <Link href="/admin/config"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="currentPath === '/admin/config' ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
@@ -385,11 +473,28 @@ onUnmounted(() => {
                           :class="isActive('/admin/ai-assistant') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🎙️</span> ИИ-ассистент
                     </Link>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- СЕКЦИЯ: БЕЗОПАСНОСТЬ -->
-                <div v-if="canAccessClub" class="space-y-2">
-                    <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Безопасность</div>
+                <div v-if="canAccessClub">
+                    <button type="button"
+                            class="w-full flex items-center justify-between cursor-pointer text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 pr-2 py-1.5 rounded-xl hover:text-white/70 hover:bg-white/[0.02] transition-colors"
+                            :aria-expanded="isMenuOpen('security')"
+                            @click="toggleMenu('security')">
+                        <span>Безопасность</span>
+                        <span class="flex items-center gap-2">
+                            <span v-if="counts.incidents > 0 && !isMenuOpen('security')"
+                                  class="min-w-[18px] px-1.5 py-0.5 rounded-full bg-red-500 text-black text-[9px] font-black tabular-nums text-center"
+                                  :class="counts.sos > 0 ? 'animate-pulse' : ''">
+                                {{ counts.incidents }}
+                            </span>
+                            <span class="text-white/25 transition-transform duration-200" :class="isMenuOpen('security') ? 'rotate-90' : ''">▸</span>
+                        </span>
+                    </button>
+                    <div class="grid transition-[grid-template-rows] duration-200 ease-out" :class="isMenuOpen('security') ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
+                        <div class="overflow-hidden min-h-0 space-y-2 mt-2">
                     <Link href="/admin/incidents"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/incidents') ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
@@ -400,11 +505,21 @@ onUnmounted(() => {
                             {{ counts.incidents }}
                         </span>
                     </Link>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- СЕКЦИЯ: СПРАВКА -->
-                <div v-if="!isSalaryOnly" class="space-y-2">
-                    <div class="text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 mb-3">Справка</div>
+                <div v-if="!isSalaryOnly">
+                    <button type="button"
+                            class="w-full flex items-center justify-between cursor-pointer text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 pr-2 py-1.5 rounded-xl hover:text-white/70 hover:bg-white/[0.02] transition-colors"
+                            :aria-expanded="isMenuOpen('docs')"
+                            @click="toggleMenu('docs')">
+                        <span>Справка</span>
+                        <span class="text-white/25 transition-transform duration-200" :class="isMenuOpen('docs') ? 'rotate-90' : ''">▸</span>
+                    </button>
+                    <div class="grid transition-[grid-template-rows] duration-200 ease-out" :class="isMenuOpen('docs') ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
+                        <div class="overflow-hidden min-h-0 space-y-2 mt-2">
                     <Link v-if="!canAccessClub" href="/admin/salary"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
@@ -415,6 +530,8 @@ onUnmounted(() => {
                           :class="isActive('/admin/docs') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>📖</span> О системе
                     </Link>
+                        </div>
+                    </div>
                 </div>
 
             </div>
