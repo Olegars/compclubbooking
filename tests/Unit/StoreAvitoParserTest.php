@@ -69,6 +69,40 @@ class StoreAvitoParserTest extends TestCase
         $this->assertStringContainsString('RTX 4060', $a['avito_model']);
     }
 
+    public function test_does_not_parse_workstation_a400_as_rtx_4060(): void
+    {
+        $a = $this->parser->parse('gpu', 'Видеокарта NVIDIA RTX A400, 4 GB GDDR6, 64 bit, 4xDisplayPort, GPU 727 MHz', '', 'NVIDIA');
+
+        $this->assertTrue($this->parser->isSkippedAvitoGpu('NVIDIA RTX A400'));
+        $this->assertFalse($this->parser->isAllowedAvitoGpu('NVIDIA RTX A400'));
+        $this->assertSame('SKIP', $a['avito_code']);
+    }
+
+    public function test_does_not_parse_l40s_as_geforce(): void
+    {
+        $a = $this->parser->parse('gpu', 'Видеокарта NVIDIA L40S, 48 GB GDDR6, 384 bit, 4xDisplayPort, GPU 1110 MHz', '', 'NVIDIA');
+
+        $this->assertTrue($this->parser->isSkippedAvitoGpu($a['avito_model'] ?? 'L40S'));
+        $this->assertSame('SKIP', $a['avito_code']);
+    }
+
+    public function test_skips_rtx_3060_and_rx_6600(): void
+    {
+        $old = $this->parser->parse('gpu', 'MSI GeForce RTX 3060 Ventus 12G', '', 'MSI');
+        $this->assertSame('SKIP', $old['avito_code']);
+        $this->assertTrue($this->parser->isSkippedAvitoGpu('RTX 3060'));
+
+        $rdna2 = $this->parser->parse('gpu', 'Sapphire Pulse RX 6600 8GB', '', 'Sapphire');
+        $this->assertSame('SKIP', $rdna2['avito_code']);
+    }
+
+    public function test_allows_rx_9070_xt(): void
+    {
+        $a = $this->parser->parse('gpu', 'Gigabyte Radeon RX 9070 XT Gaming OC', '', 'Gigabyte');
+        $this->assertSame('RX 9070 XT', $a['avito_code']);
+        $this->assertTrue($this->parser->isAllowedAvitoGpu($a['avito_model'] ?? ''));
+    }
+
     public function test_parses_ram_kit_and_ddr5(): void
     {
         $a = $this->parser->parse('ram', 'Kingston Fury Beast DDR5 32GB (2x16GB) 6000', '', 'Kingston');

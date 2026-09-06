@@ -7,6 +7,9 @@ use App\Support\StoreComponentSpecs;
 
 class StoreAvitoCatalogAttrParser
 {
+    /** Старые / профессиональные / посторонние карты — не идут в сборки Avito. */
+    public const SKIP_GPU = 'SKIP';
+
     /**
      * @return array{
      *   type: ?string,
@@ -78,9 +81,82 @@ class StoreAvitoCatalogAttrParser
     {
         $attrs['avito_brand'] = $this->gpuMaker($hay, $vendor);
         $attrs['avito_model'] = $this->cleanName($hay);
+        $allowed = $this->allowedAvitoGpuChip($hay);
+        if ($allowed !== null) {
+            $attrs['avito_code'] = $allowed;
+
+            return $attrs;
+        }
+        if ($this->isSkippedAvitoGpu($hay)) {
+            $attrs['avito_code'] = self::SKIP_GPU;
+
+            return $attrs;
+        }
         $attrs['avito_code'] = $this->gpuChip($hay);
 
         return $attrs;
+    }
+
+    public function isAllowedAvitoGpu(string $hay): bool
+    {
+        return $this->allowedAvitoGpuChip($hay) !== null;
+    }
+
+    /**
+     * Не 40xx/50xx и не свежий AMD — помечаем SKIP, в объявления не берём.
+     */
+    public function isSkippedAvitoGpu(string $hay): bool
+    {
+        if ($this->allowedAvitoGpuChip($hay) !== null) {
+            return false;
+        }
+        if ($this->isWorkstationGpu($hay)) {
+            return true;
+        }
+        $h = mb_strtolower($hay);
+        if (preg_match('/rtx\s*(20|30)\d{2}/iu', $h)) {
+            return true;
+        }
+        if (preg_match('/\bgtx\s*\d/iu', $h)) {
+            return true;
+        }
+        if (preg_match('/\brx\s*[56]\d{3}/iu', $h)) {
+            return true;
+        }
+        if (preg_match('/\barc\s*[ab]\d{3}/iu', $h)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    public function allowedAvitoGpuChip(string $hay): ?string
+    {
+        if ($this->isWorkstationGpu($hay)) {
+            return null;
+        }
+        $chip = $this->gpuChip($hay);
+        if ($chip === null) {
+            return null;
+        }
+        if (preg_match('/^RTX (40|50)\d{2}(\s+Ti)?(\s+Super)?$/i', $chip)) {
+            return $chip;
+        }
+        if (preg_match('/^RX [79]\d{3}(\s+(XTX|XT|GRE))?$/i', $chip)) {
+            return $chip;
+        }
+
+        return null;
+    }
+
+    public function isWorkstationGpu(string $hay): bool
+    {
+        $h = mb_strtolower($hay);
+
+        return (bool) preg_match(
+            '/\b(quadro|tesla|nvs)\b|\brtx\s*a\d{3,4}\b|\bl40s?\b|\bnvidia\s+l4\b|\brtx\s*[456]000(\s+ada)?\b|\b(a100|h100|h200|a800|a40)\b|\bt(?:400|600|1000|2000)\b/iu',
+            $h
+        );
     }
 
     private function ram(string $hay, array $attrs): array
@@ -160,7 +236,7 @@ class StoreAvitoCatalogAttrParser
 
     private function gpuChip(string $hay): ?string
     {
-        if (preg_match('/rtx\s*(\d{4})\s*(ti)?\s*(super)?/iu', $hay, $m)) {
+        if (preg_match('/(?:rtx|geforce)\s*(\d{4})\s*(ti)?\s*(super)?/iu', $hay, $m)) {
             $raw = 'RTX '.$m[1];
             if (! empty($m[2])) {
                 $raw .= ' Ti';
@@ -171,11 +247,27 @@ class StoreAvitoCatalogAttrParser
 
             return $raw;
         }
+        if (preg_match('/(?<![0-9])(40|50)(\d{2})\s*(ti)?\s*(super)?(?![0-9])/iu', $hay, $m)) {
+            $raw = 'RTX '.$m[1].$m[2];
+            if (! empty($m[3])) {
+                $raw .= ' Ti';
+            }
+            if (! empty($m[4])) {
+                $raw .= ' Super';
+            }
+
+            return $raw;
+        }
         if (preg_match('/gtx\s*(\d{3,4}\s*(?:super|ti)?)/iu', $hay, $m)) {
             return 'GTX '.trim(preg_replace('/\s+/', ' ', $m[1]));
         }
-        if (preg_match('/rx\s*(\d{3,4}\s*(?:xt|gre|xtx)?)/iu', $hay, $m)) {
-            return 'RX '.strtoupper(trim(preg_replace('/\s+/', ' ', $m[1])));
+        if (preg_match('/rx\s*(\d{3,4})\s*(xtx|xt|gre)?/iu', $hay, $m)) {
+            $raw = 'RX '.strtoupper($m[1]);
+            if (! empty($m[2])) {
+                $raw .= ' '.strtoupper($m[2]);
+            }
+
+            return $raw;
         }
         if (preg_match('/arc\s*([ab]\d{3})/iu', $hay, $m)) {
             return 'Arc '.strtoupper($m[1]);

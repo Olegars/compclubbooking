@@ -102,6 +102,9 @@ class StoreAvitoCatalogAttrService
             $parsed['type'] = $type === 'storage_ssd' ? 'ssd' : $type;
             $this->upsert((int) $product->sku, $parsed, 'heuristic');
             $done++;
+            if ($type === 'gpu' && $this->parser->isSkippedAvitoGpu((string) $product->name.' '.(string) ($product->part ?? ''))) {
+                continue;
+            }
             if (! $this->isComplete($type, $parsed)) {
                 $needLlm[] = $product;
             }
@@ -191,6 +194,7 @@ class StoreAvitoCatalogAttrService
                 'avito_code' => $row['avito_code'] ?? null,
             ], fn ($v) => $v !== null && $v !== ''));
             $merged['type'] = $type === 'storage_ssd' ? 'ssd' : $type;
+            $merged = $this->groundLlmToName($type, $parsed, $merged, $product);
             $merged = $this->clamp($type, $merged);
             $this->upsert((int) $product->sku, $merged, 'deepseek');
             $updated++;
@@ -218,7 +222,7 @@ class StoreAvitoCatalogAttrService
 
         $dictHint = match ($type) {
             'cpu' => 'avito_brand Intel|AMD; avito_model Core i5|Ryzen 5; avito_code — точный индекс из названия: 7500F не 7500, 12400F, 7800X3D. «Ryzen 5 7500F» → code 7500F, socket AM5.',
-            'gpu' => 'avito_brand — производитель карты (ZOTAC, Palit, MSI, ASUS, Gigabyte), НЕ NVIDIA/AMD. avito_model — полное имя из прайса. avito_code — чип: RTX 5060, RTX 5060 Ti, RX 9070 XT (Ti/Super только если есть в названии).',
+            'gpu' => 'avito_brand — производитель карты (ZOTAC, Palit, MSI, ASUS, Gigabyte), НЕ NVIDIA/AMD. avito_model — полное имя из прайса. avito_code ТОЛЬКО из списка, иначе SKIP. NVIDIA: только RTX 40xx и 50xx — 4060, 4060 Ti, 4070, 4070 Super, 4070 Ti, 4070 Ti Super, 4080, 4080 Super, 4090, 5050, 5060, 5060 Ti, 5070, 5070 Ti, 5080, 5090. AMD: только RX 7000 и 9000 — 7600, 7600 XT, 7700 XT, 7800 XT, 7900 GRE, 7900 XT, 7900 XTX, 9060 XT, 9070, 9070 XT. SKIP (не пойдут в объявления): RTX 20/30, GTX, RX 6000, Arc, RTX A400/A2000, L40S, Quadro, Tesla, всё остальное. Ti/Super только если есть в названии.',
             'ram' => 'ram_gb число комплекта, ddr DDR4|DDR5, avito_code вида «32 ГБ».',
             'motherboard' => 'socket AM4|AM5|LGA1700|LGA1851, ddr DDR4|DDR5, avito_brand ASUS|MSI|Gigabyte|ASRock, avito_model — полное имя платы, avito_code — чипсет B550|B650|B650E|B850|B760 (B650M это B650, не путать с B650E).',
             'psu' => 'wattage — ваттность блока (500, 550, 650, 750, 850). Из «GPS-500A8», «500Вт», «500 W» бери 500. Не путай с 80 PLUS.',
@@ -472,6 +476,64 @@ PROMPT;
         };
     }
 
+    /**
+     * DeepSeek приводит чип к каноническому виду, но не подменяет то, чего нет в названии SKU.
+     *
+     * @param  array<string, mixed>  $heuristic
+     * @param  array<string, mixed>  $merged
+     * @return array<string, mixed>
+     */
+    private function groundLlmToName(string $type, array $heuristic, array $merged, StoreSupplierCatalogProduct $product): array
+    {
+        if ($type !== 'gpu') {
+            return $merged;
+        }
+        $hay = trim((string) $product->name.' '.(string) ($product->part ?? ''));
+        if ($this->parser->isSkippedAvitoGpu($hay)) {
+            $merged['avito_code'] = StoreAvitoCatalogAttrParser::SKIP_GPU;
+            $merged['avito_model'] = $heuristic['avito_model'] ?? ($merged['avito_model'] ?? null);
+
+            return $merged;
+        }
+        $fromName = $this->parser->allowedAvitoGpuChip($hay);
+        if ($fromName !== null) {
+            $merged['avito_code'] = $fromName;
+
+            return $merged;
+        }
+        $llm = trim((string) ($merged['avito_code'] ?? ''));
+        if ($llm !== '' && $this->gpuCodeInName($hay, $llm) && $this->parser->allowedAvitoGpuChip($llm) !== null) {
+            $merged['avito_code'] = $this->parser->allowedAvitoGpuChip($llm);
+
+            return $merged;
+        }
+        $merged['avito_code'] = StoreAvitoCatalogAttrParser::SKIP_GPU;
+
+        return $merged;
+    }
+
+    private function gpuCodeInName(string $hay, string $code): bool
+    {
+        $hay = mb_strtolower($hay);
+        $code = mb_strtolower(trim($code));
+        $compactHay = preg_replace('/\s+/', '', $hay) ?? $hay;
+        $compactCode = preg_replace('/\s+/', '', $code) ?? $code;
+        if ($compactCode !== '' && str_contains($compactHay, $compactCode)) {
+            return true;
+        }
+        $tokens = preg_split('/\s+/', $code) ?: [];
+        foreach ($tokens as $token) {
+            if ($token === '' || in_array($token, ['rtx', 'gtx', 'rx', 'geforce', 'radeon'], true)) {
+                continue;
+            }
+            if (! preg_match('/(?<![0-9a-z])'.preg_quote($token, '/').'(?![0-9a-z])/u', $hay)) {
+                return false;
+            }
+        }
+
+        return $tokens !== [];
+    }
+
     private function clamp(string $type, array $parsed): array
     {
         if ($type === 'cpu') {
@@ -483,13 +545,19 @@ PROMPT;
                 ?: $parsed['avito_code'];
         }
         if ($type === 'gpu') {
-            $hay = trim(($parsed['avito_brand'] ?? '').' '.($parsed['avito_model'] ?? ''));
-            $parsed['avito_brand'] = $this->matcher->match('BrandVideocard', $hay) ?: $parsed['avito_brand'];
-            $parsed['avito_model'] = $this->matcher->match('ModelVideocard', (string) ($parsed['avito_model'] ?? ''), $parsed['avito_brand'] ?? null)
-                ?: $parsed['avito_model'];
-            if (! empty($parsed['avito_code'])) {
-                $parsed['avito_code'] = $this->matcher->match('CodeVideocard', (string) $parsed['avito_code'], $parsed['avito_model'] ?? null)
-                    ?: $parsed['avito_code'];
+            if (($parsed['avito_code'] ?? '') === StoreAvitoCatalogAttrParser::SKIP_GPU) {
+                return $parsed;
+            }
+            $modelHay = trim(($parsed['avito_model'] ?? '').' '.($parsed['avito_code'] ?? ''));
+            if (! $this->parser->isSkippedAvitoGpu($modelHay)) {
+                $hay = trim(($parsed['avito_brand'] ?? '').' '.($parsed['avito_model'] ?? ''));
+                $parsed['avito_brand'] = $this->matcher->match('BrandVideocard', $hay) ?: $parsed['avito_brand'];
+                $parsed['avito_model'] = $this->matcher->match('ModelVideocard', (string) ($parsed['avito_model'] ?? ''), $parsed['avito_brand'] ?? null)
+                    ?: $parsed['avito_model'];
+                if (! empty($parsed['avito_code'])) {
+                    $parsed['avito_code'] = $this->matcher->match('CodeVideocard', (string) $parsed['avito_code'], $parsed['avito_model'] ?? null)
+                        ?: $parsed['avito_code'];
+                }
             }
         }
         if ($type === 'motherboard') {

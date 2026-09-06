@@ -464,6 +464,68 @@ class StoreAvitoTest extends TestCase
         $this->assertSame('deepseek', $attr->source);
     }
 
+    public function test_classifies_workstation_gpu_without_deepseek_geforce_code(): void
+    {
+        config(['ai_assistant.deepseek.api_key' => 'sk-deepseek-test']);
+        StoreSupplierCatalogProduct::query()->create([
+            'sku' => 77,
+            'name' => 'Видеокарта NVIDIA RTX A400, 4 GB GDDR6, 64 bit, 4xDisplayPort, GPU 727 MHz',
+            'vendor' => 'NVIDIA',
+            'price' => 12000,
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*chat/completions' => \Illuminate\Support\Facades\Http::response([
+                'choices' => [[
+                    'message' => [
+                        'content' => '[{"sku":77,"avito_brand":"NVIDIA","avito_model":"RTX 4060","avito_code":"RTX 4060"}]',
+                    ],
+                ]],
+            ]),
+        ]);
+        $svc = app(\App\Services\StoreAvito\StoreAvitoCatalogAttrService::class);
+        $svc->classifyProducts(
+            'gpu',
+            StoreSupplierCatalogProduct::query()->where('sku', 77)->get(),
+            false,
+            true,
+        );
+        \Illuminate\Support\Facades\Http::assertNothingSent();
+        $attr = StoreAvitoProductAttr::query()->where('sku', 77)->first();
+        $this->assertNotNull($attr);
+        $this->assertSame('SKIP', $attr->avito_code);
+        $this->assertSame('heuristic', $attr->source);
+    }
+
+    public function test_deepseek_cannot_override_gpu_chip_absent_from_name(): void
+    {
+        config(['ai_assistant.deepseek.api_key' => 'sk-deepseek-test']);
+        StoreSupplierCatalogProduct::query()->create([
+            'sku' => 78,
+            'name' => 'Видеокарта OEM Gaming 8G',
+            'vendor' => 'OEM',
+            'price' => 15000,
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*chat/completions' => \Illuminate\Support\Facades\Http::response([
+                'choices' => [[
+                    'message' => [
+                        'content' => '[{"sku":78,"avito_brand":"Palit","avito_model":"GeForce RTX 4060","avito_code":"RTX 4060"}]',
+                    ],
+                ]],
+            ]),
+        ]);
+        $svc = app(\App\Services\StoreAvito\StoreAvitoCatalogAttrService::class);
+        $svc->classifyProducts(
+            'gpu',
+            StoreSupplierCatalogProduct::query()->where('sku', 78)->get(),
+            false,
+            true,
+        );
+        $attr = StoreAvitoProductAttr::query()->where('sku', 78)->first();
+        $this->assertNotNull($attr);
+        $this->assertSame('SKIP', $attr->avito_code);
+    }
+
     public function test_generator_matches_ryzen_5_7500f_catalog_name(): void
     {
         $this->seed(StoreAvitoPartsSeeder::class);
@@ -534,6 +596,69 @@ class StoreAvitoTest extends TestCase
         $this->assertSame(1, $result['created'], (string) ($result['error'] ?? ''));
         $names = implode(' ', array_column(StoreAvitoAd::query()->first()->components, 'name'));
         $this->assertStringContainsString('GPS-500A8', $names);
+    }
+
+    public function test_generator_does_not_pick_workstation_gpu_for_rtx_4060(): void
+    {
+        $this->seed(StoreAvitoPartsSeeder::class);
+        $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [
+            'socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F',
+        ]);
+        $this->addCatalogRow(211, 'motherboard', 'MSI B760 DDR5', 'MSI', 10000, [
+            'socket' => 'LGA1700', 'ddr' => 'DDR5', 'avito_brand' => 'MSI', 'avito_code' => 'B760',
+        ]);
+        $this->addCatalogRow(311, 'ram', 'Kingston DDR5 16GB', 'Kingston', 5000, [
+            'ddr' => 'DDR5', 'ram_gb' => 16, 'avito_code' => '16 ГБ',
+        ]);
+        $this->addCatalogRow(511, 'ssd', 'Kingston NV2 256GB', 'Kingston', 3000, ['ram_gb' => 256]);
+        $this->addCatalogRow(611, 'psu', 'Chieftec 600W', 'Chieftec', 4500, ['wattage' => 600]);
+        $this->addCatalogRow(401, 'gpu', 'Palit GeForce RTX 4060 Dual 8GB', 'Palit', 28000, [
+            'avito_brand' => 'Palit', 'avito_model' => 'Palit GeForce RTX 4060 Dual 8GB', 'avito_code' => 'RTX 4060',
+        ]);
+        $this->addCatalogRow(402, 'gpu', 'Видеокарта NVIDIA RTX A400, 4 GB GDDR6, 64 bit, 4xDisplayPort, GPU 727 MHz', 'NVIDIA', 12000, [
+            'avito_brand' => 'NVIDIA', 'avito_model' => 'RTX 4060', 'avito_code' => 'RTX 4060',
+        ]);
+        $this->addCatalogRow(403, 'gpu', 'Видеокарта NVIDIA L40S, 48 GB GDDR6, 384 bit, 4xDisplayPort, GPU 1110 MHz', 'NVIDIA', 90000, [
+            'avito_brand' => 'NVIDIA', 'avito_model' => 'RTX 4060', 'avito_code' => 'RTX 4060',
+        ]);
+        $this->addCatalogRow(404, 'gpu', 'MSI GeForce RTX 3060 Ventus 12G', 'MSI', 18000, [
+            'avito_brand' => 'MSI', 'avito_model' => 'RTX 4060', 'avito_code' => 'RTX 4060',
+        ]);
+        $this->makeConfig('cpu-12400f', 'ram-ddr5-16', 'ssd-m2-256', 'psu-600', 'gpu-rtx-4060');
+        StoreAvitoSetting::current()->forceFill(['address' => 'Москва', 'pc_type' => 'Игровой'])->save();
+
+        $result = app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
+        $this->assertSame(1, $result['created'], (string) ($result['error'] ?? ''));
+        $names = implode(' ', array_column(StoreAvitoAd::query()->first()->components, 'name'));
+        $this->assertStringContainsString('RTX 4060', $names);
+        $this->assertStringNotContainsString('A400', $names);
+        $this->assertStringNotContainsString('L40S', $names);
+        $this->assertStringNotContainsString('3060', $names);
+    }
+
+    public function test_generator_fails_when_only_workstation_gpus_for_4060(): void
+    {
+        $this->seed(StoreAvitoPartsSeeder::class);
+        $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [
+            'socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F',
+        ]);
+        $this->addCatalogRow(211, 'motherboard', 'MSI B760 DDR5', 'MSI', 10000, [
+            'socket' => 'LGA1700', 'ddr' => 'DDR5', 'avito_brand' => 'MSI', 'avito_code' => 'B760',
+        ]);
+        $this->addCatalogRow(311, 'ram', 'Kingston DDR5 16GB', 'Kingston', 5000, [
+            'ddr' => 'DDR5', 'ram_gb' => 16, 'avito_code' => '16 ГБ',
+        ]);
+        $this->addCatalogRow(511, 'ssd', 'Kingston NV2 256GB', 'Kingston', 3000, ['ram_gb' => 256]);
+        $this->addCatalogRow(611, 'psu', 'Chieftec 600W', 'Chieftec', 4500, ['wattage' => 600]);
+        $this->addCatalogRow(402, 'gpu', 'Видеокарта NVIDIA RTX A400, 4 GB GDDR6', 'NVIDIA', 12000, [
+            'avito_brand' => 'NVIDIA', 'avito_code' => 'RTX 4060',
+        ]);
+        $this->makeConfig('cpu-12400f', 'ram-ddr5-16', 'ssd-m2-256', 'psu-600', 'gpu-rtx-4060');
+        StoreAvitoSetting::current()->forceFill(['address' => 'Москва', 'pc_type' => 'Игровой'])->save();
+
+        $result = app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
+        $this->assertSame(0, $result['created']);
+        $this->assertStringContainsString('нет видеокарты RTX 4060', (string) ($result['error'] ?? ''));
     }
 
     public function test_generator_picks_b650_board_not_b650e(): void

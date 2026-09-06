@@ -249,7 +249,7 @@ class StoreAvitoBuildComposer
     {
         $code = trim((string) ($tpl->gpu?->avito_code ?? ''));
         if ($code === '') {
-            return $gpus;
+            return $gpus->filter(fn (array $g) => $this->isAllowedGpuRow($g))->values();
         }
 
         return $gpus->filter(fn (array $g) => $this->gpuChipMatches($g, $code))->values();
@@ -322,45 +322,104 @@ class StoreAvitoBuildComposer
     }
 
     /**
+     * Чип только из названия SKU. avito_code из разметки не доверяем:
+     * DeepSeek/словарь Avito часто ставят RTX 4060 на профессиональные A400/L40S.
+     *
      * @param  array<string, mixed>  $gpu
      */
     private function gpuChipMatches(array $gpu, string $code): bool
     {
-        $code = mb_strtolower(trim($code));
-        $attr = mb_strtolower(trim((string) ($gpu['avito_code'] ?? '')));
-        if ($attr !== '') {
-            if ($attr === $code) {
-                return true;
-            }
-            if (! str_contains($code, 'ti') && preg_match('/^'.preg_quote($code, '/').'\s+ti\b/u', $attr)) {
-                return false;
-            }
-            if (! str_contains($code, 'super') && preg_match('/^'.preg_quote($code, '/').'\s+super\b/u', $attr)) {
-                return false;
-            }
+        if ($this->isSkippedGpuRow($gpu) || ! $this->isAllowedGpuRow($gpu)) {
+            return false;
         }
-        $hay = mb_strtolower(implode(' ', array_filter([
+        $hay = trim(implode(' ', array_filter([
             $gpu['name'] ?? null,
             $gpu['part'] ?? null,
-            $gpu['avito_code'] ?? null,
-            $gpu['avito_model'] ?? null,
         ])));
-        $tokens = preg_split('/\s+/', $code) ?: [];
-        if ($tokens === []) {
-            return false;
-        }
-        $re = implode('\s*', array_map(fn (string $t) => preg_quote($t, '/'), $tokens));
-        if (! preg_match('/'.$re.'/u', $hay)) {
-            return false;
-        }
-        if (! str_contains($code, 'ti') && preg_match('/'.$re.'\s*ti\b/u', $hay)) {
-            return false;
-        }
-        if (! str_contains($code, 'super') && preg_match('/'.$re.'\s*super\b/u', $hay)) {
+        $want = $this->gpuChipParts($code);
+        $got = $this->gpuChipParts($hay);
+        if ($want === null || $got === null) {
             return false;
         }
 
-        return true;
+        return $want === $got;
+    }
+
+    /**
+     * @param  array<string, mixed>  $gpu
+     */
+    private function isAllowedGpuRow(array $gpu): bool
+    {
+        return $this->parser->isAllowedAvitoGpu(trim(($gpu['name'] ?? '').' '.($gpu['part'] ?? '')));
+    }
+
+    /**
+     * @param  array<string, mixed>  $gpu
+     */
+    private function isSkippedGpuRow(array $gpu): bool
+    {
+        if (($gpu['avito_code'] ?? '') === StoreAvitoCatalogAttrParser::SKIP_GPU) {
+            return true;
+        }
+
+        return $this->parser->isSkippedAvitoGpu(trim(($gpu['name'] ?? '').' '.($gpu['part'] ?? '')));
+    }
+
+    /**
+     * @return array{fam:string,num:string,ti:bool,super:bool,suffix:string}|null
+     */
+    private function gpuChipParts(string $hay): ?array
+    {
+        if ($this->parser->isSkippedAvitoGpu($hay) || ! $this->parser->isAllowedAvitoGpu($hay)) {
+            return null;
+        }
+        if (preg_match('/rtx\s*(\d{4})\s*(ti)?\s*(super)?/iu', $hay, $m)) {
+            return [
+                'fam' => 'rtx',
+                'num' => $m[1],
+                'ti' => ! empty($m[2]),
+                'super' => ! empty($m[3]),
+                'suffix' => '',
+            ];
+        }
+        if (preg_match('/(?<![0-9])(40|50)(\d{2})\s*(ti)?\s*(super)?(?![0-9])/iu', $hay, $m)) {
+            return [
+                'fam' => 'rtx',
+                'num' => $m[1].$m[2],
+                'ti' => ! empty($m[3]),
+                'super' => ! empty($m[4]),
+                'suffix' => '',
+            ];
+        }
+        if (preg_match('/gtx\s*(\d{3,4})\s*(ti)?\s*(super)?/iu', $hay, $m)) {
+            return [
+                'fam' => 'gtx',
+                'num' => preg_replace('/\s+/', '', $m[1]) ?? $m[1],
+                'ti' => ! empty($m[2]),
+                'super' => ! empty($m[3]),
+                'suffix' => '',
+            ];
+        }
+        if (preg_match('/rx\s*(\d{3,4})\s*(xtx|xt|gre)?/iu', $hay, $m)) {
+            return [
+                'fam' => 'rx',
+                'num' => $m[1],
+                'ti' => false,
+                'super' => false,
+                'suffix' => strtolower($m[2] ?? ''),
+            ];
+        }
+        if (preg_match('/arc\s*([ab]\d{3})/iu', $hay, $m)) {
+            return [
+                'fam' => 'arc',
+                'num' => strtolower($m[1]),
+                'ti' => false,
+                'super' => false,
+                'suffix' => '',
+            ];
+        }
+
+        return null;
     }
 
     /**
@@ -649,6 +708,9 @@ class StoreAvitoBuildComposer
             }
             $price = (float) ($p->price ?: $p->rrp ?: 0);
             if ($price <= 0) {
+                return null;
+            }
+            if ($attr->type === 'gpu' && ! $this->parser->isAllowedAvitoGpu((string) $p->name.' '.(string) ($p->part ?? ''))) {
                 return null;
             }
 

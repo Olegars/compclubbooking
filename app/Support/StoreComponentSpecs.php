@@ -135,10 +135,12 @@ class StoreComponentSpecs
 
             'gpu_brand' => ['ASUS', 'MSI', 'Gigabyte', 'Palit', 'NVIDIA', 'AMD', 'Sapphire', 'PowerColor'],
             'gpu_chip' => [
-                'GTX 1650', 'GTX 1660 Super',
-                'RTX 3050', 'RTX 3060', 'RTX 3060 Ti', 'RTX 3070', 'RTX 3080',
-                'RTX 4060', 'RTX 4060 Ti', 'RTX 4070', 'RTX 4070 Super', 'RTX 4070 Ti', 'RTX 4080', 'RTX 4090',
-                'RX 6600', 'RX 6700 XT', 'RX 7600', 'RX 7700 XT', 'RX 7800 XT', 'RX 7900 XT', 'RX 7900 XTX',
+                'RTX 4060', 'RTX 4060 Ti', 'RTX 4070', 'RTX 4070 Super', 'RTX 4070 Ti', 'RTX 4070 Ti Super',
+                'RTX 4080', 'RTX 4080 Super', 'RTX 4090',
+                'RTX 5050', 'RTX 5060', 'RTX 5060 Ti', 'RTX 5070', 'RTX 5070 Ti', 'RTX 5080', 'RTX 5090',
+                'RX 7600', 'RX 7600 XT', 'RX 7700 XT', 'RX 7800 XT',
+                'RX 7900 GRE', 'RX 7900 XT', 'RX 7900 XTX',
+                'RX 9060 XT', 'RX 9070', 'RX 9070 XT',
             ],
             'gpu_vram' => ['4GB', '6GB', '8GB', '12GB', '16GB', '24GB'],
 
