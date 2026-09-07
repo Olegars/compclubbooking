@@ -70,8 +70,8 @@ class StoreAvitoBuildComposer
     {
         $used = array_fill_keys(StoreAvitoAd::query()->pluck('fingerprint')->all(), true);
         $pools = $this->pools();
-        if ($pools['cpu']->isEmpty() || $pools['motherboard']->isEmpty() || $pools['ram']->isEmpty() || $pools['ssd']->isEmpty()) {
-            $this->lastFailures[] = 'В каталоге нет размеченных CPU/плат/ОЗУ/SSD в наличии — не из чего собрать шаблон.';
+        if ($pools['motherboard']->isEmpty() || $pools['ram']->isEmpty() || $pools['ssd']->isEmpty()) {
+            $this->lastFailures[] = 'В каталоге нет размеченных плат/ОЗУ/SSD в наличии — не из чего собрать шаблон.';
 
             return [];
         }
@@ -211,8 +211,12 @@ class StoreAvitoBuildComposer
         $part = $tpl->cpu;
         $code = mb_strtolower((string) ($part?->avito_code ?? ''));
         $socket = $part?->socket;
+        $matched = $cpus->filter(fn (array $c) => $this->cpuMatches($c, $code, $socket))->values();
+        if ($matched->isNotEmpty() || $code === '') {
+            return $matched;
+        }
 
-        return $cpus->filter(fn (array $c) => $this->cpuMatches($c, $code, $socket))->values();
+        return $this->catalogCpus($code)->filter(fn (array $c) => $this->cpuMatches($c, $code, $socket))->values();
     }
 
     /**
@@ -220,18 +224,38 @@ class StoreAvitoBuildComposer
      */
     private function cpuMatches(array $cpu, string $code, ?string $socket): bool
     {
-        if ($socket && filled($cpu['socket'] ?? null) && $cpu['socket'] !== $socket) {
-            return false;
-        }
-        $hay = mb_strtolower(($cpu['name'] ?? '').' '.($cpu['part'] ?? ''));
-        if (preg_match('/epyc|threadripper|xeon|для ноут|ноутбук|laptop/iu', $hay)) {
+        $hay = mb_strtolower(trim(($cpu['name'] ?? '').' '.($cpu['part'] ?? '')));
+        if ($hay === '' || preg_match('/epyc|threadripper|xeon|для ноут|ноутбук|laptop/iu', $hay)) {
             return false;
         }
         if ($code === '') {
-            return true;
+            return ! $socket || empty($cpu['socket']) || $cpu['socket'] === $socket;
+        }
+        if (! $this->cpuCodeInHay($hay, $code)) {
+            return false;
         }
 
-        return (bool) preg_match('/(?<![0-9a-zа-яё])'.preg_quote($code, '/').'(?![0-9a-zа-яё])/u', $hay);
+        return true;
+    }
+
+    private function cpuCodeInHay(string $hay, string $code): bool
+    {
+        $code = mb_strtolower($code);
+        if ($code === '') {
+            return true;
+        }
+        $quoted = preg_quote($code, '/');
+        if (preg_match('/(?<![0-9a-zа-яё])'.$quoted.'(?![0-9a-zа-яё])/u', $hay)) {
+            return true;
+        }
+        $compact = preg_replace('/[^a-z0-9]+/u', '', $hay) ?? $hay;
+        $c = preg_replace('/[^a-z0-9]+/u', '', $code) ?? $code;
+        if ($c === '') {
+            return false;
+        }
+
+        // «Ryzen 5 7500F» / «i5-12400F» после склейки: 57500f, i512400f
+        return (bool) preg_match('/(?:(?<![0-9])|[3579])'.$c.'(?![0-9a-z])/u', $compact);
     }
 
     /**
@@ -602,6 +626,64 @@ class StoreAvitoBuildComposer
     }
 
     /**
+     * Живой CPU из прайса, если attrs нет или сокет/код размечены криво.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function catalogCpus(string $code): Collection
+    {
+        $needle = mb_strtolower(trim($code));
+        if ($needle === '') {
+            return collect();
+        }
+
+        return StoreSupplierCatalogProduct::query()
+            ->where(function ($w) {
+                $w->where('price', '>', 0)->orWhere('rrp', '>', 0);
+            })
+            ->where(function ($w) {
+                foreach (['процессор', 'ryzen', 'intel', 'core'] as $kw) {
+                    $w->orWhereRaw('LOWER(name) LIKE ?', ['%'.$kw.'%'])
+                        ->orWhereRaw('LOWER(COALESCE(part, \'\')) LIKE ?', ['%'.$kw.'%']);
+                }
+            })
+            ->where(function ($w) use ($needle) {
+                $w->whereRaw('LOWER(name) LIKE ?', ['%'.$needle.'%'])
+                    ->orWhereRaw('LOWER(COALESCE(part, \'\')) LIKE ?', ['%'.$needle.'%']);
+            })
+            ->orderBy('price')
+            ->limit(200)
+            ->get()
+            ->map(function (StoreSupplierCatalogProduct $p) {
+                $price = (float) ($p->price ?: $p->rrp ?: 0);
+                $hay = (string) $p->name.' '.(string) ($p->part ?? '');
+                if ($price <= 0 || preg_match('/epyc|threadripper|xeon|для ноут|ноутбук|laptop/iu', $hay)) {
+                    return null;
+                }
+                $parsed = $this->parser->parse('cpu', (string) $p->name, (string) ($p->part ?? ''), (string) ($p->vendor ?? ''));
+
+                return [
+                    'type' => 'cpu',
+                    'sku' => (int) $p->sku,
+                    'name' => (string) $p->name,
+                    'part' => (string) ($p->part ?? ''),
+                    'purchase' => $price,
+                    'socket' => $parsed['socket'] ?? null,
+                    'ddr' => null,
+                    'ram_gb' => null,
+                    'wattage' => null,
+                    'avito_brand' => $parsed['avito_brand'] ?? null,
+                    'avito_model' => $parsed['avito_model'] ?? null,
+                    'avito_code' => $parsed['avito_code'] ?? null,
+                    'vendor' => (string) ($p->vendor ?? ''),
+                    'has_image' => (bool) $p->has_image,
+                ];
+            })
+            ->filter()
+            ->values();
+    }
+
+    /**
      * @param  Collection<int, array<string, mixed>>  $boards
      * @param  array<string, mixed>  $cpu
      * @param  array<string, mixed>  $ram
@@ -690,6 +772,17 @@ class StoreAvitoBuildComposer
             if ($attr->type === 'cpu' && preg_match('/epyc|threadripper|xeon|для ноут|ноутбук|laptop/iu', $hay)) {
                 return null;
             }
+            $socket = $attr->socket;
+            $avitoBrand = $attr->avito_brand;
+            $avitoModel = $attr->avito_model;
+            $avitoCode = $attr->avito_code;
+            if ($attr->type === 'cpu') {
+                $parsed = $this->parser->parse('cpu', (string) $p->name, (string) ($p->part ?? ''), (string) ($p->vendor ?? ''));
+                $socket = $parsed['socket'] ?? $socket;
+                $avitoBrand = $parsed['avito_brand'] ?? $avitoBrand;
+                $avitoModel = $parsed['avito_model'] ?? $avitoModel;
+                $avitoCode = $parsed['avito_code'] ?? $avitoCode;
+            }
 
             return [
                 'type' => $attr->type,
@@ -697,13 +790,13 @@ class StoreAvitoBuildComposer
                 'name' => (string) $p->name,
                 'part' => (string) ($p->part ?? ''),
                 'purchase' => $price,
-                'socket' => $attr->socket,
+                'socket' => $socket,
                 'ddr' => $attr->ddr,
                 'ram_gb' => $attr->ram_gb,
                 'wattage' => $attr->wattage,
-                'avito_brand' => $attr->avito_brand,
-                'avito_model' => $attr->avito_model,
-                'avito_code' => $attr->avito_code,
+                'avito_brand' => $avitoBrand,
+                'avito_model' => $avitoModel,
+                'avito_code' => $avitoCode,
                 'vendor' => (string) ($p->vendor ?? ''),
                 'has_image' => (bool) $p->has_image,
             ];
