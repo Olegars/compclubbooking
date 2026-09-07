@@ -13,6 +13,7 @@ class StoreAvitoCatalogAttrParser
     /**
      * @return array{
      *   type: ?string,
+     *   standard: ?string,
      *   socket: ?string,
      *   ddr: ?string,
      *   ram_gb: ?int,
@@ -26,10 +27,11 @@ class StoreAvitoCatalogAttrParser
     public function parse(string $type, string $name, string $part = '', string $vendor = ''): array
     {
         $hay = trim($name.' '.$part.' '.$vendor);
-        $type = strtolower(trim($type));
+        $type = $this->normalizeType($type);
 
         $attrs = [
             'type' => $type !== '' ? $type : null,
+            'standard' => null,
             'socket' => $this->socket($hay),
             'ddr' => $this->ddr($hay),
             'ram_gb' => $this->ramGb($hay),
@@ -40,16 +42,100 @@ class StoreAvitoCatalogAttrParser
             'avito_code' => null,
         ];
 
-        return match ($type) {
+        $attrs = match ($type) {
             'cpu' => $this->cpu($hay, $attrs),
             'gpu' => $this->gpu($hay, $vendor, $attrs),
             'ram' => $this->ram($hay, $attrs),
             'motherboard' => $this->motherboard($hay, $vendor, $attrs),
             'psu' => $this->psu($hay, $vendor, $attrs),
-            'storage_ssd', 'ssd' => $this->named($hay, $vendor, $attrs),
+            'ssd' => $this->named($hay, $vendor, $attrs),
             'case', 'cooler' => $this->named($hay, $vendor, $attrs),
             default => $attrs,
         };
+        $attrs['type'] = $type !== '' ? $type : ($attrs['type'] ?? null);
+        $attrs['standard'] = $this->deriveStandard($attrs);
+
+        return $attrs;
+    }
+
+    public function normalizeType(string $type): string
+    {
+        $type = strtolower(trim($type));
+
+        return match ($type) {
+            'mb', 'motherboard' => 'motherboard',
+            'storage_ssd', 'ssd' => 'ssd',
+            'vc', 'videocard' => 'gpu',
+            default => $type,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $attrs
+     */
+    public function deriveStandard(array $attrs): ?string
+    {
+        $type = (string) ($attrs['type'] ?? '');
+        $code = trim((string) ($attrs['avito_code'] ?? ''));
+        $fromCode = $code !== '' && strcasecmp($code, self::SKIP_GPU) !== 0 ? $code : null;
+
+        return match ($type) {
+            'cpu', 'gpu', 'motherboard' => $fromCode,
+            'ram' => $this->ramStandard($attrs['ddr'] ?? null, $attrs['ram_gb'] ?? null),
+            'ssd' => ! empty($attrs['ram_gb']) ? (string) (int) $attrs['ram_gb'] : null,
+            'psu' => ! empty($attrs['wattage']) ? (string) (int) $attrs['wattage'] : null,
+            default => $fromCode,
+        };
+    }
+
+    public function ramStandard(?string $ddr, mixed $gb): ?string
+    {
+        $parsed = $this->parseRamStandard(trim((string) $ddr).' '.(string) $gb);
+        if ($parsed !== null) {
+            return $parsed['standard'];
+        }
+        $n = (int) $gb;
+        $ddr = strtoupper(preg_replace('/[^A-Z0-9]/', '', (string) $ddr) ?? '');
+        if (! preg_match('/^DDR[45]$/', $ddr) || $n <= 0) {
+            return null;
+        }
+
+        return $ddr.' '.$n;
+    }
+
+    /**
+     * @return array{ddr: string, ram_gb: int, standard: string}|null
+     */
+    public function parseRamStandard(string $raw): ?array
+    {
+        $raw = strtoupper(trim($raw));
+        if ($raw === '') {
+            return null;
+        }
+        $raw = str_replace(['ГБ', 'GB'], '', $raw);
+        if (! preg_match('/DDR\s*([45])/u', $raw, $m)) {
+            return null;
+        }
+        $gb = null;
+        if (preg_match_all('/\d+/', $raw, $nums)) {
+            foreach ($nums[0] as $n) {
+                $n = (int) $n;
+                if (in_array($n, [8, 16, 24, 32, 48, 64, 96, 128], true)) {
+                    $gb = $n;
+                    break;
+                }
+            }
+        }
+        if ($gb === null) {
+            return null;
+        }
+        $ddr = 'DDR'.$m[1];
+
+        return [
+            'ddr' => $ddr,
+            'ram_gb' => $gb,
+            'standard' => $ddr.' '.$gb,
+        ];
     }
 
     private function cpu(string $hay, array $attrs): array

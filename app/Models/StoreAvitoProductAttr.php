@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class StoreAvitoProductAttr extends Model
 {
     protected $fillable = [
-        'sku', 'type', 'socket', 'ddr', 'ram_gb', 'wattage', 'form',
+        'sku', 'type', 'standard', 'socket', 'ddr', 'ram_gb', 'wattage', 'form',
         'avito_brand', 'avito_model', 'avito_code', 'source', 'mapped_at',
     ];
 

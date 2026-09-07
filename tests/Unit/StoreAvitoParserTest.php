@@ -23,6 +23,8 @@ class StoreAvitoParserTest extends TestCase
         $this->assertSame('Intel', $a['avito_brand']);
         $this->assertSame('Core i5', $a['avito_model']);
         $this->assertSame('12400F', $a['avito_code']);
+        $this->assertSame('12400F', $a['standard']);
+        $this->assertSame('cpu', $a['type']);
         $this->assertSame('LGA1700', $a['socket']);
     }
 
@@ -38,6 +40,8 @@ class StoreAvitoParserTest extends TestCase
         $this->assertSame('AMD', $a['avito_brand']);
         $this->assertSame('Ryzen 5', $a['avito_model']);
         $this->assertSame('7500F', $a['avito_code']);
+        $this->assertSame('7500F', $a['standard']);
+        $this->assertSame('cpu', $a['type']);
         $this->assertSame('AM5', $a['socket']);
     }
 
@@ -59,6 +63,8 @@ class StoreAvitoParserTest extends TestCase
         $this->assertStringContainsString('4060 Ti', $a['avito_model']);
         $this->assertStringContainsString('AMP', $a['avito_model']);
         $this->assertSame('RTX 4060 Ti', $a['avito_code']);
+        $this->assertSame('RTX 4060 Ti', $a['standard']);
+        $this->assertSame('gpu', $a['type']);
     }
 
     public function test_parses_rtx_4060_from_compact_and_hyphen_names(): void
@@ -133,6 +139,12 @@ class StoreAvitoParserTest extends TestCase
         $this->assertSame('DDR5', $a['ddr']);
         $this->assertSame(32, $a['ram_gb']);
         $this->assertSame('32 ГБ', $a['avito_code']);
+        $this->assertSame('DDR5 32', $a['standard']);
+        $this->assertSame('ram', $a['type']);
+        $this->assertSame('DDR5 32', $this->parser->ramStandard('DDR5', 32));
+        $this->assertSame('DDR4 32', $this->parser->parseRamStandard('ddr4-32')['standard'] ?? null);
+        $this->assertSame('DDR5 16', $this->parser->parseRamStandard('DDR5 16 ГБ')['standard'] ?? null);
+        $this->assertNull($this->parser->parseRamStandard('32'));
     }
 
     public function test_parses_full_motherboard_name_not_chipset(): void
