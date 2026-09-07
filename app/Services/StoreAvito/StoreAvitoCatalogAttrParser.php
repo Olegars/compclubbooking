@@ -86,7 +86,8 @@ class StoreAvitoCatalogAttrParser
         $fromCode = $code !== '' && strcasecmp($code, self::SKIP_GPU) !== 0 ? $code : null;
 
         return match ($type) {
-            'cpu', 'motherboard' => $fromCode,
+            'cpu' => $this->cpuStandard($fromCode),
+            'motherboard' => $this->motherboardStandard($fromCode),
             'gpu' => $this->gpuStandard($fromCode),
             'ram' => $this->ramStandard($attrs['ddr'] ?? null, $attrs['ram_gb'] ?? null),
             'ssd' => $this->parseSsdStandard((string) ($attrs['ram_gb'] ?? ''))
@@ -94,6 +95,142 @@ class StoreAvitoCatalogAttrParser
             'psu' => ! empty($attrs['wattage']) ? (string) (int) $attrs['wattage'] : null,
             default => $fromCode,
         };
+    }
+
+    /** Канон ответа Дипсика / поля standard. */
+    public function canonStandard(string $type, ?string $raw): ?string
+    {
+        $type = $this->normalizeType($type);
+        $raw = trim((string) $raw);
+        if ($raw === '' || strcasecmp($raw, self::SKIP_GPU) === 0) {
+            return null;
+        }
+
+        return match ($type) {
+            'cpu' => $this->cpuStandard($raw),
+            'gpu' => $this->gpuStandard($raw),
+            'motherboard' => $this->motherboardStandard($raw),
+            'ram' => $this->parseRamStandard($raw)['standard'] ?? null,
+            'ssd' => $this->parseSsdStandard($raw),
+            'psu' => $this->psuStandard($raw),
+            default => mb_strlen($raw) <= 64 ? $raw : null,
+        };
+    }
+
+    /**
+     * Каноны как в шаблонах конфигураций (части StoreAvitoPart / сидер).
+     *
+     * @return list<string>
+     */
+    public function defaultTemplateCanons(string $type): array
+    {
+        $type = $this->normalizeType($type);
+
+        return match ($type) {
+            'cpu' => array_values(array_filter(
+                StoreComponentSpecs::dictionaries()['cpu_model'],
+                fn ($c) => ! preg_match('/[HU]$/i', (string) $c)
+            )),
+            'gpu' => array_values(array_unique(array_filter(array_map(
+                fn ($c) => $this->gpuStandard((string) $c),
+                StoreComponentSpecs::dictionaries()['gpu_chip']
+            )))),
+            'motherboard' => StoreComponentSpecs::dictionaries()['mb_chipset'],
+            'ram' => ['DDR4 16', 'DDR4 32', 'DDR5 16', 'DDR5 32'],
+            'ssd' => ['256', '512'],
+            'psu' => ['500', '550', '600', '650', '700', '750', '800', '850'],
+            default => [],
+        };
+    }
+
+    /**
+     * Ответ Дипсика → канон из списка шаблонов. Чужой индекс не сохраняем.
+     *
+     * @param  list<string>  $allowed
+     */
+    public function pickTemplateCanon(string $type, ?string $raw, array $allowed): ?string
+    {
+        $type = $this->normalizeType($type);
+        $raw = trim((string) $raw);
+        if ($raw === '' || strcasecmp($raw, self::SKIP_GPU) === 0) {
+            return null;
+        }
+        if ($allowed === []) {
+            $allowed = $this->defaultTemplateCanons($type);
+        }
+        $canon = $this->canonStandard($type, $raw);
+        $want = $this->normCanon($type, $canon ?? $raw);
+        foreach ($allowed as $item) {
+            $item = trim((string) $item);
+            if ($item === '') {
+                continue;
+            }
+            if ($this->normCanon($type, $item) === $want) {
+                return $this->canonStandard($type, $item) ?? $item;
+            }
+        }
+
+        return null;
+    }
+
+    private function normCanon(string $type, string $raw): string
+    {
+        $canon = $this->canonStandard($type, $raw);
+
+        return mb_strtolower(preg_replace('/\s+/u', '', $canon ?? trim($raw)) ?? '');
+    }
+
+    public function cpuStandard(?string $raw): ?string
+    {
+        $raw = trim((string) $raw);
+        if ($raw === '') {
+            return null;
+        }
+        if (preg_match('/\b(\d{3,5}(?:X3D|KF|F|K|X|T)?)\b/i', $raw, $m)) {
+            return strtoupper($m[1]);
+        }
+
+        return mb_strlen($raw) <= 16 ? $raw : null;
+    }
+
+    /**
+     * «Intel Z890», «Z890M», «B650E-PLUS» → Z890 / B650E.
+     */
+    public function motherboardStandard(?string $raw): ?string
+    {
+        $raw = strtoupper(trim((string) $raw));
+        if ($raw === '' || strcasecmp($raw, self::SKIP_GPU) === 0) {
+            return null;
+        }
+        $raw = preg_replace('/\b(INTEL|AMD)\b/u', ' ', $raw) ?? $raw;
+        if (preg_match('/\b([A-Z]\d{3}E)\b/', $raw, $m)) {
+            return $m[1];
+        }
+        if (preg_match('/\b([A-Z]\d{3})[MI]?\b/', $raw, $m)) {
+            return $m[1];
+        }
+        $compact = preg_replace('/[^A-Z0-9]/', '', $raw) ?? '';
+        if (preg_match('/([A-Z]\d{3}E)/', $compact, $m)) {
+            return $m[1];
+        }
+        if (preg_match('/([A-Z]\d{3})/', $compact, $m)) {
+            return $m[1];
+        }
+
+        return null;
+    }
+
+    public function psuStandard(?string $raw): ?string
+    {
+        if (! preg_match('/(\d{3,4})/', (string) $raw, $m)) {
+            return null;
+        }
+        $n = (int) $m[1];
+        if ($n < 300 || $n > 2000) {
+            return null;
+        }
+
+        return (string) $n;
     }
 
     public function ramStandard(?string $ddr, mixed $gb): ?string

@@ -244,10 +244,13 @@ class StoreAvitoBuildComposer
         }
 
         return match ($kind) {
-            'gpu' => (string) ($this->parser->gpuStandard($part->avito_code) ?? ''),
-            'ram' => (string) ($this->parser->ramStandard($part->ddr, $part->ram_gb) ?? ''),
-            'ssd' => (string) ($this->parser->parseSsdStandard((string) (int) $part->capacity_gb) ?? ''),
-            'psu' => (int) $part->wattage > 0 ? (string) (int) $part->wattage : '',
+            'gpu', 'cpu', 'motherboard', 'ram', 'ssd', 'psu' => (string) ($this->parser->canonStandard($kind, match ($kind) {
+                'gpu' => $part->avito_code,
+                'ram' => $this->parser->ramStandard($part->ddr, $part->ram_gb),
+                'ssd' => (int) $part->capacity_gb > 0 ? (string) (int) $part->capacity_gb : '',
+                'psu' => (int) $part->wattage > 0 ? (string) (int) $part->wattage : '',
+                default => $part->avito_code,
+            }) ?? ''),
             default => trim((string) $part->avito_code),
         };
     }
@@ -257,32 +260,17 @@ class StoreAvitoBuildComposer
      */
     private function rowStandard(array $row, string $kind): string
     {
-        $s = trim((string) ($row['standard'] ?? ''));
-        if ($kind === 'ram') {
-            $parsed = $this->parser->parseRamStandard($s)
-                ?? $this->parser->parseRamStandard(trim((string) ($row['ddr'] ?? '').' '.(string) ($row['ram_gb'] ?? '')));
-
-            return $parsed['standard'] ?? '';
-        }
-        if ($kind === 'ssd') {
-            return $this->parser->parseSsdStandard($s)
-                ?? $this->parser->parseSsdStandard((string) ($row['ram_gb'] ?? ''))
-                ?? $this->parser->parseSsdStandard(trim((string) ($row['name'] ?? '').' '.(string) ($row['part'] ?? '')))
-                ?? '';
-        }
-        if ($kind === 'gpu') {
-            return $this->parser->gpuStandard($s)
-                ?: $this->parser->gpuStandard((string) ($row['avito_code'] ?? ''))
-                ?: '';
-        }
-        if ($s !== '' && strcasecmp($s, StoreAvitoCatalogAttrParser::SKIP_GPU) !== 0) {
-            return $s;
+        $fromAttr = $this->parser->canonStandard($kind, (string) ($row['standard'] ?? ''))
+            ?? $this->parser->canonStandard($kind, (string) ($row['avito_code'] ?? ''));
+        if ($fromAttr !== null) {
+            return $fromAttr;
         }
 
         return match ($kind) {
-            'cpu', 'motherboard' => trim((string) ($row['avito_code'] ?? '')),
+            'ram' => (string) ($this->parser->ramStandard($row['ddr'] ?? null, $row['ram_gb'] ?? null) ?? ''),
+            'ssd' => (string) ($this->parser->parseSsdStandard((string) ($row['ram_gb'] ?? '')) ?? ''),
             'psu' => (int) ($row['wattage'] ?? 0) > 0 ? (string) (int) $row['wattage'] : '',
-            default => trim((string) ($row['avito_code'] ?? '')),
+            default => '',
         };
     }
 
@@ -298,7 +286,10 @@ class StoreAvitoBuildComposer
             return $a !== null && $a === $b;
         }
         if ($kind === 'motherboard') {
-            return $this->chipsetTokenEquals($got, $want);
+            $a = $this->parser->motherboardStandard($want);
+            $b = $this->parser->motherboardStandard($got);
+
+            return $a !== null && $a === $b;
         }
         if ($kind === 'ram') {
             $a = $this->parser->parseRamStandard($want);
@@ -499,34 +490,48 @@ class StoreAvitoBuildComposer
                 (string) ($p->part ?? ''),
                 (string) ($p->vendor ?? ''),
             );
-            $socket = $attr->socket ?: ($parsed['socket'] ?? null);
-            $ddr = $attr->ddr ?: ($parsed['ddr'] ?? null);
-            $ramGb = (int) ($attr->ram_gb ?: ($parsed['ram_gb'] ?? 0));
-            $wattage = (int) ($attr->wattage ?: ($parsed['wattage'] ?? 0));
-            $avitoBrand = $attr->avito_brand ?: ($parsed['avito_brand'] ?? null);
-            $avitoModel = $attr->avito_model ?: ($parsed['avito_model'] ?? null);
-            $standard = trim((string) ($attr->standard ?: ''));
+            $socket = $attr->socket;
+            $ddr = $attr->ddr;
+            $ramGb = (int) ($attr->ram_gb ?: 0);
+            $wattage = (int) ($attr->wattage ?: 0);
+            $avitoBrand = $attr->avito_brand;
+            $avitoModel = $attr->avito_model;
+            $standard = $this->parser->canonStandard($type, (string) ($attr->standard ?? ''))
+                ?? $this->parser->canonStandard($type, (string) ($attr->avito_code ?? ''));
+            if ($standard === null) {
+                $standard = match ($type) {
+                    'ram' => $this->parser->ramStandard($ddr, $ramGb ?: null),
+                    'ssd' => $this->parser->parseSsdStandard((string) $ramGb),
+                    'psu' => $wattage > 0 ? (string) $wattage : null,
+                    default => null,
+                };
+            }
+            if ($standard === null || strcasecmp($standard, StoreAvitoCatalogAttrParser::SKIP_GPU) === 0) {
+                return null;
+            }
             $avitoCode = (string) ($attr->avito_code ?: '');
-            // GPU: выборка только по type+standard из attrs. Имя каталога не парсим.
-            if ($type !== 'gpu') {
-                if ($avitoCode === '') {
-                    $fromParse = (string) ($parsed['avito_code'] ?? '');
-                    if ($fromParse !== '' && strcasecmp($fromParse, StoreAvitoCatalogAttrParser::SKIP_GPU) !== 0) {
-                        $avitoCode = $fromParse;
-                    }
-                }
-                if ($standard === '' || strcasecmp($standard, StoreAvitoCatalogAttrParser::SKIP_GPU) === 0) {
-                    $standard = (string) ($this->parser->deriveStandard([
-                        'type' => $type,
-                        'avito_code' => $avitoCode,
-                        'ddr' => $ddr,
-                        'ram_gb' => $ramGb ?: null,
-                        'wattage' => $wattage ?: null,
-                    ]) ?? '');
-                }
-                if ($avitoCode === '' && $standard !== '') {
-                    $avitoCode = $standard;
-                }
+            if ($type === 'gpu') {
+                $avitoCode = $this->parser->gpuStandardPretty($standard) ?: $avitoCode;
+            } elseif ($avitoCode === '' || strcasecmp($avitoCode, StoreAvitoCatalogAttrParser::SKIP_GPU) === 0) {
+                $avitoCode = $standard;
+            }
+            if ($socket === null || $socket === '') {
+                $socket = $parsed['socket'] ?? null;
+            }
+            if ($ddr === null || $ddr === '') {
+                $ddr = $parsed['ddr'] ?? null;
+            }
+            if ($ramGb <= 0) {
+                $ramGb = (int) ($parsed['ram_gb'] ?? 0);
+            }
+            if ($wattage <= 0) {
+                $wattage = (int) ($parsed['wattage'] ?? 0);
+            }
+            if ($avitoBrand === null || $avitoBrand === '') {
+                $avitoBrand = $parsed['avito_brand'] ?? null;
+            }
+            if ($avitoModel === null || $avitoModel === '') {
+                $avitoModel = $parsed['avito_model'] ?? null;
             }
             $row = [
                 'type' => $type,

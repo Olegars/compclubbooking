@@ -396,7 +396,7 @@ class StoreAvitoTest extends TestCase
     {
         $this->seed(StoreAvitoPartsSeeder::class);
         $this->seedPcPool();
-        $this->addCatalogRow(211, 'motherboard', 'MSI B760 DDR5', 'MSI', 10000, ['socket' => 'LGA1700', 'ddr' => 'DDR5', 'avito_brand' => 'MSI']);
+        $this->addCatalogRow(211, 'motherboard', 'MSI B760 DDR5', 'MSI', 10000, ['socket' => 'LGA1700', 'ddr' => 'DDR5', 'avito_brand' => 'MSI', 'avito_code' => 'B760']);
         $this->addCatalogRow(311, 'ram', 'Kingston DDR5 16GB 2x8', 'Kingston', 5000, ['ddr' => 'DDR5', 'ram_gb' => 16, 'avito_code' => '16 ГБ']);
         $this->addCatalogRow(511, 'ssd', 'Kingston NV2 256GB', 'Kingston', 3000, ['ram_gb' => 256]);
         $this->addCatalogRow(611, 'psu', 'Chieftec 600W', 'Chieftec', 4500, ['wattage' => 600]);
@@ -482,6 +482,7 @@ class StoreAvitoTest extends TestCase
         $this->assertSame('cpu', $attr->type);
         $this->assertSame('AM5', $attr->socket);
 
+        $attr->forceFill(['source' => 'deepseek'])->save();
         \Illuminate\Support\Facades\Http::fake();
         $again = $svc->classifyProducts(
             'cpu',
@@ -661,8 +662,10 @@ class StoreAvitoTest extends TestCase
             $system = (string) data_get($data, 'messages.0.content', '');
             $user = (string) data_get($data, 'messages.1.content', '');
 
-            return str_contains($system, 'видеокарт')
-                && str_contains($system, 'Type не определяй')
+            return str_contains(mb_strtolower($system), 'видеокарт')
+                && str_contains($system, 'type не определяй')
+                && str_contains($system, 'rtx4060')
+                && str_contains($system, 'шаблонов конфигураций')
                 && str_contains($user, '"kind":"gpu"')
                 && str_contains($user, '"title"')
                 && str_contains($user, 'Видеокарта OEM Gaming 8G')
@@ -705,6 +708,103 @@ class StoreAvitoTest extends TestCase
         $this->assertSame('rtx4060ti', StoreAvitoProductAttr::query()->where('sku', 82)->value('standard'));
     }
 
+    public function test_deepseek_motherboard_intel_z890_becomes_z890(): void
+    {
+        config(['ai_assistant.deepseek.api_key' => 'sk-deepseek-test']);
+        StoreSupplierCatalogProduct::query()->create([
+            'sku' => 88,
+            'name' => 'Материнская плата GIGABYTE Z890M AORUS ELITE WIFI7 ICE, LGA1851, Intel Z890',
+            'vendor' => 'GIGABYTE',
+            'price' => 22000,
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*chat/completions' => \Illuminate\Support\Facades\Http::response([
+                'choices' => [[
+                    'message' => [
+                        'content' => '[{"sku":88,"standard":"Intel Z890"}]',
+                    ],
+                ]],
+            ]),
+        ]);
+        $svc = app(\App\Services\StoreAvito\StoreAvitoCatalogAttrService::class);
+        $svc->classifyProducts(
+            'motherboard',
+            StoreSupplierCatalogProduct::query()->where('sku', 88)->get(),
+            false,
+            true,
+        );
+        $attr = StoreAvitoProductAttr::query()->where('sku', 88)->first();
+        $this->assertSame('motherboard', $attr?->type);
+        $this->assertSame('Z890', $attr?->standard);
+        $this->assertSame('Z890', $attr?->avito_code);
+        \Illuminate\Support\Facades\Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+            $system = (string) data_get($request->data(), 'messages.0.content', '');
+
+            return str_contains($system, 'Z890')
+                && str_contains($system, 'B650')
+                && str_contains($system, 'шаблонов конфигураций');
+        });
+    }
+
+    public function test_deepseek_gpu_palit_5070_becomes_rtx5070(): void
+    {
+        config(['ai_assistant.deepseek.api_key' => 'sk-deepseek-test']);
+        StoreSupplierCatalogProduct::query()->create([
+            'sku' => 89,
+            'name' => 'Видеокарта Palit GeForce RTX 5070 INFINITY 3, 12 GB GDDR7',
+            'vendor' => 'Palit',
+            'price' => 55000,
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*chat/completions' => \Illuminate\Support\Facades\Http::response([
+                'choices' => [[
+                    'message' => [
+                        'content' => '[{"sku":89,"standard":"rtx5070"}]',
+                    ],
+                ]],
+            ]),
+        ]);
+        $svc = app(\App\Services\StoreAvito\StoreAvitoCatalogAttrService::class);
+        $svc->classifyProducts(
+            'gpu',
+            StoreSupplierCatalogProduct::query()->where('sku', 89)->get(),
+            false,
+            true,
+        );
+        $attr = StoreAvitoProductAttr::query()->where('sku', 89)->first();
+        $this->assertSame('gpu', $attr?->type);
+        $this->assertSame('rtx5070', $attr?->standard);
+        $this->assertSame('RTX 5070', $attr?->avito_code);
+    }
+
+    public function test_deepseek_drops_standard_outside_config_templates(): void
+    {
+        config(['ai_assistant.deepseek.api_key' => 'sk-deepseek-test']);
+        StoreSupplierCatalogProduct::query()->create([
+            'sku' => 91,
+            'name' => 'Накопитель SSD Kingston NV2 1TB',
+            'vendor' => 'Kingston',
+            'price' => 7000,
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*chat/completions' => \Illuminate\Support\Facades\Http::response([
+                'choices' => [[
+                    'message' => [
+                        'content' => '[{"sku":91,"standard":"1024"}]',
+                    ],
+                ]],
+            ]),
+        ]);
+        $svc = app(\App\Services\StoreAvito\StoreAvitoCatalogAttrService::class);
+        $svc->classifyProducts(
+            'storage_ssd',
+            StoreSupplierCatalogProduct::query()->where('sku', 91)->get(),
+            false,
+            true,
+        );
+        $this->assertNull(StoreAvitoProductAttr::query()->where('sku', 91)->value('standard'));
+    }
+
     public function test_generator_matches_ryzen_5_7500f_catalog_name(): void
     {
         $this->seed(StoreAvitoPartsSeeder::class);
@@ -718,6 +818,7 @@ class StoreAvitoTest extends TestCase
             'socket' => 'AM5',
             'ddr' => 'DDR5',
             'avito_brand' => 'MSI',
+            'avito_code' => 'B650',
         ]);
         $this->addCatalogRow(321, 'ram', 'Kingston DDR5 32GB', 'Kingston', 8000, [
             'ddr' => 'DDR5',
@@ -826,14 +927,14 @@ class StoreAvitoTest extends TestCase
         $this->assertStringContainsString('нет процессора 7500F', (string) ($result['error'] ?? ''));
     }
 
-    public function test_generator_reads_500w_from_psu_model_name(): void
+    public function test_generator_ignores_psu_without_standard(): void
     {
         $this->seed(StoreAvitoPartsSeeder::class);
         $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 7500F Soc-AM5 3.7GHz OEM', 'AMD', 12000, [
             'socket' => 'AM5', 'avito_brand' => 'AMD', 'avito_model' => 'Ryzen 5', 'avito_code' => '7500F',
         ]);
         $this->addCatalogRow(221, 'motherboard', 'MSI B650 GAMING DDR5', 'MSI', 14000, [
-            'socket' => 'AM5', 'ddr' => 'DDR5', 'avito_brand' => 'MSI',
+            'socket' => 'AM5', 'ddr' => 'DDR5', 'avito_brand' => 'MSI', 'avito_code' => 'B650',
         ]);
         $this->addCatalogRow(321, 'ram', 'Kingston DDR5 32GB', 'Kingston', 8000, [
             'ddr' => 'DDR5', 'ram_gb' => 32, 'avito_code' => '32 ГБ',
@@ -847,9 +948,8 @@ class StoreAvitoTest extends TestCase
         StoreAvitoSetting::current()->forceFill(['address' => 'Москва', 'pc_type' => 'Игровой'])->save();
 
         $result = app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
-        $this->assertSame(1, $result['created'], (string) ($result['error'] ?? ''));
-        $names = implode(' ', array_column(StoreAvitoAd::query()->first()->components, 'name'));
-        $this->assertStringContainsString('GPS-500A8', $names);
+        $this->assertSame(0, $result['created']);
+        $this->assertStringContainsString('нет БП', (string) ($result['error'] ?? ''));
     }
 
     public function test_generator_does_not_pick_workstation_gpu_for_rtx_4060(): void
@@ -915,7 +1015,7 @@ class StoreAvitoTest extends TestCase
         $this->assertStringContainsString('нет видеокарты RTX 4060', (string) ($result['error'] ?? ''));
     }
 
-    public function test_generator_skips_gpu_when_standard_is_skip(): void
+    public function test_generator_skips_gpu_without_standard(): void
     {
         $this->seed(StoreAvitoPartsSeeder::class);
         $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [
@@ -993,7 +1093,7 @@ class StoreAvitoTest extends TestCase
         $this->assertStringNotContainsString('фотобарабан', $names);
     }
 
-    public function test_generator_ignores_gpu_name_without_type_standard(): void
+    public function test_generator_skips_gpu_when_standard_empty(): void
     {
         $this->seed(StoreAvitoPartsSeeder::class);
         $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [

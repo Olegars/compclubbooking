@@ -195,6 +195,23 @@ class StoreAvitoParserTest extends TestCase
 
         $this->assertSame('AM5', $a['socket']);
         $this->assertSame('B650E', $a['avito_code']);
+        $this->assertSame('B650E', $a['standard']);
+    }
+
+    public function test_canon_matches_config_templates(): void
+    {
+        $this->assertSame('Z890', $this->parser->motherboardStandard('Intel Z890'));
+        $this->assertSame('Z890', $this->parser->motherboardStandard('Z890M'));
+        $this->assertSame('B650', $this->parser->motherboardStandard('B650M'));
+        $this->assertSame('B650E', $this->parser->motherboardStandard('B650E'));
+        $this->assertSame('7500F', $this->parser->cpuStandard('Ryzen 5 7500F'));
+        $this->assertSame('rtx5070', $this->parser->gpuStandard('rtx5070'));
+        $this->assertSame('Z890', $this->parser->pickTemplateCanon('motherboard', 'Intel Z890', $this->parser->defaultTemplateCanons('motherboard')));
+        $this->assertSame('rtx5070', $this->parser->pickTemplateCanon('gpu', 'RTX 5070', $this->parser->defaultTemplateCanons('gpu')));
+        $this->assertNull($this->parser->pickTemplateCanon('ssd', '1024', $this->parser->defaultTemplateCanons('ssd')));
+        $this->assertSame('256', $this->parser->pickTemplateCanon('ssd', 'SSD M.2 256 ГБ', $this->parser->defaultTemplateCanons('ssd')));
+        $this->assertSame('DDR5 32', $this->parser->pickTemplateCanon('ram', 'DDR5 32GB', $this->parser->defaultTemplateCanons('ram')));
+        $this->assertSame('500', $this->parser->pickTemplateCanon('psu', 'GPS-500A8', $this->parser->defaultTemplateCanons('psu')));
     }
 
     public function test_parses_psu_watts_from_model_and_vt(): void
