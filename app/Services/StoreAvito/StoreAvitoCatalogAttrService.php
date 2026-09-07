@@ -90,7 +90,9 @@ class StoreAvitoCatalogAttrService
         foreach ($products as $product) {
             $existing = StoreAvitoProductAttr::query()->where('sku', $product->sku)->first();
             if ($existing && $this->rowComplete($type, $existing)) {
-                continue;
+                if ($type !== 'gpu' || ! $this->gpuSkipShouldRetry($existing, $product)) {
+                    continue;
+                }
             }
             $pending++;
             $parsed = $this->parser->parse(
@@ -102,7 +104,8 @@ class StoreAvitoCatalogAttrService
             $parsed['type'] = $type === 'storage_ssd' ? 'ssd' : $type;
             $this->upsert((int) $product->sku, $parsed, 'heuristic');
             $done++;
-            if ($type === 'gpu' && $this->parser->isSkippedAvitoGpu((string) $product->name.' '.(string) ($product->part ?? ''))) {
+            $hay = (string) $product->name.' '.(string) ($product->part ?? '');
+            if ($type === 'gpu' && ($this->parser->isJunkAvitoGpu($hay) || $this->parser->isSkippedAvitoGpu($hay))) {
                 continue;
             }
             if (! $this->isComplete($type, $parsed)) {
@@ -222,7 +225,7 @@ class StoreAvitoCatalogAttrService
 
         $dictHint = match ($type) {
             'cpu' => 'avito_brand Intel|AMD; avito_model Core i5|Ryzen 5; avito_code — точный индекс из названия: 7500F не 7500, 12400F, 7800X3D. «Ryzen 5 7500F» → code 7500F, socket AM5.',
-            'gpu' => 'avito_brand — производитель карты (ZOTAC, Palit, MSI, ASUS, Gigabyte), НЕ NVIDIA/AMD. avito_model — полное имя из прайса. avito_code ТОЛЬКО из списка, иначе SKIP. NVIDIA: только RTX 40xx и 50xx — 4060, 4060 Ti, 4070, 4070 Super, 4070 Ti, 4070 Ti Super, 4080, 4080 Super, 4090, 5050, 5060, 5060 Ti, 5070, 5070 Ti, 5080, 5090. AMD: только RX 7000 и 9000 — 7600, 7600 XT, 7700 XT, 7800 XT, 7900 GRE, 7900 XT, 7900 XTX, 9060 XT, 9070, 9070 XT. SKIP (не пойдут в объявления): RTX 20/30, GTX, RX 6000, Arc, RTX A400/A2000, L40S, Quadro, Tesla, всё остальное. Ti/Super только если есть в названии.',
+            'gpu' => 'avito_code — канон чипа из названия/артикула, без выдумок. Только: RTX 4060, RTX 4060 Ti, RTX 4070, RTX 4070 Super, RTX 4070 Ti, RTX 4070 Ti Super, RTX 4080, RTX 4080 Super, RTX 4090, RTX 5050, RTX 5060, RTX 5060 Ti, RTX 5070, RTX 5070 Ti, RTX 5080, RTX 5090, RX 7600, RX 7600 XT, RX 7700 XT, RX 7800 XT, RX 7900 GRE, RX 7900 XT, RX 7900 XTX, RX 9060 XT, RX 9070, RX 9070 XT. «4060» → RTX 4060, «4060 Ti/4060ti» → RTX 4060 Ti. Ti и Super только если они есть в названии. avito_brand — производитель карты (ZOTAC, Palit, MSI), не NVIDIA. avito_model — имя из прайса. Иначе avito_code=SKIP (RTX 20/30, GTX, A400, L40S, Quadro, принтеры).',
             'ram' => 'ram_gb число комплекта, ddr DDR4|DDR5, avito_code вида «32 ГБ».',
             'motherboard' => 'socket AM4|AM5|LGA1700|LGA1851, ddr DDR4|DDR5, avito_brand ASUS|MSI|Gigabyte|ASRock, avito_model — полное имя платы, avito_code — чипсет B550|B650|B650E|B850|B760 (B650M это B650, не путать с B650E).',
             'psu' => 'wattage — ваттность блока (500, 550, 650, 750, 850). Из «GPS-500A8», «500Вт», «500 W» бери 500. Не путай с 80 PLUS.',
@@ -477,7 +480,8 @@ PROMPT;
     }
 
     /**
-     * DeepSeek приводит чип к каноническому виду, но не подменяет то, чего нет в названии SKU.
+     * DeepSeek стандартизирует чип (4060 → RTX 4060, 4060ti → RTX 4060 Ti).
+     * Нельзя подменить чип, который уже явно есть в SKU, и нельзя повесить 4060 на A400/барабан.
      *
      * @param  array<string, mixed>  $heuristic
      * @param  array<string, mixed>  $merged
@@ -489,7 +493,7 @@ PROMPT;
             return $merged;
         }
         $hay = trim((string) $product->name.' '.(string) ($product->part ?? ''));
-        if ($this->parser->isSkippedAvitoGpu($hay)) {
+        if ($this->parser->isJunkAvitoGpu($hay) || $this->parser->isSkippedAvitoGpu($hay) || $this->parser->isWorkstationGpu($hay)) {
             $merged['avito_code'] = StoreAvitoCatalogAttrParser::SKIP_GPU;
             $merged['avito_model'] = $heuristic['avito_model'] ?? ($merged['avito_model'] ?? null);
 
@@ -501,9 +505,9 @@ PROMPT;
 
             return $merged;
         }
-        $llm = trim((string) ($merged['avito_code'] ?? ''));
-        if ($llm !== '' && $this->gpuCodeInName($hay, $llm) && $this->parser->allowedAvitoGpuChip($llm) !== null) {
-            $merged['avito_code'] = $this->parser->allowedAvitoGpuChip($llm);
+        $canon = $this->parser->canonicalizeAllowedGpuChip((string) ($merged['avito_code'] ?? ''));
+        if ($canon !== null && $this->gpuChipAgreesWithName($hay, $canon)) {
+            $merged['avito_code'] = $canon;
 
             return $merged;
         }
@@ -512,26 +516,37 @@ PROMPT;
         return $merged;
     }
 
-    private function gpuCodeInName(string $hay, string $code): bool
+    private function gpuChipAgreesWithName(string $hay, string $chip): bool
     {
-        $hay = mb_strtolower($hay);
-        $code = mb_strtolower(trim($code));
-        $compactHay = preg_replace('/\s+/', '', $hay) ?? $hay;
-        $compactCode = preg_replace('/\s+/', '', $code) ?? $code;
-        if ($compactCode !== '' && str_contains($compactHay, $compactCode)) {
-            return true;
+        if (! preg_match('/(\d{4})/u', $chip, $m)) {
+            return false;
         }
-        $tokens = preg_split('/\s+/', $code) ?: [];
-        foreach ($tokens as $token) {
-            if ($token === '' || in_array($token, ['rtx', 'gtx', 'rx', 'geforce', 'radeon'], true)) {
-                continue;
-            }
-            if (! preg_match('/(?<![0-9a-z])'.preg_quote($token, '/').'(?![0-9a-z])/u', $hay)) {
-                return false;
-            }
+        $num = $m[1];
+        if (! preg_match('/(?<![0-9a-zа-яё])'.preg_quote($num, '/').'(?![0-9])/iu', $hay)) {
+            return false;
         }
+        $hayTi = (bool) preg_match('/(?<![a-zа-яё])ti(?![a-zа-яё])/iu', $hay);
+        $chipTi = (bool) preg_match('/\bti\b/i', $chip);
+        if ($hayTi !== $chipTi) {
+            return false;
+        }
+        $haySuper = (bool) preg_match('/(?<![a-zа-яё])super(?![a-zа-яё])/iu', $hay);
+        $chipSuper = (bool) preg_match('/\bsuper\b/i', $chip);
 
-        return $tokens !== [];
+        return $haySuper === $chipSuper;
+    }
+
+    private function gpuSkipShouldRetry(StoreAvitoProductAttr $row, StoreSupplierCatalogProduct $product): bool
+    {
+        if (($row->avito_code ?? '') !== StoreAvitoCatalogAttrParser::SKIP_GPU) {
+            return false;
+        }
+        $hay = trim((string) $product->name.' '.(string) ($product->part ?? ''));
+
+        return $this->parser->looksLikeDesktopGpu($hay)
+            && ! $this->parser->isJunkAvitoGpu($hay)
+            && ! $this->parser->isSkippedAvitoGpu($hay)
+            && ! $this->parser->isWorkstationGpu($hay);
     }
 
     private function clamp(string $type, array $parsed): array

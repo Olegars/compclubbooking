@@ -130,6 +130,36 @@ class StoreAvitoCatalogAttrParser
         return false;
     }
 
+    public function isJunkAvitoGpu(string $hay): bool
+    {
+        return $this->isJunkGpuHay(mb_strtolower($hay));
+    }
+
+    /**
+     * «4060», «4060ti», «RTX4060 Ti» → канон из белого списка.
+     */
+    public function canonicalizeAllowedGpuChip(string $raw): ?string
+    {
+        $raw = trim($raw);
+        if ($raw === '' || strcasecmp($raw, self::SKIP_GPU) === 0) {
+            return null;
+        }
+        foreach ([$raw, 'RTX '.$raw, 'RX '.$raw] as $try) {
+            $chip = $this->allowedAvitoGpuChip($try);
+            if ($chip !== null) {
+                return $chip;
+            }
+        }
+        $want = $this->compactGpuHay($raw);
+        foreach (\App\Support\StoreComponentSpecs::dictionaries()['gpu_chip'] as $chip) {
+            if ($this->compactGpuHay((string) $chip) === $want) {
+                return (string) $chip;
+            }
+        }
+
+        return null;
+    }
+
     public function allowedAvitoGpuChip(string $hay): ?string
     {
         if ($this->isWorkstationGpu($hay) || $this->isJunkGpuHay($hay)) {
@@ -145,6 +175,9 @@ class StoreAvitoCatalogAttrParser
         if (preg_match('/geforce(40|50)(\d{2})(ti)?(super)?/', $c, $m)) {
             return $this->formatRtxChip($m[1].$m[2], ! empty($m[3]), ! empty($m[4]));
         }
+        if (preg_match('/nvidia(40|50)(\d{2})(ti)?(super)?/', $c, $m)) {
+            return $this->formatRtxChip($m[1].$m[2], ! empty($m[3]), ! empty($m[4]));
+        }
         if (preg_match('/rx([79]\d{3})(xtx|xt|gre)?/', $c, $m)) {
             $raw = 'RX '.strtoupper($m[1]);
             if (! empty($m[2])) {
@@ -154,7 +187,7 @@ class StoreAvitoCatalogAttrParser
             return $raw;
         }
 
-        return null;
+        return $this->rtxChipFromGpuContext($hay);
     }
 
     public function isWorkstationGpu(string $hay): bool
@@ -167,14 +200,17 @@ class StoreAvitoCatalogAttrParser
         );
     }
 
-    private function looksLikeDesktopGpu(string $hay): bool
+    public function looksLikeDesktopGpu(string $hay): bool
     {
         $h = mb_strtolower($hay);
         if ($this->isJunkGpuHay($h)) {
             return false;
         }
 
-        return (bool) preg_match('/rtx|geforce|radeon|видеокарт|videocard|vga\b/iu', $h);
+        return (bool) preg_match(
+            '/rtx|ртх|geforce|гефорс|radeon|nvidia|видеокарт|видеоадаптер|videocard|gddr|pci-?e|\bvga\b/iu',
+            $h
+        );
     }
 
     private function isJunkGpuHay(string $hay): bool
@@ -185,10 +221,27 @@ class StoreAvitoCatalogAttrParser
         );
     }
 
+    /**
+     * «Видеокарта Palit Dual 4060 8GB» без слов RTX/GeForce.
+     * Не берём P4060 / 64060 — только отдельный токен 40xx/50xx.
+     */
+    private function rtxChipFromGpuContext(string $hay): ?string
+    {
+        if (! preg_match('/видеокарт|видеоадаптер|videocard|\bvga\b|gddr|pci-?e/iu', $hay)) {
+            return null;
+        }
+        if (! preg_match('/(?<![0-9a-zа-яё])(40|50)(\d{2})(?:\s*ti)?(?:\s*super)?(?![0-9])/iu', $hay, $m)) {
+            return null;
+        }
+
+        return $this->formatRtxChip($m[1].$m[2], (bool) preg_match('/ti/i', $m[0]), (bool) preg_match('/super/i', $m[0]));
+    }
+
     private function compactGpuHay(string $hay): string
     {
         $h = mb_strtolower($hay);
         $h = str_replace(['™', '®', '©'], ' ', $h);
+        $h = str_replace(['ртх', 'гефорс'], ['rtx', 'geforce'], $h);
         $h = preg_replace('/[^\p{L}\p{N}]+/u', '', $h) ?? $h;
 
         return $h;

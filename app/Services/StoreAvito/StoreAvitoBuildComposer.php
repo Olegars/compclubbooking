@@ -183,7 +183,10 @@ class StoreAvitoBuildComposer
             }
             $ssd = $ssds->random();
             $psu = $psus->isNotEmpty() ? $psus->random() : null;
-            $parts = array_values(array_filter([$cpu, $board, $ram, $gpu, $ssd, $psu]));
+            $parts = array_values(array_filter(
+                [$cpu, $board, $ram, $gpu, $ssd, $psu],
+                fn ($p) => is_array($p) && in_array($p['type'] ?? '', ['cpu', 'motherboard', 'ram', 'gpu', 'ssd', 'psu'], true)
+            ));
             $fingerprint = $this->fingerprint($parts);
             if (isset($used[$fingerprint])) {
                 continue;
@@ -211,12 +214,7 @@ class StoreAvitoBuildComposer
         $part = $tpl->cpu;
         $code = mb_strtolower((string) ($part?->avito_code ?? ''));
         $socket = $part?->socket;
-        $matched = $cpus->filter(fn (array $c) => $this->cpuMatches($c, $code, $socket))->values();
-        if ($matched->isNotEmpty() || $code === '') {
-            return $matched;
-        }
-
-        return $this->catalogCpus($code)->filter(fn (array $c) => $this->cpuMatches($c, $code, $socket))->values();
+        return $cpus->filter(fn (array $c) => $this->cpuMatches($c, $code, $socket))->values();
     }
 
     /**
@@ -269,12 +267,7 @@ class StoreAvitoBuildComposer
         if ($code === '') {
             return $live;
         }
-        $matched = $live->filter(fn (array $g) => $this->gpuChipMatches($g, $code))->values();
-        if ($matched->isNotEmpty()) {
-            return $matched;
-        }
-
-        return $this->catalogGpus($code)->filter(fn (array $g) => $this->gpuChipMatches($g, $code))->values();
+        return $live->filter(fn (array $g) => $this->gpuChipMatches($g, $code))->values();
     }
 
     /**
@@ -351,15 +344,15 @@ class StoreAvitoBuildComposer
      */
     private function gpuChipMatches(array $gpu, string $code): bool
     {
-        if ($this->isSkippedGpuRow($gpu) || ! $this->isAllowedGpuRow($gpu)) {
+        if ($this->isRejectedGpuRow($gpu)) {
             return false;
         }
-        $hay = trim(implode(' ', array_filter([
-            $gpu['name'] ?? null,
-            $gpu['part'] ?? null,
-        ])));
         $want = $this->gpuChipParts($code);
-        $got = $this->gpuChipParts($hay);
+        $got = $this->gpuChipParts((string) ($gpu['avito_code'] ?? ''))
+            ?: $this->gpuChipParts(trim(implode(' ', array_filter([
+                $gpu['name'] ?? null,
+                $gpu['part'] ?? null,
+            ]))));
         if ($want === null || $got === null) {
             return false;
         }
@@ -372,21 +365,27 @@ class StoreAvitoBuildComposer
      */
     private function isAllowedGpuRow(array $gpu): bool
     {
-        return $this->parser->isAllowedAvitoGpu(trim(($gpu['name'] ?? '').' '.($gpu['part'] ?? '')));
+        if ($this->isRejectedGpuRow($gpu)) {
+            return false;
+        }
+        $hay = trim(($gpu['name'] ?? '').' '.($gpu['part'] ?? ''));
+        if ($this->parser->isAllowedAvitoGpu($hay)) {
+            return true;
+        }
+
+        return $this->parser->canonicalizeAllowedGpuChip((string) ($gpu['avito_code'] ?? '')) !== null;
     }
 
     /**
      * @param  array<string, mixed>  $gpu
      */
-    private function isSkippedGpuRow(array $gpu): bool
+    private function isRejectedGpuRow(array $gpu): bool
     {
         $hay = trim(($gpu['name'] ?? '').' '.($gpu['part'] ?? ''));
-        if ($this->parser->isAllowedAvitoGpu($hay)) {
-            return false;
-        }
 
-        return ($gpu['avito_code'] ?? '') === StoreAvitoCatalogAttrParser::SKIP_GPU
-            || $this->parser->isSkippedAvitoGpu($hay);
+        return $this->parser->isJunkAvitoGpu($hay)
+            || $this->parser->isWorkstationGpu($hay)
+            || ($this->parser->isSkippedAvitoGpu($hay) && ! $this->parser->isAllowedAvitoGpu($hay));
     }
 
     /**
@@ -394,7 +393,7 @@ class StoreAvitoBuildComposer
      */
     private function gpuChipParts(string $hay): ?array
     {
-        $chip = $this->parser->allowedAvitoGpuChip($hay);
+        $chip = $this->parser->canonicalizeAllowedGpuChip($hay) ?: $this->parser->allowedAvitoGpuChip($hay);
         if ($chip === null) {
             return null;
         }
@@ -468,12 +467,7 @@ class StoreAvitoBuildComposer
         if ($want <= 0) {
             return $psus;
         }
-        $picked = $this->pickPsuWatts($psus, $want);
-        if ($picked->isNotEmpty()) {
-            return $picked;
-        }
-
-        return $this->pickPsuWatts($this->catalogPsus(), $want);
+        return $this->pickPsuWatts($psus, $want);
     }
 
     /**
@@ -519,168 +513,6 @@ class StoreAvitoBuildComposer
             (string) ($psu['part'] ?? ''),
             (string) ($psu['vendor'] ?? ''),
         )['wattage'] ?? 0);
-    }
-
-    /**
-     * @return Collection<int, array<string, mixed>>
-     */
-    private function catalogPsus(): Collection
-    {
-        return StoreSupplierCatalogProduct::query()
-            ->where(function ($w) {
-                $w->where('price', '>', 0)->orWhere('rrp', '>', 0);
-            })
-            ->where(function ($w) {
-                foreach (['блок питания', 'бп ', 'psu', 'power supply'] as $kw) {
-                    $w->orWhereRaw('LOWER(name) LIKE ?', ['%'.$kw.'%']);
-                }
-            })
-            ->orderBy('price')
-            ->limit(400)
-            ->get()
-            ->map(function (StoreSupplierCatalogProduct $p) {
-                $parsed = $this->parser->parse('psu', (string) $p->name, (string) ($p->part ?? ''), (string) ($p->vendor ?? ''));
-                $price = (float) ($p->price ?: $p->rrp ?: 0);
-                if ($price <= 0) {
-                    return null;
-                }
-
-                return [
-                    'type' => 'psu',
-                    'sku' => (int) $p->sku,
-                    'name' => (string) $p->name,
-                    'part' => (string) ($p->part ?? ''),
-                    'purchase' => $price,
-                    'socket' => null,
-                    'ddr' => null,
-                    'ram_gb' => null,
-                    'wattage' => $parsed['wattage'] ?? null,
-                    'avito_brand' => $parsed['avito_brand'] ?? null,
-                    'avito_model' => $parsed['avito_model'] ?? null,
-                    'avito_code' => $parsed['avito_code'] ?? null,
-                    'vendor' => (string) ($p->vendor ?? ''),
-                    'has_image' => (bool) $p->has_image,
-                ];
-            })
-            ->filter()
-            ->values();
-    }
-
-    /**
-     * Живые GPU из прайса, если разметка attrs пустая или поставила SKIP.
-     *
-     * @return Collection<int, array<string, mixed>>
-     */
-    private function catalogGpus(string $code): Collection
-    {
-        $parts = $this->gpuChipParts($code);
-        $needle = $parts['num'] ?? '';
-        if ($needle === '') {
-            return collect();
-        }
-
-        return StoreSupplierCatalogProduct::query()
-            ->where(function ($w) {
-                $w->where('price', '>', 0)->orWhere('rrp', '>', 0);
-            })
-            ->where(function ($w) {
-                foreach (['rtx', 'geforce', 'radeon', 'видеокарт'] as $kw) {
-                    $w->orWhereRaw('LOWER(name) LIKE ?', ['%'.$kw.'%'])
-                        ->orWhereRaw('LOWER(COALESCE(part, \'\')) LIKE ?', ['%'.$kw.'%']);
-                }
-            })
-            ->where(function ($w) use ($needle) {
-                $w->whereRaw('LOWER(name) LIKE ?', ['%'.$needle.'%'])
-                    ->orWhereRaw('LOWER(COALESCE(part, \'\')) LIKE ?', ['%'.$needle.'%']);
-            })
-            ->orderBy('price')
-            ->limit(400)
-            ->get()
-            ->map(function (StoreSupplierCatalogProduct $p) {
-                $price = (float) ($p->price ?: $p->rrp ?: 0);
-                $hay = (string) $p->name.' '.(string) ($p->part ?? '');
-                if ($price <= 0 || ! $this->parser->isAllowedAvitoGpu($hay)) {
-                    return null;
-                }
-                $parsed = $this->parser->parse('gpu', (string) $p->name, (string) ($p->part ?? ''), (string) ($p->vendor ?? ''));
-
-                return [
-                    'type' => 'gpu',
-                    'sku' => (int) $p->sku,
-                    'name' => (string) $p->name,
-                    'part' => (string) ($p->part ?? ''),
-                    'purchase' => $price,
-                    'socket' => null,
-                    'ddr' => null,
-                    'ram_gb' => null,
-                    'wattage' => null,
-                    'avito_brand' => $parsed['avito_brand'] ?? null,
-                    'avito_model' => $parsed['avito_model'] ?? null,
-                    'avito_code' => $parsed['avito_code'] ?? null,
-                    'vendor' => (string) ($p->vendor ?? ''),
-                    'has_image' => (bool) $p->has_image,
-                ];
-            })
-            ->filter()
-            ->values();
-    }
-
-    /**
-     * Живой CPU из прайса, если attrs нет или сокет/код размечены криво.
-     *
-     * @return Collection<int, array<string, mixed>>
-     */
-    private function catalogCpus(string $code): Collection
-    {
-        $needle = mb_strtolower(trim($code));
-        if ($needle === '') {
-            return collect();
-        }
-
-        return StoreSupplierCatalogProduct::query()
-            ->where(function ($w) {
-                $w->where('price', '>', 0)->orWhere('rrp', '>', 0);
-            })
-            ->where(function ($w) {
-                foreach (['процессор', 'ryzen', 'intel', 'core'] as $kw) {
-                    $w->orWhereRaw('LOWER(name) LIKE ?', ['%'.$kw.'%'])
-                        ->orWhereRaw('LOWER(COALESCE(part, \'\')) LIKE ?', ['%'.$kw.'%']);
-                }
-            })
-            ->where(function ($w) use ($needle) {
-                $w->whereRaw('LOWER(name) LIKE ?', ['%'.$needle.'%'])
-                    ->orWhereRaw('LOWER(COALESCE(part, \'\')) LIKE ?', ['%'.$needle.'%']);
-            })
-            ->orderBy('price')
-            ->limit(200)
-            ->get()
-            ->map(function (StoreSupplierCatalogProduct $p) {
-                $price = (float) ($p->price ?: $p->rrp ?: 0);
-                $hay = (string) $p->name.' '.(string) ($p->part ?? '');
-                if ($price <= 0 || preg_match('/epyc|threadripper|xeon|для ноут|ноутбук|laptop/iu', $hay)) {
-                    return null;
-                }
-                $parsed = $this->parser->parse('cpu', (string) $p->name, (string) ($p->part ?? ''), (string) ($p->vendor ?? ''));
-
-                return [
-                    'type' => 'cpu',
-                    'sku' => (int) $p->sku,
-                    'name' => (string) $p->name,
-                    'part' => (string) ($p->part ?? ''),
-                    'purchase' => $price,
-                    'socket' => $parsed['socket'] ?? null,
-                    'ddr' => null,
-                    'ram_gb' => null,
-                    'wattage' => null,
-                    'avito_brand' => $parsed['avito_brand'] ?? null,
-                    'avito_model' => $parsed['avito_model'] ?? null,
-                    'avito_code' => $parsed['avito_code'] ?? null,
-                    'vendor' => (string) ($p->vendor ?? ''),
-                    'has_image' => (bool) $p->has_image,
-                ];
-            })
-            ->filter()
-            ->values();
     }
 
     /**
@@ -766,8 +598,15 @@ class StoreAvitoBuildComposer
                 return null;
             }
             $hay = (string) $p->name.' '.(string) ($p->part ?? '');
-            if ($attr->type === 'gpu' && ! $this->parser->isAllowedAvitoGpu($hay)) {
-                return null;
+            if ($attr->type === 'gpu') {
+                $row = [
+                    'name' => (string) $p->name,
+                    'part' => (string) ($p->part ?? ''),
+                    'avito_code' => $attr->avito_code,
+                ];
+                if (! $this->isAllowedGpuRow($row)) {
+                    return null;
+                }
             }
             if ($attr->type === 'cpu' && preg_match('/epyc|threadripper|xeon|для ноут|ноутбук|laptop/iu', $hay)) {
                 return null;
@@ -849,6 +688,7 @@ class StoreAvitoBuildComposer
                 ?: (string) ($gpu['avito_model'] ?? $gpu['name'] ?? '');
             $gpuCode = $this->matcher->match('CodeVideocard', $gpuHay, $gpuModel)
                 ?: $this->parser->allowedAvitoGpuChip($gpuHay)
+                ?: $this->parser->canonicalizeAllowedGpuChip((string) ($gpu['avito_code'] ?? ''))
                 ?: (string) ($gpu['avito_code'] ?? '');
             if ($gpuBrand !== '') {
                 $xml['BrandVideocard'] = $gpuBrand;
