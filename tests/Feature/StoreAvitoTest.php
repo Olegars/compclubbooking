@@ -592,6 +592,39 @@ class StoreAvitoTest extends TestCase
         $this->assertSame('heuristic', $attr->source);
     }
 
+    public function test_deepseek_skip_does_not_write_product_title_to_standard(): void
+    {
+        config(['ai_assistant.deepseek.api_key' => 'sk-deepseek-test']);
+        $title = 'Накопитель SSD PCIE 6.4TB 7500 MAX MTFDKCC6T4TGQ-1BK1JABYY U.3 NVMe 7000/5900 3D';
+        StoreSupplierCatalogProduct::query()->create([
+            'sku' => 90,
+            'name' => $title,
+            'vendor' => 'Micron',
+            'price' => 80000,
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*chat/completions' => \Illuminate\Support\Facades\Http::response([
+                'choices' => [[
+                    'message' => [
+                        'content' => '[{"sku":90,"type":"skip","standard":"'.$title.'","avito_code":"'.$title.'"}]',
+                    ],
+                ]],
+            ]),
+        ]);
+        $svc = app(\App\Services\StoreAvito\StoreAvitoCatalogAttrService::class);
+        $svc->classifyProducts(
+            'storage_ssd',
+            StoreSupplierCatalogProduct::query()->where('sku', 90)->get(),
+            false,
+            true,
+        );
+        $attr = StoreAvitoProductAttr::query()->where('sku', 90)->first();
+        $this->assertNotNull($attr);
+        $this->assertSame('ssd', $attr->type);
+        $this->assertNull($attr->standard);
+        $this->assertTrue(mb_strlen((string) $attr->type) <= 32);
+    }
+
     public function test_deepseek_fills_standard_when_chip_absent_from_short_name(): void
     {
         config(['ai_assistant.deepseek.api_key' => 'sk-deepseek-test']);
@@ -624,12 +657,16 @@ class StoreAvitoTest extends TestCase
         $this->assertSame('rtx4060', $attr->standard);
         $this->assertSame('RTX 4060', $attr->avito_code);
         \Illuminate\Support\Facades\Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
-            $user = (string) data_get($request->data(), 'messages.1.content', '');
+            $data = $request->data();
+            $system = (string) data_get($data, 'messages.0.content', '');
+            $user = (string) data_get($data, 'messages.1.content', '');
 
-            return str_contains($user, '"title"')
+            return str_contains($system, 'видеокарт')
+                && str_contains($system, 'Type не определяй')
+                && str_contains($user, '"kind":"gpu"')
+                && str_contains($user, '"title"')
                 && str_contains($user, 'Видеокарта OEM Gaming 8G')
                 && ! str_contains($user, '"part"')
-                && ! str_contains($user, '"vendor"')
                 && ! str_contains($user, 'NE64060019');
         });
     }
