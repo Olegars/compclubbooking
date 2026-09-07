@@ -53,6 +53,12 @@ class StoreAvitoCatalogAttrParser
             default => $attrs,
         };
         $attrs['type'] = $type !== '' ? $type : ($attrs['type'] ?? null);
+        if ($type === 'ssd') {
+            $gb = $this->parseSsdStandard($hay) ?? $this->parseSsdStandard((string) ($attrs['ram_gb'] ?? ''));
+            if ($gb !== null) {
+                $attrs['ram_gb'] = (int) $gb;
+            }
+        }
         $attrs['standard'] = $this->deriveStandard($attrs);
 
         return $attrs;
@@ -82,7 +88,8 @@ class StoreAvitoCatalogAttrParser
         return match ($type) {
             'cpu', 'gpu', 'motherboard' => $fromCode,
             'ram' => $this->ramStandard($attrs['ddr'] ?? null, $attrs['ram_gb'] ?? null),
-            'ssd' => ! empty($attrs['ram_gb']) ? (string) (int) $attrs['ram_gb'] : null,
+            'ssd' => $this->parseSsdStandard((string) ($attrs['ram_gb'] ?? ''))
+                ?? $this->parseSsdStandard((string) ($attrs['avito_code'] ?? '')),
             'psu' => ! empty($attrs['wattage']) ? (string) (int) $attrs['wattage'] : null,
             default => $fromCode,
         };
@@ -136,6 +143,41 @@ class StoreAvitoCatalogAttrParser
             'ram_gb' => $gb,
             'standard' => $ddr.' '.$gb,
         ];
+    }
+
+    /**
+     * Канон шаблона: 256 или 512 (1 ТБ → 1024). Не путать с M.2.
+     */
+    public function parseSsdStandard(string $raw): ?string
+    {
+        $raw = strtoupper(trim($raw));
+        if ($raw === '') {
+            return null;
+        }
+        if (preg_match('/\b1\s*T(B|Б)\b/u', $raw) || preg_match('/\b(1024|1000)\b/', $raw)) {
+            return '1024';
+        }
+        if (! preg_match_all('/\d+/', $raw, $m)) {
+            return null;
+        }
+        $nums = array_map('intval', $m[0]);
+        foreach ([2048, 1024, 512, 500, 480, 256, 250, 240] as $n) {
+            if (in_array($n, $nums, true)) {
+                return (string) $this->canonicalizeSsdGb($n);
+            }
+        }
+
+        return null;
+    }
+
+    private function canonicalizeSsdGb(int $n): int
+    {
+        return match (true) {
+            $n >= 240 && $n <= 256 => 256,
+            $n >= 480 && $n <= 512 => 512,
+            $n >= 960 && $n <= 1024 => 1024,
+            default => $n,
+        };
     }
 
     private function cpu(string $hay, array $attrs): array

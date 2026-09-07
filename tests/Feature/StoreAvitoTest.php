@@ -726,6 +726,34 @@ class StoreAvitoTest extends TestCase
         $this->assertStringContainsString('Ryzen 5 OEM', implode(' ', array_column($ad->components, 'name')));
     }
 
+    public function test_generator_finds_ssd_256_when_standard_is_template_label(): void
+    {
+        $this->seed(StoreAvitoPartsSeeder::class);
+        $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 7500F Soc-AM5', 'AMD', 12000, [
+            'socket' => 'AM5', 'avito_brand' => 'AMD', 'avito_model' => 'Ryzen 5', 'avito_code' => '7500F',
+        ]);
+        $this->addCatalogRow(221, 'motherboard', 'MSI B650 GAMING DDR5', 'MSI', 14000, [
+            'socket' => 'AM5', 'ddr' => 'DDR5', 'avito_brand' => 'MSI', 'standard' => 'B650',
+        ]);
+        $this->addCatalogRow(321, 'ram', 'Kingston DDR5 32GB', 'Kingston', 8000, [
+            'ddr' => 'DDR5', 'ram_gb' => 32, 'avito_code' => '32 ГБ',
+        ]);
+        $this->addCatalogRow(521, 'ssd', 'Kingston NV2 256GB', 'Kingston', 2500, [
+            'standard' => 'SSD M.2 256 ГБ',
+        ]);
+        $this->addCatalogRow(621, 'psu', 'Chieftec 500W', 'Chieftec', 4000, ['wattage' => 500]);
+        $this->addCatalogRow(421, 'gpu', 'Palit GeForce RTX 5060 8GB', 'Palit', 28000, [
+            'avito_brand' => 'Palit', 'avito_code' => 'RTX 5060',
+        ]);
+        $this->makeConfig('cpu-7500f', 'ram-ddr5-32', 'ssd-m2-256', 'psu-500', 'gpu-rtx-5060');
+        StoreAvitoSetting::current()->forceFill(['address' => 'Москва', 'pc_type' => 'Игровой'])->save();
+
+        $result = app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
+        $this->assertSame(1, $result['created'], (string) ($result['error'] ?? ''));
+        $names = implode(' ', array_column(StoreAvitoAd::query()->first()->components, 'name'));
+        $this->assertStringContainsString('256GB', $names);
+    }
+
     public function test_generator_ignores_cpu_with_wrong_standard(): void
     {
         $this->seed(StoreAvitoPartsSeeder::class);

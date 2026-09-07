@@ -147,6 +147,19 @@ class StoreAvitoParserTest extends TestCase
         $this->assertNull($this->parser->parseRamStandard('32'));
     }
 
+    public function test_parses_ssd_256_not_m2(): void
+    {
+        $a = $this->parser->parse('ssd', 'Kingston NV2 256GB', '', 'Kingston');
+        $this->assertSame(256, $a['ram_gb']);
+        $this->assertSame('256', $a['standard']);
+        $this->assertSame('ssd', $a['type']);
+        $this->assertSame('256', $this->parser->parseSsdStandard('SSD M.2 256 ГБ'));
+        $this->assertSame('256', $this->parser->parseSsdStandard('M.2 250GB'));
+        $this->assertSame('512', $this->parser->parseSsdStandard('Samsung 980 512 ГБ'));
+        $this->assertSame('1024', $this->parser->parseSsdStandard('Kingston NV2 1TB'));
+        $this->assertNull($this->parser->parseSsdStandard('M.2'));
+    }
+
     public function test_parses_full_motherboard_name_not_chipset(): void
     {
         $a = $this->parser->parse('motherboard', 'GIGABYTE B760M GAMING X DDR4 (rev. 1.0)', '', 'GIGABYTE');

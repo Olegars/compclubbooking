@@ -231,7 +231,7 @@ class StoreAvitoCatalogAttrService
             'ram' => 'type=ram. standard как в шаблоне: «DDR4 32», «DDR5 32», «DDR5 16» (поколение + объём комплекта). Не пиши одно число 32 — без DDR4/DDR5 шаблон не найдёт модуль. ram_gb то же число, ddr DDR4|DDR5, avito_code вида «32 ГБ».',
             'motherboard' => 'type=mb. standard — чипсет как в шаблоне: B550|B650|B650E|B850|B760 (B650M это B650, не путать с B650E). socket AM4|AM5|LGA1700|LGA1851, ddr DDR4|DDR5, avito_brand ASUS|MSI|Gigabyte|ASRock, avito_model — полное имя платы, avito_code = standard.',
             'psu' => 'type=psu. standard — ваттность как в шаблоне: 500, 550, 650, 750, 850. Из «GPS-500A8», «500Вт», «500 W» бери 500. wattage то же число. Не путай с 80 PLUS.',
-            'storage_ssd' => 'type=ssd. standard — объём в ГБ как в шаблоне: 256, 512, 1024. ram_gb то же число, avito_model из названия.',
+            'storage_ssd' => 'type=ssd. standard — ТОЛЬКО объём как в шаблоне: 256 или 512. Не пиши «SSD M.2 256 ГБ» и не путай с M.2. «250ГБ/256GB» → 256, «500/512» → 512, «1TB» → 1024. ram_gb то же число.',
             default => 'type по сути товара (cpu|mb|gpu|ram|ssd|psu|skip), standard — канон шаблона.',
         };
 
@@ -484,7 +484,8 @@ PROMPT;
             'ram' => ((int) ($parsed['ram_gb'] ?? 0) > 0 || $canon) && filled($parsed['ddr']),
             'motherboard' => $canon && filled($parsed['socket']) && filled($parsed['ddr']) && filled($parsed['avito_brand']),
             'psu' => (int) ($parsed['wattage'] ?? 0) > 0 || $canon,
-            'storage_ssd', 'ssd' => (int) ($parsed['ram_gb'] ?? 0) > 0 || $canon || filled($parsed['avito_model']),
+            'storage_ssd', 'ssd' => $this->parser->parseSsdStandard((string) ($parsed['standard'] ?? '')) !== null
+                || (int) ($parsed['ram_gb'] ?? 0) > 0,
             default => filled($parsed['avito_model']),
         };
     }
@@ -525,8 +526,13 @@ PROMPT;
                     $parsed['avito_code'] = AvitoPcXmlDict::ramSizeForGb($ramStd['ram_gb']);
                 }
             }
-            if ($type === 'ssd' && (int) $std > 0) {
-                $parsed['ram_gb'] = (int) $std;
+            if ($type === 'ssd') {
+                $ssdStd = $this->parser->parseSsdStandard($std)
+                    ?: $this->parser->parseSsdStandard((string) ($parsed['ram_gb'] ?? ''));
+                if ($ssdStd !== null) {
+                    $parsed['standard'] = $ssdStd;
+                    $parsed['ram_gb'] = (int) $ssdStd;
+                }
             }
             if ($type === 'psu' && (int) $std > 0) {
                 $parsed['wattage'] = (int) $std;

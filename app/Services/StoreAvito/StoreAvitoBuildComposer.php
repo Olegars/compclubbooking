@@ -145,7 +145,7 @@ class StoreAvitoBuildComposer
             return null;
         }
         if ($ssds->isEmpty()) {
-            $this->lastFailures[] = $label.': в каталоге нет SSD '.($tpl->ssd?->label ?: '');
+            $this->lastFailures[] = $label.': в каталоге нет SSD '.((int) ($tpl->ssd?->capacity_gb ?? 0) ?: ($tpl->ssd?->label ?: ''));
 
             return null;
         }
@@ -246,7 +246,7 @@ class StoreAvitoBuildComposer
         return match ($kind) {
             'cpu', 'gpu', 'motherboard' => trim((string) $part->avito_code),
             'ram' => (string) ($this->parser->ramStandard($part->ddr, $part->ram_gb) ?? ''),
-            'ssd' => (int) $part->capacity_gb > 0 ? (string) (int) $part->capacity_gb : '',
+            'ssd' => (string) ($this->parser->parseSsdStandard((string) (int) $part->capacity_gb) ?? ''),
             'psu' => (int) $part->wattage > 0 ? (string) (int) $part->wattage : '',
             default => trim((string) $part->avito_code),
         };
@@ -264,13 +264,18 @@ class StoreAvitoBuildComposer
 
             return $parsed['standard'] ?? '';
         }
+        if ($kind === 'ssd') {
+            return $this->parser->parseSsdStandard($s)
+                ?? $this->parser->parseSsdStandard((string) ($row['ram_gb'] ?? ''))
+                ?? $this->parser->parseSsdStandard(trim((string) ($row['name'] ?? '').' '.(string) ($row['part'] ?? '')))
+                ?? '';
+        }
         if ($s !== '' && strcasecmp($s, StoreAvitoCatalogAttrParser::SKIP_GPU) !== 0) {
             return $s;
         }
 
         return match ($kind) {
             'cpu', 'gpu', 'motherboard' => trim((string) ($row['avito_code'] ?? '')),
-            'ssd' => (int) ($row['ram_gb'] ?? 0) > 0 ? (string) (int) $row['ram_gb'] : '',
             'psu' => (int) ($row['wattage'] ?? 0) > 0 ? (string) (int) $row['wattage'] : '',
             default => trim((string) ($row['avito_code'] ?? '')),
         };
@@ -296,7 +301,13 @@ class StoreAvitoBuildComposer
 
             return $a !== null && $b !== null && $a['standard'] === $b['standard'];
         }
-        if (in_array($kind, ['ssd', 'psu'], true)) {
+        if ($kind === 'ssd') {
+            $a = $this->parser->parseSsdStandard($want);
+            $b = $this->parser->parseSsdStandard($got);
+
+            return $a !== null && $b !== null && $a === $b;
+        }
+        if ($kind === 'psu') {
             $a = (int) $this->digitsFrom($want);
             $b = (int) $this->digitsFrom($got);
 
