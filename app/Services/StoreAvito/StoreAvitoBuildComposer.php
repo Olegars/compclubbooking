@@ -270,12 +270,20 @@ class StoreAvitoBuildComposer
                 ?? $this->parser->parseSsdStandard(trim((string) ($row['name'] ?? '').' '.(string) ($row['part'] ?? '')))
                 ?? '';
         }
+        if ($kind === 'gpu') {
+            $hay = trim((string) ($row['name'] ?? '').' '.(string) ($row['part'] ?? ''));
+
+            return $this->parser->canonicalizeAllowedGpuChip($s)
+                ?: $this->parser->canonicalizeAllowedGpuChip((string) ($row['avito_code'] ?? ''))
+                ?: $this->parser->allowedAvitoGpuChip($hay)
+                ?: '';
+        }
         if ($s !== '' && strcasecmp($s, StoreAvitoCatalogAttrParser::SKIP_GPU) !== 0) {
             return $s;
         }
 
         return match ($kind) {
-            'cpu', 'gpu', 'motherboard' => trim((string) ($row['avito_code'] ?? '')),
+            'cpu', 'motherboard' => trim((string) ($row['avito_code'] ?? '')),
             'psu' => (int) ($row['wattage'] ?? 0) > 0 ? (string) (int) $row['wattage'] : '',
             default => trim((string) ($row['avito_code'] ?? '')),
         };
@@ -287,10 +295,10 @@ class StoreAvitoBuildComposer
             return false;
         }
         if ($kind === 'gpu') {
-            $a = $this->parser->canonicalizeAllowedGpuChip($want) ?: $want;
-            $b = $this->parser->canonicalizeAllowedGpuChip($got) ?: $got;
+            $a = $this->parser->canonicalizeAllowedGpuChip($want);
+            $b = $this->parser->canonicalizeAllowedGpuChip($got);
 
-            return $this->normToken($a) === $this->normToken($b);
+            return $a !== null && $b !== null && $a === $b;
         }
         if ($kind === 'motherboard') {
             return $this->chipsetTokenEquals($got, $want);
@@ -384,9 +392,6 @@ class StoreAvitoBuildComposer
             return false;
         }
         $std = $this->rowStandard($gpu, 'gpu');
-        if ($std === '' || strcasecmp($std, StoreAvitoCatalogAttrParser::SKIP_GPU) === 0) {
-            return false;
-        }
 
         return $this->parser->canonicalizeAllowedGpuChip($std) !== null;
     }

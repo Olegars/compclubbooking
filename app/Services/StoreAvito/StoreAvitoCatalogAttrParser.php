@@ -336,7 +336,7 @@ class StoreAvitoCatalogAttrParser
         }
 
         return (bool) preg_match(
-            '/rtx|ртх|geforce|гефорс|radeon|nvidia|видеокарт|видеоадаптер|videocard|gddr|pci-?e|\bvga\b/iu',
+            '/rtx|ртх|geforce|гефорс|radeon|nvidia|видеокарт|видеоадаптер|videocard|gddr|pci-?e|\bvga\b|(?<![0-9a-zа-яё])(40|50)\d{2}(?![0-9])/iu',
             $h
         );
     }
@@ -350,19 +350,17 @@ class StoreAvitoCatalogAttrParser
     }
 
     /**
-     * «Видеокарта Palit Dual 4060 8GB» без слов RTX/GeForce.
-     * Не берём P4060 / 64060 — только отдельный токен 40xx/50xx.
+     * «Palit Dual 4060 8GB» без слов RTX/GeForce. Не P4060 / 64060.
      */
     private function rtxChipFromGpuContext(string $hay): ?string
     {
-        if (! preg_match('/видеокарт|видеоадаптер|videocard|\bvga\b|gddr|pci-?e/iu', $hay)) {
+        if (! preg_match('/(?<![0-9a-zа-яё])(40|50)(\d{2})(?![0-9])/iu', $hay, $m)) {
             return null;
         }
-        if (! preg_match('/(?<![0-9a-zа-яё])(40|50)(\d{2})(?:\s*ti)?(?:\s*super)?(?![0-9])/iu', $hay, $m)) {
-            return null;
-        }
+        $ti = (bool) preg_match('/(?<![a-zа-яё])ti(?![a-zа-яё])/iu', $hay);
+        $super = (bool) preg_match('/(?<![a-zа-яё])super(?![a-zа-яё])/iu', $hay);
 
-        return $this->formatRtxChip($m[1].$m[2], (bool) preg_match('/ti/i', $m[0]), (bool) preg_match('/super/i', $m[0]));
+        return $this->formatRtxChip($m[1].$m[2], $ti, $super);
     }
 
     private function compactGpuHay(string $hay): string
