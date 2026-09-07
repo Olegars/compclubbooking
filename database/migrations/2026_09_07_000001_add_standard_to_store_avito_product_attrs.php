@@ -14,9 +14,11 @@ return new class extends Migration
             $table->index(['type', 'standard']);
         });
 
-        DB::statement("UPDATE store_avito_product_attrs SET standard = avito_code WHERE (standard IS NULL OR standard = '') AND avito_code IS NOT NULL AND avito_code != '' AND avito_code != 'SKIP'");
+        $driver = Schema::getConnection()->getDriverName();
+        $len = $driver === 'sqlite' ? 'length(avito_code)' : 'CHAR_LENGTH(avito_code)';
+        DB::statement("UPDATE store_avito_product_attrs SET standard = avito_code WHERE (standard IS NULL OR standard = '') AND type IN ('cpu', 'gpu', 'motherboard') AND avito_code IS NOT NULL AND avito_code != '' AND avito_code != 'SKIP' AND {$len} <= 64");
         DB::statement("UPDATE store_avito_product_attrs SET standard = ram_gb WHERE (standard IS NULL OR standard = '') AND type IN ('ssd', 'storage_ssd') AND ram_gb IS NOT NULL AND ram_gb > 0");
-        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+        if ($driver === 'sqlite') {
             DB::statement("UPDATE store_avito_product_attrs SET standard = ddr || ' ' || ram_gb WHERE type = 'ram' AND ddr IS NOT NULL AND ddr != '' AND ram_gb IS NOT NULL AND ram_gb > 0");
         } else {
             DB::statement("UPDATE store_avito_product_attrs SET standard = CONCAT(ddr, ' ', ram_gb) WHERE type = 'ram' AND ddr IS NOT NULL AND ddr != '' AND ram_gb IS NOT NULL AND ram_gb > 0");
