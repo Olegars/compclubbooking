@@ -737,13 +737,7 @@ class StoreAvitoTest extends TestCase
         $this->assertSame('motherboard', $attr?->type);
         $this->assertSame('Z890', $attr?->standard);
         $this->assertSame('Z890', $attr?->avito_code);
-        \Illuminate\Support\Facades\Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
-            $system = (string) data_get($request->data(), 'messages.0.content', '');
-
-            return str_contains($system, 'Z890')
-                && str_contains($system, 'B650')
-                && str_contains($system, 'шаблонов конфигураций');
-        });
+        \Illuminate\Support\Facades\Http::assertNothingSent();
     }
 
     public function test_deepseek_gpu_palit_5070_becomes_rtx5070(): void

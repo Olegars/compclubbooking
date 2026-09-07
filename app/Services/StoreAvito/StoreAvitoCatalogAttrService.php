@@ -19,6 +19,8 @@ class StoreAvitoCatalogAttrService
     /** DeepSeek при синке каталога — как корпуса, только эти типы. */
     public const STD_TYPES = ['cpu', 'gpu', 'motherboard', 'ram', 'storage_ssd', 'psu'];
 
+    private const LLM_BATCH = 32;
+
     /** @var array<string, list<string>> */
     private array $templateCanonCache = [];
 
@@ -50,6 +52,7 @@ class StoreAvitoCatalogAttrService
             $q->whereIn('category_external_id', $ids);
         }
         $this->excludeWrongComponentNames($q, $type);
+        $this->excludeNonDesktopBom($q, $type);
 
         return $q->orderBy('price')->limit($limit)->get();
     }
@@ -57,31 +60,42 @@ class StoreAvitoCatalogAttrService
     /**
      * Как корпуса: уже размеченные не трогаем, DeepSeek только дыры.
      *
-     * @return array{total:int, pending_before:int, classified:int}
+     * @param  callable(string,int,int,int):void|null  $onType  type, total, pending, llm
+     * @return array{total:int, pending_before:int, classified:int, llm:int}
      */
-    public function classifyAll(bool $force = false): array
+    public function classifyAll(bool $force = false, ?string $onlyType = null, int $limit = 8000, ?callable $onType = null): array
     {
+        $types = $onlyType ? [$this->parser->normalizeType($onlyType) === 'ssd' ? 'storage_ssd' : $onlyType] : self::STD_TYPES;
         $total = 0;
         $pending = 0;
         $classified = 0;
-        foreach (self::STD_TYPES as $type) {
-            $products = $this->inCategory($type);
-            $total += $products->count();
+        $llm = 0;
+        foreach ($types as $type) {
+            if (! in_array($type, self::STD_TYPES, true)) {
+                continue;
+            }
+            $products = $this->inStock($type, $limit);
             $result = $this->classifyProducts($type, $products, $force);
+            $total += $result['total'];
             $pending += $result['pending_before'];
             $classified += $result['classified'];
+            $llm += $result['llm'];
+            if ($onType) {
+                $onType($type, $result['total'], $result['pending_before'], $result['llm']);
+            }
         }
 
         return [
             'total' => $total,
             'pending_before' => $pending,
             'classified' => $classified,
+            'llm' => $llm,
         ];
     }
 
     /**
      * @param  Collection<int, StoreSupplierCatalogProduct>  $products
-     * @return array{total:int, pending_before:int, classified:int}
+     * @return array{total:int, pending_before:int, classified:int, llm:int}
      */
     public function classifyProducts(string $type, Collection $products, bool $force = false, bool $useLlm = true): array
     {
@@ -89,15 +103,17 @@ class StoreAvitoCatalogAttrService
             StoreAvitoProductAttr::query()->whereIn('sku', $products->pluck('sku')->all())->delete();
         }
 
+        $existingBySku = StoreAvitoProductAttr::query()
+            ->whereIn('sku', $products->pluck('sku')->all())
+            ->get()
+            ->keyBy(fn (StoreAvitoProductAttr $row) => (int) $row->sku);
+
         $needLlm = [];
         $pending = 0;
         $done = 0;
         foreach ($products as $product) {
-            $existing = StoreAvitoProductAttr::query()->where('sku', $product->sku)->first();
-            if ($existing && $existing->source === 'deepseek' && $this->isStdType($type)) {
-                continue;
-            }
-            if ($existing && $this->rowComplete($type, $existing) && ! $this->isStdType($type)) {
+            $existing = $existingBySku->get((int) $product->sku);
+            if ($existing && $this->shouldSkipExisting($type, $existing)) {
                 continue;
             }
             $pending++;
@@ -111,22 +127,25 @@ class StoreAvitoCatalogAttrService
             $this->upsert((int) $product->sku, $parsed, 'heuristic');
             $done++;
             $hay = (string) $product->name;
-            if ($type === 'gpu' && ($this->parser->isJunkAvitoGpu($hay) || $this->parser->isWorkstationGpu($hay))) {
+            if ($this->isNonDesktopBom($type, $hay)) {
                 continue;
             }
-            if ($this->isStdType($type)) {
+            if ($this->isStdType($type) && ! filled($parsed['standard'] ?? null)) {
                 $needLlm[] = $product;
             }
         }
 
+        $llmDone = 0;
         if ($useLlm && $needLlm !== [] && $this->isStdType($type) && $this->llmConfigured()) {
-            $done += $this->fillWithLlm($type, $needLlm);
+            $llmDone = $this->fillWithLlm($type, $needLlm);
+            $done += $llmDone;
         }
 
         return [
             'total' => $products->count(),
             'pending_before' => $pending,
             'classified' => $done,
+            'llm' => count($needLlm),
         ];
     }
 
@@ -154,7 +173,7 @@ class StoreAvitoCatalogAttrService
     private function fillWithLlm(string $type, array $products): int
     {
         $updated = 0;
-        foreach (array_chunk($products, 8) as $chunk) {
+        foreach (array_chunk($products, self::LLM_BATCH) as $chunk) {
             $updated += $this->fillChunk($type, $chunk);
         }
 
@@ -546,6 +565,18 @@ PROMPT;
         return true;
     }
 
+    private function shouldSkipExisting(string $type, StoreAvitoProductAttr $existing): bool
+    {
+        if (! $this->isStdType($type)) {
+            return $this->rowComplete($type, $existing);
+        }
+        if ($existing->source === 'deepseek') {
+            return true;
+        }
+
+        return filled($existing->standard);
+    }
+
     private function isStdType(string $type): bool
     {
         return in_array($type, self::STD_TYPES, true);
@@ -556,9 +587,61 @@ PROMPT;
      */
     private function excludeWrongComponentNames($query, string $type): void
     {
-        foreach ($this->search->typeRules()[$type]['name_exclude'] ?? [] as $ex) {
+        $ruleType = $type === 'ssd' ? 'storage_ssd' : $type;
+        foreach ($this->search->typeRules()[$ruleType]['name_exclude'] ?? [] as $ex) {
             $query->whereRaw('LOWER(name) NOT LIKE ?', ['%'.mb_strtolower((string) $ex).'%']);
         }
+        $includes = $this->search->typeRules()[$ruleType]['name_include'] ?? [];
+        $kind = $this->parser->normalizeType($type);
+        if ($includes !== [] && in_array($kind, ['motherboard', 'cpu', 'ram', 'ssd'], true)) {
+            $query->where(function ($w) use ($includes) {
+                foreach ($includes as $kw) {
+                    $w->orWhereRaw('LOWER(name) LIKE ?', ['%'.mb_strtolower((string) $kw).'%']);
+                }
+            });
+        }
+    }
+
+    /** Ноутбуки, сервер, бытовая техника, расходники — не комплектующие сборок. */
+    private function excludeNonDesktopBom($query, string $type): void
+    {
+        foreach ($this->nonDesktopHay($type) as $ex) {
+            $query->whereRaw('LOWER(name) NOT LIKE ?', ['%'.mb_strtolower($ex).'%']);
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function nonDesktopHay(string $type): array
+    {
+        $common = ['для ноут', 'ноутбук', 'laptop', 'для сервер', 'server'];
+
+        return match ($this->parser->normalizeType($type)) {
+            'cpu' => array_merge($common, ['epyc', 'xeon', 'threadripper']),
+            'gpu' => array_merge($common, ['фотобарабан', 'тонер', 'картридж', 'quadro', 'rtx a', 'l40s']),
+            'ram' => array_merge($common, ['so-dimm', 'sodimm']),
+            'ssd' => array_merge($common, ['u.2', 'u.3']),
+            'motherboard' => $common,
+            'psu' => ['микроволн', 'аэрогрил', 'чайник', 'утюг', 'фен', 'пылесос', 'бытов'],
+            default => $common,
+        };
+    }
+
+    private function isNonDesktopBom(string $type, string $hay): bool
+    {
+        $kind = $this->parser->normalizeType($type);
+        if ($kind === 'gpu' && ($this->parser->isJunkAvitoGpu($hay) || $this->parser->isWorkstationGpu($hay))) {
+            return true;
+        }
+        $n = mb_strtolower($hay);
+        foreach ($this->nonDesktopHay($type) as $ex) {
+            if (str_contains($n, mb_strtolower($ex))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
