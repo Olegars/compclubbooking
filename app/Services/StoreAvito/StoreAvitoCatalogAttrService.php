@@ -45,6 +45,7 @@ class StoreAvitoCatalogAttrService
             }
             $q->whereIn('category_external_id', $ids);
         }
+        $this->excludeWrongComponentNames($q, $type);
 
         return $q->orderBy('price')->limit($limit)->get();
     }
@@ -104,16 +105,16 @@ class StoreAvitoCatalogAttrService
             $parsed = $this->applyStandard($parsed, $type);
             $this->upsert((int) $product->sku, $parsed, 'heuristic');
             $done++;
-            $hay = (string) $product->name.' '.(string) ($product->part ?? '');
+            $hay = (string) $product->name;
             if ($type === 'gpu' && ($this->parser->isJunkAvitoGpu($hay) || $this->parser->isSkippedAvitoGpu($hay))) {
                 continue;
             }
-            if (! $this->isComplete($type, $parsed)) {
+            if (! $this->isComplete($type, $parsed) && $this->isStdType($type)) {
                 $needLlm[] = $product;
             }
         }
 
-        if ($useLlm && $needLlm !== [] && $this->llmConfigured()) {
+        if ($useLlm && $needLlm !== [] && $this->isStdType($type) && $this->llmConfigured()) {
             $done += $this->fillWithLlm($type, $needLlm);
         }
 
@@ -219,15 +220,13 @@ class StoreAvitoCatalogAttrService
         foreach ($chunk as $p) {
             $payload[] = [
                 'sku' => (int) $p->sku,
-                'name' => (string) $p->name,
-                'part' => (string) ($p->part ?? ''),
-                'vendor' => (string) ($p->vendor ?? ''),
+                'title' => (string) $p->name,
             ];
         }
 
         $dictHint = match ($type) {
             'cpu' => 'type=cpu. standard — канон как в шаблоне конфигурации, ТОЛЬКО индекс: 7500F (не 7500, не Ryzen 5 7500F), 12400F, 7800X3D. «Ryzen 5 7500F» → standard 7500F, socket AM5. avito_brand Intel|AMD; avito_model Core i5|Ryzen 5. avito_code = standard.',
-            'gpu' => 'type=gpu. standard — канон чипа как в шаблоне, без выдумок. Только: RTX 4060, RTX 4060 Ti, RTX 4070, RTX 4070 Super, RTX 4070 Ti, RTX 4070 Ti Super, RTX 4080, RTX 4080 Super, RTX 4090, RTX 5050, RTX 5060, RTX 5060 Ti, RTX 5070, RTX 5070 Ti, RTX 5080, RTX 5090, RX 7600, RX 7600 XT, RX 7700 XT, RX 7800 XT, RX 7900 GRE, RX 7900 XT, RX 7900 XTX, RX 9060 XT, RX 9070, RX 9070 XT. «4060» → RTX 4060, «4060 Ti/4060ti» → RTX 4060 Ti. Ti и Super только если они есть в названии. avito_brand — производитель карты (ZOTAC, Palit, MSI), не NVIDIA. avito_model — имя из прайса. avito_code = standard. Иначе type=skip и standard=SKIP (RTX 20/30, GTX, A400, L40S, Quadro, принтеры).',
+            'gpu' => 'type=gpu. standard — компактный канон для выборки, слитно латиницей: rtx4060, rtx4060ti, rtx4070super, rtx4070tisuper, rx7900xt. Белый список чипов: 4060/4060ti/4070/4070super/4070ti/4070tisuper/4080/4080super/4090/5050/5060/5060ti/5070/5070ti/5080/5090 и RX 7600/7600xt/7700xt/7800xt/7900gre/7900xt/7900xtx/9060xt/9070/9070xt. «4060» → rtx4060, «4060 Ti/4060ti» → rtx4060ti. Ti и Super только если они есть в заголовке. avito_brand — производитель карты (ZOTAC, Palit, MSI), не NVIDIA. avito_model — из заголовка. avito_code — человекочитаемый чип для XML Avito: RTX 4060 / RTX 4060 Ti. Иначе type=skip и standard=SKIP (RTX 20/30, GTX, A400, L40S, Quadro, принтеры).',
             'ram' => 'type=ram. standard как в шаблоне: «DDR4 32», «DDR5 32», «DDR5 16» (поколение + объём комплекта). Не пиши одно число 32 — без DDR4/DDR5 шаблон не найдёт модуль. ram_gb то же число, ddr DDR4|DDR5, avito_code вида «32 ГБ».',
             'motherboard' => 'type=mb. standard — чипсет как в шаблоне: B550|B650|B650E|B850|B760 (B650M это B650, не путать с B650E). socket AM4|AM5|LGA1700|LGA1851, ddr DDR4|DDR5, avito_brand ASUS|MSI|Gigabyte|ASRock, avito_model — полное имя платы, avito_code = standard.',
             'psu' => 'type=psu. standard — ваттность как в шаблоне: 500, 550, 650, 750, 850. Из «GPS-500A8», «500Вт», «500 W» бери 500. wattage то же число. Не путай с 80 PLUS.',
@@ -236,11 +235,13 @@ class StoreAvitoCatalogAttrService
         };
 
         $system = <<<PROMPT
-Ты размечаешь комплектующие ПК. Сборки ищут SKU только по полям type + standard (как в шаблоне конфигурации).
+Ты размечаешь комплектующие для сборки ПК. На вход — sku и заголовок товара (title). Артикул и вендор не даём: смотри только заголовок.
+Размечай только нужные типы: cpu, gpu, mb, ram, ssd, psu. Кулеры, корпуса, принтеры, расходники и прочее — type=skip.
+Сборки потом ищут SKU только по полям type + standard.
 Верни ТОЛЬКО JSON-массив, без markdown и без текста вокруг:
-[{"sku":1,"type":"cpu|mb|gpu|ram|ssd|psu|skip","standard":"7500F|RTX 4060|B650|DDR5 32|256|500","socket":"AM5|AM4|LGA1700|LGA1851|null","ddr":"DDR4|DDR5|null","ram_gb":32,"wattage":650,"form":"atx|matx|itx|null","avito_brand":"...","avito_model":"...","avito_code":"..."}]
+[{"sku":1,"type":"cpu|mb|gpu|ram|ssd|psu|skip","standard":"7500F|rtx4060|B650|DDR5 32|256|500","socket":"AM5|AM4|LGA1700|LGA1851|null","ddr":"DDR4|DDR5|null","ram_gb":32,"wattage":650,"form":"atx|matx|itx|null","avito_brand":"...","avito_model":"...","avito_code":"..."}]
 Правила: {$dictHint}
-type и standard обязательны. avito_code для cpu/gpu/mb копируй из standard. Не выдумывай поля, которых нет в названии — тогда null.
+type и standard обязательны. avito_code для cpu/mb копируй из standard. Для gpu avito_code — RTX 4060 / RTX 4060 Ti, standard — rtx4060 / rtx4060ti. Не выдумывай поля, которых нет в заголовке — тогда null.
 PROMPT;
 
         $body = [
@@ -423,6 +424,7 @@ PROMPT;
         } elseif (! $this->applyNameFallback($q, $type)) {
             return collect();
         }
+        $this->excludeWrongComponentNames($q, $type);
 
         return $q->orderBy('sku')->limit(8000)->get();
     }
@@ -440,6 +442,21 @@ PROMPT;
         });
 
         return true;
+    }
+
+    private function isStdType(string $type): bool
+    {
+        return in_array($type, self::STD_TYPES, true);
+    }
+
+    /**
+     * В категории поставщика бывают чужие позиции — не скармливаем их DeepSeek.
+     */
+    private function excludeWrongComponentNames($query, string $type): void
+    {
+        foreach ($this->search->typeRules()[$type]['name_exclude'] ?? [] as $ex) {
+            $query->whereRaw('LOWER(name) NOT LIKE ?', ['%'.mb_strtolower((string) $ex).'%']);
+        }
     }
 
     /**
@@ -491,7 +508,7 @@ PROMPT;
     }
 
     /**
-     * type + standard — канон шаблона. avito_code для XML совпадает со standard у cpu/gpu/mb.
+     * type + standard — канон шаблона. GPU: standard компактный (rtx4060ti), avito_code — RTX 4060 Ti для XML.
      *
      * @param  array<string, mixed>  $parsed
      * @return array<string, mixed>
@@ -513,8 +530,17 @@ PROMPT;
         }
 
         if ($std !== '' && strcasecmp($std, StoreAvitoCatalogAttrParser::SKIP_GPU) !== 0) {
-            if (in_array($type, ['cpu', 'gpu', 'motherboard'], true)) {
+            if (in_array($type, ['cpu', 'motherboard'], true)) {
                 $parsed['avito_code'] = $std;
+            }
+            if ($type === 'gpu') {
+                $raw = $std !== '' ? $std : (string) ($parsed['avito_code'] ?? '');
+                $compact = $this->parser->gpuStandard($raw) ?: $this->parser->gpuStandard((string) ($parsed['avito_code'] ?? ''));
+                if ($compact !== null) {
+                    $parsed['standard'] = $compact;
+                    $parsed['avito_code'] = $this->parser->gpuStandardPretty($raw)
+                        ?: $this->parser->gpuStandardPretty((string) ($parsed['avito_code'] ?? ''));
+                }
             }
             if ($type === 'ram') {
                 $ramStd = $this->parser->parseRamStandard($std)
@@ -547,8 +573,8 @@ PROMPT;
     }
 
     /**
-     * DeepSeek стандартизирует чип (4060 → RTX 4060, 4060ti → RTX 4060 Ti).
-     * Нельзя подменить чип, который уже явно есть в SKU, и нельзя повесить 4060 на A400/барабан.
+     * DeepSeek пишет type=gpu и compact standard (rtx4060ti). Чип из LLM не подменяем парсером имени.
+     * Хлам (A400, барабан, 3060) — skip. Если LLM ничего не дал — эвристика по названию.
      *
      * @param  array<string, mixed>  $heuristic
      * @param  array<string, mixed>  $merged
@@ -563,7 +589,7 @@ PROMPT;
         if ($type !== 'gpu' && $llmType !== 'gpu') {
             return $merged;
         }
-        $hay = trim((string) $product->name.' '.(string) ($product->part ?? ''));
+        $hay = (string) $product->name;
         if ($this->parser->isJunkAvitoGpu($hay) || $this->parser->isSkippedAvitoGpu($hay) || $this->parser->isWorkstationGpu($hay)) {
             $merged['type'] = 'skip';
             $merged['standard'] = null;
@@ -572,20 +598,20 @@ PROMPT;
 
             return $merged;
         }
-        $fromName = $this->parser->allowedAvitoGpuChip($hay);
-        if ($fromName !== null) {
+        $compact = $this->parser->gpuStandard((string) ($merged['standard'] ?? ''))
+            ?: $this->parser->gpuStandard((string) ($merged['avito_code'] ?? ''));
+        if ($compact !== null) {
             $merged['type'] = 'gpu';
-            $merged['standard'] = $fromName;
-            $merged['avito_code'] = $fromName;
+            $merged['standard'] = $compact;
+            $merged['avito_code'] = $this->parser->gpuStandardPretty($compact);
 
             return $merged;
         }
-        $raw = (string) ($merged['standard'] ?? $merged['avito_code'] ?? '');
-        $canon = $this->parser->canonicalizeAllowedGpuChip($raw);
-        if ($canon !== null && ($this->gpuChipAgreesWithName($hay, $canon) || ! preg_match('/\d{4}/u', $hay))) {
+        $fromName = $this->parser->gpuStandard((string) ($this->parser->allowedAvitoGpuChip($hay) ?? ''));
+        if ($fromName !== null) {
             $merged['type'] = 'gpu';
-            $merged['standard'] = $canon;
-            $merged['avito_code'] = $canon;
+            $merged['standard'] = $fromName;
+            $merged['avito_code'] = $this->parser->gpuStandardPretty($fromName);
 
             return $merged;
         }
@@ -596,32 +622,12 @@ PROMPT;
         return $merged;
     }
 
-    private function gpuChipAgreesWithName(string $hay, string $chip): bool
-    {
-        if (! preg_match('/(\d{4})/u', $chip, $m)) {
-            return false;
-        }
-        $num = $m[1];
-        if (! preg_match('/(?<![0-9a-zа-яё])'.preg_quote($num, '/').'(?![0-9])/iu', $hay)) {
-            return false;
-        }
-        $hayTi = (bool) preg_match('/(?<![a-zа-яё])ti(?![a-zа-яё])/iu', $hay);
-        $chipTi = (bool) preg_match('/\bti\b/i', $chip);
-        if ($hayTi !== $chipTi) {
-            return false;
-        }
-        $haySuper = (bool) preg_match('/(?<![a-zа-яё])super(?![a-zа-яё])/iu', $hay);
-        $chipSuper = (bool) preg_match('/\bsuper\b/i', $chip);
-
-        return $haySuper === $chipSuper;
-    }
-
     private function gpuSkipShouldRetry(StoreAvitoProductAttr $row, StoreSupplierCatalogProduct $product): bool
     {
         if (($row->avito_code ?? '') !== StoreAvitoCatalogAttrParser::SKIP_GPU) {
             return false;
         }
-        $hay = trim((string) $product->name.' '.(string) ($product->part ?? ''));
+        $hay = (string) $product->name;
 
         return $this->parser->looksLikeDesktopGpu($hay)
             && ! $this->parser->isJunkAvitoGpu($hay)

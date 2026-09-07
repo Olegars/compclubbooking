@@ -44,7 +44,7 @@ class StoreAvitoCatalogAttrParser
 
         $attrs = match ($type) {
             'cpu' => $this->cpu($hay, $attrs),
-            'gpu' => $this->gpu($hay, $vendor, $attrs),
+            'gpu' => $this->gpu($name, $vendor, $attrs),
             'ram' => $this->ram($hay, $attrs),
             'motherboard' => $this->motherboard($hay, $vendor, $attrs),
             'psu' => $this->psu($hay, $vendor, $attrs),
@@ -86,7 +86,8 @@ class StoreAvitoCatalogAttrParser
         $fromCode = $code !== '' && strcasecmp($code, self::SKIP_GPU) !== 0 ? $code : null;
 
         return match ($type) {
-            'cpu', 'gpu', 'motherboard' => $fromCode,
+            'cpu', 'motherboard' => $fromCode,
+            'gpu' => $this->gpuStandard($fromCode),
             'ram' => $this->ramStandard($attrs['ddr'] ?? null, $attrs['ram_gb'] ?? null),
             'ssd' => $this->parseSsdStandard((string) ($attrs['ram_gb'] ?? ''))
                 ?? $this->parseSsdStandard((string) ($attrs['avito_code'] ?? '')),
@@ -205,22 +206,23 @@ class StoreAvitoCatalogAttrParser
         return $attrs;
     }
 
-    private function gpu(string $hay, string $vendor, array $attrs): array
+    private function gpu(string $title, string $vendor, array $attrs): array
     {
+        $hay = trim($title.' '.$vendor);
         $attrs['avito_brand'] = $this->gpuMaker($hay, $vendor);
-        $attrs['avito_model'] = $this->cleanName($hay);
-        $allowed = $this->allowedAvitoGpuChip($hay);
+        $attrs['avito_model'] = $this->cleanName($title);
+        $allowed = $this->allowedAvitoGpuChip($title);
         if ($allowed !== null) {
             $attrs['avito_code'] = $allowed;
 
             return $attrs;
         }
-        if ($this->isSkippedAvitoGpu($hay)) {
+        if ($this->isSkippedAvitoGpu($title)) {
             $attrs['avito_code'] = self::SKIP_GPU;
 
             return $attrs;
         }
-        $attrs['avito_code'] = $this->gpuChip($hay);
+        $attrs['avito_code'] = $this->gpuChip($title);
 
         return $attrs;
     }
@@ -264,7 +266,25 @@ class StoreAvitoCatalogAttrParser
     }
 
     /**
-     * «4060», «4060ti», «RTX4060 Ti» → канон из белого списка.
+     * Канон для выборки: rtx4060, rtx4060ti, rtx4070super, rx7900xt.
+     */
+    public function gpuStandard(?string $raw): ?string
+    {
+        $pretty = $this->canonicalizeAllowedGpuChip((string) $raw);
+        if ($pretty === null) {
+            return null;
+        }
+
+        return $this->compactGpuHay($pretty);
+    }
+
+    public function gpuStandardPretty(?string $raw): ?string
+    {
+        return $this->canonicalizeAllowedGpuChip((string) $raw);
+    }
+
+    /**
+     * «4060», «4060ti», «rtx4060ti» → «RTX 4060 Ti» из белого списка.
      */
     public function canonicalizeAllowedGpuChip(string $raw): ?string
     {

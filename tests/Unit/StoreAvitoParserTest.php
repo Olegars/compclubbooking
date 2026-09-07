@@ -63,7 +63,7 @@ class StoreAvitoParserTest extends TestCase
         $this->assertStringContainsString('4060 Ti', $a['avito_model']);
         $this->assertStringContainsString('AMP', $a['avito_model']);
         $this->assertSame('RTX 4060 Ti', $a['avito_code']);
-        $this->assertSame('RTX 4060 Ti', $a['standard']);
+        $this->assertSame('rtx4060ti', $a['standard']);
         $this->assertSame('gpu', $a['type']);
     }
 
@@ -76,12 +76,17 @@ class StoreAvitoParserTest extends TestCase
         $this->assertSame('RTX 4060', $this->parser->allowedAvitoGpuChip('Видеокарта Palit Dual 4060 8GB'));
         $this->assertSame('RTX 4060', $this->parser->allowedAvitoGpuChip('VGA Palit Dual 4060 8G'));
         $this->assertSame('RTX 4060', $this->parser->allowedAvitoGpuChip('Palit Dual 4060 8GB'));
-        $this->assertSame('RTX 4060', $this->parser->parse('gpu', 'Palit Dual 4060 8GB', '', 'Palit')['standard']);
+        $this->assertSame('rtx4060', $this->parser->parse('gpu', 'Palit Dual 4060 8GB', '', 'Palit')['standard']);
+        $this->assertSame('rtx4060', $this->parser->parse('gpu', 'Palit Dual 4060 8GB', 'NE64060019P1-1060F', 'Palit')['standard']);
         $this->assertSame('RTX 4060', $this->parser->allowedAvitoGpuChip('Видеокарта Palit РТХ 4060 Dual 8GB'));
         $this->assertNull($this->parser->allowedAvitoGpuChip('Palit Dual NE64060019P1-1060F'));
         $this->assertSame('RTX 4060', $this->parser->canonicalizeAllowedGpuChip('4060'));
         $this->assertSame('RTX 4060 Ti', $this->parser->canonicalizeAllowedGpuChip('4060ti'));
         $this->assertSame('RTX 4060 Ti', $this->parser->canonicalizeAllowedGpuChip('RTX 4060 Ti'));
+        $this->assertSame('rtx4060', $this->parser->gpuStandard('RTX 4060'));
+        $this->assertSame('rtx4060ti', $this->parser->gpuStandard('RTX 4060 Ti'));
+        $this->assertSame($this->parser->gpuStandard('rtx4060ti'), $this->parser->gpuStandard('RTX 4060 Ti'));
+        $this->assertNotSame($this->parser->gpuStandard('rtx4060'), $this->parser->gpuStandard('rtx4060ti'));
     }
 
     public function test_parses_palit_gpu_brand(): void

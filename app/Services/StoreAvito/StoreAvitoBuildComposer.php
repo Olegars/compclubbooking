@@ -244,7 +244,7 @@ class StoreAvitoBuildComposer
         }
 
         return match ($kind) {
-            'cpu', 'gpu', 'motherboard' => trim((string) $part->avito_code),
+            'gpu' => (string) ($this->parser->gpuStandard($part->avito_code) ?? ''),
             'ram' => (string) ($this->parser->ramStandard($part->ddr, $part->ram_gb) ?? ''),
             'ssd' => (string) ($this->parser->parseSsdStandard((string) (int) $part->capacity_gb) ?? ''),
             'psu' => (int) $part->wattage > 0 ? (string) (int) $part->wattage : '',
@@ -271,11 +271,8 @@ class StoreAvitoBuildComposer
                 ?? '';
         }
         if ($kind === 'gpu') {
-            $hay = trim((string) ($row['name'] ?? '').' '.(string) ($row['part'] ?? ''));
-
-            return $this->parser->canonicalizeAllowedGpuChip($s)
-                ?: $this->parser->canonicalizeAllowedGpuChip((string) ($row['avito_code'] ?? ''))
-                ?: $this->parser->allowedAvitoGpuChip($hay)
+            return $this->parser->gpuStandard($s)
+                ?: $this->parser->gpuStandard((string) ($row['avito_code'] ?? ''))
                 ?: '';
         }
         if ($s !== '' && strcasecmp($s, StoreAvitoCatalogAttrParser::SKIP_GPU) !== 0) {
@@ -295,10 +292,10 @@ class StoreAvitoBuildComposer
             return false;
         }
         if ($kind === 'gpu') {
-            $a = $this->parser->canonicalizeAllowedGpuChip($want);
-            $b = $this->parser->canonicalizeAllowedGpuChip($got);
+            $a = $this->parser->gpuStandard($want);
+            $b = $this->parser->gpuStandard($got);
 
-            return $a !== null && $b !== null && $a === $b;
+            return $a !== null && $a === $b;
         }
         if ($kind === 'motherboard') {
             return $this->chipsetTokenEquals($got, $want);
@@ -393,7 +390,7 @@ class StoreAvitoBuildComposer
         }
         $std = $this->rowStandard($gpu, 'gpu');
 
-        return $this->parser->canonicalizeAllowedGpuChip($std) !== null;
+        return $std !== '';
     }
 
     /**
@@ -510,23 +507,26 @@ class StoreAvitoBuildComposer
             $avitoModel = $attr->avito_model ?: ($parsed['avito_model'] ?? null);
             $standard = trim((string) ($attr->standard ?: ''));
             $avitoCode = (string) ($attr->avito_code ?: '');
-            if ($avitoCode === '') {
-                $fromParse = (string) ($parsed['avito_code'] ?? '');
-                if ($fromParse !== '' && strcasecmp($fromParse, StoreAvitoCatalogAttrParser::SKIP_GPU) !== 0) {
-                    $avitoCode = $fromParse;
+            // GPU: выборка только по type+standard из attrs. Имя каталога не парсим.
+            if ($type !== 'gpu') {
+                if ($avitoCode === '') {
+                    $fromParse = (string) ($parsed['avito_code'] ?? '');
+                    if ($fromParse !== '' && strcasecmp($fromParse, StoreAvitoCatalogAttrParser::SKIP_GPU) !== 0) {
+                        $avitoCode = $fromParse;
+                    }
                 }
-            }
-            if ($standard === '' || strcasecmp($standard, StoreAvitoCatalogAttrParser::SKIP_GPU) === 0) {
-                $standard = (string) ($this->parser->deriveStandard([
-                    'type' => $type,
-                    'avito_code' => $avitoCode,
-                    'ddr' => $ddr,
-                    'ram_gb' => $ramGb ?: null,
-                    'wattage' => $wattage ?: null,
-                ]) ?? '');
-            }
-            if ($avitoCode === '' && $standard !== '') {
-                $avitoCode = $standard;
+                if ($standard === '' || strcasecmp($standard, StoreAvitoCatalogAttrParser::SKIP_GPU) === 0) {
+                    $standard = (string) ($this->parser->deriveStandard([
+                        'type' => $type,
+                        'avito_code' => $avitoCode,
+                        'ddr' => $ddr,
+                        'ram_gb' => $ramGb ?: null,
+                        'wattage' => $wattage ?: null,
+                    ]) ?? '');
+                }
+                if ($avitoCode === '' && $standard !== '') {
+                    $avitoCode = $standard;
+                }
             }
             $row = [
                 'type' => $type,
@@ -602,9 +602,9 @@ class StoreAvitoBuildComposer
             $gpuBrand = $this->matcher->match('BrandVideocard', $gpuHay) ?: (string) ($gpu['avito_brand'] ?? '');
             $gpuModel = $this->matcher->match('ModelVideocard', $gpuHay, $gpuBrand)
                 ?: (string) ($gpu['avito_model'] ?? $gpu['name'] ?? '');
-            $gpuCode = $this->parser->canonicalizeAllowedGpuChip((string) ($gpu['standard'] ?? $gpu['avito_code'] ?? ''))
-                ?: $this->parser->allowedAvitoGpuChip($gpuHay)
-                ?: (string) ($gpu['standard'] ?? $gpu['avito_code'] ?? '');
+            $gpuCode = $this->parser->gpuStandardPretty((string) ($gpu['standard'] ?? ''))
+                ?: $this->parser->gpuStandardPretty((string) ($gpu['avito_code'] ?? ''))
+                ?: '';
             if ($gpuBrand !== '') {
                 $xml['BrandVideocard'] = $gpuBrand;
             }
