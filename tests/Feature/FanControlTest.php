@@ -155,6 +155,24 @@ class FanControlTest extends TestCase
         $this->assertArrayHasKey('manual_lock', $state);
     }
 
+    public function test_shell_state_netmod_uses_tcp_port(): void
+    {
+        $this->board->update([
+            'name' => 'NetMod',
+            'driver' => RelayBoard::DRIVER_NETMOD_HTTP,
+            'port' => 8080,
+        ]);
+
+        $state = $this->fans->stateForComputer($this->pcA->id);
+
+        $this->assertSame(8080, $state['relay']['port']);
+        $this->assertSame('netmod_http', $state['relay']['driver']);
+        $this->assertSame(8080, RelayBoard::fallbackPort(null, RelayBoard::DRIVER_NETMOD_HTTP));
+        $this->assertSame(30000, RelayBoard::fallbackPort(null, RelayBoard::DRIVER_W5100_HTTP));
+        $this->assertSame('http://192.168.1.4:8080/', RelayBoard::httpBase('192.168.1.4', 8080, RelayBoard::DRIVER_NETMOD_HTTP));
+        $this->assertSame('http://192.168.1.4/30000/', RelayBoard::httpBase('192.168.1.4', 30000, RelayBoard::DRIVER_W5100_HTTP));
+    }
+
     public function test_thermal_hysteresis_updates_facts_not_applied(): void
     {
         $this->fans->reportThermal($this->pcA->id, 70.0);

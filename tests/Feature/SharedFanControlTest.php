@@ -181,6 +181,9 @@ class SharedFanControlTest extends TestCase
 
         $this->assertSame(80, $res->json('targets.0.load_pct'));
         $this->assertSame(SpaceFan::SPEED_HIGH, $res->json('targets.0.desired_power'));
+        $this->assertSame('w5100_http', $res->json('targets.0.driver'));
+        $this->assertSame(30000, $res->json('targets.0.port'));
+        $this->assertSame('http://192.168.1.4/30000/', $res->json('targets.0.http_base'));
 
         $this->postJson('/api/fans/shared-applied', [
             'token' => 'test-shared-token',

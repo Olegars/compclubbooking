@@ -228,7 +228,7 @@ class ShellApiController extends Controller
             // Cloud Saves: pack for Shell to restore on this PC (may be null if never saved).
             $cloud = app(UserCloudSettingsService::class)->getPackWithMeta($user);
 
-            // Fan desired refresh only — shell actuates W5100 on LAN.
+            // Fan desired refresh only — shell actuates NetMod/W5100 on LAN.
             try {
                 app(FanControlService::class)->reconcileForComputer($terminalId);
             } catch (\Throwable $e) {
@@ -790,7 +790,7 @@ class ShellApiController extends Controller
 
     /**
      * Shell reports CPU temperature; backend stores thermal facts for the room.
-     * Physical relay control is done by the shell on LAN (W5100).
+     * Physical relay control is done by the shell on LAN (NetMod / W5100).
      */
     public function reportThermal(Request $request)
     {
@@ -826,7 +826,7 @@ class ShellApiController extends Controller
 
     /**
      * Manual fan mode for the room. Shared across all PCs in the Space.
-     * action: on | off | auto — shell applies to W5100 after this.
+     * action: on | off | auto — shell applies to the LAN relay after this.
      */
     public function controlFan(Request $request)
     {
@@ -859,7 +859,7 @@ class ShellApiController extends Controller
     }
 
     /**
-     * Shell reports actual W5100 channel state after command or /99 status read.
+     * Shell reports actual relay channel state after command or /99 status read.
      */
     public function acknowledgeFanApplied(Request $request)
     {

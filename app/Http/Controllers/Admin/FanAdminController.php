@@ -142,7 +142,7 @@ class FanAdminController extends Controller
             'computers' => $computers,
             'mapPreview' => $mapPreview,
             'defaults' => [
-                'port' => (int) config('fan.w5100_default_port', 30000),
+                'port' => (int) config('fan.http_default_port', 8080),
                 'thermal_on_c' => (int) config('fan.thermal_on_c', 75),
                 'thermal_off_c' => (int) config('fan.thermal_off_c', 65),
                 'max_per_space' => (int) config('fan.max_per_space', 2),
@@ -158,15 +158,16 @@ class FanAdminController extends Controller
             'name' => 'required|string|max:120',
             'host' => 'required|string|max:120',
             'port' => 'nullable|integer|min:1|max:65535',
+            'driver' => ['nullable', 'string', Rule::in(RelayBoard::httpDrivers())],
             'is_active' => 'nullable|boolean',
         ]);
 
         $board = RelayBoard::create([
             'club_id' => $data['club_id'],
             'name' => $data['name'],
-            'driver' => RelayBoard::DRIVER_W5100_HTTP,
+            'driver' => $data['driver'] ?? RelayBoard::DRIVER_NETMOD_HTTP,
             'host' => $data['host'],
-            'port' => $data['port'] ?? (int) config('fan.w5100_default_port', 30000),
+            'port' => $data['port'] ?? (int) config('fan.http_default_port', 8080),
             'meta' => null,
             'is_active' => $data['is_active'] ?? true,
         ]);
@@ -180,6 +181,7 @@ class FanAdminController extends Controller
             'name' => 'required|string|max:120',
             'host' => 'required|string|max:120',
             'port' => 'nullable|integer|min:1|max:65535',
+            'driver' => ['nullable', 'string', Rule::in(RelayBoard::httpDrivers())],
             'is_active' => 'nullable|boolean',
         ]);
 
@@ -187,7 +189,7 @@ class FanAdminController extends Controller
             'name' => $data['name'],
             'host' => $data['host'],
             'port' => $data['port'] ?? $board->port,
-            'driver' => RelayBoard::DRIVER_W5100_HTTP,
+            'driver' => $data['driver'] ?? ($board->driver ?: RelayBoard::DRIVER_NETMOD_HTTP),
             'is_active' => $data['is_active'] ?? $board->is_active,
         ]);
 

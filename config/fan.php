@@ -3,10 +3,10 @@
 return [
     /*
     |--------------------------------------------------------------------------
-    | Fan control defaults (3-speed cascade on 2 W5100 channels)
+    | Fan control defaults (3-speed cascade on 2 NetMod channels)
     |--------------------------------------------------------------------------
     |
-    | Hardware: K1=channel, K2=channel2 with priority cascade contactors.
+    | Hardware: HW-584 + NetMod (http://host:8080/cmd). K1=channel, K2=channel2.
     | Speed 1: K1=OFF K2=OFF → 120V (night / duty)
     | Speed 2: K1=ON  K2=OFF → 170V (mid / cool-down)
     | Speed 3: K1=OFF K2=ON  → 220V (session max)
@@ -28,7 +28,8 @@ return [
 
     'manual_cooldown_sec' => (int) env('FAN_MANUAL_COOLDOWN_SEC', 10),
     'auto_apply_cooldown_sec' => (int) env('FAN_AUTO_APPLY_COOLDOWN_SEC', 20),
-    // Path segment for http://{host}/{port}/{cmd} (TCP remains :80), not a TCP listen port.
+    // NetMod TCP listen port for http://{host}:{port}/{cmd}. Factory W5100 path-port stays 30000 on that driver.
+    'http_default_port' => (int) env('FAN_HTTP_DEFAULT_PORT', 8080),
     'w5100_default_port' => (int) env('FAN_W5100_DEFAULT_PORT', 30000),
     'max_per_space' => (int) env('FAN_MAX_PER_SPACE', 2),
     // Cascade K1/K2 must be odd+next: 1+2, 3+4, … 15+16 (enforced in bind/admin).

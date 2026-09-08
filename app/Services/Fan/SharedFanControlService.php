@@ -2,6 +2,7 @@
 
 namespace App\Services\Fan;
 
+use App\Models\RelayBoard;
 use App\Models\SharedFan;
 use App\Models\SharedFanLink;
 use App\Models\SharedFanMap;
@@ -148,7 +149,7 @@ class SharedFanControlService
     public function targetsPayload(?int $clubId = null): array
     {
         $fans = SharedFan::query()
-            ->with(['relayBoard:id,host,port,is_active,club_id', 'maps'])
+            ->with(['relayBoard:id,host,port,driver,is_active,club_id', 'maps'])
             ->when($clubId, fn ($q) => $q->where('club_id', $clubId))
             ->whereHas('relayBoard', fn ($q) => $q->where('is_active', true))
             ->orderBy('id')
@@ -177,7 +178,9 @@ class SharedFanControlService
                 'kind' => (string) $fan->kind,
                 'name' => (string) $fan->name,
                 'host' => (string) $board->host,
-                'port' => (int) ($board->port ?: config('fan.w5100_default_port', 30000)),
+                'port' => RelayBoard::fallbackPort($board->port, $board->driver),
+                'driver' => (string) $board->driver,
+                'http_base' => RelayBoard::httpBase((string) $board->host, $board->port, $board->driver),
                 'channel' => (int) $fan->channel,
                 'channel2' => (int) $fan->channel2,
                 'desired_power' => (int) $fan->desired_power,

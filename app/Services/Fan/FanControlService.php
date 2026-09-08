@@ -272,7 +272,7 @@ class FanControlService
     }
 
     /**
-     * Shell acknowledges physical relay state after W5100 command or /99 status read.
+     * Shell acknowledges physical relay state after NetMod/W5100 command or /99 status read.
      *
      * @param  'command'|'status_read'  $source
      * @return array{fan: ?SpaceFan, locked: bool, remaining_sec: int}
@@ -418,7 +418,7 @@ class FanControlService
             $relays[] = [
                 'fan_id' => (int) $fan->id,
                 'host' => (string) $board->host,
-                'port' => (int) ($board->port ?: config('fan.w5100_default_port', 30000)),
+                'port' => RelayBoard::fallbackPort($board->port, $board->driver),
                 'channel' => (int) $fan->channel,
                 'channel2' => (int) $fan->channel2,
                 'driver' => (string) $board->driver,
@@ -466,7 +466,7 @@ class FanControlService
         if ($board && $board->is_active) {
             $relay = [
                 'host' => (string) $board->host,
-                'port' => (int) ($board->port ?: config('fan.w5100_default_port', 30000)),
+                'port' => RelayBoard::fallbackPort($board->port, $board->driver),
                 'channel' => (int) $fan->channel,
                 'channel2' => (int) $fan->channel2,
                 'driver' => (string) $board->driver,
@@ -738,7 +738,7 @@ class FanControlService
         $boundFans = SpaceFan::query()
             ->where('space_id', $spaceId)
             ->where('club_id', $clubId)
-            ->with('relayBoard:id,name,host,port')
+            ->with('relayBoard:id,name,host,port,driver')
             ->orderBy('id')
             ->get();
 
@@ -797,7 +797,7 @@ class FanControlService
                 'id' => (int) $board->id,
                 'name' => (string) $board->name,
                 'host' => (string) $board->host,
-                'port' => (int) ($board->port ?: config('fan.w5100_default_port', 30000)),
+                'port' => RelayBoard::fallbackPort($board->port, $board->driver),
                 'driver' => (string) $board->driver,
                 'pairs' => $pairs,
             ];
@@ -814,7 +814,8 @@ class FanControlService
                 'channel' => (int) $f->channel,
                 'channel2' => (int) $f->channel2,
                 'host' => (string) ($f->relayBoard?->host ?? ''),
-                'port' => (int) ($f->relayBoard?->port ?? 30000),
+                'port' => RelayBoard::fallbackPort($f->relayBoard?->port, $f->relayBoard?->driver),
+                'driver' => (string) ($f->relayBoard?->driver ?? ''),
                 'label' => 'K'.$f->channel.'+K'.$f->channel2,
             ];
         }
@@ -836,6 +837,7 @@ class FanControlService
                     'channel2' => (int) $pair['channel2'],
                     'host' => (string) $board['host'],
                     'port' => (int) $board['port'],
+                    'driver' => (string) ($board['driver'] ?? ''),
                     'label' => (string) $pair['label'],
                 ];
             }

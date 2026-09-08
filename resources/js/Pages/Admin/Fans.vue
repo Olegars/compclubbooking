@@ -52,7 +52,15 @@ const boardForm = useForm({
     name: '',
     host: '',
     port: props.defaults.port,
+    driver: 'netmod_http',
     is_active: true,
+})
+
+watch(() => boardForm.driver, (d) => {
+    if (d === 'w5100_http' && Number(boardForm.port) === Number(props.defaults.port))
+        boardForm.port = 30000
+    if (d === 'netmod_http' && Number(boardForm.port) === 30000)
+        boardForm.port = props.defaults.port
 })
 
 watch(() => props.clubId, (id) => {
@@ -143,6 +151,27 @@ const submitBoard = () => {
     boardForm.post('/admin/fans/boards', {
         onSuccess: () => boardForm.reset('name', 'host'),
     })
+}
+
+const boardHttpBase = (b: any) => {
+    if (!b) return ''
+    if (b.http_base) return b.http_base
+    const d = String(b.driver || '').toLowerCase()
+    if (d === 'w5100_http')
+        return `http://${b.host}/${b.port}/`
+    const p = Number(b.port) || 8080
+    if (p === 80) return `http://${b.host}/`
+    return `http://${b.host}:${p}/`
+}
+
+const convertBoardToNetmod = (b: any) => {
+    router.put(`/admin/fans/boards/${b.id}`, {
+        name: b.name,
+        host: b.host,
+        port: 8080,
+        driver: 'netmod_http',
+        is_active: b.is_active,
+    }, { preserveScroll: true })
 }
 
 const submitFan = () => {
@@ -300,7 +329,7 @@ const spaceStroke = (s: any) => {
                 <div>
                     <h1 class="text-4xl font-black italic tracking-tighter uppercase text-cyan-500">Вентиляторы</h1>
                     <p class="text-[10px] text-white/30 uppercase tracking-widest font-black mt-2">
-                        W5100 · K1+K2 каскад 120/170/220 В · shell на LAN
+                        NetMod HW-584 · K1+K2 каскад 120/170/220 В · shell на LAN
                     </p>
                 </div>
                 <select v-model.number="selectedClubId"
@@ -311,14 +340,19 @@ const spaceStroke = (s: any) => {
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 space-y-4">
-                    <h3 class="text-lg font-black uppercase italic">Новая плата W5100</h3>
+                    <h3 class="text-lg font-black uppercase italic">Новая плата реле</h3>
                     <form @submit.prevent="submitBoard" class="space-y-3">
                         <input v-model="boardForm.name" type="text" placeholder="Имя (Hall A relays)"
                                class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" required />
                         <input v-model="boardForm.host" type="text" placeholder="IP (192.168.1.4)"
                                class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" required />
+                        <select v-model="boardForm.driver"
+                                class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500">
+                            <option value="netmod_http">NetMod TCP · http://IP:порт/cmd (новая прошивка)</option>
+                            <option value="w5100_http">Заводской W5100 · http://IP/путь/cmd</option>
+                        </select>
                         <input v-model.number="boardForm.port" type="number" min="1" max="65535"
-                               placeholder="Путь-порт (30000 → http://IP/30000/…)"
+                               :placeholder="boardForm.driver === 'w5100_http' ? 'Путь-порт (30000)' : 'TCP-порт (8080)'"
                                class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" />
                         <button type="submit" class="w-full py-4 bg-cyan-500 text-black font-black uppercase text-[10px] rounded-xl tracking-widest">
                             Добавить плату
@@ -330,11 +364,19 @@ const spaceStroke = (s: any) => {
                              class="flex items-center justify-between gap-3 p-4 rounded-2xl border border-white/5 bg-black/40">
                             <div>
                                 <div class="text-sm font-black uppercase italic">{{ b.name }}</div>
-                                <div class="text-[10px] text-white/40 font-mono mt-1">http://{{ b.host }}/{{ b.port }}/ · {{ b.driver }}</div>
+                                <div class="text-[10px] text-white/40 font-mono mt-1">{{ boardHttpBase(b) }} · {{ b.driver }}</div>
                             </div>
-                            <button @click="deleteBoard(b.id)" class="text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase">
-                                Удалить
-                            </button>
+                            <div class="flex items-center gap-3">
+                                <button v-if="b.driver === 'w5100_http'"
+                                        type="button"
+                                        @click="convertBoardToNetmod(b)"
+                                        class="text-cyan-400/70 hover:text-cyan-400 text-[10px] font-black uppercase">
+                                    NetMod :8080
+                                </button>
+                                <button @click="deleteBoard(b.id)" class="text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase">
+                                    Удалить
+                                </button>
+                            </div>
                         </div>
                         <div v-if="!boards.length" class="text-[10px] text-white/20 uppercase tracking-widest italic py-6 text-center border border-dashed border-white/5 rounded-2xl">
                             Платы не заведены
@@ -502,7 +544,7 @@ const spaceStroke = (s: any) => {
                                 Space #{{ f.space_id }} · {{ f.space?.name || 'room' }}
                             </div>
                             <div class="text-[10px] text-white/40 font-mono mt-1">
-                                http://{{ f.relay_board?.host }}/{{ f.relay_board?.port }}/
+                                {{ boardHttpBase(f.relay_board) }}
                                 · K1={{ f.channel }} K2={{ f.channel2 }}
                                 · speed {{ f.applied_power }}/3 · mode {{ f.manual_mode }}
                                 <span v-if="f.shared_fan_link?.shared_fan" class="text-amber-400/80">
@@ -566,7 +608,7 @@ const spaceStroke = (s: any) => {
                                     {{ kindLabel(sf.kind) }} · {{ sf.name }}
                                 </div>
                                 <div class="text-[10px] text-white/40 font-mono mt-1">
-                                    http://{{ sf.relay_board?.host }}/{{ sf.relay_board?.port }}/
+                                    {{ boardHttpBase(sf.relay_board) }}
                                     · K{{ sf.channel }}+K{{ sf.channel2 }}
                                     · load {{ sf.load_pct }}% → desired {{ speedLabel(sf.desired_power) }}
                                     · applied {{ speedLabel(sf.applied_power) }}

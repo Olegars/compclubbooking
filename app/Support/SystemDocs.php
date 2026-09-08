@@ -306,13 +306,13 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Вентиляция: железо и скорости',
-                        'description' => "Личный вентилятор места (SpaceFan) сидит на плате W5100 (RelayBoard): host + path-порт (по умолчанию 30000). URL команды: http://{host}/{port}/{cmd} — порт это сегмент пути, TCP обычно :80.\n\nДва канала каскада K1+K2 (пары 1+2, 3+4 … 15+16):\n• скорость 1 (night / 120V) — K1 OFF, K2 OFF\n• скорость 2 (mid / 170V) — K1 ON, K2 OFF\n• скорость 3 (high / 220V) — K1 OFF, K2 ON\n\nПолного электрического OFF на двух CO-реле нет: «выкл» = night. Прыжок 1↔3 идёт через mid ~2.5 с, чтобы не бить контакторы. На комнату (space) до 2 личных вентиляторов.",
+                        'description' => "Личный вентилятор места (SpaceFan) сидит на HW-584 (RelayBoard, driver netmod_http): host + TCP-порт (по умолчанию 8080). URL команды: http://{host}:{port}/{cmd} (NetMod-ServerApp). Старый заводской W5100 (w5100_http) — path-порт: http://{host}/{port}/{cmd} на TCP :80.\n\nПины в веб-морде NetMod должны быть Output, иначе /00–/31 молчат. Веб-морда: :8080, не :80.\n\nДва канала каскада K1+K2 (пары 1+2, 3+4 … 15+16):\n• скорость 1 (night / 120V) — K1 OFF, K2 OFF\n• скорость 2 (mid / 170V) — K1 ON, K2 OFF\n• скорость 3 (high / 220V) — K1 OFF, K2 ON\n\nПолного электрического OFF на двух CO-реле нет: «выкл» = night. Прыжок 1↔3 идёт через mid ~2.5 с, чтобы не бить контакторы. На комнату (space) до 2 личных вентиляторов.",
                         'path' => '/admin/fans',
                         'audience' => 'Supervisor+ / Shell',
                     ],
                     [
                         'title' => 'Вентиляция: кто крутит реле',
-                        'description' => "Облако (booking) только считает desired_power и факты (сессия / CPU°C / manual). Физический HTTP на W5100 делает Shell по LAN — сервер в интернет до платы не ходит.\n\nPC Shell (Qt): опрос fan state, ручные 50/75/100%, thermal report, apply → ack.\nTV Shell (APK): привязка пары каналов в Setup (discover → ТЕСТ mid ~2с → ПРИВЯЗАТЬ), те же API /api/shell/fan/*.\n\nРежимы: auto (по сессии и термопорогам), force_on, force_off(=night). Пороги thermal_on_c / thermal_off_c (дефолт 75 / 65). Пустая комната сбрасывает force_on в auto.",
+                        'description' => "Облако (booking) только считает desired_power и факты (сессия / CPU°C / manual). Физический HTTP на NetMod/W5100 делает Shell по LAN — сервер в интернет до платы не ходит.\n\nPC Shell (Qt): опрос fan state, ручные 50/75/100%, thermal report, apply → ack.\nTV Shell (APK): привязка пары каналов в Setup (discover → ТЕСТ high ~2.5с → ПРИВЯЗАТЬ), те же API /api/shell/fan/*.\n\nРежимы: auto (по сессии и термопорогам), force_on, force_off(=night). Пороги thermal_on_c / thermal_off_c (дефолт 75 / 65). Пустая комната сбрасывает force_on в auto.",
                         'path' => '/admin/fans',
                         'audience' => 'Supervisor+ / Shell / TV',
                     ],
