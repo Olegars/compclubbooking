@@ -150,7 +150,7 @@ class StoreAvitoBuildComposer
             return null;
         }
         if ($needGpu && $gpus->isEmpty()) {
-            $this->lastFailures[] = $label.': в каталоге нет видеокарты '.($tpl->gpu?->avito_code ?: $tpl->gpu?->label ?: '');
+            $this->lastFailures[] = $label.': в каталоге нет видеокарты '.($tpl->gpu?->avito_code ?: $tpl->gpu?->label ?: '').' в наличии с ценой поставщика';
 
             return null;
         }
