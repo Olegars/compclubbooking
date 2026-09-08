@@ -500,10 +500,19 @@ class StoreAvitoCatalogAttrParser
 
     private function isJunkGpuHay(string $hay): bool
     {
-        return (bool) preg_match(
-            '/фотобарабан|drum.?unit|тонер|картридж|ecosys|taskalfa|kyocera|для ноут|ноутбук|laptop|hdd.?box|sata-sata|agestar|совместимый nv-/iu',
+        if (preg_match(
+            '/фотобарабан|drum.?unit|тонер|картридж|ecosys|taskalfa|kyocera|hdd.?box|sata-sata|agestar|совместимый nv-/iu',
             $hay
-        );
+        )) {
+            return true;
+        }
+
+        // «не для ноутбука» у десктопных карт не хлам; «ноутбука» раньше ловилось куском «ноутбук».
+        if (preg_match('/(?<!не )для ноутбука|ноутбучн/iu', $hay)) {
+            return true;
+        }
+
+        return (bool) preg_match('/(?<![a-zа-яё])laptop(?![a-zа-яё])/iu', $hay);
     }
 
     /**

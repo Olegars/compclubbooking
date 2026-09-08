@@ -78,6 +78,9 @@ class StoreAvitoParserTest extends TestCase
         $this->assertSame('RTX 4060', $this->parser->allowedAvitoGpuChip('Palit Dual 4060 8GB'));
         $this->assertSame('rtx4060', $this->parser->parse('gpu', 'Palit Dual 4060 8GB', '', 'Palit')['standard']);
         $this->assertSame('rtx4060', $this->parser->parse('gpu', 'Palit Dual 4060 8GB', 'NE64060019P1-1060F', 'Palit')['standard']);
+        $this->assertFalse($this->parser->isJunkAvitoGpu('Видеокарта Palit GeForce RTX 4060 Dual 8GB (не для ноутбука)'));
+        $this->assertFalse($this->parser->isWorkstationGpu('Видеокарта Palit GeForce RTX 4060 Dual 8GB'));
+        $this->assertTrue($this->parser->isJunkAvitoGpu('Видеокарта NVIDIA GeForce RTX 4060 для ноутбука'));
         $this->assertSame('RTX 4060', $this->parser->allowedAvitoGpuChip('Видеокарта Palit РТХ 4060 Dual 8GB'));
         $this->assertNull($this->parser->allowedAvitoGpuChip('Palit Dual NE64060019P1-1060F'));
         $this->assertSame('RTX 4060', $this->parser->canonicalizeAllowedGpuChip('4060'));

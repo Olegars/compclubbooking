@@ -370,7 +370,7 @@ class StoreAvitoBuildComposer
     }
 
     /**
-     * type=gpu + standard канона. Имя проверяем только чтобы отсечь хлам (A400, барабан, 3060).
+     * type=gpu + standard канона. Имя — только хлам/workstation, не перечёркиваем attrs.
      *
      * @param  array<string, mixed>  $gpu
      */
@@ -379,9 +379,8 @@ class StoreAvitoBuildComposer
         if ($this->isRejectedGpuRow($gpu)) {
             return false;
         }
-        $std = $this->rowStandard($gpu, 'gpu');
 
-        return $std !== '';
+        return $this->rowStandard($gpu, 'gpu') !== '';
     }
 
     /**
@@ -479,7 +478,7 @@ class StoreAvitoBuildComposer
             if (! $p instanceof StoreSupplierCatalogProduct) {
                 return null;
             }
-            $price = (float) ($p->price ?: $p->rrp ?: 0);
+            $price = max((float) ($p->price ?? 0), (float) ($p->rrp ?? 0));
             if ($price <= 0) {
                 return null;
             }
