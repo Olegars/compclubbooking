@@ -7,6 +7,7 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { ZiggyVue } from 'ziggy-js'; // <--- Импорт из NPM
 
 const isClientApp = /CompClubClient/i.test(navigator.userAgent || '');
+const isAdminApp = /CompClubAdmin/i.test(navigator.userAgent || '');
 const clientPages = import.meta.glob([
     './Pages/Home/**/*.vue',
     './Pages/Auth/Login.vue',
@@ -15,9 +16,17 @@ const clientPages = import.meta.glob([
     './Pages/User/**/*.vue',
     './Pages/Legal/**/*.vue',
 ]);
+const adminPages = import.meta.glob([
+    './Pages/Admin/**/*.vue',
+    './Pages/Auth/AdminLogin.vue',
+]);
 
 if (isClientApp && /^\/admin(\/|$)/.test(window.location.pathname)) {
     window.location.replace('/');
+}
+
+if (isAdminApp && !/^\/admin(\/|$)/.test(window.location.pathname)) {
+    window.location.replace('/admin/login');
 }
 
 createInertiaApp({
@@ -28,6 +37,12 @@ createInertiaApp({
                 return resolvePageComponent('./Pages/Home/Index.vue', clientPages);
             }
             return resolvePageComponent(`./Pages/${name}.vue`, clientPages);
+        }
+        if (isAdminApp) {
+            if (!(name.startsWith('Admin/') || name === 'Auth/AdminLogin')) {
+                return resolvePageComponent('./Pages/Auth/AdminLogin.vue', adminPages);
+            }
+            return resolvePageComponent(`./Pages/${name}.vue`, adminPages);
         }
         return resolvePageComponent(`./Pages/${name}.vue`, import.meta.glob('./Pages/**/*.vue'));
     },

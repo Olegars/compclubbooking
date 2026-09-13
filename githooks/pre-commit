@@ -1,19 +1,28 @@
 #!/bin/sh
-# Copies the built client APK into Laravel storage so it is committed with the site.
+# Copies built APKs into Laravel storage so they are committed with the site.
 
 ROOT="$(git rev-parse --show-toplevel)"
-APK="$ROOT/android-client/app/build/outputs/apk/debug/app-debug.apk"
 DEST_DIR="$ROOT/storage/app/apk"
-DEST="$DEST_DIR/sector0451.apk"
+mkdir -p "$DEST_DIR"
 
-if [ ! -f "$APK" ]; then
-  echo "pre-commit: no built APK at android-client/app/build/outputs/apk/debug/app-debug.apk"
-  echo "pre-commit: skip copy (existing $DEST will be committed if already staged/tracked)"
-  exit 0
+CLIENT_APK="$ROOT/android-client/app/build/outputs/apk/debug/app-debug.apk"
+CLIENT_DEST="$DEST_DIR/sector0451.apk"
+if [ -f "$CLIENT_APK" ]; then
+  cp -f "$CLIENT_APK" "$CLIENT_DEST"
+  git add -- "$CLIENT_DEST"
+  echo "pre-commit: copied client APK -> storage/app/apk/sector0451.apk"
+else
+  echo "pre-commit: no built client APK at android-client/app/build/outputs/apk/debug/app-debug.apk"
 fi
 
-mkdir -p "$DEST_DIR"
-cp -f "$APK" "$DEST"
-git add -- "$DEST"
-echo "pre-commit: copied client APK -> storage/app/apk/sector0451.apk"
+ADMIN_APK="C:/Qt/admin_apk/app/build/outputs/apk/release/app-release.apk"
+ADMIN_DEST="$DEST_DIR/admin0451.apk"
+if [ -f "$ADMIN_APK" ]; then
+  cp -f "$ADMIN_APK" "$ADMIN_DEST"
+  git add -- "$ADMIN_DEST"
+  echo "pre-commit: copied admin APK -> storage/app/apk/admin0451.apk"
+else
+  echo "pre-commit: no built admin APK at C:/Qt/admin_apk/app/build/outputs/apk/release/app-release.apk"
+fi
+
 exit 0

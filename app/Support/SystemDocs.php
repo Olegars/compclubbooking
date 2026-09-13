@@ -54,9 +54,15 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Личный кабинет',
-                        'description' => 'Смены, начисления, штрафы, вывод. Новая регистрация: правила клуба, паспорт, «Устроиться» → «На проверке». Управляющий назначает дату визита, затем в клубе снимает биометрию (заглушка камеры). После этого кандидат принимает правила пожарной безопасности — и открывается кабинет.',
+                        'description' => 'Смены, начисления, штрафы, вывод. Новая регистрация: правила клуба, паспорт, «Устроиться» → «На проверке». Управляющий назначает дату визита, затем в клубе снимает биометрию (заглушка камеры). После этого кандидат принимает правила пожарной безопасности — и открывается кабинет. С этой страницы скачивается админский APK (0451 Ctrl): кнопка «Скачать приложение», файл GET /admin-app.apk.',
                         'path' => '/admin/salary',
                         'audience' => 'Админ / Магазин',
+                    ],
+                    [
+                        'title' => 'Админское приложение (0451 Ctrl)',
+                        'description' => "Android-обёртка только админки, не путать с клиентским APK (space.club0451.client) и TV Shell.\n\nПакет space.club0451.admin, имя на устройстве «0451 Ctrl», исходники C:\\Qt\\admin_apk. WebView открывает /admin/login. UA дополняется CompClubAdmin/… — по нему сайт режет публичные страницы (middleware RestrictPublicInAdminApp + редирект на /admin/login в WebView и в app.js; в бандл приложения попадают только Admin-страницы и AdminLogin).\n\nСкачать: кнопка на /admin/salary (скрыта внутри приложения). Файл GET /admin-app.apk (storage/app/apk/admin0451.apk). Самообновление: GET /admin-app.json {version_code, version_name, apk_url, size}. После выкладки APK поднять ADMIN_APP_VERSION_CODE / ADMIN_APP_VERSION_NAME в .env (config/admin_app.php).\n\nСборка (JDK 17):\n   cd C:\\Qt\\admin_apk\n   set JAVA_HOME=C:\\Qt\\jdk-17\n   gradlew.bat assembleRelease",
+                        'path' => '/admin-app.apk',
+                        'audience' => 'Админ / Техник',
                     ],
                     [
                         'title' => 'Транзакции и копии чеков',

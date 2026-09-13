@@ -18,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // === ПОДКЛЮЧЕНИЕ ГЛОБАЛЬНОЙ ШИНЫ INERTIA ===
         $middleware->web(prepend: [
             \App\Http\Middleware\BlockAdminInClientApp::class,
+            \App\Http\Middleware\RestrictPublicInAdminApp::class,
         ]);
 
         $middleware->web(append: [

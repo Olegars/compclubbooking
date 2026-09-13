@@ -143,6 +143,7 @@ const props = withDefaults(defineProps<{
 const clubName = useClubName()
 const page = usePage()
 const { success, error } = useToast()
+const isAdminApp = /CompClubAdmin/i.test(navigator.userAgent || '')
 
 const flashSuccess = computed(() => (page.props as any).flash?.success as string | undefined)
 const formErrors = computed(() => (page.props as any).errors as Record<string, string> | undefined)
@@ -370,6 +371,22 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
     <Head :title="`${clubName} | Личный кабинет`" />
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
+
+            <a
+                v-if="!isAdminApp"
+                href="/admin-app.apk"
+                download="admin0451.apk"
+                class="flex items-center justify-between gap-4 bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1.125rem] px-6 py-5 hover:bg-[#22c55e]/10 transition-colors"
+            >
+                <div>
+                    <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Android</div>
+                    <div class="text-white text-sm font-black uppercase tracking-wide mt-1">Скачать приложение для админов</div>
+                    <p class="text-white/40 text-xs mt-1">0451 Ctrl — только админка, без сайта для гостей</p>
+                </div>
+                <span class="shrink-0 px-5 py-3 bg-[#22c55e] text-black rounded-2xl text-xs font-black uppercase tracking-widest">
+                    Скачать APK
+                </span>
+            </a>
 
             <StaffEmployment
                 v-if="employment.required"
