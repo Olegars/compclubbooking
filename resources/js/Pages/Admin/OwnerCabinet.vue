@@ -72,7 +72,7 @@ const links = [
     { href: '/admin/dashboard', label: 'Дашборд зала', hint: 'ПК, касса, гости' },
     { href: '/admin/staff', label: 'Штат', hint: 'Найм, ставки, штрафы' },
     { href: '/admin/analytics', label: 'Аналитика', hint: 'Загрузка и выручка' },
-    { href: '/admin/taxes', label: 'Налоги', hint: 'УСН 6%' },
+    { href: '/admin/taxes', label: 'Налоги', hint: 'УСН 6% · НДС · штат' },
     { href: '/admin/store/locations', label: 'Локации', hint: 'Клубы и магазины' },
     { href: '/admin/store/orders', label: 'Заказы магазина', hint: 'Сборки и выдача' },
     { href: '/admin/incidents', label: 'Инциденты', hint: 'SOS и качество' },

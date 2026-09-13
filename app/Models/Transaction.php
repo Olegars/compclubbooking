@@ -14,6 +14,7 @@ class Transaction extends Model
         'amount',
         'type',
         'source',
+        'is_taxable',
         'description',
         'payload',
         'idempotency_key',
@@ -29,6 +30,7 @@ class Transaction extends Model
     protected $casts = [
         'payload' => 'array',
         'amount' => 'float',
+        'is_taxable' => 'boolean',
         'fiscal_at' => 'datetime',
         'send_receipt' => 'boolean',
     ];

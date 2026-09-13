@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Admin;
 use App\Models\Shift;
 use App\Models\StoreOrder;
-use App\Models\Transaction;
 use App\Models\User;
 use App\Support\AdminAlerts;
 use App\Support\AdminLocation;
@@ -14,6 +13,8 @@ use Illuminate\Support\Facades\Schema;
 
 class OwnerCabinetService
 {
+    public function __construct(private readonly TaxReportService $taxes) {}
+
     /**
      * @return array<string, mixed>
      */
@@ -81,18 +82,6 @@ class OwnerCabinetService
 
     private function todayTaxable(): float
     {
-        if (! Schema::hasTable('transactions')) {
-            return 0.0;
-        }
-
-        $query = Transaction::query()->whereDate('created_at', today());
-        if (Schema::hasColumn('transactions', 'is_taxable')) {
-            $query->where('is_taxable', true);
-        }
-        if (Schema::hasColumn('transactions', 'type')) {
-            $query->whereIn('type', ['deposit', 'refund']);
-        }
-
-        return round((float) $query->sum('amount'), 2);
+        return $this->taxes->incomeBetween(now()->startOfDay(), now()->endOfDay());
     }
 }
