@@ -98,6 +98,19 @@ const kindSummary = computed(() =>
     }))
 )
 
+const telegramUrl = computed(() => String(props.contacts?.socials?.telegram || ''))
+const phoneHref = computed(() => {
+    const phone = String(props.contacts?.phone || '')
+    return phone ? `tel:${phone.replace(/[^\d+]/g, '')}` : ''
+})
+const occupancyJump = computed(() => (props.map?.computers?.length ? '#club-map' : bookingUrl()))
+
+const buildHighlights = [
+    { title: 'Подбор', text: 'железо под игры и бюджет' },
+    { title: 'Сборка', text: 'в клубе, со стресс-тестами' },
+    { title: 'Гарантия', text: 'на готовый компьютер' },
+]
+
 const tariffMode = ref<'hourly' | 'packages'>('hourly')
 
 const allPackages = computed(() =>
@@ -216,33 +229,93 @@ const steps = [
                     </dl>
                 </div>
 
-                <div v-if="hasSeats"
-                     class="bg-white/5 md:bg-[#0a0a0a] border border-white/10 rounded-3xl p-7 flex flex-col justify-center">
-                    <div class="flex items-center gap-2 mb-5">
+                <article class="build-card relative overflow-hidden rounded-3xl border border-amber-400/25 p-6 sm:p-7 flex flex-col justify-between min-h-[280px]">
+                    <div class="pointer-events-none absolute inset-0 build-card__grid" aria-hidden="true"></div>
+                    <div class="pointer-events-none absolute -right-10 -top-16 h-48 w-48 rounded-full bg-amber-500/20 blur-3xl" aria-hidden="true"></div>
+                    <div class="pointer-events-none absolute right-2 bottom-1 hidden w-[40%] max-w-[170px] sm:block" aria-hidden="true">
+                        <svg viewBox="0 0 180 220" fill="none" class="w-full h-auto text-amber-200/70">
+                            <rect x="42" y="16" width="96" height="188" rx="10" stroke="currentColor" stroke-width="1.4"/>
+                            <rect x="54" y="34" width="72" height="142" rx="4" stroke="currentColor" stroke-opacity="0.35"/>
+                            <rect x="64" y="46" width="52" height="48" rx="2" stroke="#f59e0b" stroke-opacity="0.55"/>
+                            <rect x="78" y="58" width="24" height="24" rx="2" fill="#f59e0b" fill-opacity="0.22" stroke="#fbbf24"/>
+                            <rect x="108" y="50" width="4" height="38" fill="#22c55e" fill-opacity="0.7"/>
+                            <rect x="115" y="50" width="4" height="38" fill="#22c55e" fill-opacity="0.4"/>
+                            <rect class="gpu-glow" x="64" y="106" width="52" height="20" rx="2" fill="#f59e0b"/>
+                            <g class="fan-spin">
+                                <circle cx="90" cy="154" r="13" stroke="#fbbf24" stroke-opacity="0.75"/>
+                                <path d="M90 154 L90 143 M90 154 L90 165 M90 154 L79 154 M90 154 L101 154" stroke="#fbbf24" stroke-opacity="0.8" stroke-width="1.4"/>
+                                <circle cx="90" cy="154" r="2.4" fill="#fbbf24"/>
+                            </g>
+                            <rect x="54" y="182" width="72" height="14" rx="2" fill="currentColor" fill-opacity="0.12"/>
+                        </svg>
+                    </div>
+
+                    <div class="relative z-[1]">
+                        <div class="inline-flex items-center gap-2 mb-4">
+                            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                            <span class="label !mb-0 !text-amber-400/70">Магазин при клубе</span>
+                        </div>
+                        <h3 class="text-2xl sm:text-3xl font-black italic uppercase tracking-tighter text-white leading-[1.05] max-w-[18ch]">
+                            У нас можно собрать игровой компьютер
+                        </h3>
+                        <p class="mt-3 text-[13px] sm:text-sm text-white/55 leading-relaxed max-w-[36ch]">
+                            Подберём комплектующие, соберём в клубе, прогоним тесты и отдадим с гарантией.
+                        </p>
+                    </div>
+
+                    <ul class="relative z-[1] mt-5 grid grid-cols-3 gap-2 max-w-[360px]">
+                        <li v-for="item in buildHighlights" :key="item.title"
+                            class="rounded-xl border border-white/10 bg-black/30 px-2.5 py-2">
+                            <div class="text-[10px] font-black uppercase tracking-widest text-amber-300">{{ item.title }}</div>
+                            <div class="mt-0.5 text-[10px] text-white/45 leading-snug">{{ item.text }}</div>
+                        </li>
+                    </ul>
+
+                    <div class="relative z-[1] mt-6 flex flex-col sm:flex-row gap-2.5">
+                        <a v-if="phoneHref" :href="phoneHref"
+                           class="px-5 py-3 rounded-xl bg-amber-400 text-black font-black uppercase text-[10px] tracking-[0.18em] text-center hover:bg-amber-300 transition-colors">
+                            Позвонить
+                        </a>
+                        <a v-if="telegramUrl" :href="telegramUrl" target="_blank" rel="noopener"
+                           class="px-5 py-3 rounded-xl border border-amber-400/40 text-amber-200 font-black uppercase text-[10px] tracking-[0.18em] text-center hover:border-amber-300 hover:text-white transition-colors">
+                            Telegram
+                        </a>
+                        <a v-if="!phoneHref && !telegramUrl && contacts?.address"
+                           :href="contacts?.map_url || '#tariffs'"
+                           class="px-5 py-3 rounded-xl border border-amber-400/40 text-amber-200 font-black uppercase text-[10px] tracking-[0.18em] text-center hover:border-amber-300 hover:text-white transition-colors">
+                            Приходите в клуб
+                        </a>
+                    </div>
+                </article>
+            </section>
+
+            <!-- ЗАНЯТОСТЬ -->
+            <section v-if="hasSeats" class="mb-16">
+                <a :href="occupancyJump"
+                   class="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6 bg-white/5 md:bg-[#0a0a0a] border border-white/10 rounded-2xl px-5 py-4 hover:border-[#22c55e]/35 transition-colors">
+                    <div class="flex items-center gap-2 shrink-0">
                         <span class="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse"></span>
                         <span class="label !mb-0">Свободно прямо сейчас</span>
                     </div>
-
-                    <div class="flex items-baseline gap-3">
-                        <span class="text-6xl sm:text-7xl font-black italic tracking-tighter text-white leading-none">
+                    <div class="flex items-baseline gap-2">
+                        <span class="text-3xl font-black italic tracking-tighter text-white leading-none">
                             {{ occupancy?.free }}
                         </span>
                         <span class="text-white/40 text-sm">из {{ occupancy?.total }} мест</span>
                     </div>
-
-                    <div class="mt-5 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                    <div class="hidden md:block h-1.5 flex-1 rounded-full bg-white/10 overflow-hidden">
                         <div class="h-full rounded-full bg-[#22c55e] transition-all duration-700"
                              :style="{ width: `${freePercent}%` }"></div>
                     </div>
-
-                    <div v-if="kindSummary.length" class="mt-6 space-y-2">
-                        <div v-for="k in kindSummary" :key="k.kind"
-                             class="flex items-center justify-between text-[12px] border-b border-white/5 pb-2 last:border-0">
-                            <span class="text-white/50">{{ k.label }}</span>
-                            <span class="font-mono text-white/80">{{ k.free }} / {{ k.total }}</span>
-                        </div>
+                    <div v-if="kindSummary.length" class="flex flex-wrap gap-x-5 gap-y-1 text-[12px] font-mono">
+                        <span v-for="k in kindSummary" :key="k.kind" class="text-white/75">
+                            <span class="text-white/35">{{ k.label }}</span> {{ k.free }}/{{ k.total }}
+                        </span>
                     </div>
-                </div>
+                    <span class="text-[10px] font-black uppercase tracking-[0.18em] text-white/30 sm:ml-auto">
+                        {{ map?.computers?.length ? 'К карте →' : 'Забронировать →' }}
+                    </span>
+                </a>
             </section>
 
             <!-- ТАРИФЫ -->
@@ -344,7 +417,7 @@ const steps = [
             </section>
 
             <!-- КАРТА -->
-            <section v-if="map?.computers?.length" class="mb-16">
+            <section v-if="map?.computers?.length" id="club-map" class="mb-16 scroll-mt-28">
                 <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
                     <h3 class="text-xl sm:text-2xl font-black italic uppercase tracking-tight text-white">Карта клуба</h3>
                     <div class="flex flex-wrap gap-4 text-[11px] text-white/40">
@@ -478,5 +551,38 @@ const steps = [
 
 .label {
     @apply text-[10px] uppercase tracking-[0.25em] text-white/30 mb-1.5 font-black italic;
+}
+
+.build-card {
+    background:
+        radial-gradient(circle at 88% 12%, rgba(245, 158, 11, 0.16), transparent 42%),
+        linear-gradient(160deg, #14100a 0%, #0a0a0a 55%);
+}
+
+.build-card__grid {
+    background-image:
+        linear-gradient(rgba(245, 158, 11, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(245, 158, 11, 0.05) 1px, transparent 1px);
+    background-size: 22px 22px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 85%);
+}
+
+.gpu-glow {
+    filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.85));
+    animation: gpu-pulse 2.6s ease-in-out infinite;
+}
+
+.fan-spin {
+    transform-origin: 90px 154px;
+    animation: fan-spin 9s linear infinite;
+}
+
+@keyframes gpu-pulse {
+    0%, 100% { filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.45)); }
+    50% { filter: drop-shadow(0 0 14px rgba(251, 191, 36, 0.95)); }
+}
+
+@keyframes fan-spin {
+    to { transform: rotate(360deg); }
 }
 </style>
