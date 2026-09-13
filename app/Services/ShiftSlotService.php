@@ -114,6 +114,10 @@ class ShiftSlotService
 
     public function book(Admin $admin, ShiftSlot $slot): ShiftSlotBooking
     {
+        if ($admin->isOwner()) {
+            throw new RuntimeException('Владелец не занимает слоты смены. График сотрудников — в штате.');
+        }
+
         return DB::transaction(function () use ($admin, $slot) {
             /** @var ShiftSlot $locked */
             $locked = ShiftSlot::query()->lockForUpdate()->findOrFail($slot->id);

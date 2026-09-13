@@ -41,6 +41,7 @@ use App\Http\Controllers\Admin\BonusController;
 use App\Http\Controllers\Admin\TaxController;
 use App\Http\Controllers\Admin\StaffController;
 use App\Http\Controllers\Admin\StaffPayrollController;
+use App\Http\Controllers\Admin\OwnerCabinetController;
 use App\Http\Controllers\Store\StoreHireController;
 use App\Http\Controllers\Admin\TariffController;
 use App\Http\Controllers\Admin\ZoneController;
@@ -320,7 +321,12 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
     // Справка — всем ролям
     Route::get('/docs', [SystemDocsController::class, 'index'])->name('admin.docs');
 
-    // Личный кабинет — любой сотрудник (клуб и магазин)
+    // Личный кабинет владельца — отдельно от зарплаты зала и магазина
+    Route::get('/cabinet', [OwnerCabinetController::class, 'index'])
+        ->middleware('role:owner')
+        ->name('admin.cabinet');
+
+    // Личный кабинет — админ зала, стажёр, управляющий, сотрудник магазина
     Route::get('/salary', [StaffPayrollController::class, 'index'])->name('admin.salary');
     Route::post('/salary/withdraw', [StaffPayrollController::class, 'withdraw'])->name('admin.salary.withdraw');
     Route::post('/salary/slots/{slot}/book', [StaffPayrollController::class, 'bookSlot'])->name('admin.salary.slots.book');

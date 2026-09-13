@@ -141,13 +141,17 @@ class AdminDutyAccessTest extends TestCase
     {
         $owner = $this->makeAdmin('owner', null);
 
-        $this->actingAs($owner, 'admin')->get('/admin/salary')->assertOk()
+        $this->actingAs($owner, 'admin')->get('/admin/cabinet')->assertOk()
             ->assertInertia(fn ($page) => $page
+                ->component('Admin/OwnerCabinet')
                 ->where('can_access_club', true)
                 ->where('is_salary_only', false)
                 ->where('has_full_club_ops', true)
             );
+        $this->actingAs($owner, 'admin')->get('/admin/salary')->assertRedirect('/admin/cabinet');
     }
+
+    private function makeAdmin(string $role, ?int $rate = 2000): Admin
     {
         return Admin::create([
             'name' => ucfirst($role).' '.uniqid(),

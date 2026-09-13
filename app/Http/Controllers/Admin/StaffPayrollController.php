@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Admin;
 use App\Models\ShiftSlot;
 use App\Models\ShiftSlotBooking;
 use App\Services\ShiftSlotService;
@@ -26,6 +27,9 @@ class StaffPayrollController extends Controller
     public function index(Request $request)
     {
         $admin = auth('admin')->user();
+        if ($admin?->isOwner()) {
+            return redirect()->route('admin.cabinet');
+        }
         $payload = $this->payroll->snapshot($admin);
         $payload['employment'] = $this->employment->payload($admin);
         if ($admin->isStoreRole() && $admin->needsEmployment()) {
@@ -51,6 +55,7 @@ class StaffPayrollController extends Controller
     public function withdraw(Request $request)
     {
         $admin = auth('admin')->user();
+        $this->assertStaffCabinet($admin);
         if ($admin->needsEmployment()) {
             return back()->withErrors(['message' => 'Сначала завершите устройство на работу.']);
         }
@@ -76,6 +81,7 @@ class StaffPayrollController extends Controller
     public function bookSlot(ShiftSlot $slot)
     {
         $admin = auth('admin')->user();
+        $this->assertStaffCabinet($admin);
         if ($admin->needsEmployment()) {
             return back()->withErrors(['message' => 'Сначала завершите устройство на работу.']);
         }
@@ -91,8 +97,11 @@ class StaffPayrollController extends Controller
 
     public function cancelSlot(ShiftSlotBooking $booking)
     {
+        $admin = auth('admin')->user();
+        $this->assertStaffCabinet($admin);
+
         try {
-            $this->slots->cancel(auth('admin')->user(), $booking);
+            $this->slots->cancel($admin, $booking);
         } catch (RuntimeException $e) {
             return back()->withErrors(['message' => $e->getMessage()]);
         }
@@ -102,12 +111,15 @@ class StaffPayrollController extends Controller
 
     public function acceptEmploymentRule(Request $request)
     {
+        $admin = auth('admin')->user();
+        $this->assertStaffCabinet($admin);
+
         $data = $request->validate([
             'rule_id' => ['required', 'integer'],
         ]);
 
         try {
-            $this->employment->acceptRule(auth('admin')->user(), (int) $data['rule_id']);
+            $this->employment->acceptRule($admin, (int) $data['rule_id']);
         } catch (RuntimeException $e) {
             return back()->withErrors(['message' => $e->getMessage()]);
         }
@@ -117,12 +129,15 @@ class StaffPayrollController extends Controller
 
     public function acceptFireSafetyRule(Request $request)
     {
+        $admin = auth('admin')->user();
+        $this->assertStaffCabinet($admin);
+
         $data = $request->validate([
             'rule_id' => ['required', 'integer'],
         ]);
 
         try {
-            $this->employment->acceptFireRule(auth('admin')->user(), (int) $data['rule_id']);
+            $this->employment->acceptFireRule($admin, (int) $data['rule_id']);
         } catch (RuntimeException $e) {
             return back()->withErrors(['message' => $e->getMessage()]);
         }
@@ -138,6 +153,7 @@ class StaffPayrollController extends Controller
     public function hire(Request $request)
     {
         $admin = auth('admin')->user();
+        $this->assertStaffCabinet($admin);
         $hasScan = filled($this->employment->profile($admin)->passport_scan_path);
 
         $data = $request->validate($this->employment->hireRules($hasScan), $this->employment->hireMessages());
@@ -151,5 +167,10 @@ class StaffPayrollController extends Controller
         }
 
         return back()->with('success', 'Анкета отправлена на проверку.');
+    }
+
+    private function assertStaffCabinet(?Admin $admin): void
+    {
+        abort_if(! $admin || $admin->isOwner(), 403, 'У владельца отдельный кабинет.');
     }
 }

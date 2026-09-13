@@ -152,7 +152,6 @@ const isAdminApp = /CompClubAdmin/i.test(navigator.userAgent || '')
 const isBossApp = /CompClubBoss/i.test(navigator.userAgent || '')
 const isStoreApp = /CompClubStore/i.test(navigator.userAgent || '')
 const isStore = computed(() => Boolean(props.store_desk))
-const isOwner = computed(() => (page.props as any).admin_user?.role === 'owner')
 const storeDesk = computed(() => props.store_desk)
 
 const flashSuccess = computed(() => (page.props as any).flash?.success as string | undefined)
@@ -403,23 +402,7 @@ const kindLabel = (kind: string | null | undefined) => {
             </a>
 
             <a
-                v-else-if="isOwner && !isBossApp && !isAdminApp"
-                href="/boss-app.apk"
-                download="boss0451.apk"
-                class="flex items-center justify-between gap-4 bg-[#0a0a0a] border border-yellow-500/30 rounded-[1.125rem] px-6 py-5 hover:bg-yellow-500/10 transition-colors"
-            >
-                <div>
-                    <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Android</div>
-                    <div class="text-white text-sm font-black uppercase tracking-wide mt-1">Скачать приложение владельца</div>
-                    <p class="text-white/40 text-xs mt-1">0451 Boss — вся админка клуба и магазина, без сайта для гостей</p>
-                </div>
-                <span class="shrink-0 px-5 py-3 bg-yellow-500 text-black rounded-2xl text-xs font-black uppercase tracking-widest">
-                    Скачать APK
-                </span>
-            </a>
-
-            <a
-                v-else-if="!isStore && !isOwner && !isAdminApp && !isBossApp"
+                v-else-if="!isStore && !isAdminApp && !isBossApp"
                 href="/admin-app.apk"
                 download="admin0451.apk"
                 class="flex items-center justify-between gap-4 bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1.125rem] px-6 py-5 hover:bg-[#22c55e]/10 transition-colors"

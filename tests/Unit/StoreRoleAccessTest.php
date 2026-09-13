@@ -22,6 +22,8 @@ class StoreRoleAccessTest extends TestCase
 
         $this->assertTrue($owner->canAccessClub());
         $this->assertTrue($owner->canAccessStore());
+        $this->assertTrue($owner->isOwner());
+        $this->assertSame('admin.dashboard', $owner->homeRoute());
     }
 
     public function test_intern_is_salary_only_and_not_store(): void

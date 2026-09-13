@@ -98,6 +98,11 @@ class Admin extends Authenticatable
         return in_array($this->role, self::STORE_ONLY_ROLES, true);
     }
 
+    public function isOwner(): bool
+    {
+        return $this->role === self::ROLE_OWNER;
+    }
+
     public function isIntern(): bool
     {
         return $this->role === self::ROLE_INTERN;

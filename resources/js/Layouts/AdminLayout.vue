@@ -130,6 +130,8 @@ const adminSidebarMenu = (() => {
 
 const openMenu = ref<AdminMenuId | null>(adminSidebarMenu.open)
 
+const cabinetHref = computed(() => isOwner.value ? '/admin/cabinet' : '/admin/salary')
+
 watch([isStoreRole, isSalaryOnly], ([store, salary]) => {
     if (adminSidebarMenu.open !== null) return
     if (store || salary) {
@@ -187,7 +189,7 @@ onUnmounted(() => {
 
             <div class="flex-1 overflow-y-auto py-8 px-6 space-y-8 custom-scrollbar">
 
-                <div v-if="isSalaryOnly || isStoreRole">
+                <div v-if="isSalaryOnly || isStoreRole || isOwner">
                     <button type="button"
                             class="w-full flex items-center justify-between cursor-pointer text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 pr-2 py-1.5 rounded-xl hover:text-white/70 hover:bg-white/[0.02] transition-colors"
                             :aria-expanded="isMenuOpen('personal')"
@@ -197,10 +199,14 @@ onUnmounted(() => {
                     </button>
                     <div class="grid transition-[grid-template-rows] duration-200 ease-out" :class="isMenuOpen('personal') ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
                         <div class="overflow-hidden min-h-0 space-y-2 mt-2">
-                            <Link href="/admin/salary"
+                            <Link :href="cabinetHref"
                                   class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
-                                  :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e] shadow-[0_0_30px_rgba(34,197,94,0.05)]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
-                                <span>👤</span> Личный кабинет
+                                  :class="isActive(cabinetHref)
+                                    ? (isOwner
+                                        ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400 shadow-[0_0_30px_rgba(234,179,8,0.08)]'
+                                        : 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e] shadow-[0_0_30px_rgba(34,197,94,0.05)]')
+                                    : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                                <span>👤</span> {{ isOwner ? 'Кабинет владельца' : 'Личный кабинет' }}
                             </Link>
                         </div>
                     </div>
@@ -257,7 +263,7 @@ onUnmounted(() => {
                           :class="isActive('/admin/shifts/history') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>📋</span> Архив смен
                     </Link>
-                    <Link href="/admin/salary"
+                    <Link v-if="!isOwner" href="/admin/salary"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>👤</span> Личный кабинет
@@ -536,7 +542,7 @@ onUnmounted(() => {
                     </button>
                     <div class="grid transition-[grid-template-rows] duration-200 ease-out" :class="isMenuOpen('docs') ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
                         <div class="overflow-hidden min-h-0 space-y-2 mt-2">
-                    <Link v-if="!canAccessClub && !isStoreRole" href="/admin/salary"
+                    <Link v-if="!canAccessClub && !isStoreRole && !isOwner" href="/admin/salary"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>👤</span> Личный кабинет
