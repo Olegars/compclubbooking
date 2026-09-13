@@ -218,6 +218,11 @@ const filteredMonths = computed(() => {
                     </div>
                 </div>
                 <div class="flex items-center gap-4">
+                    <a
+                        :href="`/admin/taxes/kudir?year=${year}`"
+                        target="_blank"
+                        class="px-4 py-3 rounded-2xl border border-white/10 text-white/70 hover:text-white hover:border-indigo-500/40 text-[10px] font-black uppercase tracking-widest"
+                    >КУДиР / PDF</a>
                     <button
                         type="button"
                         class="px-4 py-3 rounded-2xl border border-white/10 text-white/60 hover:text-white hover:border-white/30 text-xs font-black"

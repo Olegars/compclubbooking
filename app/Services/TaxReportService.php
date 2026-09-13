@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Admin;
 use App\Models\StaffLedger;
 use App\Models\Transaction;
+use App\Support\ClubBrand;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Schema;
@@ -172,6 +173,84 @@ class TaxReportService
             ],
             'warnings' => $warnings,
             'calendar' => $calendar,
+        ];
+    }
+
+    /**
+     * Внутренний регистр доходов (не бланк Минфина) — для печати / PDF.
+     *
+     * @return array<string, mixed>
+     */
+    public function kudir(int $year): array
+    {
+        $report = $this->forYear($year);
+        $start = Carbon::create($year, 1, 1)->startOfDay();
+        $end = Carbon::create($year, 12, 31)->endOfDay();
+        $vatMonths = $report['vat']['months'] ?? [];
+
+        $lines = [];
+        $query = $this->depositQuery($start, $end);
+        if ($query !== null) {
+            $this->constrainFiscalized($query);
+            $rows = $query
+                ->orderBy('created_at')
+                ->orderBy('id')
+                ->get(['id', 'created_at', 'amount', 'source', 'description', 'fiscal_receipt_url', 'fiscal_status']);
+
+            $n = 0;
+            foreach ($rows as $tx) {
+                $n++;
+                $month = (int) $tx->created_at->month;
+                $rate = (float) ($vatMonths[$month]['vat_rate'] ?? 0);
+                $gross = $this->money((float) $tx->amount);
+                $split = $this->splitGross($gross, $rate);
+                $lines[] = [
+                    'n' => $n,
+                    'date' => $tx->created_at->format('d.m.Y'),
+                    'id' => $tx->id,
+                    'source' => $this->sourceLabel($tx->source),
+                    'description' => $tx->description ?: 'Пополнение',
+                    'gross' => $gross,
+                    'vat_rate' => $rate,
+                    'vat' => $split['vat'],
+                    'net' => $split['net'],
+                    'receipt' => $tx->fiscal_receipt_url,
+                ];
+            }
+        }
+
+        $legal = config('club.legal', []);
+
+        return [
+            'year' => $year,
+            'generated_at' => now()->timezone(config('app.timezone'))->format('d.m.Y H:i'),
+            'club' => ClubBrand::name(),
+            'legal' => [
+                'entity' => (string) ($legal['entity'] ?? ''),
+                'inn' => (string) ($legal['inn'] ?? ''),
+            ],
+            'profile' => $report['profile'],
+            'income' => [
+                'gross' => $report['income']['gross'],
+                'net' => $report['income']['net'],
+                'vat' => $report['income']['vat'],
+                'stub_gross' => $report['income']['stub_gross'],
+                'fiscal_live' => $report['income']['fiscal_live'],
+            ],
+            'vat' => [
+                'exempt' => $report['vat']['exempt'],
+                'rate' => $report['vat']['rate'],
+                'reason' => $report['vat']['reason'],
+            ],
+            'quarters' => $report['quarters'],
+            'premiums' => $report['premiums'],
+            'payroll' => [
+                'employee_count' => $report['payroll']['employee_count'],
+                'employees' => $report['payroll']['employees'],
+                'year' => $report['payroll']['year'],
+            ],
+            'totals' => $report['totals'],
+            'lines' => $lines,
         ];
     }
 
@@ -925,6 +1004,17 @@ class TaxReportService
             2 => sprintf('%d-07-28', $year),
             3 => sprintf('%d-10-28', $year),
             default => sprintf('%d-01-28', $year + 1),
+        };
+    }
+
+    private function sourceLabel(?string $source): string
+    {
+        return match (strtolower(trim((string) $source))) {
+            'cash', 'admin_cash' => 'Касса',
+            'card' => 'Карта',
+            'sbp' => 'СБП',
+            'yookassa' => 'ЮKassa',
+            default => $source !== null && $source !== '' ? $source : 'Пополнение',
         };
     }
 

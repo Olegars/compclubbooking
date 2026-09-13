@@ -17,4 +17,12 @@ class TaxController extends Controller
 
         return Inertia::render('Admin/Taxes', $taxes->forYear($year));
     }
+
+    public function kudir(Request $request, TaxReportService $taxes): Response
+    {
+        $year = (int) $request->integer('year', now()->year);
+        $year = max(2024, min(2100, $year));
+
+        return Inertia::render('Admin/TaxesKudir', $taxes->kudir($year));
+    }
 }

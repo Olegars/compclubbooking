@@ -49,6 +49,30 @@ class TaxReportTest extends TestCase
             ->assertRedirect('/admin/salary');
     }
 
+    public function test_kudir_lists_fiscalized_income_and_skips_stubs(): void
+    {
+        Carbon::setTestNow('2026-03-10 12:00:00');
+        $owner = $this->makeAdmin('owner', false);
+        $this->deposit('cash', 100000, '2026-01-20');
+        $this->deposit('card', 40000, '2026-01-21', stub: true);
+
+        $book = app(TaxReportService::class)->kudir(2026);
+        $this->assertCount(1, $book['lines']);
+        $this->assertSame(100000.0, $book['lines'][0]['gross']);
+        $this->assertSame(100000.0, $book['lines'][0]['net']);
+        $this->assertSame('Касса', $book['lines'][0]['source']);
+        $this->assertSame(40000.0, $book['income']['stub_gross']);
+
+        $this->actingAs($owner, 'admin')
+            ->get('/admin/taxes/kudir?year=2026')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/TaxesKudir')
+                ->where('year', 2026)
+                ->has('lines', 1)
+            );
+    }
+
     public function test_report_uses_real_deposits_excludes_bonuses_and_wallet_refunds(): void
     {
         Carbon::setTestNow('2026-03-10 12:00:00');

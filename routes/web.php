@@ -631,6 +631,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::delete('/staff/{admin}', [StaffController::class, 'destroy'])->name('admin.staff.destroy');
 
         Route::get('/taxes', [TaxController::class, 'index'])->name('admin.taxes.index');
+        Route::get('/taxes/kudir', [TaxController::class, 'kudir'])->name('admin.taxes.kudir');
 
         Route::get('/store/locations', [StoreLocationController::class, 'index'])->name('admin.store.locations');
         Route::post('/store/locations', [StoreLocationController::class, 'store'])->name('admin.store.locations.store');
