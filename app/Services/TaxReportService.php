@@ -109,6 +109,7 @@ class TaxReportService
 
         $yearUsn = $quarters[4];
         $warnings = $this->warnings($cumGross, $cumNet, $priorGross, $rates, $vatPlan);
+        $calendar = $this->calendar($year, $quarters, $ipPremiums, $payroll);
 
         return [
             'year' => $year,
@@ -157,6 +158,7 @@ class TaxReportService
                 ),
             ],
             'warnings' => $warnings,
+            'calendar' => $calendar,
         ];
     }
 
@@ -419,13 +421,24 @@ class TaxReportService
             'injury' => 0.0,
             'employer_total' => 0.0,
         ];
+        $emptyMonth = [
+            'gross' => 0.0,
+            'ndfl' => 0.0,
+            'employer' => 0.0,
+            'injury' => 0.0,
+        ];
         $quarters = [1 => $emptyQuarter, 2 => $emptyQuarter, 3 => $emptyQuarter, 4 => $emptyQuarter];
+        $months = [];
+        for ($m = 1; $m <= 12; $m++) {
+            $months[$m] = $emptyMonth;
+        }
 
         if (! Schema::hasTable('admins') || ! Schema::hasTable('staff_ledgers')) {
             return [
                 'employee_count' => 0,
                 'employees' => [],
                 'quarters' => $quarters,
+                'months' => $months,
                 'year' => $emptyQuarter,
             ];
         }
@@ -490,6 +503,11 @@ class TaxReportService
                 $quarters[$q]['employer'] += $employer['amount'];
                 $quarters[$q]['injury'] += $injury;
                 $quarters[$q]['employer_total'] += $employer['amount'] + $injury;
+
+                $months[$month]['gross'] += $gross;
+                $months[$month]['ndfl'] += $ndflDelta;
+                $months[$month]['employer'] += $employer['amount'];
+                $months[$month]['injury'] += $injury;
             }
 
             $rows[] = [
@@ -525,10 +543,20 @@ class TaxReportService
             ];
         }
 
+        for ($m = 1; $m <= 12; $m++) {
+            $months[$m] = [
+                'gross' => $this->money($months[$m]['gross']),
+                'ndfl' => $this->rub($months[$m]['ndfl']),
+                'employer' => $this->money($months[$m]['employer']),
+                'injury' => $this->money($months[$m]['injury']),
+            ];
+        }
+
         return [
             'employee_count' => $employees->count(),
             'employees' => $rows,
             'quarters' => $quarters,
+            'months' => $months,
             'year' => [
                 'gross' => $this->money($yearGross),
                 'ndfl' => $this->rub($yearNdfl),
@@ -537,6 +565,233 @@ class TaxReportService
                 'employer_total' => $this->money($yearEmployer + $yearInjury),
             ],
         ];
+    }
+
+    /**
+     * Срок с выходного переносится на следующий рабочий день (ст. 6.1 НК РФ).
+     */
+    public function shiftDeadline(string $isoDate): string
+    {
+        $date = Carbon::parse($isoDate)->startOfDay();
+        while ($date->isWeekend()) {
+            $date->addDay();
+        }
+
+        return $date->toDateString();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $quarters
+     * @param  array<string, mixed>  $premiums
+     * @param  array<string, mixed>  $payroll
+     * @return array<string, mixed>
+     */
+    public function calendar(int $year, array $quarters, array $premiums, array $payroll): array
+    {
+        $today = now()->startOfDay();
+        $items = [];
+
+        $quarterNames = [
+            1 => '1 квартал',
+            2 => 'полугодие',
+            3 => '9 месяцев',
+            4 => 'год',
+        ];
+
+        for ($q = 1; $q <= 4; $q++) {
+            $periodEnd = Carbon::create($year, $q * 3, 1)->endOfMonth()->startOfDay();
+            $usn = (float) ($quarters[$q]['usn_advance'] ?? 0);
+            if ($usn > 0) {
+                $items[] = $this->calendarItem(
+                    'usn-q'.$q,
+                    'usn',
+                    $q === 4 ? 'УСН по итогам года' : 'Аванс УСН за '.$quarterNames[$q],
+                    'ЕНП',
+                    $usn,
+                    $this->usnDeadline($year, $q),
+                    $periodEnd,
+                    $today
+                );
+            }
+
+            $vat = $this->rub((float) ($quarters[$q]['vat'] ?? 0));
+            if ($vat > 0) {
+                $parts = $this->splitInThirds($vat);
+                $firstMonth = $q * 3 + 1;
+                foreach ($parts as $index => $part) {
+                    $pay = Carbon::create($year, 1, 28)->addMonths($firstMonth + $index - 1);
+                    $items[] = $this->calendarItem(
+                        'vat-q'.$q.'-'.($index + 1),
+                        'vat',
+                        'НДС '.($index + 1).'/3 за '.$quarterNames[$q],
+                        'ЕНП · 1/3 квартала',
+                        $part,
+                        $pay->toDateString(),
+                        $periodEnd,
+                        $today
+                    );
+                }
+            }
+        }
+
+        if ((float) $premiums['fixed'] > 0) {
+            $items[] = $this->calendarItem(
+                'ip-fixed',
+                'ip_fixed',
+                'Фикс взносы ИП за '.$year,
+                'ЕНП · за себя',
+                (float) $premiums['fixed'],
+                sprintf('%d-12-28', $year),
+                Carbon::create($year, 12, 28)->startOfDay(),
+                $today
+            );
+        }
+
+        if ((float) $premiums['extra'] > 0) {
+            $items[] = $this->calendarItem(
+                'ip-extra',
+                'ip_extra',
+                '1% свыше 300 тыс. за '.$year,
+                'ЕНП · за себя',
+                (float) $premiums['extra'],
+                sprintf('%d-07-01', $year + 1),
+                Carbon::create($year, 12, 31)->startOfDay(),
+                $today
+            );
+        }
+
+        $monthNames = [1 => 'январь', 2 => 'февраль', 3 => 'март', 4 => 'апрель', 5 => 'май', 6 => 'июнь', 7 => 'июль', 8 => 'август', 9 => 'сентябрь', 10 => 'октябрь', 11 => 'ноябрь', 12 => 'декабрь'];
+        $payrollMonths = $payroll['months'] ?? [];
+        for ($m = 1; $m <= 12; $m++) {
+            $row = $payrollMonths[$m] ?? ['ndfl' => 0, 'employer' => 0, 'injury' => 0];
+            $periodEnd = Carbon::create($year, $m, 1)->endOfMonth()->startOfDay();
+            $label = $monthNames[$m].' '.$year;
+
+            if ((float) $row['ndfl'] > 0) {
+                $items[] = $this->calendarItem(
+                    'ndfl-'.$m,
+                    'ndfl',
+                    'НДФЛ за '.$label,
+                    'ЕНП · агент',
+                    (float) $row['ndfl'],
+                    Carbon::create($year, $m, 28)->addMonth()->toDateString(),
+                    $periodEnd,
+                    $today
+                );
+            }
+            if ((float) $row['employer'] > 0) {
+                $items[] = $this->calendarItem(
+                    'employer-'.$m,
+                    'employer',
+                    'Взносы за штат · '.$label,
+                    'ЕНП · 30 / 15,1%',
+                    (float) $row['employer'],
+                    Carbon::create($year, $m, 28)->addMonth()->toDateString(),
+                    $periodEnd,
+                    $today
+                );
+            }
+            if ((float) $row['injury'] > 0) {
+                $items[] = $this->calendarItem(
+                    'injury-'.$m,
+                    'injury',
+                    'Травматизм за '.$label,
+                    'СФР · не ЕНП',
+                    (float) $row['injury'],
+                    Carbon::create($year, $m, 15)->addMonth()->toDateString(),
+                    $periodEnd,
+                    $today
+                );
+            }
+        }
+
+        usort($items, function (array $a, array $b) {
+            return [$a['deadline'], $a['id']] <=> [$b['deadline'], $b['id']];
+        });
+
+        $monthsOut = [];
+        foreach ($items as $item) {
+            $key = substr($item['deadline'], 0, 7);
+            if (! isset($monthsOut[$key])) {
+                $cursor = Carbon::parse($item['deadline']);
+                $monthsOut[$key] = [
+                    'key' => $key,
+                    'year' => (int) $cursor->year,
+                    'month' => (int) $cursor->month,
+                    'label' => $monthNames[(int) $cursor->month].' '.$cursor->year,
+                    'total' => 0.0,
+                    'items' => [],
+                ];
+            }
+            $monthsOut[$key]['items'][] = $item;
+            $monthsOut[$key]['total'] = $this->money($monthsOut[$key]['total'] + $item['amount']);
+        }
+
+        $open = array_values(array_filter($items, fn ($row) => in_array($row['status'], ['due_soon', 'upcoming', 'planned'], true)));
+        $thisMonthKey = $today->format('Y-m');
+
+        return [
+            'today' => $today->toDateString(),
+            'next' => $open[0] ?? null,
+            'this_month_total' => (float) ($monthsOut[$thisMonthKey]['total'] ?? 0),
+            'overdue_total' => $this->money(array_sum(array_map(
+                fn ($row) => $row['status'] === 'overdue' ? $row['amount'] : 0,
+                $items
+            ))),
+            'due_soon_count' => count(array_filter($items, fn ($row) => $row['status'] === 'due_soon')),
+            'overdue_count' => count(array_filter($items, fn ($row) => $row['status'] === 'overdue')),
+            'items' => array_values($items),
+            'months' => array_values($monthsOut),
+        ];
+    }
+
+    /**
+     * @return array{id: string, kind: string, title: string, hint: string, amount: float, deadline: string, status: string}
+     */
+    private function calendarItem(
+        string $id,
+        string $kind,
+        string $title,
+        string $hint,
+        float $amount,
+        string $deadline,
+        Carbon $periodEnd,
+        Carbon $today,
+    ): array {
+        $due = Carbon::parse($this->shiftDeadline($deadline))->startOfDay();
+
+        if ($today->lt($periodEnd)) {
+            $status = 'planned';
+        } elseif ($due->lt($today)) {
+            $status = 'overdue';
+        } elseif ($due->lte($today->copy()->addDays(14))) {
+            $status = 'due_soon';
+        } else {
+            $status = 'upcoming';
+        }
+
+        return [
+            'id' => $id,
+            'kind' => $kind,
+            'title' => $title,
+            'hint' => $hint,
+            'amount' => $this->money($amount),
+            'deadline' => $due->toDateString(),
+            'status' => $status,
+        ];
+    }
+
+    /**
+     * @return list<float>
+     */
+    private function splitInThirds(float $amount): array
+    {
+        $amount = $this->rub($amount);
+        $one = $this->rub($amount / 3);
+        $two = $one;
+        $three = $this->rub($amount - $one - $two);
+
+        return [$one, $two, $three];
     }
 
     /**

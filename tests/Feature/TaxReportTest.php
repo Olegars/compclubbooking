@@ -35,6 +35,8 @@ class TaxReportTest extends TestCase
                 ->where('profile.usn_rate_percent', 6.0)
                 ->where('premiums.fixed', 57390.0)
                 ->where('vat.exempt', true)
+                ->has('calendar.months')
+                ->has('calendar.items')
             );
     }
 
@@ -97,6 +99,14 @@ class TaxReportTest extends TestCase
         $this->assertSame(66000.0, $q1['deduction_cap']);
         $this->assertSame(66000.0, $q1['usn_advance']);
         $this->assertSame(66000.0, $report['totals']['usn']);
+
+        $cal = collect($report['calendar']['items']);
+        $injury = $cal->firstWhere('id', 'injury-3');
+        $this->assertNotNull($injury);
+        $this->assertSame(200.0, $injury['amount']);
+        $this->assertSame('2026-04-15', $injury['deadline']);
+        $this->assertSame('due_soon', $injury['status']);
+        $this->assertSame('injury-3', $report['calendar']['next']['id']);
     }
 
     public function test_vat_is_removed_from_usn_base_when_prior_year_over_limit(): void

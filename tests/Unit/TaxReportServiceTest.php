@@ -106,4 +106,37 @@ class TaxReportServiceTest extends TestCase
         $this->assertSame(5.0, $plan['months'][1]['vat_rate']);
         $this->assertSame(5000.0, $plan['months'][1]['vat']);
     }
+
+    public function test_deadline_moves_from_weekend_to_monday(): void
+    {
+        $tax = app(TaxReportService::class);
+        $this->assertSame('2026-06-29', $tax->shiftDeadline('2026-06-27'));
+        $this->assertSame('2026-06-29', $tax->shiftDeadline('2026-06-28'));
+        $this->assertSame('2026-04-28', $tax->shiftDeadline('2026-04-28'));
+    }
+
+    public function test_calendar_splits_vat_into_three_payments(): void
+    {
+        $tax = app(TaxReportService::class);
+        $quarters = [
+            1 => ['usn_advance' => 3000.0, 'vat' => 5000.0],
+            2 => ['usn_advance' => 0.0, 'vat' => 0.0],
+            3 => ['usn_advance' => 0.0, 'vat' => 0.0],
+            4 => ['usn_advance' => 0.0, 'vat' => 0.0],
+        ];
+        $cal = $tax->calendar(2026, $quarters, [
+            'fixed' => 57390.0,
+            'extra' => 0.0,
+        ], ['months' => []]);
+
+        $vat = array_values(array_filter($cal['items'], fn ($row) => $row['kind'] === 'vat'));
+        $this->assertCount(3, $vat);
+        $this->assertSame(1667.0, $vat[0]['amount']);
+        $this->assertSame(1667.0, $vat[1]['amount']);
+        $this->assertSame(1666.0, $vat[2]['amount']);
+        $this->assertSame('2026-04-28', $vat[0]['deadline']);
+        $this->assertSame('2026-05-28', $vat[1]['deadline']);
+        $this->assertSame('2026-06-29', $vat[2]['deadline']);
+        $this->assertSame(57390.0, collect($cal['items'])->firstWhere('id', 'ip-fixed')['amount']);
+    }
 }
