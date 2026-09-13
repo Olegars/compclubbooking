@@ -43,7 +43,7 @@ class StoreRoleAccessTest extends TestCase
             $this->assertFalse($staff->canAccessClub(), $role);
             $this->assertTrue($staff->canAccessStore(), $role);
             $this->assertTrue($staff->isStoreRole(), $role);
-            $this->assertSame('admin.store.warehouse', $staff->homeRoute(), $role);
+            $this->assertSame('admin.salary', $staff->homeRoute(), $role);
         }
     }
 

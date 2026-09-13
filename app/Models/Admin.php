@@ -227,7 +227,7 @@ class Admin extends Authenticatable
             return 'admin.dashboard';
         }
 
-        return 'admin.store.warehouse';
+        return 'admin.salary';
     }
 
     public function roleLabel(): string

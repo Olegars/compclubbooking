@@ -124,9 +124,7 @@ class ShiftSlotService
                 throw new RuntimeException('Эта смена уже началась или прошла.');
             }
 
-            $kind = $admin->isIntern()
-                ? ShiftSlotBooking::KIND_INTERN
-                : ShiftSlotBooking::KIND_LEAD;
+            $kind = $this->bookingKind($admin);
 
             $existing = $locked->activeBookings->first(
                 fn (ShiftSlotBooking $row) => (int) $row->admin_id === (int) $admin->id
@@ -141,7 +139,7 @@ class ShiftSlotService
                 if ($locked->activeBookings->contains('kind', ShiftSlotBooking::KIND_LEAD)) {
                     throw new RuntimeException('Слот уже занят. Выберите другую смену.');
                 }
-            } else {
+            } elseif ($kind === ShiftSlotBooking::KIND_INTERN) {
                 $taken = $locked->activeBookings->where('kind', ShiftSlotBooking::KIND_INTERN)->count();
                 if ($taken >= (int) $locked->intern_capacity) {
                     throw new RuntimeException('Мест для стажёра на этой смене нет.');
@@ -265,16 +263,19 @@ class ShiftSlotService
 
         $lead = $bookings->firstWhere('kind', ShiftSlotBooking::KIND_LEAD);
         $interns = $bookings->where('kind', ShiftSlotBooking::KIND_INTERN);
+        $storeStaff = $bookings->where('kind', ShiftSlotBooking::KIND_STORE);
         $mine = $bookings->first(fn (ShiftSlotBooking $row) => (int) $row->admin_id === (int) $admin->id);
         $internTaken = $interns->count();
         $internCap = (int) $slot->intern_capacity;
         $started = $slot->starts_at->lte(now());
-        $isIntern = $admin->isIntern();
         $canBook = ! $started && ! $mine;
         if ($canBook) {
-            $canBook = $isIntern
-                ? $internTaken < $internCap
-                : $lead === null;
+            $kind = $this->bookingKind($admin);
+            $canBook = match ($kind) {
+                ShiftSlotBooking::KIND_INTERN => $internTaken < $internCap,
+                ShiftSlotBooking::KIND_STORE => true,
+                default => $lead === null,
+            };
         }
 
         $bookingId = $mine?->id;
@@ -292,6 +293,12 @@ class ShiftSlotService
             'lead_name' => $lead?->admin?->name,
             'intern_taken' => $internTaken,
             'intern_capacity' => $internCap,
+            'store_taken' => $storeStaff->count(),
+            'store_names' => $storeStaff
+                ->map(fn (ShiftSlotBooking $row) => $row->admin?->name)
+                ->filter()
+                ->values()
+                ->all(),
             'is_mine' => (bool) $mine,
             'my_kind' => $mine?->kind,
             'booking_id' => $bookingId,
@@ -370,6 +377,19 @@ class ShiftSlotService
         return $clubId === null
             ? $query->whereNull('club_id')
             : $query->where('club_id', $clubId);
+    }
+
+    private function bookingKind(Admin $admin): string
+    {
+        if ($admin->isIntern()) {
+            return ShiftSlotBooking::KIND_INTERN;
+        }
+
+        if ($admin->isStoreRole()) {
+            return ShiftSlotBooking::KIND_STORE;
+        }
+
+        return ShiftSlotBooking::KIND_LEAD;
     }
 
     private function assertSlotForClub(Admin $admin, ShiftSlot $slot): void

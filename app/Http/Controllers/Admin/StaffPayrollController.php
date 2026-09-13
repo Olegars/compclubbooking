@@ -8,6 +8,7 @@ use App\Models\ShiftSlotBooking;
 use App\Services\ShiftSlotService;
 use App\Services\StaffEmploymentService;
 use App\Services\StaffPayrollService;
+use App\Services\StoreStaffCabinetService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use RuntimeException;
@@ -18,6 +19,7 @@ class StaffPayrollController extends Controller
         private readonly StaffPayrollService $payroll,
         private readonly ShiftSlotService $slots,
         private readonly StaffEmploymentService $employment,
+        private readonly StoreStaffCabinetService $storeDesk,
     ) {
     }
 
@@ -36,6 +38,9 @@ class StaffPayrollController extends Controller
                 'my_bookings' => [],
             ]
             : $this->slots->calendar($admin, $request->string('month')->toString() ?: null);
+        $payload['store_desk'] = $admin->needsEmployment()
+            ? null
+            : $this->storeDesk->desk($admin);
 
         return Inertia::render('Admin/Salary', $payload);
     }

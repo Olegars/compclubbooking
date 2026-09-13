@@ -33,6 +33,10 @@ const isSupervisorPlus = computed(() => adminRole.value === 'supervisor' || admi
 const canAccessClub = computed(() => Boolean(page.props.can_access_club))
 const canAccessStore = computed(() => isOwner.value || Boolean(page.props.can_access_store))
 const isSalaryOnly = computed(() => Boolean(page.props.is_salary_only))
+const isStoreRole = computed(() => {
+    if (page.props.is_store_role != null) return Boolean(page.props.is_store_role)
+    return ['store_manager', 'assembler', 'senior_manager'].includes(String(adminRole.value || ''))
+})
 const location = computed(() => page.props.admin_location as any)
 const locations = computed(() => (page.props.admin_locations as any[]) || [])
 const switching = ref(false)
@@ -45,6 +49,10 @@ const kicking = ref(false)
 let statusTimer: number | null = null
 
 const shiftLabel = computed(() => {
+    if (isStoreRole.value) {
+        return admin.value?.role_label || adminRole.value || 'Магазин'
+    }
+
     const parts: string[] = []
     const dutyLabel = shift.value?.duty_label || admin.value?.role_label || adminRole.value
 
@@ -122,6 +130,14 @@ const adminSidebarMenu = (() => {
 
 const openMenu = ref<AdminMenuId | null>(adminSidebarMenu.open)
 
+watch([isStoreRole, isSalaryOnly], ([store, salary]) => {
+    if (adminSidebarMenu.open !== null) return
+    if (store || salary) {
+        openMenu.value = 'personal'
+        adminSidebarMenu.open = 'personal'
+    }
+}, { immediate: true })
+
 const isMenuOpen = (id: AdminMenuId) => openMenu.value === id
 
 const toggleMenu = (id: AdminMenuId) => {
@@ -171,7 +187,7 @@ onUnmounted(() => {
 
             <div class="flex-1 overflow-y-auto py-8 px-6 space-y-8 custom-scrollbar">
 
-                <div v-if="isSalaryOnly">
+                <div v-if="isSalaryOnly || isStoreRole">
                     <button type="button"
                             class="w-full flex items-center justify-between cursor-pointer text-[11px] text-white/45 font-semibold uppercase tracking-[0.16em] pl-4 pr-2 py-1.5 rounded-xl hover:text-white/70 hover:bg-white/[0.02] transition-colors"
                             :aria-expanded="isMenuOpen('personal')"
@@ -520,7 +536,7 @@ onUnmounted(() => {
                     </button>
                     <div class="grid transition-[grid-template-rows] duration-200 ease-out" :class="isMenuOpen('docs') ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
                         <div class="overflow-hidden min-h-0 space-y-2 mt-2">
-                    <Link v-if="!canAccessClub" href="/admin/salary"
+                    <Link v-if="!canAccessClub && !isStoreRole" href="/admin/salary"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/salary') ? 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e]' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>👤</span> Личный кабинет

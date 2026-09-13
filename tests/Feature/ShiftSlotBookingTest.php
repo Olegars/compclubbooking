@@ -235,6 +235,35 @@ class ShiftSlotBookingTest extends TestCase
         ]);
     }
 
+    public function test_store_staff_book_store_kind_and_do_not_block_club_lead(): void
+    {
+        $assembler = $this->makeAdmin('assembler', 2200);
+        $manager = $this->makeAdmin('store_manager', 2500);
+        $admin = $this->makeAdmin('admin');
+        $slot = $this->firstBookableSlot($assembler);
+        $model = ShiftSlot::query()->findOrFail($slot['id']);
+
+        app(ShiftSlotService::class)->book($assembler, $model);
+        app(ShiftSlotService::class)->book($manager, $model->fresh());
+        app(ShiftSlotService::class)->book($admin, $model->fresh());
+
+        $this->assertDatabaseHas('shift_slot_bookings', [
+            'shift_slot_id' => $model->id,
+            'admin_id' => $assembler->id,
+            'kind' => ShiftSlotBooking::KIND_STORE,
+        ]);
+        $this->assertDatabaseHas('shift_slot_bookings', [
+            'shift_slot_id' => $model->id,
+            'admin_id' => $manager->id,
+            'kind' => ShiftSlotBooking::KIND_STORE,
+        ]);
+        $this->assertDatabaseHas('shift_slot_bookings', [
+            'shift_slot_id' => $model->id,
+            'admin_id' => $admin->id,
+            'kind' => ShiftSlotBooking::KIND_LEAD,
+        ]);
+    }
+
     /**
      * @return array<string, mixed>
      */

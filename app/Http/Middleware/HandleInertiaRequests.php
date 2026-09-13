@@ -61,6 +61,7 @@ class HandleInertiaRequests extends Middleware
             'can_access_store' => $canAccessStore,
             'has_full_club_ops' => (bool) ($admin && $admin->hasFullClubOps()),
             'is_salary_only' => (bool) ($admin && $admin->isSalaryOnly()),
+            'is_store_role' => (bool) ($admin && $admin->isStoreRole()),
             'admin_location' => $location ? [
                 'id' => $location->id,
                 'name' => $location->name,

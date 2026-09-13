@@ -4,6 +4,7 @@ import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AdminConfirm from '@/Components/AdminConfirm.vue'
 import StaffEmployment from '@/Components/StaffEmployment.vue'
+import StoreStaffDesk, { type StoreDesk } from '@/Components/StoreStaffDesk.vue'
 import { useClubName } from '@/Composables/useClubName'
 import { useToast } from '@/Composables/useToast'
 
@@ -35,6 +36,8 @@ type SlotRow = {
     lead_name?: string | null
     intern_taken: number
     intern_capacity: number
+    store_taken?: number
+    store_names?: string[]
     is_mine: boolean
     my_kind?: string | null
     booking_id?: number | null
@@ -107,6 +110,7 @@ const props = withDefaults(defineProps<{
     monthly_accruals: LedgerRow[]
     calendar?: Calendar
     employment?: Employment
+    store_desk?: StoreDesk | null
 }>(), {
     calendar: () => ({
         month: '',
@@ -138,12 +142,15 @@ const props = withDefaults(defineProps<{
             has_scan: false,
         },
     }),
+    store_desk: null,
 })
 
 const clubName = useClubName()
 const page = usePage()
 const { success, error } = useToast()
 const isAdminApp = /CompClubAdmin/i.test(navigator.userAgent || '')
+const isStore = computed(() => Boolean(props.store_desk))
+const storeDesk = computed(() => props.store_desk)
 
 const flashSuccess = computed(() => (page.props as any).flash?.success as string | undefined)
 const formErrors = computed(() => (page.props as any).errors as Record<string, string> | undefined)
@@ -364,7 +371,11 @@ const confirmWithdraw = () => {
     })
 }
 
-const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'стажёр' : 'админ'
+const kindLabel = (kind: string | null | undefined) => {
+    if (kind === 'intern') return 'стажёр'
+    if (kind === 'store') return 'магазин'
+    return 'админ'
+}
 </script>
 
 <template>
@@ -411,22 +422,24 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                         Личный <span class="text-[#22c55e]">кабинет</span>
                     </h1>
                     <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">
-                        Смены, начисления, штрафы и вывод
+                        {{ isStore ? (storeDesk?.headline || 'Магазин, смены и расчёт') : 'Смены, начисления, штрафы и вывод' }}
                     </p>
                 </div>
                 <div class="text-right">
-                    <div class="text-[10px] uppercase font-black tracking-widest text-white/30">Статус</div>
-                    <div class="text-sm font-black uppercase text-white mt-1">{{ shiftState?.duty_label || payTypeLabel }}</div>
+                    <div class="text-[10px] uppercase font-black tracking-widest text-white/30">{{ isStore ? 'Должность' : 'Статус' }}</div>
+                    <div class="text-sm font-black uppercase text-white mt-1">{{ storeDesk?.role_label || shiftState?.duty_label || payTypeLabel }}</div>
                     <div class="text-[11px] text-white/40 mt-1">ставка {{ formatMoney(base_rate) }}</div>
                 </div>
             </div>
 
-            <div v-if="shiftState?.duty === 'intern' && !shiftState?.id"
+            <StoreStaffDesk v-if="storeDesk" :desk="storeDesk" />
+
+            <div v-if="!isStore && shiftState?.duty === 'intern' && !shiftState?.id"
                  class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-8 text-sm text-white/60 font-bold">
                 Нет активной смены. Стажёр выходит в смену вместе с активным админом, когда тот её примет.
             </div>
 
-            <div v-if="shiftState?.can_take_shift || shiftState?.can_join_as_intern || shiftState?.can_leave_as_intern"
+            <div v-if="!isStore && (shiftState?.can_take_shift || shiftState?.can_join_as_intern || shiftState?.can_leave_as_intern)"
                  class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-8 shadow-2xl flex flex-col md:flex-row md:items-center gap-6">
                 <div class="flex-1">
                     <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Смена сейчас</div>
@@ -462,7 +475,13 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                     <div>
                         <h2 class="text-sm font-black uppercase italic tracking-widest text-white">Выбрать смену</h2>
                         <p class="text-white/40 text-xs font-bold mt-2">
-                            Свободный слот можно взять, если место есть. Отмена — не позднее чем за {{ calendar.cancel_before_hours }} часов до начала.
+                            <template v-if="isStore">
+                                Запишитесь на смену магазина. Слот клуба при этом остаётся свободным для админа зала.
+                                Отмена — не позднее чем за {{ calendar.cancel_before_hours }} часов до начала.
+                            </template>
+                            <template v-else>
+                                Свободный слот можно взять, если место есть. Отмена — не позднее чем за {{ calendar.cancel_before_hours }} часов до начала.
+                            </template>
                             <span> Модель: {{ shiftWindowLabel(calendar.shift_hours, calendar.starts_hour) }}.</span>
                         </p>
                     </div>
@@ -548,6 +567,9 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                                      :class="slot.is_mine ? 'text-[#22c55e]' : slot.can_book ? 'text-white/50' : 'text-white/30'">
                                     <span v-if="slot.is_mine">Вы записаны ({{ kindLabel(slot.my_kind) }})</span>
                                     <span v-else-if="slot.started">Смена уже началась</span>
+                                    <span v-else-if="isStore">
+                                        Магазин: {{ slot.store_taken ? ((slot.store_names || []).join(', ') || (slot.store_taken + ' чел.')) : 'свободно' }}
+                                    </span>
                                     <span v-else>
                                         Админ: {{ slot.lead_taken ? (slot.lead_name || 'занято') : 'свободно' }}
                                         · стажёр {{ slot.intern_taken }}/{{ slot.intern_capacity }}
@@ -637,7 +659,7 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
 
             <div class="bg-[#050505] border border-white/5 rounded-[0.875rem] overflow-hidden shadow-xl">
                 <div class="p-6 border-b border-white/10">
-                    <h2 class="text-sm font-black uppercase italic tracking-widest text-white/70">Отработанные смены</h2>
+                    <h2 class="text-sm font-black uppercase italic tracking-widest text-white/70">{{ isStore ? 'Смены магазина' : 'Отработанные смены' }}</h2>
                 </div>
                 <table class="w-full text-left border-collapse">
                     <thead>
@@ -655,6 +677,7 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                         <td class="p-6 text-xs text-white/70">{{ formatDate(shift.started_at) }}</td>
                         <td class="p-6 text-xs">
                             <span v-if="shift.ended_at" class="text-white/70">{{ formatDate(shift.ended_at) }}</span>
+                            <span v-else-if="shift.status === 'planned'" class="text-amber-400 text-[10px] uppercase font-black tracking-widest">Запланирована</span>
                             <span v-else class="text-[#22c55e] text-[10px] uppercase font-black tracking-widest animate-pulse">На смене</span>
                         </td>
                         <td class="p-6 text-xs text-white/50">{{ formatDuration(shift.duration_minutes) }}</td>
@@ -667,7 +690,9 @@ const kindLabel = (kind: string | null | undefined) => kind === 'intern' ? 'ст
                     <tr>
                         <td colspan="5" class="py-16 text-center">
                             <div class="text-white/10 text-xl font-black uppercase tracking-widest italic mb-2">Нет смен</div>
-                            <div class="text-white/30 text-[10px] uppercase tracking-widest">Смены появятся после пересменки</div>
+                            <div class="text-white/30 text-[10px] uppercase tracking-widest">
+                                {{ isStore ? 'Выберите слот в календаре выше' : 'Смены появятся после пересменки' }}
+                            </div>
                         </td>
                     </tr>
                     </tbody>

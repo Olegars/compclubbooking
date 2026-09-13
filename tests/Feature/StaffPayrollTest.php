@@ -132,7 +132,48 @@ class StaffPayrollTest extends TestCase
 
         $this->actingAs($manager, 'admin')
             ->get('/admin/salary')
-            ->assertOk();
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/Salary')
+                ->where('store_desk.role', 'store_manager')
+                ->where('store_desk.role_label', 'Менеджер магазина')
+            );
+    }
+
+    public function test_store_shift_slot_accrues_after_it_ends(): void
+    {
+        $manager = $this->makeAdmin('store_manager', 2500, 'shift');
+        $template = \App\Models\ShiftSlotTemplate::query()->create([
+            'club_id' => null,
+            'name' => 'Магазин',
+            'starts_time' => '10:00:00',
+            'duration_hours' => 12,
+            'intern_capacity' => 1,
+            'is_active' => true,
+        ]);
+        $slot = \App\Models\ShiftSlot::query()->create([
+            'club_id' => null,
+            'template_id' => $template->id,
+            'starts_at' => now()->subHours(13),
+            'ends_at' => now()->subHour(),
+            'intern_capacity' => 1,
+        ]);
+        $booking = \App\Models\ShiftSlotBooking::query()->create([
+            'shift_slot_id' => $slot->id,
+            'admin_id' => $manager->id,
+            'kind' => \App\Models\ShiftSlotBooking::KIND_STORE,
+            'status' => \App\Models\ShiftSlotBooking::STATUS_BOOKED,
+        ]);
+
+        app(StaffPayrollService::class)->syncFor($manager);
+
+        $this->assertDatabaseHas('staff_ledgers', [
+            'admin_id' => $manager->id,
+            'type' => StaffLedger::TYPE_ACCRUAL,
+            'period_key' => 'ss:'.$booking->id,
+            'amount' => 2500,
+        ]);
+        $this->assertSame(2500.0, app(StaffPayrollService::class)->available($manager->fresh()));
     }
 
     public function test_closing_shift_accrues_salary_for_the_admin_who_worked_it(): void

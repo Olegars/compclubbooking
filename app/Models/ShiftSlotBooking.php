@@ -11,6 +11,8 @@ class ShiftSlotBooking extends Model
 
     public const KIND_INTERN = 'intern';
 
+    public const KIND_STORE = 'store';
+
     public const STATUS_BOOKED = 'booked';
 
     public const STATUS_CANCELLED = 'cancelled';

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Admin;
 use App\Models\Shift;
 use App\Models\ShiftIntern;
+use App\Models\ShiftSlotBooking;
 use App\Models\StaffLedger;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -15,6 +16,7 @@ class StaffPayrollService
     {
         $this->accrueClosedShifts($admin);
         $this->accrueClosedInternShifts($admin);
+        $this->accrueStoreSlots($admin);
         $this->accrueMonthlyPeriods($admin);
     }
 
@@ -230,7 +232,9 @@ class StaffPayrollService
 
         $shifts = $admin->isIntern()
             ? $this->internShiftRows($admin)
-            : $this->leadShiftRows($admin);
+            : ($admin->isStoreRole()
+                ? $this->storeSlotRows($admin)
+                : $this->leadShiftRows($admin));
 
         $mapEntry = function (StaffLedger $row) {
             return [
@@ -265,6 +269,9 @@ class StaffPayrollService
             ->where('admin_id', $admin->id)
             ->where('type', StaffLedger::TYPE_ACCRUAL)
             ->whereNull('shift_id')
+            ->when($admin->isStoreRole(), fn ($q) => $q->where(function ($inner) {
+                $inner->whereNull('period_key')->orWhere('period_key', 'not like', 'ss:%');
+            }))
             ->orderByDesc('id')
             ->get()
             ->map($mapEntry)
@@ -410,6 +417,88 @@ class StaffPayrollService
             'duration_minutes' => $minutes,
             'accrued' => $accrued,
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function storeSlotRows(Admin $admin): array
+    {
+        return ShiftSlotBooking::query()
+            ->with('slot.template:id,name')
+            ->where('admin_id', $admin->id)
+            ->where('kind', ShiftSlotBooking::KIND_STORE)
+            ->where('status', ShiftSlotBooking::STATUS_BOOKED)
+            ->whereHas('slot')
+            ->get()
+            ->sortByDesc(fn (ShiftSlotBooking $row) => $row->slot?->starts_at)
+            ->take(100)
+            ->values()
+            ->map(function (ShiftSlotBooking $row) use ($admin) {
+                $slot = $row->slot;
+                $ended = $slot?->ends_at && $slot->ends_at->lte(now());
+                $started = $slot?->starts_at && $slot->starts_at->lte(now());
+                $accrual = StaffLedger::query()
+                    ->where('admin_id', $admin->id)
+                    ->where('type', StaffLedger::TYPE_ACCRUAL)
+                    ->where('period_key', $this->storeSlotPeriodKey($row->id))
+                    ->first();
+
+                return [
+                    'id' => $row->id,
+                    'started_at' => $slot?->starts_at?->toIso8601String(),
+                    'ended_at' => $ended ? $slot?->ends_at?->toIso8601String() : null,
+                    'status' => $ended ? 'closed' : ($started ? 'open' : 'planned'),
+                    'is_open' => ! $ended,
+                    'duration_minutes' => ($slot?->starts_at && $slot->ends_at)
+                        ? (int) $slot->starts_at->diffInMinutes($slot->ends_at)
+                        : null,
+                    'accrued' => $accrual ? (float) $accrual->amount : 0.0,
+                ];
+            })
+            ->all();
+    }
+
+    private function accrueStoreSlots(Admin $admin): void
+    {
+        if ($admin->pay_type !== 'shift' || ! $admin->isStoreRole()) {
+            return;
+        }
+
+        $rate = round((float) $admin->base_rate, 2);
+        if ($rate <= 0) {
+            return;
+        }
+
+        $bookings = ShiftSlotBooking::query()
+            ->with('slot')
+            ->where('admin_id', $admin->id)
+            ->where('kind', ShiftSlotBooking::KIND_STORE)
+            ->where('status', ShiftSlotBooking::STATUS_BOOKED)
+            ->whereHas('slot', fn ($q) => $q->where('ends_at', '<=', now()))
+            ->get();
+
+        foreach ($bookings as $booking) {
+            $slot = $booking->slot;
+            $label = $slot?->starts_at?->format('d.m.Y H:i') ?: ('#'.$booking->id);
+
+            StaffLedger::query()->firstOrCreate(
+                [
+                    'admin_id' => $admin->id,
+                    'type' => StaffLedger::TYPE_ACCRUAL,
+                    'period_key' => $this->storeSlotPeriodKey($booking->id),
+                ],
+                [
+                    'amount' => $rate,
+                    'reason' => 'Смена магазина '.$label,
+                ]
+            );
+        }
+    }
+
+    private function storeSlotPeriodKey(int $bookingId): string
+    {
+        return 'ss:'.$bookingId;
     }
 
     private function accrueMonthlyPeriods(Admin $admin): void
