@@ -28,6 +28,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // 1. Куда редиректить НЕАВТОРИЗОВАННЫХ (Гостей)
         $middleware->redirectGuestsTo(function (Request $request) {
+            if ($request->is('store') || $request->is('store/*')) {
+                return route('store.login');
+            }
             if ($request->is('admin') || $request->is('admin/*')) {
                 return route('admin.login');
             }

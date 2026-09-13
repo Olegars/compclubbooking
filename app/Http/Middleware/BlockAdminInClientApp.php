@@ -11,7 +11,7 @@ class BlockAdminInClientApp
     public function handle(Request $request, Closure $next): Response
     {
         $ua = (string) $request->userAgent();
-        if (str_contains($ua, 'CompClubClient') && $request->is('admin', 'admin/*')) {
+        if (str_contains($ua, 'CompClubClient') && $request->is('admin', 'admin/*', 'store', 'store/*')) {
             return redirect('/');
         }
 

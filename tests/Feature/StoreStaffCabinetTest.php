@@ -157,7 +157,7 @@ class StoreStaffCabinetTest extends TestCase
         $assembler = $this->makeStoreStaff('assembler', 2200);
 
         $this->withoutMiddleware(ValidateCsrfToken::class)
-            ->post('/admin/login', [
+            ->post('/store/login', [
                 'email' => $assembler->email,
                 'password' => 'password',
             ])->assertRedirect(route('admin.salary'));

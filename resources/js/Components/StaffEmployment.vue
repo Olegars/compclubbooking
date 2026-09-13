@@ -31,6 +31,12 @@ const props = withDefaults(defineProps<{
     fireRulesTitle?: string
     acceptedFireIds?: number[]
     fireRulesComplete?: boolean
+    subtitle?: string
+    venue?: string
+    cabinetHint?: string
+    rulesAction?: string
+    fireAction?: string
+    hireAction?: string
 }>(), {
     status: 'draft',
     rejectionReason: null,
@@ -40,6 +46,12 @@ const props = withDefaults(defineProps<{
     fireRulesTitle: 'Техника пожарной безопасности',
     acceptedFireIds: () => [],
     fireRulesComplete: false,
+    subtitle: 'Правила, анкета, визит в клуб',
+    venue: 'клубе',
+    cabinetHint: 'личный кабинет',
+    rulesAction: '/admin/salary/employment/rules',
+    fireAction: '/admin/salary/employment/fire-rules',
+    hireAction: '/admin/salary/employment/hire',
 })
 
 const onReview = computed(() => props.status === 'review')
@@ -122,12 +134,12 @@ const canHire = computed(() => canEdit.value && props.rulesComplete && fieldsFil
 
 const acceptRule = (id: number) => {
     if (!canEdit.value || acceptedSet.value.has(id) || form.processing) return
-    router.post('/admin/salary/employment/rules', { rule_id: id }, { preserveScroll: true })
+    router.post(props.rulesAction, { rule_id: id }, { preserveScroll: true })
 }
 
 const acceptFireRule = (id: number) => {
     if (fireAcceptedSet.value.has(id)) return
-    router.post('/admin/salary/employment/fire-rules', { rule_id: id }, { preserveScroll: true })
+    router.post(props.fireAction, { rule_id: id }, { preserveScroll: true })
 }
 
 const onScan = (event: Event) => {
@@ -138,7 +150,7 @@ const onScan = (event: Event) => {
 
 const hire = () => {
     if (!canHire.value) return
-    form.post('/admin/salary/employment/hire', {
+    form.post(props.hireAction, {
         forceFormData: true,
         preserveScroll: true,
     })
@@ -154,9 +166,9 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                 <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">
                     Устройство <span class="text-[#22c55e]">на работу</span>
                 </h1>
-                <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">
-                    Правила, анкета, визит в клуб
-                </p>
+                    <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">
+                        {{ subtitle }}
+                    </p>
             </div>
             <div class="text-right">
                 <div class="text-[10px] uppercase font-black tracking-widest text-white/30">Правила</div>
@@ -168,7 +180,7 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
             <div class="text-[10px] uppercase font-black tracking-[0.4em] text-amber-400">Статус</div>
             <h2 class="text-3xl font-black uppercase italic text-white tracking-tighter mt-3">На проверке</h2>
             <p class="text-white/50 text-sm font-bold mt-4 max-w-lg mx-auto">
-                Анкета у управляющего. Дождитесь назначения даты визита в клуб.
+                Анкета у управляющего. Дождитесь назначения даты визита в {{ venue }}.
             </p>
         </div>
 
@@ -176,7 +188,7 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
             <div class="text-[10px] uppercase font-black tracking-[0.4em] text-[#22c55e]">Вакансия</div>
             <h2 class="text-3xl font-black uppercase italic text-white tracking-tighter mt-3">Вы подходите</h2>
             <p class="text-white/50 text-sm font-bold mt-4 max-w-lg mx-auto">
-                Приглашаем подписать документы в клубе
+                Приглашаем подписать документы в {{ venue }}
                 <span v-if="appointmentLabel" class="text-white"> {{ appointmentLabel }}</span>.
                 Возьмите паспорт.
             </p>
@@ -186,7 +198,7 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
             <div class="text-[10px] uppercase font-black tracking-[0.4em] text-[#22c55e]">Статус</div>
             <h2 class="text-3xl font-black uppercase italic text-white tracking-tighter mt-3">Вы приняты</h2>
             <p class="text-white/50 text-sm font-bold mt-4 max-w-lg mx-auto">
-                Ознакомьтесь и согласитесь с правилами пожарной безопасности. После этого откроется личный кабинет.
+                Ознакомьтесь и согласитесь с правилами пожарной безопасности. После этого откроется {{ cabinetHint }}.
             </p>
             <button type="button"
                     class="mt-8 px-8 py-4 bg-[#22c55e] text-black rounded-2xl text-xs font-black uppercase tracking-widest"

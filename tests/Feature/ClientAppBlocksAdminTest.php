@@ -15,6 +15,10 @@ class ClientAppBlocksAdminTest extends TestCase
         $this->withHeaders([
             'User-Agent' => 'Mozilla/5.0 CompClubClient/1.0',
         ])->get('/admin/dashboard')->assertRedirect('/');
+
+        $this->withHeaders([
+            'User-Agent' => 'Mozilla/5.0 CompClubClient/1.0',
+        ])->get('/store/login')->assertRedirect('/');
     }
 
     public function test_browser_can_open_admin_login(): void

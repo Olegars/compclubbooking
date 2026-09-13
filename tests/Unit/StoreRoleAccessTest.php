@@ -45,6 +45,9 @@ class StoreRoleAccessTest extends TestCase
             $this->assertTrue($staff->isStoreRole(), $role);
             $this->assertSame('admin.salary', $staff->homeRoute(), $role);
         }
+
+        $applicant = new Admin(['role' => 'assembler', 'employment_pending' => true]);
+        $this->assertSame('store.hire', $applicant->homeRoute());
     }
 
     public function test_location_has_store_for_both_and_store_types(): void

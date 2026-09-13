@@ -218,8 +218,10 @@ class StaffEmploymentService
 
         $admin->update([
             'name' => $profile->full_name,
-            'role' => Admin::ROLE_INTERN,
         ]);
+        if (! $admin->isStoreRole()) {
+            $admin->update(['role' => Admin::ROLE_INTERN]);
+        }
     }
 
     public function scheduleAppointment(Admin $reviewer, Admin $applicant, string $appointmentAt): void
@@ -334,13 +336,53 @@ class StaffEmploymentService
             'rejection_reason' => null,
         ]);
 
-        $admin->update([
+        $payload = [
             'name' => $profile->full_name ?: $admin->name,
             'employment_pending' => false,
             'hired_at' => now(),
-            'role' => Admin::ROLE_INTERN,
             'pay_type' => $admin->pay_type ?: 'shift',
-        ]);
+        ];
+        if (! $admin->isStoreRole()) {
+            $payload['role'] = Admin::ROLE_INTERN;
+        }
+
+        $admin->update($payload);
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    public function hireRules(bool $hasScan): array
+    {
+        return [
+            'full_name' => ['required', 'string', 'min:5', 'max:120'],
+            'passport_series' => ['required', 'regex:/^\d{4}$/'],
+            'passport_number' => ['required', 'regex:/^\d{6}$/'],
+            'issued_by' => ['required', 'string', 'min:8', 'max:255'],
+            'issued_at' => ['required', 'date', 'before_or_equal:today'],
+            'department_code' => ['required', 'regex:/^\d{3}-\d{3}$/'],
+            'birth_date' => ['required', 'date', 'before:-16 years', 'after:-80 years'],
+            'passport_scan' => [$hasScan ? 'nullable' : 'required', 'file', 'mimes:jpg,jpeg,png,pdf,webp', 'max:8192'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function hireMessages(): array
+    {
+        return [
+            'full_name.required' => 'Укажите ФИО',
+            'passport_series.regex' => 'Серия паспорта — 4 цифры',
+            'passport_number.regex' => 'Номер паспорта — 6 цифр',
+            'issued_by.required' => 'Укажите, кем выдан паспорт',
+            'issued_at.required' => 'Укажите дату выдачи',
+            'department_code.regex' => 'Код подразделения в формате 000-000',
+            'birth_date.required' => 'Укажите дату рождения',
+            'birth_date.before' => 'Устройство с 16 лет',
+            'passport_scan.required' => 'Загрузите скан паспорта',
+            'passport_scan.mimes' => 'Скан: JPG, PNG или PDF',
+        ];
     }
 
     private function assertPending(Admin $admin): void

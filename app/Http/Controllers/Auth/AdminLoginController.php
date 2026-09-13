@@ -39,6 +39,14 @@ class AdminLoginController extends Controller
                 ]);
             }
 
+            if ($admin?->isStoreRole()) {
+                Auth::guard('admin')->logout();
+
+                throw ValidationException::withMessages([
+                    'email' => 'Сотрудники магазина входят на странице /store/login.',
+                ]);
+            }
+
             $request->session()->regenerate();
 
             $home = $admin?->homeRoute() ?: 'admin.dashboard';
@@ -86,6 +94,7 @@ class AdminLoginController extends Controller
     public function logout(Request $request)
     {
         $admin = Auth::guard('admin')->user();
+        $storeLogin = $admin && $admin->isStoreRole();
         if ($admin && $admin->shift_handed_over_at) {
             $admin->forceFill(['shift_handed_over_at' => null])->save();
         }
@@ -95,6 +104,6 @@ class AdminLoginController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('admin.login');
+        return redirect()->route($storeLogin ? 'store.login' : 'admin.login');
     }
 }

@@ -28,6 +28,7 @@ use App\Http\Controllers\WifiAccessController;
 // Контроллеры Авторизации
 use App\Http\Controllers\Auth\SmsAuthController;
 use App\Http\Controllers\Auth\AdminLoginController;
+use App\Http\Controllers\Auth\StoreAuthController;
 use App\Http\Controllers\Auth\LogoutController;
 
 // Контроллеры Админки
@@ -40,6 +41,7 @@ use App\Http\Controllers\Admin\BonusController;
 use App\Http\Controllers\Admin\TaxController;
 use App\Http\Controllers\Admin\StaffController;
 use App\Http\Controllers\Admin\StaffPayrollController;
+use App\Http\Controllers\Store\StoreHireController;
 use App\Http\Controllers\Admin\TariffController;
 use App\Http\Controllers\Admin\ZoneController;
 use App\Http\Controllers\Admin\LicenseController;
@@ -246,6 +248,21 @@ Route::middleware(['auth'])->group(function () {
 | АДМИНКА (REACTOR CONTROL — Guard: Admin)
 |--------------------------------------------------------------------------
 */
+Route::redirect('/store', '/store/login');
+
+Route::middleware('guest:admin')->prefix('store')->group(function () {
+    Route::get('/login', [StoreAuthController::class, 'showLoginForm'])->name('store.login');
+    Route::post('/login', [StoreAuthController::class, 'login']);
+    Route::post('/register', [StoreAuthController::class, 'register'])->name('store.register');
+});
+
+Route::middleware(['auth:admin', 'staff.active'])->prefix('store')->group(function () {
+    Route::get('/hire', [StoreHireController::class, 'index'])->name('store.hire');
+    Route::post('/hire', [StoreHireController::class, 'hire'])->name('store.hire.submit');
+    Route::post('/hire/rules', [StoreHireController::class, 'acceptRule'])->name('store.hire.rules');
+    Route::post('/hire/fire-rules', [StoreHireController::class, 'acceptFireRule'])->name('store.hire.fire-rules');
+});
+
 Route::middleware('guest:admin')->prefix('admin')->group(function () {
     Route::get('/login', [AdminLoginController::class, 'showLoginForm'])->name('admin.login');
     Route::post('/login', [AdminLoginController::class, 'login']);

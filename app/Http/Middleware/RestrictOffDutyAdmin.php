@@ -21,6 +21,7 @@ class RestrictOffDutyAdmin
         }
 
         if ($admin->isFired()) {
+            $storeLogin = $admin->isStoreRole();
             Auth::guard('admin')->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
@@ -29,12 +30,25 @@ class RestrictOffDutyAdmin
                 abort(403, 'Аккаунт уволен.');
             }
 
-            return redirect()->route('admin.login')
+            return redirect()->route($storeLogin ? 'store.login' : 'admin.login')
                 ->with('error', 'Аккаунт уволен. Вход закрыт.');
         }
 
         if ($frozen = $this->frozenHandoverResponse($request, $admin)) {
             return $frozen;
+        }
+
+        if ($admin->needsEmployment()) {
+            if ($this->isEmploymentPath($request, $admin)) {
+                return $next($request);
+            }
+
+            if ($request->expectsJson()) {
+                abort(403, 'Сначала завершите устройство на работу.');
+            }
+
+            return redirect()->route($admin->homeRoute())
+                ->with('error', 'Сначала завершите устройство на работу.');
         }
 
         if ($admin->hasFullClubOps()) {
@@ -86,6 +100,25 @@ class RestrictOffDutyAdmin
             '/admin/api/shifts/scan',
             '/admin/api/shifts/count',
             '/admin/api/shifts/complete',
+            '/admin/api/shifts/status',
+        ]);
+    }
+
+    private function isEmploymentPath(Request $request, $admin): bool
+    {
+        $path = '/'.ltrim($request->path(), '/');
+        $shared = ['/admin/logout'];
+
+        if ($this->matches($path, $shared)) {
+            return true;
+        }
+
+        if ($admin->isStoreRole()) {
+            return $this->matches($path, ['/store/hire']);
+        }
+
+        return $this->matches($path, [
+            '/admin/salary',
             '/admin/api/shifts/status',
         ]);
     }

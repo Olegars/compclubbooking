@@ -19,13 +19,15 @@ const clientPages = import.meta.glob([
 const adminPages = import.meta.glob([
     './Pages/Admin/**/*.vue',
     './Pages/Auth/AdminLogin.vue',
+    './Pages/Auth/StoreLogin.vue',
+    './Pages/Auth/StoreHire.vue',
 ]);
 
-if (isClientApp && /^\/admin(\/|$)/.test(window.location.pathname)) {
+if (isClientApp && /^\/(admin|store)(\/|$)/.test(window.location.pathname)) {
     window.location.replace('/');
 }
 
-if (isAdminApp && !/^\/admin(\/|$)/.test(window.location.pathname)) {
+if (isAdminApp && !/^\/(admin|store)(\/|$)/.test(window.location.pathname)) {
     window.location.replace('/admin/login');
 }
 
@@ -33,13 +35,13 @@ createInertiaApp({
     title: (title) => title,
     resolve: (name) => {
         if (isClientApp) {
-            if (name.startsWith('Admin/') || name === 'Auth/AdminLogin') {
+            if (name.startsWith('Admin/') || name === 'Auth/AdminLogin' || name === 'Auth/StoreLogin' || name === 'Auth/StoreHire') {
                 return resolvePageComponent('./Pages/Home/Index.vue', clientPages);
             }
             return resolvePageComponent(`./Pages/${name}.vue`, clientPages);
         }
         if (isAdminApp) {
-            if (!(name.startsWith('Admin/') || name === 'Auth/AdminLogin')) {
+            if (!(name.startsWith('Admin/') || name === 'Auth/AdminLogin' || name === 'Auth/StoreLogin' || name === 'Auth/StoreHire')) {
                 return resolvePageComponent('./Pages/Auth/AdminLogin.vue', adminPages);
             }
             return resolvePageComponent(`./Pages/${name}.vue`, adminPages);

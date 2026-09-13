@@ -28,6 +28,9 @@ class StaffPayrollController extends Controller
         $admin = auth('admin')->user();
         $payload = $this->payroll->snapshot($admin);
         $payload['employment'] = $this->employment->payload($admin);
+        if ($admin->isStoreRole() && $admin->needsEmployment()) {
+            return redirect()->route('store.hire');
+        }
         $payload['calendar'] = $admin->needsEmployment()
             ? [
                 'month' => now()->format('Y-m'),
@@ -137,7 +140,7 @@ class StaffPayrollController extends Controller
         $admin = auth('admin')->user();
         $hasScan = filled($this->employment->profile($admin)->passport_scan_path);
 
-        $data = $request->validate($this->employmentRules($hasScan), $this->employmentMessages());
+        $data = $request->validate($this->employment->hireRules($hasScan), $this->employment->hireMessages());
 
         $scan = $request->file('passport_scan');
 
@@ -148,41 +151,5 @@ class StaffPayrollController extends Controller
         }
 
         return back()->with('success', 'Анкета отправлена на проверку.');
-    }
-
-    /**
-     * @return array<string, list<string>>
-     */
-    private function employmentRules(bool $hasScan): array
-    {
-        return [
-            'full_name' => ['required', 'string', 'min:5', 'max:120'],
-            'passport_series' => ['required', 'regex:/^\d{4}$/'],
-            'passport_number' => ['required', 'regex:/^\d{6}$/'],
-            'issued_by' => ['required', 'string', 'min:8', 'max:255'],
-            'issued_at' => ['required', 'date', 'before_or_equal:today'],
-            'department_code' => ['required', 'regex:/^\d{3}-\d{3}$/'],
-            'birth_date' => ['required', 'date', 'before:-16 years', 'after:-80 years'],
-            'passport_scan' => [$hasScan ? 'nullable' : 'required', 'file', 'mimes:jpg,jpeg,png,pdf,webp', 'max:8192'],
-        ];
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function employmentMessages(): array
-    {
-        return [
-            'full_name.required' => 'Укажите ФИО',
-            'passport_series.regex' => 'Серия паспорта — 4 цифры',
-            'passport_number.regex' => 'Номер паспорта — 6 цифр',
-            'issued_by.required' => 'Укажите, кем выдан паспорт',
-            'issued_at.required' => 'Укажите дату выдачи',
-            'department_code.regex' => 'Код подразделения в формате 000-000',
-            'birth_date.required' => 'Укажите дату рождения',
-            'birth_date.before' => 'Устройство с 16 лет',
-            'passport_scan.required' => 'Загрузите скан паспорта',
-            'passport_scan.mimes' => 'Скан: JPG, PNG или PDF',
-        ];
     }
 }
