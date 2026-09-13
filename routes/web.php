@@ -308,6 +308,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('store')->group(functi
     Route::post('/hire', [StoreHireController::class, 'hire'])->name('store.hire.submit');
     Route::post('/hire/rules', [StoreHireController::class, 'acceptRule'])->name('store.hire.rules');
     Route::post('/hire/fire-rules', [StoreHireController::class, 'acceptFireRule'])->name('store.hire.fire-rules');
+    Route::get('/cabinet', [StaffPayrollController::class, 'storeCabinet'])->name('store.cabinet');
 });
 
 Route::middleware('guest:admin')->prefix('admin')->group(function () {
@@ -326,7 +327,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         ->middleware('role:owner')
         ->name('admin.cabinet');
 
-    // Личный кабинет — админ зала, стажёр, управляющий, сотрудник магазина
+    // Личный кабинет — админ зала, стажёр, управляющий (магазин — /store/cabinet)
     Route::get('/salary', [StaffPayrollController::class, 'index'])->name('admin.salary');
     Route::post('/salary/withdraw', [StaffPayrollController::class, 'withdraw'])->name('admin.salary.withdraw');
     Route::post('/salary/slots/{slot}/book', [StaffPayrollController::class, 'bookSlot'])->name('admin.salary.slots.book');

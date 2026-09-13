@@ -30,26 +30,24 @@ class StaffPayrollController extends Controller
         if ($admin?->isOwner()) {
             return redirect()->route('admin.cabinet');
         }
-        $payload = $this->payroll->snapshot($admin);
-        $payload['employment'] = $this->employment->payload($admin);
-        if ($admin->isStoreRole() && $admin->needsEmployment()) {
+        if ($admin?->isStoreRole()) {
+            return redirect()->route($admin->needsEmployment() ? 'store.hire' : 'store.cabinet');
+        }
+
+        return $this->renderCabinet($request, $admin, 'Admin/Salary', false);
+    }
+
+    public function storeCabinet(Request $request)
+    {
+        $admin = auth('admin')->user();
+        if (! $admin?->isStoreRole()) {
+            return redirect()->route($admin?->homeRoute() ?: 'admin.salary');
+        }
+        if ($admin->needsEmployment()) {
             return redirect()->route('store.hire');
         }
-        $payload['calendar'] = $admin->needsEmployment()
-            ? [
-                'month' => now()->format('Y-m'),
-                'cancel_before_hours' => ShiftSlotService::CANCEL_BEFORE_HOURS,
-                'shift_hours' => 12,
-                'starts_hour' => 10,
-                'days' => [],
-                'my_bookings' => [],
-            ]
-            : $this->slots->calendar($admin, $request->string('month')->toString() ?: null);
-        $payload['store_desk'] = $admin->needsEmployment()
-            ? null
-            : $this->storeDesk->desk($admin);
 
-        return Inertia::render('Admin/Salary', $payload);
+        return $this->renderCabinet($request, $admin, 'Admin/StoreCabinet', true);
     }
 
     public function withdraw(Request $request)
@@ -172,5 +170,27 @@ class StaffPayrollController extends Controller
     private function assertStaffCabinet(?Admin $admin): void
     {
         abort_if(! $admin || $admin->isOwner(), 403, 'У владельца отдельный кабинет.');
+    }
+
+    private function renderCabinet(Request $request, Admin $admin, string $page, bool $withStoreDesk)
+    {
+        $payload = $this->payroll->snapshot($admin);
+        $payload['employment'] = $this->employment->payload($admin);
+        $payload['calendar'] = $admin->needsEmployment()
+            ? [
+                'month' => now()->format('Y-m'),
+                'cancel_before_hours' => ShiftSlotService::CANCEL_BEFORE_HOURS,
+                'shift_hours' => 12,
+                'starts_hour' => 10,
+                'days' => [],
+                'my_bookings' => [],
+            ]
+            : $this->slots->calendar($admin, $request->string('month')->toString() ?: null);
+        if ($withStoreDesk) {
+            $payload['store_desk'] = $this->storeDesk->desk($admin);
+            abort_if(! $payload['store_desk'], 403);
+        }
+
+        return Inertia::render($page, $payload);
     }
 }

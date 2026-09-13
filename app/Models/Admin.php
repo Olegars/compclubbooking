@@ -225,7 +225,7 @@ class Admin extends Authenticatable
     public function homeRoute(): string
     {
         if ($this->isStoreRole()) {
-            return $this->needsEmployment() ? 'store.hire' : 'admin.salary';
+            return $this->needsEmployment() ? 'store.hire' : 'store.cabinet';
         }
 
         if ($this->isSalaryOnly()) {

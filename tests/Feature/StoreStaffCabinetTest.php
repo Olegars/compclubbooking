@@ -53,9 +53,13 @@ class StoreStaffCabinetTest extends TestCase
 
         $this->actingAs($assembler, 'admin')
             ->get('/admin/salary')
+            ->assertRedirect('/store/cabinet');
+
+        $this->actingAs($assembler, 'admin')
+            ->get('/store/cabinet')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->component('Admin/Salary')
+                ->component('Admin/StoreCabinet')
                 ->where('store_desk.role', 'assembler')
                 ->where('store_desk.permissions.can_take_orders', true)
                 ->where('store_desk.permissions.can_manage', false)
@@ -65,9 +69,9 @@ class StoreStaffCabinetTest extends TestCase
 
         $this->actingAs($assembler, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
-            ->from('/admin/salary')
+            ->from('/store/cabinet')
             ->post("/admin/store/orders/{$open->id}/status", ['status' => 'assembling'])
-            ->assertRedirect('/admin/salary');
+            ->assertRedirect('/store/cabinet');
 
         $this->assertDatabaseHas('store_orders', [
             'id' => $open->id,
@@ -94,10 +98,10 @@ class StoreStaffCabinetTest extends TestCase
         ]);
 
         $this->actingAs($manager, 'admin')
-            ->get('/admin/salary')
+            ->get('/store/cabinet')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->component('Admin/Salary')
+                ->component('Admin/StoreCabinet')
                 ->where('store_desk.role', 'store_manager')
                 ->where('store_desk.permissions.can_manage', true)
                 ->where('store_desk.permissions.can_cancel', false)
@@ -119,10 +123,10 @@ class StoreStaffCabinetTest extends TestCase
         ]);
 
         $this->actingAs($senior, 'admin')
-            ->get('/admin/salary')
+            ->get('/store/cabinet')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->component('Admin/Salary')
+                ->component('Admin/StoreCabinet')
                 ->where('store_desk.role', 'senior_manager')
                 ->where('store_desk.permissions.can_cancel', true)
                 ->where('store_desk.permissions.can_close_warranty', true)
@@ -148,8 +152,11 @@ class StoreStaffCabinetTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('Admin/Salary')
-                ->where('store_desk', null)
+                ->missing('store_desk')
             );
+        $this->actingAs($admin, 'admin')
+            ->get('/store/cabinet')
+            ->assertRedirect('/admin/salary');
     }
 
     public function test_store_login_lands_on_personal_cabinet(): void
@@ -160,7 +167,7 @@ class StoreStaffCabinetTest extends TestCase
             ->post('/store/login', [
                 'email' => $assembler->email,
                 'password' => 'password',
-            ])->assertRedirect(route('admin.salary'));
+            ])->assertRedirect(route('store.cabinet'));
     }
 
     private function makeStoreStaff(string $role, float $rate, string $payType = 'shift'): Admin

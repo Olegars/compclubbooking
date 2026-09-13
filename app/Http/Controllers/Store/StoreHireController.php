@@ -22,7 +22,7 @@ class StoreHireController extends Controller
             return redirect()->route($admin->homeRoute() ?: 'admin.salary');
         }
         if (! $admin->needsEmployment()) {
-            return redirect()->route('admin.salary');
+            return redirect()->route('store.cabinet');
         }
 
         return Inertia::render('Auth/StoreHire', [
@@ -61,7 +61,7 @@ class StoreHireController extends Controller
 
         $admin = auth('admin')->user()->fresh();
         if (! $admin->needsEmployment()) {
-            return redirect()->route('admin.salary')->with('success', 'Вы приняты. Кабинет магазина открыт.');
+            return redirect()->route('store.cabinet')->with('success', 'Вы приняты. Кабинет магазина открыт.');
         }
 
         return back();

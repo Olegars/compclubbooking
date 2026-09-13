@@ -51,7 +51,7 @@ class StoreAuthController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route($admin->homeRoute() ?: 'admin.salary'));
+        return redirect()->intended(route($admin->homeRoute() ?: 'store.cabinet'));
     }
 
     public function register(Request $request)

@@ -130,7 +130,21 @@ const adminSidebarMenu = (() => {
 
 const openMenu = ref<AdminMenuId | null>(adminSidebarMenu.open)
 
-const cabinetHref = computed(() => isOwner.value ? '/admin/cabinet' : '/admin/salary')
+const cabinetHref = computed(() => {
+    if (isOwner.value) return '/admin/cabinet'
+    if (isStoreRole.value) return '/store/cabinet'
+    return '/admin/salary'
+})
+const cabinetLabel = computed(() => {
+    if (isOwner.value) return 'Кабинет владельца'
+    if (isStoreRole.value) return 'Кабинет магазина'
+    return 'Личный кабинет'
+})
+const cabinetActiveClass = computed(() => {
+    if (isOwner.value) return 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400 shadow-[0_0_30px_rgba(234,179,8,0.08)]'
+    if (isStoreRole.value) return 'bg-amber-500/10 border-amber-500/30 text-amber-400 shadow-[0_0_30px_rgba(245,158,11,0.08)]'
+    return 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e] shadow-[0_0_30px_rgba(34,197,94,0.05)]'
+})
 
 watch([isStoreRole, isSalaryOnly], ([store, salary]) => {
     if (adminSidebarMenu.open !== null) return
@@ -202,11 +216,9 @@ onUnmounted(() => {
                             <Link :href="cabinetHref"
                                   class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                                   :class="isActive(cabinetHref)
-                                    ? (isOwner
-                                        ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400 shadow-[0_0_30px_rgba(234,179,8,0.08)]'
-                                        : 'bg-[#22c55e]/10 border-[#22c55e]/30 text-[#22c55e] shadow-[0_0_30px_rgba(34,197,94,0.05)]')
+                                    ? cabinetActiveClass
                                     : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
-                                <span>👤</span> {{ isOwner ? 'Кабинет владельца' : 'Личный кабинет' }}
+                                <span>👤</span> {{ cabinetLabel }}
                             </Link>
                         </div>
                     </div>

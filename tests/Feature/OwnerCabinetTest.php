@@ -110,8 +110,12 @@ class OwnerCabinetTest extends TestCase
 
         $this->actingAs($staff, 'admin')
             ->get('/admin/salary')
+            ->assertRedirect('/store/cabinet');
+
+        $this->actingAs($staff, 'admin')
+            ->get('/store/cabinet')
             ->assertOk()
-            ->assertInertia(fn ($page) => $page->component('Admin/Salary'));
+            ->assertInertia(fn ($page) => $page->component('Admin/StoreCabinet'));
     }
 
     public function test_owner_cannot_withdraw_or_book_staff_slots(): void

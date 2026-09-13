@@ -119,6 +119,10 @@ class StoreStaffAuthTest extends TestCase
         $this->actingAs($assembler, 'admin')
             ->get('/admin/salary')
             ->assertRedirect('/store/hire');
+
+        $this->actingAs($assembler, 'admin')
+            ->get('/store/cabinet')
+            ->assertRedirect('/store/hire');
     }
 
     public function test_store_hire_submit_keeps_assembler_role(): void

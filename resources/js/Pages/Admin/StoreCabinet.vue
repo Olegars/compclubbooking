@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AdminConfirm from '@/Components/AdminConfirm.vue'
-import StaffEmployment from '@/Components/StaffEmployment.vue'
+import StoreStaffDesk, { type StoreDesk } from '@/Components/StoreStaffDesk.vue'
 import { useClubName } from '@/Composables/useClubName'
 import { useToast } from '@/Composables/useToast'
 
@@ -70,31 +70,6 @@ type Calendar = {
     my_bookings: MyBooking[]
 }
 
-type Employment = {
-    required: boolean
-    status?: 'draft' | 'review' | 'invited' | 'fire_safety' | 'rejected' | 'approved'
-    rejection_reason?: string | null
-    appointment_at?: string | null
-    rules: Array<{ id: number; title: string; body: string }>
-    accepted_ids: number[]
-    rules_complete: boolean
-    rules_title?: string
-    fire_rules?: Array<{ id: number; title: string; body: string }>
-    fire_rules_title?: string
-    accepted_fire_ids?: number[]
-    fire_rules_complete?: boolean
-    profile: {
-        full_name: string | null
-        passport_series: string | null
-        passport_number: string | null
-        issued_by: string | null
-        issued_at: string | null
-        department_code: string | null
-        birth_date: string | null
-        has_scan: boolean
-    }
-}
-
 const props = withDefaults(defineProps<{
     pay_type: 'shift' | 'monthly' | null
     base_rate: number | null
@@ -108,7 +83,7 @@ const props = withDefaults(defineProps<{
     payouts: LedgerRow[]
     monthly_accruals: LedgerRow[]
     calendar?: Calendar
-    employment?: Employment
+    store_desk: StoreDesk
 }>(), {
     calendar: () => ({
         month: '',
@@ -118,35 +93,13 @@ const props = withDefaults(defineProps<{
         days: {},
         my_bookings: [],
     }),
-    employment: () => ({
-        required: false,
-        status: 'draft',
-        rejection_reason: null,
-        appointment_at: null,
-        rules: [],
-        accepted_ids: [],
-        rules_complete: false,
-        fire_rules: [],
-        accepted_fire_ids: [],
-        fire_rules_complete: false,
-        profile: {
-            full_name: '',
-            passport_series: '',
-            passport_number: '',
-            issued_by: '',
-            issued_at: '',
-            department_code: '',
-            birth_date: '',
-            has_scan: false,
-        },
-    }),
 })
 
 const clubName = useClubName()
 const page = usePage()
 const { success, error } = useToast()
-const isAdminApp = /CompClubAdmin/i.test(navigator.userAgent || '')
-const isBossApp = /CompClubBoss/i.test(navigator.userAgent || '')
+const isStoreApp = /CompClubStore/i.test(navigator.userAgent || '')
+const storeDesk = computed(() => props.store_desk)
 
 const flashSuccess = computed(() => (page.props as any).flash?.success as string | undefined)
 const formErrors = computed(() => (page.props as any).errors as Record<string, string> | undefined)
@@ -164,8 +117,6 @@ watch(() => (page.props as any).flash?.error as string | undefined, (msg) => {
     if (msg) error(msg)
 }, { immediate: true })
 
-const shiftState = computed(() => page.props.admin_shift as any)
-const dutyBusy = ref(false)
 const slotBusy = ref(false)
 const selectedDate = ref('')
 const confirmOpen = ref(false)
@@ -229,29 +180,7 @@ const goMonth = (delta: number) => {
     const [y, m] = props.calendar.month.split('-').map(Number)
     const next = new Date(y, m - 1 + delta, 1)
     const month = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
-    router.get('/admin/salary', { month }, { preserveScroll: true, preserveState: false })
-}
-
-const takeShift = () => {
-    router.get('/admin/shifts/transfer')
-}
-
-const internJoin = () => {
-    if (dutyBusy.value) return
-    dutyBusy.value = true
-    router.post('/admin/shifts/intern/join', {}, {
-        preserveScroll: true,
-        onFinish: () => { dutyBusy.value = false },
-    })
-}
-
-const internLeave = () => {
-    if (dutyBusy.value) return
-    dutyBusy.value = true
-    router.post('/admin/shifts/intern/leave', {}, {
-        preserveScroll: true,
-        onFinish: () => { dutyBusy.value = false },
-    })
+    router.get('/store/cabinet', { month }, { preserveScroll: true, preserveState: false })
 }
 
 const bookSlot = (slot: SlotRow) => {
@@ -375,101 +304,51 @@ const kindLabel = (kind: string | null | undefined) => {
 </script>
 
 <template>
-    <Head :title="`${clubName} | Личный кабинет`" />
+    <Head :title="`${clubName} | Кабинет магазина`" />
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
 
             <a
-                v-if="!isAdminApp && !isBossApp"
-                href="/admin-app.apk"
-                download="admin0451.apk"
-                class="flex items-center justify-between gap-4 bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1.125rem] px-6 py-5 hover:bg-[#22c55e]/10 transition-colors"
+                v-if="!isStoreApp"
+                href="/store-app.apk"
+                download="store0451.apk"
+                class="flex items-center justify-between gap-4 bg-[#0a0a0a] border border-amber-500/30 rounded-[1.125rem] px-6 py-5 hover:bg-amber-500/10 transition-colors"
             >
                 <div>
                     <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Android</div>
-                    <div class="text-white text-sm font-black uppercase tracking-wide mt-1">Скачать приложение для админов</div>
-                    <p class="text-white/40 text-xs mt-1">0451 Ctrl — только админка клуба, без сайта для гостей</p>
+                    <div class="text-white text-sm font-black uppercase tracking-wide mt-1">Скачать приложение магазина</div>
+                    <p class="text-white/40 text-xs mt-1">0451 Store — склад, сметы, сборки, без клуба</p>
                 </div>
-                <span class="shrink-0 px-5 py-3 bg-[#22c55e] text-black rounded-2xl text-xs font-black uppercase tracking-widest">
+                <span class="shrink-0 px-5 py-3 bg-amber-500 text-black rounded-2xl text-xs font-black uppercase tracking-widest">
                     Скачать APK
                 </span>
             </a>
 
-            <StaffEmployment
-                v-if="employment.required"
-                :rules="employment.rules"
-                :accepted-ids="employment.accepted_ids"
-                :rules-complete="employment.rules_complete"
-                :rules-title="employment.rules_title || 'Условия работы администратора'"
-                :profile="employment.profile"
-                :status="employment.status || 'draft'"
-                :rejection-reason="employment.rejection_reason || null"
-                :appointment-at="employment.appointment_at || null"
-                :fire-rules="employment.fire_rules || []"
-                :fire-rules-title="employment.fire_rules_title || 'Техника пожарной безопасности'"
-                :accepted-fire-ids="employment.accepted_fire_ids || []"
-                :fire-rules-complete="employment.fire_rules_complete || false"
-            />
-
-            <template v-else>
             <div class="flex justify-between items-end mb-4 border-b border-white/10 pb-6">
                 <div>
                     <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">
-                        Личный <span class="text-[#22c55e]">кабинет</span>
+                        Кабинет <span class="text-amber-400">магазина</span>
                     </h1>
                     <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">
-                        Смены, начисления, штрафы и вывод
+                        {{ storeDesk?.headline || 'Магазин, смены и расчёт' }}
                     </p>
                 </div>
                 <div class="text-right">
-                    <div class="text-[10px] uppercase font-black tracking-widest text-white/30">Статус</div>
-                    <div class="text-sm font-black uppercase text-white mt-1">{{ shiftState?.duty_label || payTypeLabel }}</div>
+                    <div class="text-[10px] uppercase font-black tracking-widest text-white/30">Должность</div>
+                    <div class="text-sm font-black uppercase text-white mt-1">{{ storeDesk?.role_label || payTypeLabel }}</div>
                     <div class="text-[11px] text-white/40 mt-1">ставка {{ formatMoney(base_rate) }}</div>
                 </div>
             </div>
 
-            <div v-if="shiftState?.duty === 'intern' && !shiftState?.id"
-                 class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-8 text-sm text-white/60 font-bold">
-                Нет активной смены. Стажёр выходит в смену вместе с активным админом, когда тот её примет.
-            </div>
-
-            <div v-if="shiftState?.can_take_shift || shiftState?.can_join_as_intern || shiftState?.can_leave_as_intern"
-                 class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-8 shadow-2xl flex flex-col md:flex-row md:items-center gap-6">
-                <div class="flex-1">
-                    <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Смена сейчас</div>
-                    <p v-if="shiftState?.duty === 'incoming'" class="text-white text-sm font-bold mt-2">
-                        Приём уже начат. Продолжите скан холодильников.
-                    </p>
-                    <p v-else-if="shiftState?.can_take_shift" class="text-white text-sm font-bold mt-2">
-                        Подойдите к ресепшену, нажмите «Принять смену» и посмотрите в камеру.
-                    </p>
-                    <p v-else-if="shiftState?.can_join_as_intern" class="text-white text-sm font-bold mt-2">
-                        Активный админ: {{ shiftState.admin_name }}. Выйдите в смену вместе с ним.
-                    </p>
-                    <p v-else class="text-white text-sm font-bold mt-2">
-                        Вы на смене вместе с {{ shiftState.admin_name }}.
-                    </p>
-                </div>
-                <button v-if="shiftState?.can_take_shift" type="button" @click="takeShift"
-                        class="px-8 py-4 bg-[#22c55e] hover:bg-[#1ea34d] text-black rounded-2xl text-xs font-black uppercase tracking-widest">
-                    {{ shiftState?.duty === 'incoming' ? 'Продолжить приём' : 'Принять смену' }}
-                </button>
-                <button v-else-if="shiftState?.can_join_as_intern" type="button" :disabled="dutyBusy" @click="internJoin"
-                        class="px-8 py-4 bg-amber-500 hover:bg-amber-400 text-black rounded-2xl text-xs font-black uppercase tracking-widest disabled:opacity-40">
-                    Выйти в смену
-                </button>
-                <button v-else-if="shiftState?.can_leave_as_intern" type="button" :disabled="dutyBusy" @click="internLeave"
-                        class="px-8 py-4 border border-white/15 text-white/70 hover:text-white rounded-2xl text-xs font-black uppercase tracking-widest disabled:opacity-40">
-                    Уйти со смены
-                </button>
-            </div>
+            <StoreStaffDesk :desk="storeDesk" />
 
             <div class="bg-[#0a0a0a] border border-white/5 rounded-[1.125rem] p-8 shadow-2xl space-y-8">
                 <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
                     <div>
                         <h2 class="text-sm font-black uppercase italic tracking-widest text-white">Выбрать смену</h2>
                         <p class="text-white/40 text-xs font-bold mt-2">
-                            Свободный слот можно взять, если место есть. Отмена — не позднее чем за {{ calendar.cancel_before_hours }} часов до начала.
+                            Запишитесь на смену магазина. Слот клуба при этом остаётся свободным для админа зала.
+                            Отмена — не позднее чем за {{ calendar.cancel_before_hours }} часов до начала.
                             <span> Модель: {{ shiftWindowLabel(calendar.shift_hours, calendar.starts_hour) }}.</span>
                         </p>
                     </div>
@@ -556,8 +435,7 @@ const kindLabel = (kind: string | null | undefined) => {
                                     <span v-if="slot.is_mine">Вы записаны ({{ kindLabel(slot.my_kind) }})</span>
                                     <span v-else-if="slot.started">Смена уже началась</span>
                                     <span v-else>
-                                        Админ: {{ slot.lead_taken ? (slot.lead_name || 'занято') : 'свободно' }}
-                                        · стажёр {{ slot.intern_taken }}/{{ slot.intern_capacity }}
+                                        Магазин: {{ slot.store_taken ? ((slot.store_names || []).join(', ') || (slot.store_taken + ' чел.')) : 'свободно' }}
                                     </span>
                                 </div>
                             </div>
@@ -644,7 +522,7 @@ const kindLabel = (kind: string | null | undefined) => {
 
             <div class="bg-[#050505] border border-white/5 rounded-[0.875rem] overflow-hidden shadow-xl">
                 <div class="p-6 border-b border-white/10">
-                    <h2 class="text-sm font-black uppercase italic tracking-widest text-white/70">Отработанные смены</h2>
+                    <h2 class="text-sm font-black uppercase italic tracking-widest text-white/70">Смены магазина</h2>
                 </div>
                 <table class="w-full text-left border-collapse">
                     <thead>
@@ -676,7 +554,7 @@ const kindLabel = (kind: string | null | undefined) => {
                         <td colspan="5" class="py-16 text-center">
                             <div class="text-white/10 text-xl font-black uppercase tracking-widest italic mb-2">Нет смен</div>
                             <div class="text-white/30 text-[10px] uppercase tracking-widest">
-                                Смены появятся после пересменки
+                                Выберите слот в календаре выше
                             </div>
                         </td>
                     </tr>
@@ -735,8 +613,6 @@ const kindLabel = (kind: string | null | undefined) => {
                     </tbody>
                 </table>
             </div>
-
-            </template>
 
         </div>
 

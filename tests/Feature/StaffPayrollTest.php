@@ -132,9 +132,13 @@ class StaffPayrollTest extends TestCase
 
         $this->actingAs($manager, 'admin')
             ->get('/admin/salary')
+            ->assertRedirect('/store/cabinet');
+
+        $this->actingAs($manager, 'admin')
+            ->get('/store/cabinet')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->component('Admin/Salary')
+                ->component('Admin/StoreCabinet')
                 ->where('store_desk.role', 'store_manager')
                 ->where('store_desk.role_label', 'Менеджер магазина')
             );
