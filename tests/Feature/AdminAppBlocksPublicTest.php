@@ -24,11 +24,11 @@ class AdminAppBlocksPublicTest extends TestCase
         ])->get('/admin/login')->assertOk();
     }
 
-    public function test_admin_apk_can_open_store_login(): void
+    public function test_admin_apk_cannot_open_store_login(): void
     {
         $this->withHeaders([
             'User-Agent' => 'Mozilla/5.0 CompClubAdmin/1.0',
-        ])->get('/store/login')->assertOk();
+        ])->get('/store/login')->assertRedirect('/admin/login');
     }
 
     public function test_client_apk_still_cannot_open_admin(): void

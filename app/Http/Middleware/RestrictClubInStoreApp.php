@@ -6,20 +6,29 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-class RestrictPublicInAdminApp
+class RestrictClubInStoreApp
 {
     public function handle(Request $request, Closure $next): Response
     {
         $ua = (string) $request->userAgent();
-        if (! str_contains($ua, 'CompClubAdmin')) {
+        if (! str_contains($ua, 'CompClubStore')) {
             return $next($request);
         }
 
         if ($request->is(
-            'admin',
-            'admin/*',
-            'admin-app.apk',
-            'admin-app.json',
+            'store',
+            'store/*',
+            'admin/salary',
+            'admin/salary/*',
+            'admin/store',
+            'admin/store/*',
+            'admin/logout',
+            'admin/api',
+            'admin/api/*',
+            'admin/docs',
+            'admin/docs/*',
+            'store-app.apk',
+            'store-app.json',
             'build/*',
             'hot',
             'storage/*',
@@ -30,6 +39,6 @@ class RestrictPublicInAdminApp
             return $next($request);
         }
 
-        return redirect()->route('admin.login');
+        return redirect()->route('store.login');
     }
 }

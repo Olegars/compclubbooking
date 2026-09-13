@@ -6,6 +6,7 @@ import AvatarWatermarkBg from '@/Components/AvatarWatermarkBg.vue'
 
 const clubName = useClubName()
 const mode = ref('login')
+const isStoreApp = /CompClubStore/i.test(navigator.userAgent || '')
 
 const form = useForm({
     email: '',
@@ -145,7 +146,7 @@ const submitRegister = () => {
                 </p>
             </form>
 
-            <Link href="/admin/login" class="mt-8 block text-center text-[10px] uppercase tracking-widest text-white/35 hover:text-amber-400 font-black">
+            <Link v-if="!isStoreApp" href="/admin/login" class="mt-8 block text-center text-[10px] uppercase tracking-widest text-white/35 hover:text-amber-400 font-black">
                 Админам клуба →
             </Link>
         </div>

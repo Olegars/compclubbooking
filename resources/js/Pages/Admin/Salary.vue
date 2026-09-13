@@ -149,6 +149,7 @@ const clubName = useClubName()
 const page = usePage()
 const { success, error } = useToast()
 const isAdminApp = /CompClubAdmin/i.test(navigator.userAgent || '')
+const isStoreApp = /CompClubStore/i.test(navigator.userAgent || '')
 const isStore = computed(() => Boolean(props.store_desk))
 const storeDesk = computed(() => props.store_desk)
 
@@ -384,7 +385,23 @@ const kindLabel = (kind: string | null | undefined) => {
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
 
             <a
-                v-if="!isAdminApp"
+                v-if="isStore && !isStoreApp"
+                href="/store-app.apk"
+                download="store0451.apk"
+                class="flex items-center justify-between gap-4 bg-[#0a0a0a] border border-amber-500/30 rounded-[1.125rem] px-6 py-5 hover:bg-amber-500/10 transition-colors"
+            >
+                <div>
+                    <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Android</div>
+                    <div class="text-white text-sm font-black uppercase tracking-wide mt-1">Скачать приложение магазина</div>
+                    <p class="text-white/40 text-xs mt-1">0451 Store — склад, сметы, сборки, без клуба</p>
+                </div>
+                <span class="shrink-0 px-5 py-3 bg-amber-500 text-black rounded-2xl text-xs font-black uppercase tracking-widest">
+                    Скачать APK
+                </span>
+            </a>
+
+            <a
+                v-else-if="!isStore && !isAdminApp"
                 href="/admin-app.apk"
                 download="admin0451.apk"
                 class="flex items-center justify-between gap-4 bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1.125rem] px-6 py-5 hover:bg-[#22c55e]/10 transition-colors"
@@ -392,7 +409,7 @@ const kindLabel = (kind: string | null | undefined) => {
                 <div>
                     <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Android</div>
                     <div class="text-white text-sm font-black uppercase tracking-wide mt-1">Скачать приложение для админов</div>
-                    <p class="text-white/40 text-xs mt-1">0451 Ctrl — только админка, без сайта для гостей</p>
+                    <p class="text-white/40 text-xs mt-1">0451 Ctrl — только админка клуба, без сайта для гостей</p>
                 </div>
                 <span class="shrink-0 px-5 py-3 bg-[#22c55e] text-black rounded-2xl text-xs font-black uppercase tracking-widest">
                     Скачать APK
