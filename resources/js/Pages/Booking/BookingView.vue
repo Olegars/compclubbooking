@@ -1558,6 +1558,7 @@ onUnmounted(() => {
     font-family: ui-monospace, monospace;
     font-size: 11px;
     font-weight: 900;
+    cursor: pointer;
     transition: background-color 0.15s, color 0.15s;
 }
 .time-step:hover:not(:disabled) { background: rgba(34, 197, 94, 0.15); }
@@ -1575,6 +1576,7 @@ onUnmounted(() => {
     font-family: ui-monospace, monospace;
     font-size: 12px;
     font-weight: 900;
+    cursor: pointer;
     transition: all 0.15s;
 }
 .seat-chip.is-selected { background: #22c55e; border-color: #22c55e; color: #000; }
