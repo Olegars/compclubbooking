@@ -55,7 +55,7 @@ const clubName = useClubName()
 </script>
 
 <template>
-    <footer class="w-full border-t border-white/10 mt-16">
+    <footer class="w-full border-t border-white/10 mt-16 bg-[#050505]/90">
         <div class="max-w-[1400px] mx-auto px-4 sm:px-6 py-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4 text-[13px] text-white/60">
             <div>
                 <div class="text-white font-black italic uppercase tracking-widest text-sm mb-3">
