@@ -140,7 +140,7 @@ const links = [
                     <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Доход сегодня</div>
                     <div class="text-yellow-400 text-lg font-black mt-3">{{ money(today.taxable) }}</div>
                     <p class="text-white/40 text-xs font-bold mt-2">
-                        Пополнения УСН · новые гости {{ today.new_guests }}
+                        Пополнения с живым чеком · новые гости {{ today.new_guests }}
                     </p>
                 </div>
 

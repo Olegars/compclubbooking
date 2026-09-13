@@ -55,6 +55,7 @@ class TaxReportTest extends TestCase
 
         $this->deposit('cash', 100000, '2026-01-20');
         $this->deposit('achievement', 50000, '2026-01-21');
+        $this->deposit('card', 40000, '2026-01-21', stub: true);
         $refund = Transaction::query()->create([
             'amount' => 20000,
             'type' => 'refund',
@@ -69,6 +70,7 @@ class TaxReportTest extends TestCase
         $report = app(TaxReportService::class)->forYear(2026);
 
         $this->assertSame(100000.0, $report['income']['gross']);
+        $this->assertSame(40000.0, $report['income']['stub_gross']);
         $this->assertSame(100000.0, $report['quarters'][1]['gross']);
         $this->assertSame(0.0, $report['quarters'][2]['gross']);
     }
@@ -125,7 +127,7 @@ class TaxReportTest extends TestCase
         $this->assertSame(5000.0, $report['totals']['vat']);
     }
 
-    private function deposit(string $source, float $amount, string $when): void
+    private function deposit(string $source, float $amount, string $when, bool $stub = false): void
     {
         $tx = Transaction::query()->create([
             'amount' => $amount,
@@ -136,6 +138,13 @@ class TaxReportTest extends TestCase
         ]);
         $tx->timestamps = false;
         $tx->created_at = Carbon::parse($when.' 12:00:00');
+        if ($stub) {
+            $tx->fiscal_status = 'skipped';
+            $tx->fiscal_receipt_url = '/receipt/stub/'.$tx->id;
+        } else {
+            $tx->fiscal_status = 'success';
+            $tx->fiscal_receipt_url = 'https://ofd.example.test/r/'.$tx->id;
+        }
         $tx->save();
     }
 

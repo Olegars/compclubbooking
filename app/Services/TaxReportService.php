@@ -30,6 +30,9 @@ class TaxReportService
         }
 
         $grossYear = $this->money(array_sum($monthsGross));
+        $yearStart = Carbon::create($year, 1, 1)->startOfDay();
+        $yearEnd = Carbon::create($year, 12, 31)->endOfDay();
+        $stubGross = $this->demoIncomeBetween($yearStart, $yearEnd);
         $priorGross = $this->incomeBetween(
             Carbon::create($year - 1, 1, 1)->startOfDay(),
             Carbon::create($year - 1, 12, 31)->endOfDay()
@@ -109,6 +112,14 @@ class TaxReportService
 
         $yearUsn = $quarters[4];
         $warnings = $this->warnings($cumGross, $cumNet, $priorGross, $rates, $vatPlan);
+        if ($stubGross > 0 || ! config('fiscal.enabled', false)) {
+            array_unshift($warnings, [
+                'level' => 'info',
+                'text' => $stubGross > 0
+                    ? 'Демо-чеки (касса выкл. / тестовый QR) не входят в УСН и НДС: '.number_format($stubGross, 0, ',', ' ').' ₽ за год. В базу попадают только фискализированные пополнения.'
+                    : 'Касса выключена (FISCAL_ENABLED=false): тестовые чеки в налог не считаются. После включения ККТ в базу пойдут только чеки со статусом success.',
+            ]);
+        }
         $calendar = $this->calendar($year, $quarters, $ipPremiums, $payroll);
 
         return [
@@ -137,6 +148,8 @@ class TaxReportService
                 'vat' => $cumVat,
                 'prior_year_gross' => $priorGross,
                 'months' => $monthsGross,
+                'stub_gross' => $stubGross,
+                'fiscal_live' => (bool) config('fiscal.enabled', false),
             ],
             'vat' => $vatPlan,
             'quarters' => $quarters,
@@ -164,8 +177,35 @@ class TaxReportService
 
     public function incomeBetween(CarbonInterface $from, CarbonInterface $to): float
     {
-        if (! Schema::hasTable('transactions')) {
+        $query = $this->depositQuery($from, $to);
+        if ($query === null) {
             return 0.0;
+        }
+
+        $this->constrainFiscalized($query);
+
+        return $this->money((float) $query->sum('amount'));
+    }
+
+    public function demoIncomeBetween(CarbonInterface $from, CarbonInterface $to): float
+    {
+        $query = $this->depositQuery($from, $to);
+        if ($query === null) {
+            return 0.0;
+        }
+
+        $this->constrainDemoFiscal($query);
+
+        return $this->money((float) $query->sum('amount'));
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Builder<Transaction>|null
+     */
+    private function depositQuery(CarbonInterface $from, CarbonInterface $to)
+    {
+        if (! Schema::hasTable('transactions')) {
+            return null;
         }
 
         $query = Transaction::query()
@@ -190,7 +230,39 @@ class TaxReportService
             });
         }
 
-        return $this->money((float) $query->sum('amount'));
+        return $query;
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<Transaction>  $query
+     */
+    private function constrainFiscalized($query): void
+    {
+        if (Schema::hasColumn('transactions', 'fiscal_status')) {
+            $query->where('fiscal_status', 'success');
+        }
+
+        if (Schema::hasColumn('transactions', 'fiscal_receipt_url')) {
+            $query->where(function ($inner) {
+                $inner->whereNull('fiscal_receipt_url')
+                    ->orWhere('fiscal_receipt_url', 'not like', '%/receipt/stub/%');
+            });
+        }
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<Transaction>  $query
+     */
+    private function constrainDemoFiscal($query): void
+    {
+        $query->where(function ($inner) {
+            if (Schema::hasColumn('transactions', 'fiscal_status')) {
+                $inner->where('fiscal_status', 'skipped');
+            }
+            if (Schema::hasColumn('transactions', 'fiscal_receipt_url')) {
+                $inner->orWhere('fiscal_receipt_url', 'like', '%/receipt/stub/%');
+            }
+        });
     }
 
     /**

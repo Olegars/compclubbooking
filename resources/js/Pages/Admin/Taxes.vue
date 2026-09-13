@@ -84,6 +84,8 @@ const props = defineProps<{
         vat: number
         prior_year_gross: number
         months: Record<number, number>
+        stub_gross: number
+        fiscal_live: boolean
     }
     vat: {
         exempt: boolean
@@ -247,7 +249,10 @@ const filteredMonths = computed(() => {
                 <div class="bg-[#050505] border border-white/5 p-6 rounded-[0.875rem]">
                     <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Валовая выручка</div>
                     <div class="text-3xl font-black text-white tracking-tighter mt-2">{{ formatRuble(income.gross) }}</div>
-                    <div class="text-[10px] text-white/30 mt-2">Касса / СБП / карта, без бонусов</div>
+                    <div class="text-[10px] text-white/30 mt-2">
+                        Только фискализированные чеки, без бонусов
+                        <span v-if="income.stub_gross > 0"> · демо {{ formatRuble(income.stub_gross) }} не в базе</span>
+                    </div>
                 </div>
                 <div class="bg-[#050505] border border-white/5 p-6 rounded-[0.875rem]">
                     <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">База УСН (без НДС)</div>
