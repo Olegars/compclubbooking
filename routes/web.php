@@ -146,6 +146,29 @@ Route::get('/store-app.json', function () {
         'size' => filesize($path),
     ]);
 })->name('store-app.json');
+Route::get('/boss-app.apk', function () {
+    $path = storage_path('app/apk/boss0451.apk');
+    abort_unless(is_file($path), 404);
+
+    $response = response()->file($path);
+    $response->headers->set('Content-Type', 'application/vnd.android.package-archive');
+    $response->headers->set('Content-Disposition', 'attachment; filename="boss0451.apk"');
+    $response->headers->set('X-Content-Type-Options', 'nosniff');
+    $response->headers->set('Cache-Control', 'private, no-transform');
+
+    return $response;
+})->name('boss-app.apk');
+Route::get('/boss-app.json', function () {
+    $path = storage_path('app/apk/boss0451.apk');
+    abort_unless(is_file($path), 404);
+
+    return response()->json([
+        'version_code' => (int) config('boss_app.version_code'),
+        'version_name' => (string) config('boss_app.version_name'),
+        'apk_url' => url('/boss-app.apk'),
+        'size' => filesize($path),
+    ]);
+})->name('boss-app.json');
 Route::get('/legal/offer', fn () => Inertia::render('Legal/Offer'))->name('legal.offer');
 Route::get('/avito/{token}/feed.xml', [StoreAvitoFeedController::class, 'feed'])->name('store.avito.feed');
 Route::get('/avito/{token}/img/{configId}/{sku}/{index}', [StoreAvitoFeedController::class, 'image'])

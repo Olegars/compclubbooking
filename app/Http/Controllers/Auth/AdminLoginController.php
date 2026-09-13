@@ -47,6 +47,14 @@ class AdminLoginController extends Controller
                 ]);
             }
 
+            if (str_contains((string) $request->userAgent(), 'CompClubBoss') && $admin?->role !== Admin::ROLE_OWNER) {
+                Auth::guard('admin')->logout();
+
+                throw ValidationException::withMessages([
+                    'email' => 'Это приложение только для владельца. Сотрудники входят в 0451 Ctrl или 0451 Store.',
+                ]);
+            }
+
             $request->session()->regenerate();
 
             $home = $admin?->homeRoute() ?: 'admin.dashboard';
@@ -61,6 +69,12 @@ class AdminLoginController extends Controller
 
     public function register(Request $request)
     {
+        if (str_contains((string) $request->userAgent(), 'CompClubBoss')) {
+            throw ValidationException::withMessages([
+                'email' => 'Регистрация сотрудников в приложении владельца недоступна.',
+            ]);
+        }
+
         $data = $request->validate([
             'name' => ['required', 'string', 'min:2', 'max:120'],
             'email' => ['required', 'email', 'max:190', 'unique:admins,email'],

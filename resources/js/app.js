@@ -8,6 +8,7 @@ import { ZiggyVue } from 'ziggy-js'; // <--- Импорт из NPM
 
 const isClientApp = /CompClubClient/i.test(navigator.userAgent || '');
 const isAdminApp = /CompClubAdmin/i.test(navigator.userAgent || '');
+const isBossApp = /CompClubBoss/i.test(navigator.userAgent || '');
 const isStoreApp = /CompClubStore/i.test(navigator.userAgent || '');
 const clientPages = import.meta.glob([
     './Pages/Home/**/*.vue',
@@ -20,6 +21,12 @@ const clientPages = import.meta.glob([
 const adminPages = import.meta.glob([
     './Pages/Admin/**/*.vue',
     './Pages/Auth/AdminLogin.vue',
+]);
+const bossPages = import.meta.glob([
+    './Pages/Admin/**/*.vue',
+    './Pages/Auth/AdminLogin.vue',
+    './Pages/Auth/StoreLogin.vue',
+    './Pages/Auth/StoreHire.vue',
 ]);
 const storePages = import.meta.glob([
     './Pages/Admin/Salary.vue',
@@ -35,12 +42,22 @@ const isStoreAppPage = (name) => (
     || name === 'Auth/StoreLogin'
     || name === 'Auth/StoreHire'
 );
+const isBossAppPage = (name) => (
+    name.startsWith('Admin/')
+    || name === 'Auth/AdminLogin'
+    || name === 'Auth/StoreLogin'
+    || name === 'Auth/StoreHire'
+);
 
 if (isClientApp && /^\/(admin|store)(\/|$)/.test(window.location.pathname)) {
     window.location.replace('/');
 }
 
 if (isAdminApp && !/^\/admin(\/|$)/.test(window.location.pathname)) {
+    window.location.replace('/admin/login');
+}
+
+if (isBossApp && !/^\/(admin|store)(\/|$)/.test(window.location.pathname)) {
     window.location.replace('/admin/login');
 }
 
@@ -69,6 +86,12 @@ createInertiaApp({
                 return resolvePageComponent('./Pages/Auth/StoreLogin.vue', storePages);
             }
             return resolvePageComponent(`./Pages/${name}.vue`, storePages);
+        }
+        if (isBossApp) {
+            if (!isBossAppPage(name)) {
+                return resolvePageComponent('./Pages/Auth/AdminLogin.vue', bossPages);
+            }
+            return resolvePageComponent(`./Pages/${name}.vue`, bossPages);
         }
         if (isAdminApp) {
             if (!(name.startsWith('Admin/') || name === 'Auth/AdminLogin')) {

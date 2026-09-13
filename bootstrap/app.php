@@ -19,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(prepend: [
             \App\Http\Middleware\BlockAdminInClientApp::class,
             \App\Http\Middleware\RestrictPublicInAdminApp::class,
+            \App\Http\Middleware\RestrictPublicInBossApp::class,
             \App\Http\Middleware\RestrictClubInStoreApp::class,
         ]);
 

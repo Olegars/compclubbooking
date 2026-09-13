@@ -65,6 +65,12 @@ class SystemDocs
                         'audience' => 'Админ / Техник',
                     ],
                     [
+                        'title' => 'Приложение владельца (0451 Boss)',
+                        'description' => "Android-обёртка всей админки бэкенда для владельца, не путать с 0451 Ctrl (зал), 0451 Store (магазин) и клиентским APK.\n\nПакет space.club0451.boss, имя на устройстве «0451 Boss», исходники C:\\Qt\\boss_apk. Отдельный фронт не нужен: WebView открывает /admin/login и те же Inertia-страницы Admin, что и сайт. UA дополняется CompClubBoss/… — по нему сайт режет публичные страницы (middleware RestrictPublicInBossApp + редирект в WebView и в app.js). Разрешены /admin/* (зал, экономика, персонал, налоги, магазин, локации) и /store/*. В бандл: все Admin-страницы, AdminLogin, StoreLogin, StoreHire.\n\nВход только с ролью owner; «Устроиться» скрыто. Скачать: кнопка на /admin/salary у владельца (скрыта внутри приложения). Файл GET /boss-app.apk (storage/app/apk/boss0451.apk). Самообновление: GET /boss-app.json {version_code, version_name, apk_url, size}. После выкладки APK поднять BOSS_APP_VERSION_CODE / BOSS_APP_VERSION_NAME в .env (config/boss_app.php).\n\nСборка (JDK 17):\n   cd C:\\Qt\\boss_apk\n   set JAVA_HOME=C:\\Qt\\jdk-17\n   gradlew.bat assembleRelease",
+                        'path' => '/boss-app.apk',
+                        'audience' => 'Owner',
+                    ],
+                    [
                         'title' => 'Транзакции и копии чеков',
                         'description' => "Отдельный журнал фискализуемых операций (/admin/transactions).\n\nВ списке: телефон и имя гостя, тип (пополнение / бронь / магазин / возврат), сумма, статус чека (success / pending / deferred / void / error / skipped), признак «+Email/SMS» если клиент попросил отправку, ссылка ОФД (или демо-заглушка при выключенной кассе).\n\ndeferred = бронь оплачена с баланса, чек ждёт вход на ПК; void = отмена с возвратом до оказания услуги.\n\nПоиск по телефону/имени, фильтр по типу и статусу.\nКнопка «Напечатать» открывает окно «КОПИЯ ЧЕКА» с QR и реквизитами первичной фискализации — без повторного RegisterCheck и без новой оплаты. Для заглушек (касса выкл.) печать копии ОФД недоступна.\n\nСхема чеков: пополнение → аванс; бронь → полный расчёт при login/no-show; магазин с баланса → полный расчёт сразу.",
                         'path' => '/admin/transactions',

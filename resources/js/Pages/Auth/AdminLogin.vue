@@ -7,6 +7,7 @@ import AvatarWatermarkBg from '@/Components/AvatarWatermarkBg.vue';
 const clubName = useClubName();
 const mode = ref('login')
 const isAdminApp = /CompClubAdmin/i.test(navigator.userAgent || '')
+const isBossApp = /CompClubBoss/i.test(navigator.userAgent || '')
 
 const form = useForm({
     email: '',
@@ -44,14 +45,14 @@ const submitRegister = () => {
             <div class="flex items-center gap-3 mb-2">
                 <div class="w-3 h-3 bg-[#22c55e] rounded-full animate-pulse shadow-[0_0_10px_#22c55e]"></div>
                 <h1 class="text-2xl font-bold uppercase tracking-tight">
-                    {{ clubName }} <span class="text-[#22c55e]">Ctrl</span>
+                    {{ clubName }} <span class="text-[#22c55e]">{{ isBossApp ? 'Boss' : 'Ctrl' }}</span>
                 </h1>
             </div>
             <p class="text-white/40 text-xs uppercase tracking-[0.16em] font-semibold mb-8">
-                {{ mode === 'register' ? 'Регистрация сотрудника' : 'Вход для администраторов и операторов' }}
+                {{ isBossApp ? 'Вход для владельца' : (mode === 'register' ? 'Регистрация сотрудника' : 'Вход для администраторов и операторов') }}
             </p>
 
-            <div class="grid grid-cols-2 gap-2 mb-8">
+            <div v-if="!isBossApp" class="grid grid-cols-2 gap-2 mb-8">
                 <button type="button"
                         class="py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
                         :class="mode === 'login' ? 'bg-[#22c55e] text-black' : 'border border-white/10 text-white/50'"
@@ -136,7 +137,7 @@ const submitRegister = () => {
                 </p>
             </form>
 
-            <Link v-if="!isAdminApp" href="/store/login" class="mt-8 block text-center text-[10px] uppercase tracking-widest text-white/35 hover:text-[#22c55e] font-black">
+            <Link v-if="!isAdminApp && !isBossApp" href="/store/login" class="mt-8 block text-center text-[10px] uppercase tracking-widest text-white/35 hover:text-[#22c55e] font-black">
                 Сотрудникам магазина →
             </Link>
         </div>
