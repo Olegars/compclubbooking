@@ -112,9 +112,9 @@ const chatCounts = computed(() => props.chat_counts || { inbox: 0, in_progress: 
 
 const avitoQuery = (extra: { tab?: string, folder?: Folder, chat?: string | null, mark_read?: number } = {}) => {
     const params: Record<string, string | number> = {
-        tab: extra.tab ?? props.tab || 'ads',
+        tab: extra.tab ?? (props.tab || 'ads'),
     }
-    const nextFolder = extra.folder ?? props.folder || 'inbox'
+    const nextFolder = extra.folder ?? (props.folder || 'inbox')
     if (params.tab === 'chats') {
         params.folder = nextFolder
     }
