@@ -25,6 +25,10 @@ class AvitoController extends StoreController
         $tab = $request->string('tab')->toString() ?: 'ads';
         $q = mb_strtoupper(trim($request->string('q')->toString()));
         $chatId = $request->string('chat')->toString();
+        $folder = $request->string('folder')->toString();
+        if (! in_array($folder, StoreAvitoChat::FOLDERS, true)) {
+            $folder = StoreAvitoChat::WORKFLOW_INBOX;
+        }
 
         $adsQuery = StoreAvitoAd::query()->orderByDesc('id');
         if ($q !== '') {
@@ -34,21 +38,25 @@ class AvitoController extends StoreController
             });
         }
 
-        $chatsQuery = StoreAvitoChat::query()
+        $chatsBase = StoreAvitoChat::query()
+            ->with('acceptedBy:id,name')
             ->orderByDesc('last_message_at')
             ->orderByDesc('id');
         if ($q !== '') {
-            $chatsQuery->where(function ($w) use ($q) {
+            $chatsBase->where(function ($w) use ($q) {
                 $w->where('config_id', 'like', '%'.$q.'%')
                     ->orWhere('ad_title', 'like', '%'.$q.'%')
                     ->orWhere('client_name', 'like', '%'.$q.'%');
             });
         }
 
+        $chatsQuery = clone $chatsBase;
+        $this->applyChatFolder($chatsQuery, $folder);
         $chats = $chatsQuery->limit(80)->get();
 
         $activeChat = $chatId !== ''
-            ? $chats->firstWhere('chat_id', $chatId) ?? StoreAvitoChat::query()->where('chat_id', $chatId)->first()
+            ? $chats->firstWhere('chat_id', $chatId)
+                ?? StoreAvitoChat::query()->with('acceptedBy:id,name')->where('chat_id', $chatId)->first()
             : $chats->first();
 
         if ($activeChat && $request->boolean('mark_read')) {
@@ -57,20 +65,32 @@ class AvitoController extends StoreController
         }
 
         $messages = $activeChat
-            ? StoreAvitoMessage::query()->where('chat_id', $activeChat->chat_id)->orderBy('id')->limit(200)->get()
+            ? StoreAvitoMessage::query()
+                ->with('admin:id,name')
+                ->where('chat_id', $activeChat->chat_id)
+                ->orderBy('id')
+                ->limit(200)
+                ->get()
             : collect();
 
         return Inertia::render('Admin/Store/Avito', [
             'tab' => in_array($tab, ['ads', 'configs', 'chats', 'settings'], true) ? $tab : 'ads',
+            'folder' => $folder,
             'settings' => $this->settingsPayload($settings, app(StoreAvitoDictMatcher::class)),
             'feed_url' => URL::to('/avito/'.$settings->feed_token.'/feed.xml'),
             'filters' => ['q' => $q !== '' ? $q : null],
             'ads' => $adsQuery->limit($q !== '' ? 80 : 120)->get(),
-            'chats' => $chats,
-            'active_chat' => $activeChat,
-            'messages' => $messages,
+            'chats' => $chats->map(fn (StoreAvitoChat $c) => $this->chatPayload($c))->values()->all(),
+            'active_chat' => $this->chatPayload($activeChat),
+            'messages' => $this->messagesPayload($messages),
             'canManage' => $this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner',
             'unread' => StoreAvitoChat::query()->where('unread', true)->count(),
+            'chat_counts' => [
+                'inbox' => (clone $chatsBase)->where('workflow', StoreAvitoChat::WORKFLOW_INBOX)->count(),
+                'in_progress' => (clone $chatsBase)->where('workflow', StoreAvitoChat::WORKFLOW_IN_PROGRESS)->count(),
+                'done' => (clone $chatsBase)->where('workflow', StoreAvitoChat::WORKFLOW_DONE)->count(),
+                'favorite' => (clone $chatsBase)->where('important', true)->count(),
+            ],
             'parts' => $this->partsPayload(),
             'configs' => $this->configsPayload(),
         ]);
@@ -224,10 +244,17 @@ class AvitoController extends StoreController
         $data = $request->validate([
             'important' => 'sometimes|boolean',
             'unread' => 'sometimes|boolean',
+            'workflow' => 'sometimes|in:inbox,in_progress,done',
         ]);
+        if (array_key_exists('workflow', $data)) {
+            $data = array_merge($data, $this->workflowAssignment($storeAvitoChat, $data['workflow']));
+        }
         $storeAvitoChat->update($data);
         if (array_key_exists('unread', $data) && ! $data['unread']) {
             StoreAvitoMessage::query()->where('chat_id', $storeAvitoChat->chat_id)->update(['read' => true]);
+        }
+        if (array_key_exists('workflow', $data)) {
+            return $this->redirectToChat($storeAvitoChat, $data['workflow']);
         }
 
         return back();
@@ -241,12 +268,19 @@ class AvitoController extends StoreController
             'chat_id' => 'required|string|max:128',
             'text' => 'required|string|max:2000',
         ]);
-        abort_unless(StoreAvitoChat::query()->where('chat_id', $data['chat_id'])->exists(), 404);
+        $chat = StoreAvitoChat::query()->where('chat_id', $data['chat_id'])->firstOrFail();
 
-        $ok = $messenger->sendText($data['chat_id'], $data['text']);
+        $ok = $messenger->sendText($data['chat_id'], $data['text'], $this->admin());
         abort_unless($ok, 502, 'Не удалось отправить сообщение в Avito.');
+        $this->claimChat($chat);
 
-        return back()->with('success', 'Сообщение отправлено.');
+        return $this->redirectToChat(
+            $chat,
+            $chat->workflow === StoreAvitoChat::WORKFLOW_DONE
+                ? StoreAvitoChat::WORKFLOW_DONE
+                : StoreAvitoChat::WORKFLOW_IN_PROGRESS,
+            'Сообщение отправлено.'
+        );
     }
 
     public function sendBom(Request $request, StoreAvitoMessengerService $messenger)
@@ -257,11 +291,19 @@ class AvitoController extends StoreController
             'chat_id' => 'required|string|max:128',
             'config_id' => 'required|string|max:16',
         ]);
+        $chat = StoreAvitoChat::query()->where('chat_id', $data['chat_id'])->firstOrFail();
         $text = $messenger->bomReply(strtoupper($data['config_id']));
         abort_unless($text, 404, 'Конфигурация не найдена.');
-        $messenger->sendText($data['chat_id'], $text);
+        $messenger->sendText($data['chat_id'], $text, $this->admin());
+        $this->claimChat($chat);
 
-        return back()->with('success', 'Комплектация отправлена.');
+        return $this->redirectToChat(
+            $chat,
+            $chat->workflow === StoreAvitoChat::WORKFLOW_DONE
+                ? StoreAvitoChat::WORKFLOW_DONE
+                : StoreAvitoChat::WORKFLOW_IN_PROGRESS,
+            'Комплектация отправлена.'
+        );
     }
 
     public function connectWebhook(Request $request, StoreAvitoMessengerService $messenger)
@@ -380,5 +422,117 @@ class AvitoController extends StoreController
                 'psu' => $c->psu?->label,
             ])
             ->all();
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<StoreAvitoChat>  $query
+     */
+    private function applyChatFolder($query, string $folder): void
+    {
+        match ($folder) {
+            StoreAvitoChat::WORKFLOW_IN_PROGRESS => $query->where('workflow', StoreAvitoChat::WORKFLOW_IN_PROGRESS),
+            StoreAvitoChat::WORKFLOW_DONE => $query->where('workflow', StoreAvitoChat::WORKFLOW_DONE),
+            StoreAvitoChat::FOLDER_FAVORITE => $query->where('important', true),
+            default => $query->where('workflow', StoreAvitoChat::WORKFLOW_INBOX),
+        };
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function chatPayload(?StoreAvitoChat $chat): ?array
+    {
+        if (! $chat) {
+            return null;
+        }
+        $chat->loadMissing('acceptedBy:id,name');
+
+        return [
+            'id' => $chat->id,
+            'chat_id' => $chat->chat_id,
+            'client_name' => $chat->client_name,
+            'ad_title' => $chat->ad_title,
+            'config_id' => $chat->config_id,
+            'unread' => (bool) $chat->unread,
+            'important' => (bool) $chat->important,
+            'workflow' => $chat->workflow ?: StoreAvitoChat::WORKFLOW_INBOX,
+            'accepted_by_id' => $chat->accepted_by_id,
+            'accepted_by_name' => $chat->acceptedBy?->name,
+            'last_message_at' => $chat->last_message_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, StoreAvitoMessage>  $messages
+     * @return list<array<string, mixed>>
+     */
+    private function messagesPayload($messages): array
+    {
+        if ($messages->isEmpty()) {
+            return [];
+        }
+        $messages->loadMissing('admin:id,name');
+
+        return $messages->map(fn (StoreAvitoMessage $m) => [
+            'id' => $m->id,
+            'from_us' => $m->from_us,
+            'content' => $m->content,
+            'created_at' => ($m->avito_created_at ?? $m->created_at)?->toIso8601String(),
+            'admin_id' => $m->admin_id,
+            'admin_name' => $m->admin?->name,
+        ])->values()->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function workflowAssignment(StoreAvitoChat $chat, string $workflow): array
+    {
+        $admin = $this->admin();
+        if ($workflow === StoreAvitoChat::WORKFLOW_IN_PROGRESS) {
+            return [
+                'accepted_by_id' => $admin->id,
+                'accepted_at' => now(),
+                'done_at' => null,
+            ];
+        }
+        if ($workflow === StoreAvitoChat::WORKFLOW_DONE) {
+            return [
+                'accepted_by_id' => $chat->accepted_by_id ?: $admin->id,
+                'accepted_at' => $chat->accepted_at ?: now(),
+                'done_at' => now(),
+            ];
+        }
+
+        return [
+            'accepted_by_id' => null,
+            'accepted_at' => null,
+            'done_at' => null,
+        ];
+    }
+
+    private function claimChat(StoreAvitoChat $chat): void
+    {
+        if ($chat->workflow === StoreAvitoChat::WORKFLOW_DONE) {
+            return;
+        }
+        if ($chat->workflow === StoreAvitoChat::WORKFLOW_IN_PROGRESS && $chat->accepted_by_id) {
+            return;
+        }
+        $chat->update(array_merge(
+            ['workflow' => StoreAvitoChat::WORKFLOW_IN_PROGRESS],
+            $this->workflowAssignment($chat, StoreAvitoChat::WORKFLOW_IN_PROGRESS),
+        ));
+    }
+
+    private function redirectToChat(StoreAvitoChat $chat, string $folder, ?string $flash = null)
+    {
+        $response = redirect()->route('admin.store.avito', [
+            'tab' => 'chats',
+            'folder' => $folder,
+            'chat' => $chat->chat_id,
+        ]);
+
+        return $flash ? $response->with('success', $flash) : $response;
     }
 }

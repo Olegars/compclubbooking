@@ -281,6 +281,133 @@ class StoreAvitoTest extends TestCase
             ->assertOk();
     }
 
+    public function test_chat_folders_filter_and_assign_manager(): void
+    {
+        $manager = $this->makeAvitoManager('Иван Менеджер', 'ivan-chat@avito.test');
+        $inbox = $this->makeAvitoChat('u2i-inbox', ['client_name' => 'Новый']);
+        $this->makeAvitoChat('u2i-work', [
+            'client_name' => 'В работе',
+            'workflow' => 'in_progress',
+            'accepted_by_id' => $manager->id,
+            'accepted_at' => now(),
+        ]);
+        $this->makeAvitoChat('u2i-done', [
+            'client_name' => 'Готово',
+            'workflow' => 'done',
+            'accepted_by_id' => $manager->id,
+            'important' => true,
+        ]);
+
+        $this->actingAs($manager, 'admin')
+            ->get('/admin/store/avito?tab=chats&folder=inbox')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/Store/Avito')
+                ->where('folder', 'inbox')
+                ->has('chats', 1)
+                ->where('chats.0.chat_id', 'u2i-inbox')
+                ->where('chat_counts.inbox', 1)
+                ->where('chat_counts.in_progress', 1)
+                ->where('chat_counts.done', 1)
+                ->where('chat_counts.favorite', 1)
+            );
+
+        $this->get('/admin/store/avito?tab=chats&folder=in_progress')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('chats', 1)
+                ->where('chats.0.chat_id', 'u2i-work')
+                ->where('chats.0.accepted_by_name', 'Иван Менеджер')
+            );
+
+        $this->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/store/avito/chats/'.$inbox->id, ['workflow' => 'in_progress'])
+            ->assertRedirect();
+
+        $inbox->refresh();
+        $this->assertSame('in_progress', $inbox->workflow);
+        $this->assertSame($manager->id, $inbox->accepted_by_id);
+
+        $this->post('/admin/store/avito/chats/'.$inbox->id, ['workflow' => 'done'])->assertRedirect();
+        $this->assertSame('done', $inbox->fresh()->workflow);
+
+        $this->post('/admin/store/avito/chats/'.$inbox->id, ['important' => true])->assertRedirect();
+        $this->assertTrue($inbox->fresh()->important);
+
+        $this->get('/admin/store/avito?tab=chats&folder=favorite')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('chats', 2)
+            );
+    }
+
+    public function test_sending_chat_message_tags_manager_and_takes_into_work(): void
+    {
+        $manager = $this->makeAvitoManager('Пётр Ответ', 'petr-chat@avito.test');
+        $chat = $this->makeAvitoChat('u2i-reply', ['client_name' => 'Гость']);
+        StoreAvitoMessage::query()->create([
+            'chat_id' => $chat->chat_id,
+            'type' => 'text',
+            'content' => ['text' => 'Привет'],
+            'from_us' => false,
+            'read' => false,
+            'avito_created_at' => now(),
+        ]);
+
+        $this->actingAs($manager, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/store/avito/chats/send', [
+                'chat_id' => $chat->chat_id,
+                'text' => 'Добрый день, сейчас уточню',
+            ])
+            ->assertRedirect();
+
+        $chat->refresh();
+        $this->assertSame('in_progress', $chat->workflow);
+        $this->assertSame($manager->id, $chat->accepted_by_id);
+
+        $msg = StoreAvitoMessage::query()->where('from_us', true)->first();
+        $this->assertNotNull($msg);
+        $this->assertSame($manager->id, $msg->admin_id);
+
+        $this->get('/admin/store/avito?tab=chats&folder=in_progress&chat='.$chat->chat_id)
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('active_chat.accepted_by_name', 'Пётр Ответ')
+                ->has('messages', 2)
+                ->where('messages.1.admin_name', 'Пётр Ответ')
+            );
+    }
+
+    public function test_new_message_reopens_done_chat_into_work(): void
+    {
+        $manager = $this->makeAvitoManager('Анна', 'anna-reopen@avito.test');
+        $this->makeAvitoChat('u2i-reopen', [
+            'workflow' => 'done',
+            'accepted_by_id' => $manager->id,
+            'done_at' => now(),
+        ]);
+
+        $this->postJson('/api/store/avito/webhook', [
+            'payload' => [
+                'value' => [
+                    'id' => 'm-reopen',
+                    'chat_id' => 'u2i-reopen',
+                    'user_id' => 1,
+                    'author_id' => 99,
+                    'type' => 'text',
+                    'content' => ['text' => 'Ещё вопрос'],
+                    'created' => time(),
+                ],
+            ],
+        ])->assertOk();
+
+        $chat = StoreAvitoChat::query()->where('chat_id', 'u2i-reopen')->first();
+        $this->assertNotNull($chat);
+        $this->assertSame('in_progress', $chat->workflow);
+        $this->assertTrue($chat->unread);
+    }
+
     public function test_dict_matcher_uses_avito_catalog_strings(): void
     {
         $rows = [
@@ -1242,6 +1369,32 @@ class StoreAvitoTest extends TestCase
         $result = app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
         $this->assertSame(0, $result['created']);
         $this->assertStringContainsString('нет платы B650', (string) ($result['error'] ?? ''));
+    }
+
+    private function makeAvitoManager(string $name, string $email): Admin
+    {
+        return Admin::create([
+            'name' => $name,
+            'email' => $email,
+            'password' => 'password',
+            'role' => 'owner',
+            'club_id' => $this->club->id,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     */
+    private function makeAvitoChat(string $chatId, array $extra = []): StoreAvitoChat
+    {
+        return StoreAvitoChat::query()->create(array_merge([
+            'chat_id' => $chatId,
+            'client_name' => 'Гость',
+            'unread' => true,
+            'important' => false,
+            'workflow' => 'inbox',
+            'last_message_at' => now(),
+        ], $extra));
     }
 
     private function makeConfig(string $cpu, string $ram, string $ssd, string $psu, string $gpu = 'gpu-rtx-4060-ti', ?string $mb = null): StoreAvitoConfig

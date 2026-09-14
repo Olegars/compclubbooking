@@ -9,7 +9,7 @@ class StoreAvitoMessage extends Model
 {
     protected $fillable = [
         'chat_id', 'avito_message_id', 'author_id', 'type', 'content',
-        'from_us', 'read', 'avito_created_at',
+        'from_us', 'admin_id', 'read', 'avito_created_at',
     ];
 
     protected $casts = [
@@ -22,6 +22,11 @@ class StoreAvitoMessage extends Model
     public function chat(): BelongsTo
     {
         return $this->belongsTo(StoreAvitoChat::class, 'chat_id', 'chat_id');
+    }
+
+    public function admin(): BelongsTo
+    {
+        return $this->belongsTo(Admin::class);
     }
 
     public function text(): string

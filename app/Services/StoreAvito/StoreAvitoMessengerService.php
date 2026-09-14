@@ -2,6 +2,7 @@
 
 namespace App\Services\StoreAvito;
 
+use App\Models\Admin;
 use App\Models\StoreAvitoAd;
 use App\Models\StoreAvitoChat;
 use App\Models\StoreAvitoMessage;
@@ -36,14 +37,22 @@ class StoreAvitoMessengerService
                 'chat_id' => $chatId,
                 'avito_user_id' => $value['user_id'] ?? $settings->avito_user_id,
                 'unread' => ! $fromUs,
+                'workflow' => StoreAvitoChat::WORKFLOW_INBOX,
                 'last_message_at' => now(),
             ]);
             $this->hydrateChat($chat, $settings);
         } else {
-            $chat->forceFill([
+            $updates = [
                 'unread' => $fromUs ? $chat->unread : true,
                 'last_message_at' => now(),
-            ])->save();
+            ];
+            if (! $fromUs && $chat->workflow === StoreAvitoChat::WORKFLOW_DONE) {
+                $updates['workflow'] = $chat->accepted_by_id
+                    ? StoreAvitoChat::WORKFLOW_IN_PROGRESS
+                    : StoreAvitoChat::WORKFLOW_INBOX;
+                $updates['done_at'] = null;
+            }
+            $chat->forceFill($updates)->save();
         }
 
         $text = (string) data_get($value, 'content.text', '');
@@ -80,7 +89,7 @@ class StoreAvitoMessengerService
         }
     }
 
-    public function sendText(string $chatId, string $text): bool
+    public function sendText(string $chatId, string $text, ?Admin $admin = null): bool
     {
         $text = trim($text);
         if ($text === '') {
@@ -88,14 +97,7 @@ class StoreAvitoMessengerService
         }
         $settings = StoreAvitoSetting::current();
         if (! $settings->hasMessenger()) {
-            StoreAvitoMessage::query()->create([
-                'chat_id' => $chatId,
-                'type' => 'text',
-                'content' => ['text' => $text],
-                'from_us' => true,
-                'read' => true,
-                'avito_created_at' => now(),
-            ]);
+            $this->storeOutgoing($chatId, $text, $admin);
             StoreAvitoChat::query()->where('chat_id', $chatId)->update(['last_message_at' => now()]);
 
             return true;
@@ -122,20 +124,26 @@ class StoreAvitoMessengerService
             return false;
         }
 
-        StoreAvitoMessage::query()->create([
-            'chat_id' => $chatId,
-            'type' => 'text',
-            'content' => ['text' => $text],
-            'from_us' => true,
-            'read' => true,
-            'avito_created_at' => now(),
-        ]);
+        $this->storeOutgoing($chatId, $text, $admin);
         StoreAvitoChat::query()->where('chat_id', $chatId)->update([
             'last_message_at' => now(),
             'unread' => false,
         ]);
 
         return true;
+    }
+
+    private function storeOutgoing(string $chatId, string $text, ?Admin $admin): void
+    {
+        StoreAvitoMessage::query()->create([
+            'chat_id' => $chatId,
+            'type' => 'text',
+            'content' => ['text' => $text],
+            'from_us' => true,
+            'admin_id' => $admin?->id,
+            'read' => true,
+            'avito_created_at' => now(),
+        ]);
     }
 
     public function registerWebhook(string $url): void

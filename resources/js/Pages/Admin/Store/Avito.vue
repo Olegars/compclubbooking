@@ -54,6 +54,9 @@ type Chat = {
     config_id?: string | null
     unread: boolean
     important: boolean
+    workflow: 'inbox' | 'in_progress' | 'done'
+    accepted_by_id?: number | null
+    accepted_by_name?: string | null
     last_message_at?: string | null
 }
 
@@ -62,10 +65,15 @@ type Message = {
     from_us: boolean
     content?: { text?: string } | null
     created_at?: string
+    admin_id?: number | null
+    admin_name?: string | null
 }
+
+type Folder = 'inbox' | 'in_progress' | 'done' | 'favorite'
 
 const props = defineProps<{
     tab: string
+    folder?: Folder
     settings: Record<string, any>
     feed_url: string
     ads: Ad[]
@@ -74,6 +82,7 @@ const props = defineProps<{
     messages: Message[]
     canManage: boolean
     unread: number
+    chat_counts?: { inbox: number, in_progress: number, done: number, favorite: number }
     filters?: { q?: string | null }
     parts?: { cpu: Part[], gpu: Part[], motherboard: Part[], ram: Part[], ssd: Part[], psu: Part[] }
     configs?: Cfg[]
@@ -81,21 +90,40 @@ const props = defineProps<{
 
 const tab = computed({
     get: () => props.tab || 'ads',
-    set: (v: string) => router.get('/admin/store/avito', {
-        tab: v,
-        chat: props.active_chat?.chat_id,
-        ...(q.value ? { q: q.value } : {}),
-    }, { preserveState: true, replace: true }),
+    set: (v: string) => router.get('/admin/store/avito', avitoQuery({ tab: v, chat: v === 'chats' ? props.active_chat?.chat_id : undefined }), { preserveState: true, replace: true }),
+})
+
+const folder = computed({
+    get: () => props.folder || 'inbox',
+    set: (v: Folder) => router.get('/admin/store/avito', avitoQuery({ tab: 'chats', folder: v, chat: null }), { preserveState: true, replace: true }),
 })
 
 const q = computed({
     get: () => props.filters?.q || '',
-    set: (v: string) => router.get('/admin/store/avito', {
-        tab: props.tab || 'ads',
-        chat: props.active_chat?.chat_id,
-        ...(v.trim() ? { q: v.trim() } : {}),
-    }, { preserveState: true, replace: true }),
+    set: (v: string) => {
+        const params = avitoQuery({})
+        delete params.q
+        if (v.trim()) params.q = v.trim()
+        router.get('/admin/store/avito', params, { preserveState: true, replace: true })
+    },
 })
+
+const chatCounts = computed(() => props.chat_counts || { inbox: 0, in_progress: 0, done: 0, favorite: 0 })
+
+const avitoQuery = (extra: { tab?: string, folder?: Folder, chat?: string | null, mark_read?: number } = {}) => {
+    const params: Record<string, string | number> = {
+        tab: extra.tab ?? props.tab || 'ads',
+    }
+    const nextFolder = extra.folder ?? props.folder || 'inbox'
+    if (params.tab === 'chats') {
+        params.folder = nextFolder
+    }
+    const chat = 'chat' in extra ? extra.chat : props.active_chat?.chat_id
+    if (chat) params.chat = chat
+    if (q.value) params.q = q.value
+    if (extra.mark_read) params.mark_read = extra.mark_read
+    return params
+}
 
 const settingsForm = useForm({
     enabled: Boolean(props.settings.enabled),
@@ -159,7 +187,41 @@ const statusLabel: Record<string, string> = {
 }
 
 const openChat = (chat: Chat) => {
-    router.get('/admin/store/avito', { tab: 'chats', chat: chat.chat_id, mark_read: 1, ...(q.value ? { q: q.value } : {}) }, { preserveState: true })
+    router.get('/admin/store/avito', avitoQuery({ tab: 'chats', chat: chat.chat_id, mark_read: 1 }), { preserveState: true })
+}
+
+const markChat = (chat: Chat, payload: Record<string, string | boolean>) => {
+    router.post(`/admin/store/avito/chats/${chat.id}`, payload, { preserveScroll: true, preserveState: true })
+}
+
+const takeInWork = (chat: Chat) => markChat(chat, { workflow: 'in_progress' })
+const markDone = (chat: Chat) => markChat(chat, { workflow: 'done' })
+const returnInbox = (chat: Chat) => markChat(chat, { workflow: 'inbox' })
+const toggleFavorite = (chat: Chat) => markChat(chat, { important: !chat.important })
+
+const workflowLabel: Record<string, string> = {
+    inbox: 'общее',
+    in_progress: 'в работу',
+    done: 'выполнено',
+}
+
+const messageAuthor = (m: Message) => {
+    if (!m.from_us) return props.active_chat?.client_name || 'Гость'
+    return m.admin_name || props.active_chat?.accepted_by_name || 'Магазин'
+}
+
+const folders: { id: Folder, label: string }[] = [
+    { id: 'inbox', label: 'Общее' },
+    { id: 'in_progress', label: 'В работу' },
+    { id: 'done', label: 'Выполнено' },
+    { id: 'favorite', label: 'Избранное' },
+]
+
+const folderEmpty: Record<Folder, string> = {
+    inbox: 'Новых обращений нет.',
+    in_progress: 'Нет чатов в работе.',
+    done: 'Нет выполненных чатов.',
+    favorite: 'Нет избранных. Нажмите ★ в карточке чата.',
 }
 
 const saveSettings = () => settingsForm.put('/admin/store/avito/settings')
@@ -480,42 +542,80 @@ const messageText = (m: Message) => m.content?.text || ''
                 </div>
             </div>
 
-            <div v-if="tab === 'chats'" class="grid lg:grid-cols-[320px_1fr] gap-4 min-h-[520px]">
-                <div class="border border-white/5 rounded-2xl overflow-hidden bg-[#080808]">
-                    <div v-for="c in chats" :key="c.id"
-                         class="px-4 py-3 border-b border-white/5 cursor-pointer"
-                         :class="active_chat?.chat_id === c.chat_id ? 'bg-amber-500/10' : 'hover:bg-white/[0.03]'"
-                         @click="openChat(c)">
-                        <div class="flex justify-between gap-2">
-                            <div class="font-black uppercase text-sm truncate">{{ c.client_name || 'Гость' }}</div>
-                            <span v-if="c.unread" class="w-2 h-2 rounded-full bg-amber-400 mt-1 shrink-0"></span>
-                        </div>
-                        <div class="text-[10px] text-white/30 truncate">{{ c.config_id || c.ad_title || c.chat_id }}</div>
-                    </div>
-                    <div v-if="!chats.length" class="p-6 text-white/30 text-sm">{{ q ? 'Нет чатов с таким ID' : 'Чатов пока нет.' }}</div>
+            <div v-if="tab === 'chats'" class="space-y-4">
+                <div class="flex flex-wrap gap-2">
+                    <button v-for="f in folders" :key="f.id"
+                            class="px-4 py-2 rounded-xl text-[10px] uppercase font-black relative"
+                            :class="folder === f.id ? 'bg-amber-500 text-black' : 'border border-white/10 text-white/50'"
+                            @click="folder = f.id">
+                        {{ f.label }}
+                        <span v-if="chatCounts[f.id] > 0"
+                              class="ml-2 text-[9px] opacity-70">{{ chatCounts[f.id] }}</span>
+                    </button>
                 </div>
-                <div class="border border-white/5 rounded-2xl bg-[#080808] flex flex-col min-h-[520px]">
-                    <div v-if="active_chat" class="px-5 py-4 border-b border-white/5 flex justify-between gap-3">
-                        <div>
-                            <div class="font-black uppercase">{{ active_chat.client_name || 'Гость' }}</div>
-                            <div class="text-[10px] text-white/30">{{ active_chat.ad_title }} · {{ active_chat.config_id }}</div>
+                <div class="grid lg:grid-cols-[320px_1fr] gap-4 min-h-[520px]">
+                    <div class="border border-white/5 rounded-2xl overflow-hidden bg-[#080808]">
+                        <div v-for="c in chats" :key="c.id"
+                             class="px-4 py-3 border-b border-white/5 cursor-pointer"
+                             :class="active_chat?.chat_id === c.chat_id ? 'bg-amber-500/10' : 'hover:bg-white/[0.03]'"
+                             @click="openChat(c)">
+                            <div class="flex justify-between gap-2">
+                                <div class="font-black uppercase text-sm truncate">{{ c.client_name || 'Гость' }}</div>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <span v-if="c.important" class="text-amber-400 text-xs">★</span>
+                                    <span v-if="c.unread" class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                </div>
+                            </div>
+                            <div class="text-[10px] text-white/30 truncate">{{ c.config_id || c.ad_title || c.chat_id }}</div>
+                            <div v-if="c.accepted_by_name" class="text-[10px] text-amber-400/80 truncate mt-1">принял {{ c.accepted_by_name }}</div>
+                            <div v-else-if="folder === 'favorite'" class="text-[10px] text-white/25 uppercase mt-1">{{ workflowLabel[c.workflow] }}</div>
                         </div>
-                        <button v-if="canManage && active_chat.config_id"
-                                class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400"
-                                @click="sendBom">Отправить комплектацию</button>
+                        <div v-if="!chats.length" class="p-6 text-white/30 text-sm">{{ q ? 'Нет чатов с таким ID' : folderEmpty[folder] }}</div>
                     </div>
-                    <div class="flex-1 overflow-y-auto p-5 space-y-3">
-                        <div v-for="m in messages" :key="m.id"
-                             class="max-w-[80%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap"
-                             :class="m.from_us ? 'ml-auto bg-amber-500/15 text-amber-50' : 'bg-white/5'">
-                            {{ messageText(m) }}
+                    <div class="border border-white/5 rounded-2xl bg-[#080808] flex flex-col min-h-[520px]">
+                        <div v-if="active_chat" class="px-5 py-4 border-b border-white/5 space-y-3">
+                            <div class="flex justify-between gap-3">
+                                <div>
+                                    <div class="font-black uppercase">{{ active_chat.client_name || 'Гость' }}</div>
+                                    <div class="text-[10px] text-white/30">{{ active_chat.ad_title }} · {{ active_chat.config_id }}</div>
+                                    <div v-if="active_chat.accepted_by_name" class="text-[10px] text-amber-400 mt-1">
+                                        принял {{ active_chat.accepted_by_name }} · {{ workflowLabel[active_chat.workflow] }}
+                                    </div>
+                                    <div v-else class="text-[10px] text-white/25 uppercase mt-1">{{ workflowLabel[active_chat.workflow] }}</div>
+                                </div>
+                                <button v-if="canManage && active_chat.config_id"
+                                        class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400 h-fit"
+                                        @click="sendBom">Отправить комплектацию</button>
+                            </div>
+                            <div v-if="canManage" class="flex flex-wrap gap-2">
+                                <button class="px-3 py-2 rounded-xl border text-[10px] uppercase font-black"
+                                        :class="active_chat.important ? 'border-amber-500 bg-amber-500 text-black' : 'border-white/10 text-white/40'"
+                                        @click="toggleFavorite(active_chat)">{{ active_chat.important ? '★ В избранном' : '☆ В избранное' }}</button>
+                                <button v-if="active_chat.workflow !== 'in_progress'"
+                                        class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400"
+                                        @click="takeInWork(active_chat)">В работу</button>
+                                <button v-if="active_chat.workflow !== 'done'"
+                                        class="px-3 py-2 rounded-xl border border-emerald-500/30 text-[10px] uppercase font-black text-emerald-400"
+                                        @click="markDone(active_chat)">Выполнено</button>
+                                <button v-if="active_chat.workflow !== 'inbox'"
+                                        class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/40"
+                                        @click="returnInbox(active_chat)">В общее</button>
+                            </div>
                         </div>
+                        <div class="flex-1 overflow-y-auto p-5 space-y-3">
+                            <div v-for="m in messages" :key="m.id"
+                                 class="max-w-[80%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap"
+                                 :class="m.from_us ? 'ml-auto bg-amber-500/15 text-amber-50' : 'bg-white/5'">
+                                <div class="text-[9px] uppercase tracking-widest opacity-50 mb-1">{{ messageAuthor(m) }}</div>
+                                {{ messageText(m) }}
+                            </div>
+                        </div>
+                        <form v-if="canManage && active_chat" class="p-4 border-t border-white/5 flex gap-2" @submit.prevent="sendReply">
+                            <input v-model="reply.text" class="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" placeholder="Ответ в Avito…" />
+                            <button class="px-5 py-3 bg-amber-500 text-black text-[10px] uppercase font-black rounded-xl" :disabled="reply.processing">Отправить</button>
+                        </form>
+                        <div v-if="!active_chat" class="m-auto text-white/30 text-sm">Выберите чат</div>
                     </div>
-                    <form v-if="canManage && active_chat" class="p-4 border-t border-white/5 flex gap-2" @submit.prevent="sendReply">
-                        <input v-model="reply.text" class="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" placeholder="Ответ в Avito…" />
-                        <button class="px-5 py-3 bg-amber-500 text-black text-[10px] uppercase font-black rounded-xl" :disabled="reply.processing">Отправить</button>
-                    </form>
-                    <div v-if="!active_chat" class="m-auto text-white/30 text-sm">Выберите чат</div>
                 </div>
             </div>
 
