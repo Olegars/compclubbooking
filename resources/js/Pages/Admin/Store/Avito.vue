@@ -458,6 +458,27 @@ const sendBom = () => {
 
 const connectWebhook = () => router.post('/admin/store/avito/webhook', {}, { preserveScroll: true })
 
+const ringtoneInput = ref<HTMLInputElement | null>(null)
+const uploadingRingtone = ref(false)
+const pickRingtone = () => ringtoneInput.value?.click()
+const onRingtoneChosen = (e: Event) => {
+    const input = e.target as HTMLInputElement
+    const file = input.files?.[0]
+    input.value = ''
+    if (!file || uploadingRingtone.value) return
+    uploadingRingtone.value = true
+    router.post('/admin/store/avito/ringtone', { ringtone: file }, {
+        forceFormData: true,
+        preserveScroll: true,
+        onFinish: () => { uploadingRingtone.value = false },
+    })
+}
+const clearRingtone = () => router.delete('/admin/store/avito/ringtone', { preserveScroll: true })
+const previewRingtone = () => {
+    const src = String(props.settings.ringtone_url || '').trim() || '/sounds/notification.mp3'
+    new Audio(src).play().catch(() => {})
+}
+
 const copyFeed = async () => {
     try {
         await navigator.clipboard.writeText(props.feed_url)
@@ -862,6 +883,18 @@ const initials = (name?: string | null) => {
                         </label>
                     </div>
                     <textarea v-model="settingsForm.auto_reply_text" rows="3" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
+                    <div class="space-y-2">
+                        <div class="text-[10px] uppercase tracking-widest text-white/40">Рингтон нового сообщения</div>
+                        <p class="text-[11px] text-white/35 leading-relaxed">Играет во всей админке, когда появляется непрочитанный чат. mp3, wav, ogg или m4a, до 4 МБ.</p>
+                        <audio :src="settings.ringtone_url || '/sounds/notification.mp3'" controls class="w-full h-10" />
+                        <div class="flex flex-wrap items-center gap-3">
+                            <input ref="ringtoneInput" type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,.mp3,.wav,.ogg,.oga,.m4a,.aac" class="hidden" @change="onRingtoneChosen" />
+                            <button type="button" class="px-4 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400 disabled:opacity-40" :disabled="uploadingRingtone" @click="pickRingtone">{{ uploadingRingtone ? 'Загрузка…' : 'Загрузить рингтон' }}</button>
+                            <button type="button" class="px-4 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50" @click="previewRingtone">Прослушать</button>
+                            <button v-if="settings.has_custom_ringtone" type="button" class="px-4 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/40" @click="clearRingtone">Сбросить</button>
+                            <span class="text-[11px] text-white/35">{{ settings.has_custom_ringtone ? 'свой файл' : 'стандартный звук' }}</span>
+                        </div>
+                    </div>
                     <button type="button" class="px-4 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400" @click="connectWebhook">Зарегистрировать webhook</button>
                 </div>
 

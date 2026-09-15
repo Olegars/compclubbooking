@@ -13,6 +13,8 @@ use App\Services\StoreAvito\StoreAvitoDictSyncService;
 use App\Services\StoreAvito\StoreAvitoGenerateLauncher;
 use App\Services\StoreAvito\StoreAvitoMessengerService;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -149,6 +151,62 @@ class AvitoController extends StoreController
         $settings->fill($data)->save();
 
         return back()->with('success', 'Настройки Avito сохранены.');
+    }
+
+    public function uploadRingtone(Request $request)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+
+        $request->validate([
+            'ringtone' => 'required|file|max:4096',
+        ]);
+        $file = $request->file('ringtone');
+        abort_unless($file instanceof UploadedFile, 422);
+        $ext = strtolower($file->getClientOriginalExtension() ?: '');
+        if (! in_array($ext, ['mp3', 'wav', 'ogg', 'oga', 'm4a', 'aac'], true)) {
+            throw ValidationException::withMessages([
+                'ringtone' => 'Нужен аудиофайл mp3, wav, ogg или m4a (до 4 МБ).',
+            ]);
+        }
+
+        $settings = StoreAvitoSetting::current();
+        $this->deleteRingtoneFile($settings);
+        $path = $file->storeAs('avito', 'ringtone.'.$ext, 'public');
+        $settings->forceFill(['ringtone_path' => $path])->save();
+
+        return back()->with('success', 'Рингтон сохранён.');
+    }
+
+    public function clearRingtone()
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+
+        $settings = StoreAvitoSetting::current();
+        $this->deleteRingtoneFile($settings);
+        $settings->forceFill(['ringtone_path' => null])->save();
+
+        return back()->with('success', 'Рингтон сброшен на стандартный.');
+    }
+
+    private function deleteRingtoneFile(StoreAvitoSetting $settings): void
+    {
+        $disk = Storage::disk('public');
+        $current = trim((string) ($settings->ringtone_path ?? ''));
+        if ($current !== '' && $disk->exists($current)) {
+            $disk->delete($current);
+        }
+        try {
+            if (! $disk->exists('avito')) {
+                return;
+            }
+            foreach ($disk->files('avito') as $file) {
+                if (str_starts_with(basename($file), 'ringtone.')) {
+                    $disk->delete($file);
+                }
+            }
+        } catch (\Throwable) {
+            // каталог public/avito может ещё не существовать
+        }
     }
 
     public function storeConfig(Request $request)
@@ -379,6 +437,8 @@ class AvitoController extends StoreController
             'auto_reply_from' => $settings->auto_reply_from,
             'auto_reply_to' => $settings->auto_reply_to,
             'auto_reply_text' => $settings->auto_reply_text,
+            'ringtone_url' => $settings->ringtoneUrl(),
+            'has_custom_ringtone' => filled($settings->ringtone_path),
             'last_generated_at' => $settings->last_generated_at?->toIso8601String(),
             'last_generate_result' => $settings->last_generate_result,
             'last_error' => $settings->last_error,

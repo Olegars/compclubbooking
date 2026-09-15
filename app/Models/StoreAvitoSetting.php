@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class StoreAvitoSetting extends Model
@@ -19,6 +20,7 @@ class StoreAvitoSetting extends Model
         'client_id', 'client_secret', 'access_token', 'refresh_token',
         'access_token_expires_at', 'avito_user_id', 'feed_token',
         'auto_reply_enabled', 'auto_reply_from', 'auto_reply_to', 'auto_reply_text',
+        'ringtone_path',
         'last_generated_at', 'last_generate_result', 'last_error',
         'last_dict_sync_at', 'last_dict_sync_result', 'last_config_id',
     ];
@@ -105,6 +107,41 @@ class StoreAvitoSetting extends Model
     public function hasMessenger(): bool
     {
         return $this->hasAvitoApi() && (int) $this->avito_user_id > 0;
+    }
+
+    public const DEFAULT_RINGTONE = '/sounds/notification.mp3';
+
+    public function ringtoneUrl(): string
+    {
+        $path = trim((string) ($this->ringtone_path ?? ''));
+        if ($path === '') {
+            return self::DEFAULT_RINGTONE;
+        }
+        try {
+            $disk = Storage::disk('public');
+            if (! $disk->exists($path)) {
+                return self::DEFAULT_RINGTONE;
+            }
+            $url = $disk->url($path);
+            try {
+                return $url.'?v='.$disk->lastModified($path);
+            } catch (\Throwable) {
+                return $url;
+            }
+        } catch (\Throwable) {
+            return self::DEFAULT_RINGTONE;
+        }
+    }
+
+    public static function sharedRingtoneUrl(): string
+    {
+        if (! Schema::hasTable('store_avito_settings')) {
+            return self::DEFAULT_RINGTONE;
+        }
+
+        $row = self::query()->orderBy('id')->first();
+
+        return $row ? $row->ringtoneUrl() : self::DEFAULT_RINGTONE;
     }
 
     public static function configPhrase(string $configId): string

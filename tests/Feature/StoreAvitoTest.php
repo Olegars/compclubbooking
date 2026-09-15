@@ -457,6 +457,53 @@ class StoreAvitoTest extends TestCase
         $this->assertSame('in_progress', $chat->fresh()->workflow);
     }
 
+    public function test_owner_can_upload_and_clear_avito_ringtone(): void
+    {
+        $root = sys_get_temp_dir().DIRECTORY_SEPARATOR.'avito-ringtone-'.uniqid('', true);
+        mkdir($root, 0777, true);
+        config(['filesystems.disks.public.root' => $root]);
+        Storage::forgetDisk('public');
+
+        $owner = Admin::create([
+            'name' => 'Owner',
+            'email' => 'owner-ringtone@avito.test',
+            'password' => 'password',
+            'role' => 'owner',
+            'club_id' => $this->club->id,
+        ]);
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->get('/admin/store/avito?tab=settings')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('settings.has_custom_ringtone', false)
+                ->where('settings.ringtone_url', StoreAvitoSetting::DEFAULT_RINGTONE)
+                ->where('avito_ringtone_url', StoreAvitoSetting::DEFAULT_RINGTONE)
+            );
+
+        $this->post('/admin/store/avito/ringtone', [
+            'ringtone' => $this->fakeAvitoRingtone(),
+        ])->assertRedirect();
+
+        $settings = StoreAvitoSetting::current();
+        $this->assertSame('avito/ringtone.wav', $settings->ringtone_path);
+        $this->assertTrue(Storage::disk('public')->exists('avito/ringtone.wav'));
+        $this->assertStringContainsString('/storage/avito/ringtone.wav', $settings->ringtoneUrl());
+
+        $this->get('/admin/store/avito?tab=settings')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('settings.has_custom_ringtone', true)
+                ->where('avito_ringtone_url', $settings->ringtoneUrl())
+            );
+
+        $this->delete('/admin/store/avito/ringtone')->assertRedirect();
+        $this->assertNull($settings->fresh()->ringtone_path);
+        $this->assertFalse(Storage::disk('public')->exists('avito/ringtone.wav'));
+        $this->assertSame(StoreAvitoSetting::DEFAULT_RINGTONE, $settings->fresh()->ringtoneUrl());
+    }
+
     public function test_webhook_stores_incoming_image_once(): void
     {
         $payload = [
@@ -1591,6 +1638,31 @@ class StoreAvitoTest extends TestCase
         ));
 
         return new UploadedFile($path, 'shot.png', 'image/png', null, true);
+    }
+
+    private function fakeAvitoRingtone(): UploadedFile
+    {
+        $data = str_repeat("\x00", 16);
+        $wav = pack(
+            'A4VA4A4VvvVVvva4V',
+            'RIFF',
+            36 + strlen($data),
+            'WAVE',
+            'fmt ',
+            16,
+            1,
+            1,
+            8000,
+            8000,
+            1,
+            8,
+            'data',
+            strlen($data)
+        ).$data;
+        $path = sys_get_temp_dir().DIRECTORY_SEPARATOR.'avito-ring-'.uniqid('', true).'.wav';
+        file_put_contents($path, $wav);
+
+        return new UploadedFile($path, 'ringtone.wav', 'audio/wav', null, true);
     }
 
     private function makeAvitoManager(string $name, string $email): Admin

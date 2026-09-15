@@ -458,6 +458,8 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
 
             Route::get('/avito', [StoreAvitoController::class, 'index'])->name('admin.store.avito');
             Route::put('/avito/settings', [StoreAvitoController::class, 'updateSettings'])->name('admin.store.avito.settings');
+            Route::post('/avito/ringtone', [StoreAvitoController::class, 'uploadRingtone'])->name('admin.store.avito.ringtone');
+            Route::delete('/avito/ringtone', [StoreAvitoController::class, 'clearRingtone'])->name('admin.store.avito.ringtone.clear');
             Route::post('/avito/generate', [StoreAvitoController::class, 'generate'])->name('admin.store.avito.generate');
             Route::post('/avito/dicts', [StoreAvitoController::class, 'syncDicts'])->name('admin.store.avito.dicts');
             Route::post('/avito/configs', [StoreAvitoController::class, 'storeConfig'])->name('admin.store.avito.configs.store');

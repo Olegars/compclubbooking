@@ -25,7 +25,7 @@ const { counts, setCounts, avitoUnreadGrew, playAvitoPing } = useAdminAlerts()
 
 const applyAlerts = (next) => {
     if (!next) return
-    if (avitoUnreadGrew(next)) playAvitoPing()
+    if (avitoUnreadGrew(next)) playAvitoPing(page.props.avito_ringtone_url)
     setCounts(next)
 }
 

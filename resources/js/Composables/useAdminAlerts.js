@@ -27,8 +27,9 @@ const avitoUnreadGrew = (next) => {
     return grew
 }
 
-const playAvitoPing = () => {
-    new Audio('/sounds/notification.mp3').play().catch(() => {})
+const playAvitoPing = (url) => {
+    const src = String(url || '').trim() || '/sounds/notification.mp3'
+    new Audio(src).play().catch(() => {})
 }
 
 export function useAdminAlerts() {
