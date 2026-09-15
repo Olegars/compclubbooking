@@ -8,6 +8,7 @@ use App\Models\ProductUnit;
 use App\Models\Shift;
 use App\Models\ShiftIntern;
 use App\Models\ShiftInventory;
+use App\Support\AdminAlerts;
 use App\Support\AdminShift;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -344,6 +345,7 @@ class ShiftHandoverService
         return [
             'admin_shift' => $shift,
             'handover' => $this->pagePayload($viewer),
+            'admin_alerts' => AdminAlerts::counts(),
         ];
     }
 

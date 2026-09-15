@@ -10,6 +10,8 @@ const counts = reactive({
     avito_unread: 0,
 })
 
+let lastAvitoUnread = null
+
 const setCounts = (next) => {
     if (!next) return
     Object.keys(counts).forEach(key => {
@@ -17,6 +19,18 @@ const setCounts = (next) => {
     })
 }
 
+const avitoUnreadGrew = (next) => {
+    const value = Number(next?.avito_unread)
+    if (!Number.isFinite(value)) return false
+    const grew = lastAvitoUnread !== null && value > lastAvitoUnread
+    lastAvitoUnread = value
+    return grew
+}
+
+const playAvitoPing = () => {
+    new Audio('/sounds/notification.mp3').play().catch(() => {})
+}
+
 export function useAdminAlerts() {
-    return { counts, setCounts }
+    return { counts, setCounts, avitoUnreadGrew, playAvitoPing }
 }

@@ -21,9 +21,15 @@ const currentPath = computed(() => {
 
 const isActive = (url: string) => currentPath.value === url || currentPath.value.startsWith(url + '/')
 
-const { counts, setCounts } = useAdminAlerts()
+const { counts, setCounts, avitoUnreadGrew, playAvitoPing } = useAdminAlerts()
 
-watch(() => page.props.admin_alerts, (next) => setCounts(next), { immediate: true, deep: true })
+const applyAlerts = (next) => {
+    if (!next) return
+    if (avitoUnreadGrew(next)) playAvitoPing()
+    setCounts(next)
+}
+
+watch(() => page.props.admin_alerts, (next) => applyAlerts(next), { immediate: true, deep: true })
 
 const admin = computed(() => page.props.admin_user as any)
 const adminName = computed(() => admin.value?.name || admin.value?.email || 'Оператор')
@@ -101,6 +107,7 @@ const pollShiftStatus = async () => {
     if (kicking.value) return
     try {
         const { data } = await axios.get('/admin/api/shifts/status')
+        applyAlerts(data?.admin_alerts)
         const next = data?.admin_shift?.overlay || null
         if (next) overlay.value = next
         if (next === 'handed_over') {

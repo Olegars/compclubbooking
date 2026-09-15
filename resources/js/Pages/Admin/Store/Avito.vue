@@ -183,6 +183,7 @@ const dictSyncing = computed(() => props.settings?.last_dict_sync_result?.status
 const dictStats = computed(() => props.settings?.dict_stats || {})
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let chatPollTimer: ReturnType<typeof setInterval> | null = null
 watch([generating, dictSyncing], ([gen, dict]) => {
     if (pollTimer) {
         clearInterval(pollTimer)
@@ -193,8 +194,24 @@ watch([generating, dictSyncing], ([gen, dict]) => {
         router.reload({ only: ['ads', 'settings', 'configs'], preserveScroll: true })
     }, 5000)
 }, { immediate: true })
+
+watch(tab, (t) => {
+    if (chatPollTimer) {
+        clearInterval(chatPollTimer)
+        chatPollTimer = null
+    }
+    if (t !== 'chats') return
+    chatPollTimer = setInterval(() => {
+        router.reload({
+            only: ['chats', 'messages', 'unread', 'chat_counts', 'active_chat', 'admin_alerts'],
+            preserveScroll: true,
+            preserveState: true,
+        })
+    }, 7000)
+}, { immediate: true })
 onUnmounted(() => {
     if (pollTimer) clearInterval(pollTimer)
+    if (chatPollTimer) clearInterval(chatPollTimer)
     if (photoPreview.value) URL.revokeObjectURL(photoPreview.value)
 })
 
