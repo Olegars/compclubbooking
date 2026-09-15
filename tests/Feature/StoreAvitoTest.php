@@ -446,7 +446,7 @@ class StoreAvitoTest extends TestCase
             ->withoutMiddleware(ValidateCsrfToken::class)
             ->post('/admin/store/avito/chats/image', [
                 'chat_id' => $chat->chat_id,
-                'image' => UploadedFile::fake()->image('shot.jpg', 80, 60),
+                'image' => $this->fakeAvitoPhoto(),
             ])
             ->assertRedirect();
 
@@ -1581,6 +1581,16 @@ class StoreAvitoTest extends TestCase
         $result = app(StoreAvitoAdGenerator::class)->generate(1, enrich: false);
         $this->assertSame(0, $result['created']);
         $this->assertStringContainsString('нет платы B650', (string) ($result['error'] ?? ''));
+    }
+
+    private function fakeAvitoPhoto(): UploadedFile
+    {
+        $path = sys_get_temp_dir().DIRECTORY_SEPARATOR.'avito-shot-'.uniqid('', true).'.png';
+        file_put_contents($path, base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+        ));
+
+        return new UploadedFile($path, 'shot.png', 'image/png', null, true);
     }
 
     private function makeAvitoManager(string $name, string $email): Admin
