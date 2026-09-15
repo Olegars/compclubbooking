@@ -576,6 +576,11 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::post('/tournaments', [TournamentController::class, 'store']);
         Route::patch('/tournaments/{tournament}/status', [TournamentController::class, 'updateStatus']);
         Route::delete('/tournaments/{tournament}', [TournamentController::class, 'destroy']);
+        Route::post('/tournaments/{tournament}/players', [TournamentController::class, 'addPlayer']);
+        Route::delete('/tournaments/{tournament}/players/{player}', [TournamentController::class, 'removePlayer']);
+        Route::post('/tournaments/{tournament}/bracket', [TournamentController::class, 'generateBracket']);
+        Route::patch('/tournaments/{tournament}/matches/{match}', [TournamentController::class, 'reportMatch']);
+        Route::post('/tournaments/{tournament}/payout', [TournamentController::class, 'payout']);
 
         // Промокоды
         Route::get('/promocodes', [PromoCodeAdminController::class, 'index'])->name('admin.promocodes.index');

@@ -192,7 +192,7 @@ class SystemDocs
                 'items' => [
                     [
                         'title' => 'Менеджер ивентов',
-                        'description' => 'Список турниров с привязкой к играм. CRUD и смена статусов — в разработке (заготовка).',
+                        'description' => "Турнир Single Elimination на /admin/tournaments: создать ивент, ПК арены, призы 1/2/3 на депозит, регистрация гостей по телефону, сетка (bye до степени двойки), счёт матчей вручную, «Завершить + призы». Два проигравших полуфинала делят 3 место. Повторной выплаты нет (prizes_paid_at).\n\nПока ивент active и lock_games включён, GET /api/shell/games?terminal_id= на привязанных ПК отдаёт только игру турнира (в т.ч. полоса featured). Это не оверлей и не блокировка Win+Tab — каталог шелла.\n\nНе подключено и не планируется в этом контуре: Swiss / Double Elim, авторезультаты Steam Web API / Valve Game Coordinator, split-check ЮKassa на компанию, NVENC-клипы и шаринг в Telegram (writeback гибрида C: клипы не переживает, Cloud Saves — мелкий текст, бота нет).",
                         'path' => '/admin/tournaments',
                         'audience' => 'Supervisor+',
                     ],
@@ -606,7 +606,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Лендинг и бронирование',
-                        'description' => 'Публичная карта клуба, зоны, тарифы, availability ПК и игр, расчёт цены, бронь с PIN. Есть киоск `/terminal`.',
+                        'description' => 'Публичная карта клуба, зоны, тарифы, availability ПК и игр, расчёт цены, бронь с PIN. Есть киоск `/terminal`.\n\nПати: в сайдбаре «Сесть рядом» выбирает N свободных мест подряд в одной зоне (type + space_id, по номеру в имени ПК). Оплата как у обычной мультиброни (один BookingGroup, один PIN) — отдельной ссылки сплит-чека нет.',
                         'path' => '/booking',
                         'audience' => 'Гость / Игрок',
                     ],
@@ -678,7 +678,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Игры на ПК',
-                        'description' => 'Список игр, топы, запись запуска, take/free аккаунта, pause/unpause (новый PIN), обновление VDF-кэша.',
+                        'description' => 'Список игр, топы, запись запуска, take/free аккаунта, pause/unpause (новый PIN), обновление VDF-кэша. GET /api/shell/games передаёт terminal_id: если ПК в активном турнире с lock_games, каталог и featured сужаются до игры ивента.',
                         'path' => null,
                         'audience' => 'Shell',
                     ],
@@ -696,7 +696,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Магазин с ПК',
-                        'description' => 'Каталог, checkout и статус заказа прямо с терминала игрока.',
+                        'description' => 'Каталог, checkout и статус заказа прямо с терминала игрока. Если бронь в BookingGroup на несколько ПК, login/balance отдают party {count, names, computer_ids}. В корзине шелла галка «заказ на пати»: один чек капитана, в названии «Пати ПК-01, ПК-02: …», pc_name остаётся местом капитана (чтобы статус заказа на шелле не отвалился). Сплит по QR и N отдельных заказов нет — остаток бара один.',
                         'path' => null,
                         'audience' => 'Shell',
                     ],

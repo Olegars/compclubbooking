@@ -772,6 +772,67 @@ const toggleSeatSelection = (id: string) => {
     // Клик по месту / TV — только комната, без допа
 }
 
+const partySize = ref(2)
+const partyHint = ref('')
+
+const seatNumber = (name: string): number | null => {
+    const m = String(name).match(/(\d+)\s*$/)
+    return m ? parseInt(m[1], 10) : null
+}
+
+const sitTogether = () => {
+    partyHint.value = ''
+    const size = Math.max(2, Math.min(8, Number(partySize.value) || 2))
+    const occupied = new Set(occupiedIds.value.map(String))
+    const anchor = selectedIds.value[0] ? String(selectedIds.value[0]) : null
+    const pcs = props.computersList.filter((pc: any) => String(pc.kind || 'pc') === 'pc')
+    const groups = new Map<string, any[]>()
+    for (const pc of pcs) {
+        const key = `${pc.type || ''}|${pc.space_id || 0}`
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key)!.push(pc)
+    }
+
+    const pickRun = (list: any[]): string[] => {
+        const sorted = [...list].sort((a, b) => {
+            const na = seatNumber(String(a.name ?? ''))
+            const nb = seatNumber(String(b.name ?? ''))
+            if (na !== null && nb !== null && na !== nb) return na - nb
+            return String(a.name ?? '').localeCompare(String(b.name ?? ''), 'ru', { numeric: true })
+        })
+        const free = sorted.filter(pc => !occupied.has(String(pc.id)))
+        for (let i = 0; i <= free.length - size; i++) {
+            const slice = free.slice(i, i + size)
+            const nums = slice.map(pc => seatNumber(String(pc.name ?? '')))
+            const consecutive = nums.every(n => n !== null)
+                ? nums.every((n, idx) => idx === 0 || n === (nums[idx - 1] as number) + 1)
+                : true
+            if (!consecutive) continue
+            const ids = slice.map(pc => String(pc.id))
+            if (anchor && ids.includes(anchor)) return ids
+            if (!anchor) return ids
+        }
+        return []
+    }
+
+    let found: string[] = []
+    for (const group of groups.values()) {
+        const run = pickRun(group)
+        if (run.length && anchor && run.includes(anchor)) {
+            found = run
+            break
+        }
+        if (!found.length && run.length) found = run
+    }
+
+    if (!found.length) {
+        partyHint.value = `Нет ${size} свободных мест подряд в одной зоне`
+        return
+    }
+    selectedIds.value = found
+    partyHint.value = `Выбрано ${found.length} мест подряд`
+}
+
 /** Клик по PS → комната + доп. Повторный клик снимает только доп (комната остаётся). */
 const toggleAddonSeats = (payload: { addonId: number; seatIds: string[] }) => {
     const freeIds = (payload.seatIds || []).filter(id => !occupiedIds.value.includes(id))
@@ -1226,7 +1287,17 @@ onUnmounted(() => {
                             </div>
                         </div>
 
-                        <p class="step-label"><span class="step-num">02</span> Дата и время</p>
+                        <div class="mb-4 flex items-center gap-2">
+                            <span class="text-[9px] text-slate-500 font-black uppercase tracking-widest shrink-0">Пати</span>
+                            <select v-model.number="partySize" class="bg-black border border-white/10 rounded-xl px-3 py-2 text-[11px] font-mono">
+                                <option v-for="n in [2,3,4,5,6,8]" :key="n" :value="n">{{ n }} места</option>
+                            </select>
+                            <button type="button" @click="sitTogether"
+                                    class="flex-1 py-2 rounded-xl border border-[#22c55e]/40 bg-[#22c55e]/10 text-[#22c55e] text-[10px] font-black uppercase tracking-widest">
+                                Сесть рядом
+                            </button>
+                        </div>
+                        <p v-if="partyHint" class="mb-3 text-[9px] uppercase tracking-widest" :class="partyHint.startsWith('Нет') ? 'text-red-400' : 'text-white/40'">{{ partyHint }}</p>
                         <div class="mb-2.5 shrink-0">
                             <div class="flex gap-2 overflow-x-auto pb-2 no-scrollbar flex-nowrap scroll-smooth">
                                 <div v-for="d in days" :key="d.full" @click="!d.disabled && (selectedDate = d.full)"

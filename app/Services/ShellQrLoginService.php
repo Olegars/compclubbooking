@@ -467,6 +467,7 @@ class ShellQrLoginService
                 'is_stub' => (bool) ($primaryReceipt['is_stub'] ?? false),
             ] : null,
             'fiscal_receipts' => $fiscalReceipts,
+            'party' => app(PartyBookingService::class)->payloadForBooking($booking),
         ];
     }
 

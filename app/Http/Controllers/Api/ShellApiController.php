@@ -35,8 +35,10 @@ use App\Services\ComputerStatusService;
 use App\Services\Fan\FanControlService;
 use App\Services\Light\LightControlService;
 use App\Services\GameRequestService;
+use App\Services\PartyBookingService;
 use App\Services\PreSessionOrderService;
 use App\Services\ProductStockService;
+use App\Services\TournamentService;
 use App\Services\UserCloudSettingsService;
 use App\Services\VideoMarkerService;
 use App\Services\ShellQrLoginService;
@@ -293,6 +295,7 @@ class ShellApiController extends Controller
                     'is_stub' => (bool) ($primaryReceipt['is_stub'] ?? false),
                 ] : null,
                 'fiscal_receipts' => $fiscalReceipts,
+                'party' => app(PartyBookingService::class)->payloadForBooking($booking),
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -516,6 +519,9 @@ class ShellApiController extends Controller
                 'session_active' => $sessionActive,
                 'time_remaining' => $timeRemaining,
                 'relocated' => $booking && $terminalId > 0 && ! $sessionActive && $booking->status === 'active',
+                'party' => $sessionActive && $booking
+                    ? app(PartyBookingService::class)->payloadForBooking($booking)
+                    : ['count' => 0, 'names' => [], 'computer_ids' => []],
             ]);
         } catch (\Throwable $e) {
             Log::error('Shell API getBalance: '.$e->getMessage());
@@ -529,14 +535,29 @@ class ShellApiController extends Controller
     public function getGames(Request $request)
     {
         try {
-            $games = Game::query()
-                ->orderBy('title')
+            $terminalId = (int) $request->query('terminal_id', 0);
+            $lockGameId = $terminalId > 0
+                ? app(TournamentService::class)->lockGameIdForComputer($terminalId)
+                : null;
+
+            $query = Game::query()->orderBy('title');
+            if ($lockGameId) {
+                $query->where('id', $lockGameId);
+            }
+
+            $games = $query
                 ->get()
                 ->map(fn (Game $game) => $this->mapGamePayload($game))
                 ->values();
 
             $userId = (int) $request->query('user_id', 0);
             $featured = $this->buildFeaturedGames($userId > 0 ? $userId : null);
+            if ($lockGameId) {
+                $featured['games'] = collect($featured['games'] ?? [])
+                    ->filter(fn ($g) => (int) ($g['id'] ?? 0) === $lockGameId)
+                    ->values()
+                    ->all();
+            }
 
             // Enriched payload for personalization; shell understands both array and object.
             return response()->json([
@@ -1548,6 +1569,7 @@ class ShellApiController extends Controller
             'items' => 'nullable|array|min:1',
             'items.*.product_id' => 'required_with:items|exists:products,id',
             'items.*.qty' => 'nullable|integer|min:1|max:50',
+            'for_party' => 'nullable|boolean',
         ]);
 
         $rawItems = $request->input('items');
@@ -1591,6 +1613,8 @@ class ShellApiController extends Controller
 
             $booking = $resolved['booking'];
             $pcName = $resolved['pc_name'] ?: OrderDeliveryTarget::labelForComputerId($terminalId);
+            $party = app(PartyBookingService::class)->payloadForBooking($booking);
+            $forParty = $request->boolean('for_party') && ($party['count'] ?? 0) > 1;
 
             $user = User::find($booking->user_id);
             if (!$user) {
@@ -1641,6 +1665,9 @@ class ShellApiController extends Controller
             }
 
             $summary = Order::summaryFromItems($lineItems);
+            if ($forParty) {
+                $summary = 'Пати '.implode(', ', $party['names']).': '.$summary;
+            }
             $orderAttrs = $preSession->orderCreateAttributes($resolved, $pcName);
             $newBalance = $balance;
             $orderId = 0;
@@ -1659,6 +1686,8 @@ class ShellApiController extends Controller
                 $summary,
                 $stockService,
                 $orderAttrs,
+                $forParty,
+                $party,
                 &$newBalance,
                 &$orderId,
                 &$orderStatus,
@@ -1675,6 +1704,7 @@ class ShellApiController extends Controller
                     'payload' => [
                         'order_items' => $lineItems,
                         'terminal_id' => (int) $request->terminal_id,
+                        'party' => $forParty ? ($party['names'] ?? []) : null,
                     ],
                 ]);
                 $transactionId = (int) $tx->id;
