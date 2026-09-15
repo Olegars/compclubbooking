@@ -298,6 +298,7 @@ class ShellApiController extends Controller
                 ] : null,
                 'fiscal_receipts' => $fiscalReceipts,
                 'party' => app(PartyBookingService::class)->payloadForBooking($booking),
+                ...$this->lanLiveExtras($booking, $user),
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -323,8 +324,11 @@ class ShellApiController extends Controller
         }
 
         $issued = $qr->issue($computer);
+        $throne = app(\App\Services\LanLive\PcThroneService::class)->payload($computer);
 
-        return response()->json(array_merge(['status' => 'ok'], $issued));
+        return response()->json(array_merge(['status' => 'ok'], $issued, [
+            'throne' => $throne,
+        ]));
     }
 
     public function qrStatus(Request $request, ShellQrLoginService $qr)
@@ -507,6 +511,11 @@ class ShellApiController extends Controller
                     $sessionActive = true;
                     $timing = app(BookingSessionTimingService::class);
                     $booking = $timing->healSkewedWindow($booking);
+                    try {
+                        app(\App\Services\LanLive\PartyEnergyPoolService::class)->maybeSiphon($booking, true);
+                        $booking = $booking->fresh() ?? $booking;
+                    } catch (\Throwable) {
+                    }
                     $timeRemaining = $timing->formatRemainingHms($booking);
                 }
             }
@@ -524,6 +533,9 @@ class ShellApiController extends Controller
                 'party' => $sessionActive && $booking
                     ? app(PartyBookingService::class)->payloadForBooking($booking)
                     : ['count' => 0, 'names' => [], 'computer_ids' => []],
+                ...($sessionActive && $booking
+                    ? $this->lanLiveExtras($booking, $user)
+                    : []),
             ]);
         } catch (\Throwable $e) {
             Log::error('Shell API getBalance: '.$e->getMessage());
@@ -2557,6 +2569,17 @@ class ShellApiController extends Controller
                 $settingsSaved = false;
                 $settingsError = null;
 
+                try {
+                    if ($booking->user_id) {
+                        $lfgUser = User::query()->find($booking->user_id);
+                        if ($lfgUser) {
+                            app(\App\Services\LanLive\LanMatchmakingService::class)->cancel($lfgUser, $booking);
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('LFG cancel on logout: '.$e->getMessage());
+                }
+
                 // Persist cloud pack BEFORE closing the session (user_id still known).
                 if ($booking->user_id && $request->filled('settings_pack')) {
                     try {
@@ -2767,7 +2790,9 @@ class ShellApiController extends Controller
                 Log::warning('Light state after heartbeat failed: '.$e->getMessage());
             }
 
-            return response()->json(array_merge(['status' => 'success', 'light' => $lightState], $result), 200);
+            return response()->json(array_merge(['status' => 'success', 'light' => $lightState], $result, [
+                'throne' => app(\App\Services\LanLive\PcThroneService::class)->payload($computer),
+            ]), 200);
         } catch (\Throwable $e) {
             Log::error('Shell API Power Heartbeat Error: '.$e->getMessage());
 
@@ -2925,6 +2950,9 @@ class ShellApiController extends Controller
             'terminal_id' => 'required|integer',
             'duration_sec' => 'nullable|integer|min:5|max:180',
             'clip' => 'required|file|max:49152',
+            'share_token' => 'nullable|string|min:24|max:48',
+            'aspect' => 'nullable|in:9:16,16:9,1:1',
+            'source' => 'nullable|in:manual,kill,logout',
         ]);
 
         $terminalId = (int) $request->terminal_id;
@@ -2949,7 +2977,12 @@ class ShellApiController extends Controller
             $request->file('clip'),
             $booking,
             $computer,
-            (int) $request->input('duration_sec', 60)
+            (int) $request->input('duration_sec', 60),
+            [
+                'share_token' => (string) $request->input('share_token', ''),
+                'aspect' => (string) $request->input('aspect', ''),
+                'source' => (string) $request->input('source', 'manual'),
+            ]
         );
 
         return response()->json([
@@ -3059,6 +3092,35 @@ class ShellApiController extends Controller
                 'status' => 'error',
                 'message' => 'Ошибка сервера при сохранении настроек',
             ], 500);
+        }
+    }
+
+    /**
+     * Resolve player from active booking on terminal; optional user_id must match.
+     */
+    private function lanLiveExtras(Booking $booking, User $user): array
+    {
+        try {
+            $computer = Computer::query()->find((int) $booking->computer_id);
+            if (! $computer) {
+                return [];
+            }
+            $ctrl = app(\App\Http\Controllers\Api\ShellLanLiveController::class);
+            $pack = $ctrl->livePayload($computer, $booking, $user);
+
+            return [
+                'bounties' => $pack['bounties'] ?? [],
+                'bounty_targets' => $pack['bounty_targets'] ?? [],
+                'bounty_products' => $pack['bounty_products'] ?? [],
+                'party_energy' => $pack['party_energy'] ?? null,
+                'ghost_coach' => $pack['ghost_coach'] ?? true,
+                'throne' => $pack['throne'] ?? null,
+                'lfg' => $pack['lfg'] ?? null,
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('lan-live extras: '.$e->getMessage());
+
+            return [];
         }
     }
 

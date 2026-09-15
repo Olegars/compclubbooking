@@ -43,6 +43,7 @@ return [
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
         'clips_chat_id' => env('TELEGRAM_CLIPS_CHAT_ID'),
+        'clips_guest_chat_id' => env('TELEGRAM_CLIPS_GUEST_CHAT_ID'),
         'clips_auto' => env('TELEGRAM_CLIPS_AUTO', false),
     ],
 

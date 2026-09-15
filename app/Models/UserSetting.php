@@ -15,12 +15,14 @@ class UserSetting extends Model
         'light_brightness',
         'light_effect',
         'light_interactive',
+        'ghost_coach_enabled',
     ];
 
     protected $casts = [
         'payload' => 'array',
         'light_brightness' => 'integer',
         'light_interactive' => 'boolean',
+        'ghost_coach_enabled' => 'boolean',
     ];
 
     public function user(): BelongsTo

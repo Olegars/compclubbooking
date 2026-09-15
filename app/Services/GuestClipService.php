@@ -19,12 +19,16 @@ class GuestClipService
 
     public const MAX_PER_USER = 20;
 
+    /**
+     * @param  array{share_token?:string,aspect?:string,source?:string}  $meta
+     */
     public function storeUpload(
         User $user,
         UploadedFile $file,
         ?Booking $booking,
         ?Computer $computer,
-        int $durationSec = 60
+        int $durationSec = 60,
+        array $meta = [],
     ): GuestClip {
         if (strtolower((string) $file->getClientOriginalExtension()) !== 'mp4') {
             throw ValidationException::withMessages(['clip' => 'Нужен файл .mp4']);
@@ -35,12 +39,21 @@ class GuestClipService
             ]);
         }
 
-        $token = Str::lower(Str::random(32));
+        $token = $this->resolveShareToken((string) ($meta['share_token'] ?? ''));
         $dir = 'clips/'.$user->id;
         $name = $token.'.mp4';
         $path = $file->storeAs($dir, $name, 'public');
         if (! $path) {
             throw ValidationException::withMessages(['clip' => 'Не удалось сохранить клип.']);
+        }
+
+        $aspect = strtolower(trim((string) ($meta['aspect'] ?? '')));
+        if (! in_array($aspect, ['9:16', '16:9', '1:1'], true)) {
+            $aspect = null;
+        }
+        $source = strtolower(trim((string) ($meta['source'] ?? 'manual')));
+        if (! in_array($source, ['manual', 'kill', 'logout'], true)) {
+            $source = 'manual';
         }
 
         $clip = GuestClip::query()->create([
@@ -50,6 +63,8 @@ class GuestClipService
             'path' => $path,
             'bytes' => (int) $file->getSize(),
             'duration_sec' => max(1, min(180, $durationSec)),
+            'aspect' => $aspect,
+            'source' => $source,
             'share_token' => $token,
         ]);
 
@@ -70,6 +85,8 @@ class GuestClipService
             'share_url' => $clip->shareUrl(),
             'bytes' => $clip->bytes,
             'duration_sec' => $clip->duration_sec,
+            'aspect' => $clip->aspect,
+            'source' => $clip->source,
             'pc_name' => $clip->computer?->name,
             'telegram_sent' => (bool) $clip->telegram_sent_at,
             'created_at' => optional($clip->created_at)?->timezone(config('app.timezone'))->format('d.m H:i'),
@@ -98,28 +115,54 @@ class GuestClipService
         }
 
         $full = $disk->path($clip->path);
-        $caption = trim('Клип клуба'.($clip->computer?->name ? ' · '.$clip->computer->name : ''));
+        $clip->loadMissing(['user:id,name', 'computer:id,name']);
+        $nick = trim((string) ($clip->user?->name ?? ''));
+        $pc = trim((string) ($clip->computer?->name ?? ''));
+        $caption = trim(implode("\n", array_filter([
+            ($nick !== '' ? $nick : 'Клип клуба').($pc !== '' ? ' · '.$pc : ''),
+            $clip->aspect === '9:16' ? 'Reels / Shorts 9:16' : null,
+            $clip->shareUrl(),
+        ])));
         $token = (string) config('services.telegram.bot_token');
-        $chat = (string) config('services.telegram.clips_chat_id');
+        $chats = array_values(array_unique(array_filter([
+            (string) config('services.telegram.clips_chat_id'),
+            (string) config('services.telegram.clips_guest_chat_id'),
+        ])));
 
-        try {
-            $response = Http::timeout(60)
-                ->attach('video', fopen($full, 'r'), basename($clip->path))
-                ->post('https://api.telegram.org/bot'.$token.'/sendVideo', [
-                    'chat_id' => $chat,
-                    'caption' => $caption,
-                    'supports_streaming' => true,
-                ]);
-        } catch (\Throwable $e) {
-            Log::warning('Guest clip Telegram send failed: '.$e->getMessage(), ['clip_id' => $clip->id]);
-            $clip->update(['telegram_error' => Str::limit($e->getMessage(), 240)]);
+        $okAny = false;
+        $lastError = null;
+        foreach ($chats as $chat) {
+            $fields = [
+                'chat_id' => $chat,
+                'caption' => $caption,
+                'supports_streaming' => true,
+            ];
+            if ($clip->aspect === '9:16') {
+                $fields['width'] = 1080;
+                $fields['height'] = 1920;
+            }
+            try {
+                $response = Http::timeout(60)
+                    ->attach('video', fopen($full, 'r'), basename($clip->path))
+                    ->post('https://api.telegram.org/bot'.$token.'/sendVideo', $fields);
+            } catch (\Throwable $e) {
+                Log::warning('Guest clip Telegram send failed: '.$e->getMessage(), ['clip_id' => $clip->id]);
+                $lastError = Str::limit($e->getMessage(), 240);
 
-            return false;
+                continue;
+            }
+
+            if (! $response->successful() || ! ($response->json('ok'))) {
+                $desc = (string) ($response->json('description') ?: $response->body());
+                $lastError = Str::limit($desc, 240);
+
+                continue;
+            }
+            $okAny = true;
         }
 
-        if (! $response->successful() || ! ($response->json('ok'))) {
-            $desc = (string) ($response->json('description') ?: $response->body());
-            $clip->update(['telegram_error' => Str::limit($desc, 240)]);
+        if (! $okAny) {
+            $clip->update(['telegram_error' => $lastError ?: 'Telegram не принял клип']);
 
             return false;
         }
@@ -136,6 +179,17 @@ class GuestClipService
     {
         Storage::disk('public')->delete($clip->path);
         $clip->delete();
+    }
+
+    private function resolveShareToken(string $wanted): string
+    {
+        $wanted = strtolower(trim($wanted));
+        if (preg_match('/^[a-z0-9]{24,48}$/', $wanted)
+            && ! GuestClip::query()->where('share_token', $wanted)->exists()) {
+            return $wanted;
+        }
+
+        return Str::lower(Str::random(32));
     }
 
     private function pruneUser(User $user): void

@@ -10,7 +10,7 @@ class GuestClip extends Model
 {
     protected $fillable = [
         'user_id', 'booking_id', 'computer_id', 'path', 'bytes',
-        'duration_sec', 'share_token', 'telegram_sent_at', 'telegram_error',
+        'duration_sec', 'aspect', 'source', 'share_token', 'telegram_sent_at', 'telegram_error',
     ];
 
     protected $casts = [

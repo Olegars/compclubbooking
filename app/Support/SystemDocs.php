@@ -696,9 +696,39 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Баланс и poll',
-                        'description' => 'Периодический опрос баланса. При опросе закрываются просроченные сессии; remaining считается согласованно с кабинетом (wall-clock / heal ends_at).',
+                        'description' => 'Периодический опрос баланса. При опросе закрываются просроченные сессии; remaining считается согласованно с кабинетом (wall-clock / heal ends_at). В том же ответе — bounties, party_energy, ghost_coach, throne, lfg.',
                         'path' => null,
                         'audience' => 'Shell / Система',
+                    ],
+                    [
+                        'title' => 'LAN Bounty Board (охота за головами)',
+                        'description' => "С шелла: POST /api/shell/bounties — ставка депозитом или напитком бара за голову игрока на соседнем ПК («Убей ПК-14 ножом» / «1v1 AWP»). Деньги эскроу с кошелька автора. Шелл шлёт GSI (kill/death/round_win) на POST /api/shell/gsi; облако склеивает фраг охотника и смерть цели в окне 4 с и сразу переводит депозит победителю или печатает кухонный слип на его место. Снять охоту: POST /api/shell/bounties/{id}/cancel. Доска: GET /api/shell/lan-live и poll /balance.",
+                        'path' => null,
+                        'audience' => 'Shell',
+                    ],
+                    [
+                        'title' => 'King of the Hill (трон ПК)',
+                        'description' => "Дневной рекорд на конкретном месте: GSI kill/death на POST /api/shell/gsi. С 3+ фрагов за сессию ник и аватар пишутся в pc_thrones (дата + computer_id). Idle шелл берёт throne из QR challenge и power heartbeat. Следующий логин видит challenge «Сможешь превзойти рекорд King?». Свой трон — без вызова. Счётчик сессии в кэше 8 ч; корона обновляется при большем числе фрагов или том же и лучшем K/D.",
+                        'path' => null,
+                        'audience' => 'Shell / Игрок',
+                    ],
+                    [
+                        'title' => 'Blind Matchmaking (пати в зале)',
+                        'description' => "Кнопка «Найти пати» в шелле: POST /api/shell/lfg {game: cs2|dota|valorant, rank}. Подбор соло в том же клубе с рангом ±1 ступень (silver…global / herald…immortal). Ответ: «Твой тиммейт на ПК-07». POST /api/shell/lfg/sit — пересадка на свободный соседний ПК (имя ±1 или координаты x/y карты), тот же BookingSeatTransferService (новый PIN). Войс клуба не мержится — подсказка сесть рядом / войс в игре. Снять поиск: POST /api/shell/lfg/cancel (и на logout). TTL 20 мин.",
+                        'path' => null,
+                        'audience' => 'Shell',
+                    ],
+                    [
+                        'title' => 'Party Energy Pool (котёл пати)',
+                        'description' => "Если бронь в BookingGroup на 2+ ПК: общий котёл минут. Капитан POST /api/shell/party/energy/auto-fuel включает бесшовную подпитку. Любой из пати кладёт минуты POST /api/shell/party/energy/contribute (с депозита или со своей сессии). Когда у участника <90 с и GSI говорит in_match, сессия не выбивается в паузу: шелл держит игру, сервер сифонит 10 мин из котла (и на completeExpiredSessions). Без согласия капитана и пустой котёл — обычный logout.",
+                        'path' => null,
+                        'audience' => 'Shell',
+                    ],
+                    [
+                        'title' => 'Ghost Coach (ИИ-тактик)',
+                        'description' => "GSI на шелле работает всю сессию (не только галка «интерактив» — та по-прежнему включает свет). POST /api/shell/gsi + снимок экономики/ульта. Если в клубе на той же карте сидит враг, коуч слышит его money/ult: «У вражеского Enigma на ПК-14 готов Black Hole» / «У них эко, жди раш с дробовиками». Иначе — свои эко/сейв/Рошан. Шёпот раз в ~28 с, галка в шелле (user_settings.ghost_coach_enabled, POST /api/shell/coach). Не hold-to-talk F1: пуш в наушники через SAPI/TTS.",
+                        'path' => '/admin/ai-assistant',
+                        'audience' => 'Shell',
                     ],
                     [
                         'title' => 'Игры на ПК',
@@ -714,7 +744,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Instant Replay (клипы)',
-                        'description' => "Буфер последних 60 с пишется на D:/ShellData/replay (том кэша), не на C: образа. ffmpeg + h264_nvenc если GPU умеет, иначе libx264. Бинарь: Replay/ffmpeg в config.ini или D:/Tools/ffmpeg.exe.\n\nF8 (Replay/hotkey) во время сессии склеивает сегменты и POST /api/shell/clips → файл в профиле гостя (guest_clips, до 20 шт., публичная ссылка /clips/{token}). В кабинете /account/dashboard — плеер, копия ссылки, удаление. Кнопка «В канал» шлёт sendVideo, если TELEGRAM_BOT_TOKEN + TELEGRAM_CLIPS_CHAT_ID. TELEGRAM_CLIPS_AUTO=true — постить каждый клип сразу.\n\nНа logout шелл сначала грузит клип, потом закрывает сессию. Без ffmpeg на D: фича молча выключена.",
+                        'description' => "Буфер последних 60 с пишется на D:/ShellData/replay (том кэша), не на C: образа. ffmpeg + h264_nvenc если GPU умеет, иначе libx264. Бинарь: Replay/ffmpeg в config.ini или D:/Tools/ffmpeg.exe.\n\nF8 (Replay/hotkey) или авто по GSI-киллу (Replay/auto_on_kill, пауза kill_cooldown_sec) склеивает сегменты, кропает в 9:16 вокруг центра (прицел), накладывает ник, лого D:/ShellData/branding/logo.png и QR публичной ссылки /clips/{token} (токен шелл задаёт сам). POST /api/shell/clips с aspect=9:16.\n\nКлип в профиле гостя (guest_clips, до 20 шт.). TELEGRAM_CLIPS_AUTO=true — sendVideo в TELEGRAM_CLIPS_CHAT_ID и опционально TELEGRAM_CLIPS_GUEST_CHAT_ID, подпись с ником и URL. Кнопка «В канал» в кабинете. На logout шелл сначала грузит клип. Без ffmpeg на D: фича молча выключена.",
                         'path' => '/account/dashboard',
                         'audience' => 'Shell / Игрок',
                     ],
@@ -750,13 +780,13 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Свет на PC Shell',
-                        'description' => "Плитка под климатом: кружки цвета + rainbow + ползунок яркости + галка «интерактив». Desired комнаты и каталог событий — GET /api/shell/light и heartbeat (light.events, light.events_from=admin|presets, при смене сцены light.play_event). Шелл apply → POST /api/shell/light/applied; ручной цвет/яркость — POST /api/shell/light; галка — POST /api/shell/light/interactive.\n\nПитание/сессия (вкл ПК, логин, логаут, выкл) всегда по вкладке /admin/lights?tab=interactive. Игровой overlay (CS2/Dota GSI :59898, Chroma :54235, GameSense) — только при галке и активной сессии. Гаснет по событию «компьютер выключен». Железо узла — вкладка «Узлы и комнаты».",
+                        'description' => "Плитка под климатом: кружки цвета + rainbow + ползунок яркости + галка «интерактив». Desired комнаты и каталог событий — GET /api/shell/light и heartbeat (light.events, light.events_from=admin|presets, при смене сцены light.play_event). Шелл apply → POST /api/shell/light/applied; ручной цвет/яркость — POST /api/shell/light; галка — POST /api/shell/light/interactive.\n\nПитание/сессия (вкл ПК, логин, логаут, выкл) всегда по вкладке /admin/lights?tab=interactive. GSI :59898 слушает всю сессию (охота / котёл / Ghost Coach). Световой overlay игр — только при галке. Гаснет по событию «компьютер выключен». Железо узла — вкладка «Узлы и комнаты».",
                         'path' => '/admin/lights',
                         'audience' => 'Shell',
                     ],
                     [
                         'title' => 'Голосовой ИИ (F1 и приветствие)',
-                        'description' => "Hold-to-talk во время сессии: запись с микрофона → POST /api/shell/ai-assistant → SpeechKit STT (или Whisper) → LLM (DeepSeek/OpenAI из админки) → SpeechKit/OpenAI TTS в наушники. Нужна активная бронь на ПК.\n\nПосле логина: POST /api/shell/voice-greeting — короткое персональное приветствие в колонки лобби. Промпты и ключи — /admin/ai-assistant. Голос TTS выбирается в Shell и пишется в user_settings.tts_voice игрока (логин возвращает его, приветствие/Q&A берут сохранённый голос).",
+                        'description' => "Hold-to-talk во время сессии: запись с микрофона → POST /api/shell/ai-assistant → SpeechKit STT (или Whisper) → LLM (DeepSeek/OpenAI из админки) → SpeechKit/OpenAI TTS в наушники. Нужна активная бронь на ПК.\n\nПосле логина: POST /api/shell/voice-greeting — короткое персональное приветствие в колонки лобби. Промпты и ключи — /admin/ai-assistant. Голос TTS выбирается в Shell и пишется в user_settings.tts_voice игрока (логин возвращает его, приветствие/Q&A берут сохранённый голос).\n\nОтдельно: Ghost Coach — пуш-шёпот по GSI без микрофона (см. «Ghost Coach»).",
                         'path' => '/admin/ai-assistant',
                         'audience' => 'Shell / Supervisor+',
                     ],

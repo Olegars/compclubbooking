@@ -97,6 +97,22 @@ class User extends Authenticatable
         return (bool) ($this->settings?->light_interactive ?? false);
     }
 
+    public function ghostCoachEnabled(): bool
+    {
+        $this->loadMissing('settings');
+
+        return (bool) ($this->settings?->ghost_coach_enabled ?? true);
+    }
+
+    public function saveGhostCoach(bool $enabled): void
+    {
+        UserSetting::query()->updateOrCreate(
+            ['user_id' => $this->id],
+            ['ghost_coach_enabled' => $enabled]
+        );
+        $this->unsetRelation('settings');
+    }
+
     public function saveLightInteractive(bool $enabled): void
     {
         \App\Models\UserSetting::query()->updateOrCreate(

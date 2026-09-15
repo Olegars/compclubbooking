@@ -62,13 +62,21 @@ class GuestClipTest extends TestCase
         $this->post('/api/shell/clips', [
             'terminal_id' => $pc->id,
             'duration_sec' => 60,
+            'aspect' => '9:16',
+            'source' => 'kill',
+            'share_token' => 'cinematicclipsharetoken123456789ab',
             'clip' => $file,
         ])->assertOk()
-            ->assertJsonPath('status', 'success');
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('clip.aspect', '9:16')
+            ->assertJsonPath('clip.share_url', url('/clips/cinematicclipsharetoken123456789ab'));
 
         $clip = GuestClip::query()->first();
         $this->assertNotNull($clip);
         $this->assertSame($user->id, (int) $clip->user_id);
+        $this->assertSame('9:16', $clip->aspect);
+        $this->assertSame('kill', $clip->source);
+        $this->assertSame('cinematicclipsharetoken123456789ab', $clip->share_token);
         Storage::disk('public')->assertExists($clip->path);
 
         $this->get('/clips/'.$clip->share_token)->assertOk();

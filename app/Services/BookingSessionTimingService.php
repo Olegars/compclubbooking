@@ -458,6 +458,24 @@ class BookingSessionTimingService
             })
             ->pluck('id');
 
+        $kept = collect();
+        foreach ($expiredIds as $id) {
+            $row = Booking::query()->find($id);
+            if ($row) {
+                try {
+                    if (app(\App\Services\LanLive\PartyEnergyPoolService::class)->trySiphonExpired($row)) {
+                        continue;
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Party energy siphon on expiry failed: '.$e->getMessage(), [
+                        'booking_id' => $id,
+                    ]);
+                }
+            }
+            $kept->push($id);
+        }
+        $expiredIds = $kept;
+
         if ($expiredIds->isEmpty()) {
             // Legacy active без modern window / actual_started_at
             $legacyClosed = Booking::query()

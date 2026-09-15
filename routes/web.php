@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\QueueController;
 
 // Оверлеи Shell (API для терминалов)
 use App\Http\Controllers\Api\ShellApiController;
+use App\Http\Controllers\Api\ShellLanLiveController;
 use App\Http\Controllers\Api\WolRelayController;
 use App\Http\Controllers\Api\SharedFanRelayController;
 use App\Http\Controllers\Api\ShellIsolateRelayController;
@@ -780,6 +781,18 @@ Route::prefix('api/shell')->group(function () {
 
     Route::post('/game-requests', [ShellApiController::class, 'storeGameRequest']);
     Route::post('/clips', [ShellApiController::class, 'uploadClip']);
+
+    // --- LAN Live: охота, котёл пати, Ghost Coach (GSI), трон ПК, LFG ---
+    Route::get('/lan-live', [ShellLanLiveController::class, 'snapshot']);
+    Route::post('/bounties', [ShellLanLiveController::class, 'createBounty']);
+    Route::post('/bounties/{id}/cancel', [ShellLanLiveController::class, 'cancelBounty']);
+    Route::post('/party/energy/auto-fuel', [ShellLanLiveController::class, 'setAutoFuel']);
+    Route::post('/party/energy/contribute', [ShellLanLiveController::class, 'contribute']);
+    Route::post('/coach', [ShellLanLiveController::class, 'setCoach']);
+    Route::post('/gsi', [ShellLanLiveController::class, 'gsi']);
+    Route::post('/lfg', [ShellLanLiveController::class, 'enqueueLfg']);
+    Route::post('/lfg/cancel', [ShellLanLiveController::class, 'cancelLfg']);
+    Route::post('/lfg/sit', [ShellLanLiveController::class, 'sitLfg']);
 
     // --- CLOUD SAVES: индивидуальные настройки игрока (CS2/Valorant/…) ---
     Route::get('/settings', [ShellApiController::class, 'getCloudSettings']);

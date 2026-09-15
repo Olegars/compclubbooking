@@ -6,14 +6,19 @@
     <title>Клип · {{ config('app.name') }}</title>
     <style>
         body { margin: 0; background: #050505; color: #eee; font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; }
-        video { width: min(960px, 94vw); background: #000; border-radius: 12px; }
-        p { color: #666; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; }
+        .box { display: grid; justify-items: center; gap: 12px; padding: 24px; }
+        video { width: min({{ ($clip->aspect ?? '') === '9:16' ? '420px' : '960px' }}, 94vw); max-height: 88vh; background: #000; border-radius: 12px; }
+        p { color: #666; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; margin: 0; }
+        a { color: #a3a3a3; font-size: 13px; }
     </style>
 </head>
 <body>
-    <div>
-        <p>Instant Replay</p>
+    <div class="box">
+        <p>{{ ($clip->aspect ?? '') === '9:16' ? 'Reels / Shorts' : 'Instant Replay' }}</p>
         <video src="{{ $url }}" controls playsinline></video>
+        @if(!empty($clip->share_token))
+            <a href="{{ $clip->shareUrl() }}">Ссылка на клип</a>
+        @endif
     </div>
 </body>
 </html>

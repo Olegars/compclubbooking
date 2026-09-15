@@ -1,0 +1,362 @@
+<?php
+
+namespace App\Services\LanLive;
+
+use App\Models\Booking;
+use App\Models\Computer;
+use App\Models\LanLfgQueue;
+use App\Models\User;
+use App\Services\BookingSeatTransferService;
+use Carbon\CarbonImmutable;
+use RuntimeException;
+
+class LanMatchmakingService
+{
+    public const TTL_MINUTES = 20;
+
+    public function __construct(
+        private readonly BookingSeatTransferService $transfers,
+    ) {
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function payload(Booking $booking, User $user): array
+    {
+        $this->expireStale();
+        $row = $this->activeFor($user, $booking);
+
+        return [
+            'looking' => $row && $row->status === LanLfgQueue::STATUS_OPEN,
+            'queue' => $row ? $this->serialize($row, $booking) : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function enqueue(User $user, Computer $computer, Booking $booking, string $game, string $rank): array
+    {
+        $this->expireStale();
+        $game = $this->normalizeGame($game);
+        $rank = $this->normalizeRank($rank);
+        $tier = $this->rankTier($game, $rank);
+
+        $existing = $this->activeFor($user, $booking);
+        if ($existing && $existing->status === LanLfgQueue::STATUS_MATCHED) {
+            return $this->serialize($existing, $booking);
+        }
+
+        $row = $existing && $existing->status === LanLfgQueue::STATUS_OPEN
+            ? $existing
+            : new LanLfgQueue;
+
+        $row->fill([
+            'club_id' => (int) ($computer->club_id ?? 0),
+            'user_id' => $user->id,
+            'booking_id' => $booking->id,
+            'computer_id' => $computer->id,
+            'game' => $game,
+            'rank' => $rank,
+            'rank_tier' => $tier,
+            'status' => LanLfgQueue::STATUS_OPEN,
+            'matched_user_id' => null,
+            'matched_computer_id' => null,
+            'matched_queue_id' => null,
+            'matched_at' => null,
+            'expires_at' => now()->addMinutes(self::TTL_MINUTES),
+        ]);
+        $row->save();
+
+        $mate = $this->findMate($row, $booking);
+        if ($mate) {
+            $this->pair($row, $mate);
+            $row->refresh();
+        }
+
+        return $this->serialize($row, $booking);
+    }
+
+    public function cancel(User $user, Booking $booking): void
+    {
+        $row = $this->activeFor($user, $booking);
+        if (! $row) {
+            return;
+        }
+        if ($row->status === LanLfgQueue::STATUS_OPEN) {
+            $row->update(['status' => LanLfgQueue::STATUS_CANCELLED]);
+        }
+        if ($row->status === LanLfgQueue::STATUS_MATCHED && $row->matched_queue_id) {
+            $other = LanLfgQueue::query()->find($row->matched_queue_id);
+            $row->update(['status' => LanLfgQueue::STATUS_CANCELLED]);
+            if ($other && $other->status === LanLfgQueue::STATUS_MATCHED) {
+                $other->update([
+                    'status' => LanLfgQueue::STATUS_OPEN,
+                    'matched_user_id' => null,
+                    'matched_computer_id' => null,
+                    'matched_queue_id' => null,
+                    'matched_at' => null,
+                    'expires_at' => now()->addMinutes(self::TTL_MINUTES),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Move the current player onto a free seat next to the matched teammate.
+     *
+     * @return array<string, mixed>
+     */
+    public function sitTogether(User $user, Booking $booking): array
+    {
+        $row = $this->activeFor($user, $booking);
+        if (! $row || $row->status !== LanLfgQueue::STATUS_MATCHED) {
+            throw new RuntimeException('Сначала найдите тиммейта');
+        }
+        $matePc = Computer::query()->find((int) $row->matched_computer_id);
+        if (! $matePc) {
+            throw new RuntimeException('Тиммейт уже ушёл');
+        }
+
+        $seat = $this->bestAdjacentSeat($matePc, $booking);
+        if (! $seat) {
+            throw new RuntimeException(
+                'Свободных мест рядом с '.$matePc->name.' нет. Дойдите пешком или включите войс в игре.'
+            );
+        }
+
+        $result = $this->transfers->transfer($booking, (int) $seat['id'], $user);
+        $row->update([
+            'status' => LanLfgQueue::STATUS_SEATED,
+            'computer_id' => (int) $seat['id'],
+        ]);
+
+        return [
+            'moved' => true,
+            'to' => $result['to'] ?? $seat['name'],
+            'pin_code' => $result['pin_code'] ?? null,
+            'mate_pc' => (string) $matePc->name,
+            'message' => 'Пересадка на '.$seat['name'].' рядом с '.$matePc->name
+                .'. Войдите PIN на новом ПК. Войс — в игре.',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function serialize(LanLfgQueue $row, ?Booking $booking = null): array
+    {
+        $matePc = $row->matched_computer_id
+            ? Computer::query()->find((int) $row->matched_computer_id)
+            : null;
+        $mate = $row->matched_user_id
+            ? User::query()->find((int) $row->matched_user_id)
+            : null;
+        $adjacent = null;
+        if ($matePc && $booking && $row->status === LanLfgQueue::STATUS_MATCHED) {
+            $adjacent = $this->bestAdjacentSeat($matePc, $booking);
+        }
+
+        $line = null;
+        $hint = null;
+        if ($row->status === LanLfgQueue::STATUS_MATCHED && $matePc) {
+            $nick = trim((string) ($mate?->name ?? 'игрок')) ?: 'игрок';
+            $line = 'Твой тиммейт на '.$matePc->name.' ('.$nick.', '.$row->rank.')';
+            $hint = $adjacent
+                ? 'Свободно рядом: '.$adjacent['name'].'. Пересесть или войс в игре?'
+                : 'Мест рядом нет — дойдите до '.$matePc->name.' или объедините войс в игре.';
+        } elseif ($row->status === LanLfgQueue::STATUS_OPEN) {
+            $line = 'Ищем пати: '.$this->gameLabel($row->game).' · '.$row->rank;
+            $hint = 'Покажите экран соседу или ждите матч в зале.';
+        }
+
+        return [
+            'id' => (int) $row->id,
+            'status' => $row->status,
+            'game' => $row->game,
+            'rank' => $row->rank,
+            'mate_pc' => $matePc?->name,
+            'mate_name' => $mate?->name,
+            'adjacent_computer_id' => $adjacent['id'] ?? null,
+            'adjacent_pc' => $adjacent['name'] ?? null,
+            'can_sit' => (bool) $adjacent,
+            'line' => $line,
+            'hint' => $hint,
+        ];
+    }
+
+    private function activeFor(User $user, Booking $booking): ?LanLfgQueue
+    {
+        return LanLfgQueue::query()
+            ->where('user_id', $user->id)
+            ->where('booking_id', $booking->id)
+            ->whereIn('status', [LanLfgQueue::STATUS_OPEN, LanLfgQueue::STATUS_MATCHED])
+            ->latest('id')
+            ->first();
+    }
+
+    private function findMate(LanLfgQueue $row, Booking $booking): ?LanLfgQueue
+    {
+        $candidates = LanLfgQueue::query()
+            ->where('club_id', $row->club_id)
+            ->where('game', $row->game)
+            ->where('status', LanLfgQueue::STATUS_OPEN)
+            ->where('id', '!=', $row->id)
+            ->where('user_id', '!=', $row->user_id)
+            ->where(function ($q) {
+                $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
+            })
+            ->orderBy('id')
+            ->get();
+
+        $myGroup = (int) ($booking->booking_group_id ?? 0);
+        foreach ($candidates as $cand) {
+            if (abs((int) $cand->rank_tier - (int) $row->rank_tier) > 1) {
+                continue;
+            }
+            if ($myGroup > 0) {
+                $otherBooking = Booking::query()->find($cand->booking_id);
+                if ($otherBooking && (int) $otherBooking->booking_group_id === $myGroup) {
+                    continue;
+                }
+            }
+
+            return $cand;
+        }
+
+        return null;
+    }
+
+    private function pair(LanLfgQueue $a, LanLfgQueue $b): void
+    {
+        $now = now();
+        $a->update([
+            'status' => LanLfgQueue::STATUS_MATCHED,
+            'matched_user_id' => $b->user_id,
+            'matched_computer_id' => $b->computer_id,
+            'matched_queue_id' => $b->id,
+            'matched_at' => $now,
+        ]);
+        $b->update([
+            'status' => LanLfgQueue::STATUS_MATCHED,
+            'matched_user_id' => $a->user_id,
+            'matched_computer_id' => $a->computer_id,
+            'matched_queue_id' => $a->id,
+            'matched_at' => $now,
+        ]);
+    }
+
+    /**
+     * @return array{id:int,name:string}|null
+     */
+    private function bestAdjacentSeat(Computer $near, Booking $mover): ?array
+    {
+        $free = $this->transfers->freeTargets($mover);
+        if ($free === []) {
+            return null;
+        }
+
+        $best = null;
+        $bestScore = PHP_INT_MAX;
+        foreach ($free as $row) {
+            $pc = Computer::query()->find((int) $row['id']);
+            if (! $pc || (int) $pc->id === (int) $near->id) {
+                continue;
+            }
+            $score = $this->proximityScore($near, $pc);
+            if ($score === null || $score >= $bestScore) {
+                continue;
+            }
+            $bestScore = $score;
+            $best = ['id' => (int) $pc->id, 'name' => (string) $pc->name];
+        }
+
+        return $best;
+    }
+
+    private function proximityScore(Computer $a, Computer $b): ?int
+    {
+        if ($this->nameNeighbors((string) $a->name, (string) $b->name)) {
+            return 1;
+        }
+        $ax = (float) $a->x;
+        $ay = (float) $a->y;
+        $bx = (float) $b->x;
+        $by = (float) $b->y;
+        if ($ax == 0.0 && $ay == 0.0 && $bx == 0.0 && $by == 0.0) {
+            return null;
+        }
+        $dist = (int) round(hypot($ax - $bx, $ay - $by));
+        if ($dist <= 0 || $dist > 90) {
+            return null;
+        }
+
+        return 10 + $dist;
+    }
+
+    private function nameNeighbors(string $a, string $b): bool
+    {
+        if (! preg_match('/(\d+)\s*$/', $a, $ma) || ! preg_match('/(\d+)\s*$/', $b, $mb)) {
+            return false;
+        }
+
+        return abs((int) $ma[1] - (int) $mb[1]) === 1;
+    }
+
+    private function expireStale(): void
+    {
+        LanLfgQueue::query()
+            ->where('status', LanLfgQueue::STATUS_OPEN)
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '<', CarbonImmutable::now())
+            ->update(['status' => LanLfgQueue::STATUS_CANCELLED]);
+    }
+
+    private function normalizeGame(string $game): string
+    {
+        $g = strtolower(trim($game));
+        if (in_array($g, ['dota', 'dota2', 'dota 2'], true)) {
+            return 'dota';
+        }
+        if (in_array($g, ['valorant', 'val'], true)) {
+            return 'valorant';
+        }
+
+        return 'cs2';
+    }
+
+    private function normalizeRank(string $rank): string
+    {
+        $r = mb_strtolower(trim($rank));
+        $r = preg_replace('/\s+/', ' ', $r) ?? $r;
+
+        return mb_substr($r !== '' ? $r : 'any', 0, 32);
+    }
+
+    private function rankTier(string $game, string $rank): int
+    {
+        $r = mb_strtolower($rank);
+        $map = $game === 'dota'
+            ? ['herald' => 1, 'guardian' => 2, 'crusader' => 3, 'archon' => 4, 'legend' => 5, 'ancient' => 6, 'divine' => 7, 'immortal' => 8]
+            : ($game === 'valorant'
+                ? ['iron' => 1, 'bronze' => 2, 'silver' => 3, 'gold' => 4, 'plat' => 5, 'platinum' => 5, 'diamond' => 6, 'ascendant' => 7, 'immortal' => 8, 'radiant' => 9]
+                : ['silver' => 2, 'gold' => 3, 'mg' => 4, 'mge' => 4, 'dmg' => 5, 'le' => 6, 'lem' => 6, 'supreme' => 7, 'global' => 8, 'faceit' => 7]);
+        foreach ($map as $needle => $tier) {
+            if (str_contains($r, $needle)) {
+                return $tier;
+            }
+        }
+
+        return 5;
+    }
+
+    private function gameLabel(string $game): string
+    {
+        return match ($game) {
+            'dota' => 'Dota 2',
+            'valorant' => 'Valorant',
+            default => 'CS2',
+        };
+    }
+}
