@@ -57,6 +57,20 @@ class SystemDocsTest extends TestCase
             );
     }
 
+    public function test_pdf_includes_owner_system_tests(): void
+    {
+        $admin = $this->makeAdmin('supervisor');
+
+        $this->actingAs($admin, 'admin')
+            ->get('/admin/docs/pdf?q=system-tests')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SystemDocsPrint')
+                ->where('query', 'system-tests')
+                ->where('sections.0.items.0.title', 'Тесты системы')
+            );
+    }
+
     private function makeAdmin(string $role): Admin
     {
         return Admin::query()->create([

@@ -1,0 +1,117 @@
+<?php
+
+namespace Tests\Unit;
+
+use App\Models\Club;
+use App\Models\Computer;
+use App\Models\Zone;
+use App\Services\OwnerSystemTestService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Tests\TestCase;
+
+class OwnerSystemTestServiceTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_cache_and_app_checks_pass_in_testing(): void
+    {
+        $service = app(OwnerSystemTestService::class);
+
+        $cache = $service->run('cache');
+        $this->assertSame('pass', $cache['status']);
+
+        $app = $service->run('app');
+        $this->assertContains($app['status'], ['pass', 'warn']);
+
+        $sms = $service->run('sms');
+        $this->assertSame('skip', $sms['status']);
+    }
+
+    public function test_computers_fail_when_none_are_online(): void
+    {
+        $club = Club::query()->create([
+            'name' => 'Hall',
+            'slug' => 'hall-'.uniqid(),
+            'type' => 'club',
+        ]);
+        Computer::query()->create([
+            'club_id' => $club->id,
+            'name' => 'PC-1',
+            'status' => 'available',
+            'kind' => 'pc',
+        ]);
+
+        $result = app(OwnerSystemTestService::class)->run('computers', $club);
+        $this->assertSame('fail', $result['status']);
+    }
+
+    public function test_computers_pass_when_heartbeat_is_fresh(): void
+    {
+        $club = Club::query()->create([
+            'name' => 'Hall',
+            'slug' => 'hall-on-'.uniqid(),
+            'type' => 'club',
+        ]);
+        Computer::query()->create([
+            'club_id' => $club->id,
+            'name' => 'PC-1',
+            'status' => 'available',
+            'kind' => 'pc',
+            'last_seen_at' => now(),
+            'power_state' => 'on',
+            'cache_ok' => true,
+            'nic_link_mbps' => 1000,
+            'ssd_health' => 'healthy',
+        ]);
+
+        $computers = app(OwnerSystemTestService::class)->run('computers', $club);
+        $this->assertSame('pass', $computers['status']);
+
+        $health = app(OwnerSystemTestService::class)->run('station_health', $club);
+        $this->assertSame('pass', $health['status']);
+    }
+
+    public function test_tariffs_fail_without_zones(): void
+    {
+        $result = app(OwnerSystemTestService::class)->run('tariffs');
+        $this->assertSame('fail', $result['status']);
+    }
+
+    public function test_tariffs_pass_with_zone_and_tariff(): void
+    {
+        Zone::query()->create(['name' => 'VIP', 'slug' => 'vip-'.uniqid()]);
+        \App\Models\Tariff::query()->create([
+            'name' => 'Hour',
+            'category' => 'standard',
+            'threshold_hours' => 1,
+            'price_per_package' => 100,
+            'is_active' => true,
+        ]);
+
+        $result = app(OwnerSystemTestService::class)->run('tariffs');
+        $this->assertSame('pass', $result['status']);
+    }
+
+    public function test_wol_token_fail_when_empty(): void
+    {
+        config(['club.power.wol_relay_token' => '']);
+        $result = app(OwnerSystemTestService::class)->run('wol_relay');
+        $this->assertSame('fail', $result['status']);
+    }
+
+    public function test_wol_token_pass_when_set(): void
+    {
+        config(['club.power.wol_relay_token' => 'secret-token']);
+        $result = app(OwnerSystemTestService::class)->run('wol_relay');
+        $this->assertSame('pass', $result['status']);
+    }
+
+    public function test_cache_roundtrip_uses_store(): void
+    {
+        Cache::flush();
+        $result = app(OwnerSystemTestService::class)->run('cache');
+        $this->assertSame('pass', $result['status']);
+        $this->assertGreaterThan(0, $result['duration_ms']);
+    }
+}

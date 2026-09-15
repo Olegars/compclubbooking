@@ -76,6 +76,7 @@ const links = [
     { href: '/admin/store/locations', label: 'Локации', hint: 'Клубы и магазины' },
     { href: '/admin/store/orders', label: 'Заказы магазина', hint: 'Сборки и выдача' },
     { href: '/admin/incidents', label: 'Инциденты', hint: 'SOS и качество' },
+    { href: '/admin/system-tests', label: 'Тесты системы', hint: 'Кнопки проверок и PHPUnit' },
     { href: '/admin/docs', label: 'О системе', hint: 'Справка владельца' },
 ]
 </script>

@@ -464,6 +464,11 @@ onUnmounted(() => {
                           :class="currentPath === '/admin/config' ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>⚙️</span> Конфигурация смен
                     </Link>
+                    <Link v-if="isOwner" href="/admin/system-tests"
+                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
+                          :class="isActive('/admin/system-tests') ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🧪</span> Тесты системы
+                    </Link>
                     <Link href="/admin/config/documents"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/config/documents') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">

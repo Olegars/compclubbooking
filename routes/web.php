@@ -42,6 +42,7 @@ use App\Http\Controllers\Admin\TaxController;
 use App\Http\Controllers\Admin\StaffController;
 use App\Http\Controllers\Admin\StaffPayrollController;
 use App\Http\Controllers\Admin\OwnerCabinetController;
+use App\Http\Controllers\Admin\OwnerSystemTestsController;
 use App\Http\Controllers\Store\StoreHireController;
 use App\Http\Controllers\Admin\TariffController;
 use App\Http\Controllers\Admin\ZoneController;
@@ -643,6 +644,9 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
 
     // УРОВЕНЬ: OWNER
     Route::middleware(['role:owner'])->group(function () {
+        Route::get('/system-tests', [OwnerSystemTestsController::class, 'index'])->name('admin.system-tests');
+        Route::post('/system-tests/run', [OwnerSystemTestsController::class, 'run'])->name('admin.system-tests.run');
+
         Route::delete('/staff/{admin}', [StaffController::class, 'destroy'])->name('admin.staff.destroy');
 
         Route::get('/taxes', [TaxController::class, 'index'])->name('admin.taxes.index');
