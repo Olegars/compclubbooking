@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Booking;
 use Inertia\Inertia;
+use App\Models\GuestClip;
 use App\Models\Order;
 use Carbon\Carbon;
 use App\Models\ReviewClaim;
@@ -14,6 +15,7 @@ use App\Services\AchievementService;
 use App\Services\BookingSessionTimingService;
 use App\Services\FiscalService;
 use App\Services\GameBookingService;
+use App\Services\GuestClipService;
 use Carbon\CarbonImmutable;
 
 class ProfileController extends Controller
@@ -306,6 +308,16 @@ class ProfileController extends Controller
         // 6. Квесты / ачивки
         $achievements = app(AchievementService::class)->progressForUser($user);
 
+        $clipService = app(GuestClipService::class);
+        $clips = GuestClip::query()
+            ->with('computer:id,name')
+            ->where('user_id', $user->id)
+            ->orderByDesc('id')
+            ->limit(GuestClipService::MAX_PER_USER)
+            ->get()
+            ->map(fn (GuestClip $c) => $clipService->serialize($c))
+            ->values();
+
         // 7. Рендер (Все ключи приведены к соответствию с Vue)
         return Inertia::render('User/Dashboard', [
             'user' => [
@@ -320,6 +332,8 @@ class ProfileController extends Controller
             'latest_review' => $latestReview,
             'review_meta' => $reviewMeta,
             'achievements' => $achievements,
+            'clips' => $clips,
+            'clips_telegram' => $clipService->telegramConfigured(),
             'server_time' => $now->toIso8601String(),
         ]);
     }
@@ -429,5 +443,40 @@ class ProfileController extends Controller
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
+    }
+
+    public function showSharedClip(string $token)
+    {
+        $clip = GuestClip::query()->where('share_token', $token)->firstOrFail();
+
+        return response()->view('clips.show', [
+            'clip' => $clip,
+            'url' => $clip->publicUrl(),
+        ]);
+    }
+
+    public function shareClipTelegram(GuestClip $clip, GuestClipService $clips)
+    {
+        if ((int) $clip->user_id !== (int) Auth::id()) {
+            abort(404);
+        }
+        if (! $clips->telegramConfigured()) {
+            return back()->withErrors(['clip' => 'Канал клуба не подключён']);
+        }
+        if (! $clips->postTelegram($clip)) {
+            return back()->withErrors(['clip' => $clip->fresh()->telegram_error ?: 'Telegram не принял клип']);
+        }
+
+        return back();
+    }
+
+    public function destroyClip(GuestClip $clip, GuestClipService $clips)
+    {
+        if ((int) $clip->user_id !== (int) Auth::id()) {
+            abort(404);
+        }
+        $clips->destroy($clip);
+
+        return back();
     }
 }

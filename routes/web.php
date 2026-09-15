@@ -203,6 +203,8 @@ Route::middleware('guest')->group(function () {
 
 Route::post('/logout', [LogoutController::class, 'logout'])->name('logout');
 
+Route::get('/clips/{token}', [ProfileController::class, 'showSharedClip'])->name('clips.show');
+
 /*
 |--------------------------------------------------------------------------
 | Гостевой Wi-Fi (walled garden → QR/join → MikroTik grant)
@@ -260,6 +262,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/dashboard', [ProfileController::class, 'dashboard'])->name('dashboard');
         Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::post('/clips/{clip}/telegram', [ProfileController::class, 'shareClipTelegram']);
+        Route::delete('/clips/{clip}', [ProfileController::class, 'destroyClip']);
         Route::get('/transfer/targets', [ProfileController::class, 'transferTargets']);
         Route::post('/transfer/preview', [ProfileController::class, 'transferPreview']);
         Route::post('/transfer/confirm', [ProfileController::class, 'transferConfirm']);
@@ -769,6 +773,7 @@ Route::prefix('api/shell')->group(function () {
     Route::post('/games/unpause', [ShellApiController::class, 'clearPause']);
 
     Route::post('/game-requests', [ShellApiController::class, 'storeGameRequest']);
+    Route::post('/clips', [ShellApiController::class, 'uploadClip']);
 
     // --- CLOUD SAVES: индивидуальные настройки игрока (CS2/Valorant/…) ---
     Route::get('/settings', [ShellApiController::class, 'getCloudSettings']);

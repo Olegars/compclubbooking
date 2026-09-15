@@ -120,6 +120,11 @@ class User extends Authenticatable
         return $this->hasMany(Booking::class);
     }
 
+    public function clips()
+    {
+        return $this->hasMany(GuestClip::class);
+    }
+
     public function bookingGroups()
     {
         return $this->hasMany(BookingGroup::class);

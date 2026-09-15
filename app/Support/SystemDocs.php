@@ -192,7 +192,7 @@ class SystemDocs
                 'items' => [
                     [
                         'title' => 'Менеджер ивентов',
-                        'description' => "Турнир Single Elimination на /admin/tournaments: создать ивент, ПК арены, призы 1/2/3 на депозит, регистрация гостей по телефону, сетка (bye до степени двойки), счёт матчей вручную, «Завершить + призы». Два проигравших полуфинала делят 3 место. Повторной выплаты нет (prizes_paid_at).\n\nПока ивент active и lock_games включён, GET /api/shell/games?terminal_id= на привязанных ПК отдаёт только игру турнира (в т.ч. полоса featured). Это не оверлей и не блокировка Win+Tab — каталог шелла.\n\nНе подключено и не планируется в этом контуре: Swiss / Double Elim, авторезультаты Steam Web API / Valve Game Coordinator, split-check ЮKassa на компанию, NVENC-клипы и шаринг в Telegram (writeback гибрида C: клипы не переживает, Cloud Saves — мелкий текст, бота нет).",
+                        'description' => "Турнир Single Elimination на /admin/tournaments: создать ивент, ПК арены, призы 1/2/3 на депозит, регистрация гостей по телефону, сетка (bye до степени двойки), счёт матчей вручную, «Завершить + призы». Два проигравших полуфинала делят 3 место. Повторной выплаты нет (prizes_paid_at).\n\nПока ивент active и lock_games включён, GET /api/shell/games?terminal_id= на привязанных ПК отдаёт только игру турнира (в т.ч. полоса featured). Это не оверлей и не блокировка Win+Tab — каталог шелла.\n\nНе подключено: Swiss / Double Elim, авторезультаты Steam Web API / Valve Game Coordinator, split-check ЮKassa на компанию. Клипы — отдельная глава «Instant Replay».",
                         'path' => '/admin/tournaments',
                         'audience' => 'Supervisor+',
                     ],
@@ -689,8 +689,14 @@ class SystemDocs
                         'audience' => 'Shell',
                     ],
                     [
+                        'title' => 'Instant Replay (клипы)',
+                        'description' => "Буфер последних 60 с пишется на D:/ShellData/replay (том кэша), не на C: образа. ffmpeg + h264_nvenc если GPU умеет, иначе libx264. Бинарь: Replay/ffmpeg в config.ini или D:/Tools/ffmpeg.exe.\n\nF8 (Replay/hotkey) во время сессии склеивает сегменты и POST /api/shell/clips → файл в профиле гостя (guest_clips, до 20 шт., публичная ссылка /clips/{token}). В кабинете /account/dashboard — плеер, копия ссылки, удаление. Кнопка «В канал» шлёт sendVideo, если TELEGRAM_BOT_TOKEN + TELEGRAM_CLIPS_CHAT_ID. TELEGRAM_CLIPS_AUTO=true — постить каждый клип сразу.\n\nНа logout шелл сначала грузит клип, потом закрывает сессию. Без ffmpeg на D: фича молча выключена.",
+                        'path' => '/account/dashboard',
+                        'audience' => 'Shell / Игрок',
+                    ],
+                    [
                         'title' => 'Cloud Saves (настройки игрока)',
-                        'description' => 'Индивидуальный пак конфигов (sens CS2, cfg Valorant и т.д.) в user_settings. GET/POST /api/shell/settings; на logout можно передать settings_pack — при следующем входе на любой ПК пак приходит в login.',
+                        'description' => 'Индивидуальный пак конфигов (sens CS2, cfg Valorant и т.д.) в user_settings. GET/POST /api/shell/settings; на logout можно передать settings_pack — при следующем входе на любой ПК пак приходит в login. Это текст ~2 МБ, не видео. Клипы Instant Replay лежат отдельно в guest_clips / кабинете.',
                         'path' => null,
                         'audience' => 'Shell',
                     ],

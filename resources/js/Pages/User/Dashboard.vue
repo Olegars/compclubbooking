@@ -167,7 +167,7 @@ const cancelBooking = async (b: any) => {
 
 const fetchDashboardData = () => {
     router.reload({
-        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'server_time'],
+        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'clips', 'clips_telegram', 'server_time'],
         preserveScroll: true
     })
 }
@@ -175,6 +175,23 @@ const fetchDashboardData = () => {
 const achievements = computed(() => {
     return (page.props.achievements as any[]) || []
 })
+const clips = computed(() => (page.props.clips as any[]) || [])
+const clipsTelegram = computed(() => !!(page.props as any).clips_telegram)
+
+const copyClipLink = async (url: string) => {
+    try {
+        await navigator.clipboard.writeText(url)
+    } catch { /* ignore */ }
+}
+
+const shareClipTelegram = (id: number) => {
+    router.post(`/account/clips/${id}/telegram`, {}, { preserveScroll: true })
+}
+
+const deleteClip = (id: number) => {
+    if (!confirm('Удалить клип из профиля?')) return
+    router.delete(`/account/clips/${id}`, { preserveScroll: true })
+}
 
 const rewardSuffix = (type: string) => type === 'bonus_balance' ? 'фантиков' : '₽'
 
@@ -661,6 +678,23 @@ onMounted(() => {
                     <div class="min-w-0 flex-1 md:flex-none text-left md:text-center">
                         <h3 class="text-xl md:text-3xl font-black uppercase italic tracking-tighter text-white truncate">{{ page.props.user?.name }}</h3>
                         <div class="mt-2 md:mt-4 inline-flex px-4 md:px-6 py-1.5 md:py-2 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[9px] md:text-[10px] text-[#22c55e] font-black uppercase italic tracking-widest">СТАЛКЕР</div>
+                    </div>
+                </div>
+
+                <div v-if="clips.length > 0" class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-cyan-500/20 rounded-xl md:rounded-[1.125rem] p-4 sm:p-6 md:p-8 md:shadow-xl">
+                    <span class="text-[10px] uppercase text-cyan-400 tracking-[0.35em] font-black italic block mb-4">Клипы</span>
+                    <div class="space-y-4">
+                        <div v-for="c in clips" :key="c.id" class="border border-white/10 rounded-xl overflow-hidden bg-black/40">
+                            <video :src="c.url" controls playsinline class="w-full max-h-48 bg-black"></video>
+                            <div class="px-3 py-2 flex flex-wrap items-center gap-2 text-[9px] uppercase tracking-widest text-white/40">
+                                <span>{{ c.created_at }}</span>
+                                <span v-if="c.pc_name">{{ c.pc_name }}</span>
+                                <span>{{ c.duration_sec }}с</span>
+                                <button type="button" class="text-cyan-400" @click="copyClipLink(c.share_url)">Ссылка</button>
+                                <button v-if="clipsTelegram" type="button" class="text-cyan-400" @click="shareClipTelegram(c.id)">В канал</button>
+                                <button type="button" class="text-red-400 ml-auto" @click="deleteClip(c.id)">Удалить</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

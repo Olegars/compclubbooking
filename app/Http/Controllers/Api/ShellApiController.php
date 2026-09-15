@@ -35,6 +35,7 @@ use App\Services\ComputerStatusService;
 use App\Services\Fan\FanControlService;
 use App\Services\Light\LightControlService;
 use App\Services\GameRequestService;
+use App\Services\GuestClipService;
 use App\Services\PartyBookingService;
 use App\Services\PreSessionOrderService;
 use App\Services\ProductStockService;
@@ -2883,6 +2884,48 @@ class ShellApiController extends Controller
             }),
             default => 'none',
         };
+    }
+
+    /**
+     * Instant Replay: 60s clip from Shell (D: buffer) into the guest cloud profile.
+     */
+    public function uploadClip(Request $request, GuestClipService $clips)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer',
+            'duration_sec' => 'nullable|integer|min:5|max:180',
+            'clip' => 'required|file|max:49152',
+        ]);
+
+        $terminalId = (int) $request->terminal_id;
+        $booking = Booking::query()
+            ->where('status', 'active')
+            ->where(function ($query) use ($terminalId) {
+                $query->whereJsonContains('pc_ids', (string) $terminalId)
+                    ->orWhere('computer_id', $terminalId);
+            })
+            ->first();
+        if (! $booking?->user_id) {
+            return response()->json(['status' => 'error', 'message' => 'Активная сессия не найдена'], 403);
+        }
+        $user = User::query()->find($booking->user_id);
+        if (! $user) {
+            return response()->json(['status' => 'error', 'message' => 'Гость не найден'], 404);
+        }
+
+        $computer = Computer::query()->find($terminalId);
+        $clip = $clips->storeUpload(
+            $user,
+            $request->file('clip'),
+            $booking,
+            $computer,
+            (int) $request->input('duration_sec', 60)
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'clip' => $clips->serialize($clip),
+        ]);
     }
 
     /**
