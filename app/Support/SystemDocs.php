@@ -203,6 +203,24 @@ class SystemDocs
                         'audience' => 'Supervisor+',
                     ],
                     [
+                        'title' => 'Instant Replay → Reels / Shorts',
+                        'description' => "Killcam-клип с ПК: шелл пишет rolling-буфер 60 с на D:/ShellData/replay, по F8 или GSI-киллу CS2 склеивает mp4, кропает в вертикаль 9:16 вокруг центра (прицел), накладывает ник, лого клуба и QR на публичную страницу клипа, грузит POST /api/shell/clips.\n\nГость видит ролик в /account/dashboard и по ссылке /clips/{token}. TELEGRAM_CLIPS_AUTO шлёт sendVideo в канал клуба (и опционально второй чат). Личный Telegram гостя без /start бота не открывается — доставка: кабинет + QR на самом ролике + канал.\n\nПодробности, config.ini Replay/* и миграция guest_clips — глава «Instant Replay (клипы)» в PC Shell.",
+                        'path' => '/account/dashboard',
+                        'audience' => 'Shell / Игрок / Маркетинг',
+                    ],
+                    [
+                        'title' => 'King of the Hill (трон ПК)',
+                        'description' => "Битва за конкретное место: кто за сессию на этом ПК набил больше фрагов (CS2/Dota GSI), тот King дня. С 3+ киллов ник и аватар фиксируются на idle-экране терминала (карточка над QR). Следующий игрок при входе слышит/видит вызов «Сможешь превзойти рекорд King?».\n\nНе общий топ клуба и не турнирная сетка: рекорд привязан к computer_id + дате (таблица pc_thrones). Счётчик сессии в кэше 8 ч. Подробности API — одноимённая глава в PC Shell.",
+                        'path' => null,
+                        'audience' => 'Shell / Игрок',
+                    ],
+                    [
+                        'title' => 'Blind Matchmaking (пати в зале)',
+                        'description' => "Кнопка «ПАТИ» в шелле для соло: игрок указывает игру (CS2 / Dota / Valorant) и ранг. Облако ищет другого открытого LFG в том же клубе с рангом ±1 ступень и пишет на экран: «Твой тиммейт на ПК-07». Если рядом свободно — «Пересесть рядом» (тот же самосервис пересадки, новый PIN). Войс Discord/клуба не склеивается: подсказка включить голосовой чат в игре или сесть рядом.\n\nТаблица lan_lfg_queues, TTL 20 мин, снятие на logout. API — глава в PC Shell.",
+                        'path' => null,
+                        'audience' => 'Shell / Игрок',
+                    ],
+                    [
                         'title' => 'Маркетинг (промокоды)',
                         'description' => 'Создание промокодов: бонусные деньги или скидка, лимит активаций. Игрок применяет код в кабинете.',
                         'path' => '/admin/promocodes',
@@ -690,7 +708,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Вход по QR',
-                        'description' => "Дубль PIN: гость сканирует QR терминала в ЛК → сессия на этом ПК активируется без ввода PIN на клавиатуре шелла.\n\nShell (idle):\n• POST /api/shell/qr/challenge {terminal_id} → token, expires_at, qr_payload;\n• картинка QR (qr_payload) на панели «ВХОД ПО QR»;\n• poll GET /api/shell/qr/status?token= ~1.5 с; status=consumed → тот же loginSucceeded, что после PIN; expired → новый challenge.\n\nЛК: иконка QR-сканера (mobile) → redeem / quote / book (см. «Сканер QR»).\nНет брони на ПК: бронь «с сейчас» на выбранную длительность (≥60 мин, шаг 15), оплата с баланса или топап, затем activate+consume.\nБронь на другом ПК: тот же wrong_pc_occupied / wrong_pc_available, что у PIN.\n\nКод: ShellQrLoginService, ShellQrLoginController, NetworkManager::requestQrChallenge; TTL 120 с; тесты tests/Feature/ShellQrLoginTest.php.\nМиграция: shell_qr_challenges.",
+                        'description' => "Дубль PIN: гость сканирует QR терминала в ЛК → сессия на этом ПК активируется без ввода PIN на клавиатуре шелла.\n\nShell (idle):\n• POST /api/shell/qr/challenge {terminal_id} → token, expires_at, qr_payload, throne (King дня на этом ПК, если есть);\n• картинка QR (qr_payload) на панели «ВХОД ПО QR»; над ней карточка King (ник, аватар, фраг/K/D);\n• poll GET /api/shell/qr/status?token= ~1.5 с; status=consumed → тот же loginSucceeded, что после PIN; expired → новый challenge.\n\nЛК: иконка QR-сканера (mobile) → redeem / quote / book (см. «Сканер QR»).\nНет брони на ПК: бронь «с сейчас» на выбранную длительность (≥60 мин, шаг 15), оплата с баланса или топап, затем activate+consume.\nБронь на другом ПК: тот же wrong_pc_occupied / wrong_pc_available, что у PIN.\n\nКод: ShellQrLoginService, ShellQrLoginController, NetworkManager::requestQrChallenge; TTL 120 с; тесты tests/Feature/ShellQrLoginTest.php.\nМиграция: shell_qr_challenges.",
                         'path' => null,
                         'audience' => 'Shell / Игрок',
                     ],
@@ -708,15 +726,15 @@ class SystemDocs
                     ],
                     [
                         'title' => 'King of the Hill (трон ПК)',
-                        'description' => "Дневной рекорд на конкретном месте: GSI kill/death на POST /api/shell/gsi. С 3+ фрагов за сессию ник и аватар пишутся в pc_thrones (дата + computer_id). Idle шелл берёт throne из QR challenge и power heartbeat. Следующий логин видит challenge «Сможешь превзойти рекорд King?». Свой трон — без вызова. Счётчик сессии в кэше 8 ч; корона обновляется при большем числе фрагов или том же и лучшем K/D.",
+                        'description' => "Дневной рекорд на конкретном месте, не на весь клуб.\n\nGSI kill/death/match_win на POST /api/shell/gsi копится в кэше сессии (ключ throne:sess:{booking_id}, TTL 8 ч). С 3+ фрагов ник (users.name) и аватар пишутся в pc_thrones unique(computer_id, recorded_on). Ничья по киллам — лучше K/D. Свой трон повторно не вызывает игрока.\n\nIdle: throne в ответе POST /api/shell/qr/challenge и POST /api/shell/power/heartbeat → карточка «KING OF THIS PC» над QR. Login / poll / GET /api/shell/lan-live отдают throne; чужой король — challenge «Сможешь превзойти рекорд King?». GSI-ответ может содержать throne_crowned, если этот же игрок только что перебил рекорд.\n\nНе подключено: winrate как отдельная метрика короны, Steam Web API, сброс трона админом, подсветка King на карте дашборда.\nКод: PcThroneService, модель PcThrone. Миграция: 2026_09_15_220000. Тесты: LanLiveFeaturesTest::test_three_kills_crown_king_of_the_pc.",
                         'path' => null,
                         'audience' => 'Shell / Игрок',
                     ],
                     [
                         'title' => 'Blind Matchmaking (пати в зале)',
-                        'description' => "Кнопка «Найти пати» в шелле: POST /api/shell/lfg {game: cs2|dota|valorant, rank}. Подбор соло в том же клубе с рангом ±1 ступень (silver…global / herald…immortal). Ответ: «Твой тиммейт на ПК-07». POST /api/shell/lfg/sit — пересадка на свободный соседний ПК (имя ±1 или координаты x/y карты), тот же BookingSeatTransferService (новый PIN). Войс клуба не мержится — подсказка сесть рядом / войс в игре. Снять поиск: POST /api/shell/lfg/cancel (и на logout). TTL 20 мин.",
+                        'description' => "Кнопка «ПАТИ» в сайдбаре шелла. Соло указывает игру и ранг → POST /api/shell/lfg {game: cs2|dota|valorant, rank}. Облако ищет другой open-запрос в том же клубе, та же игра, rank_tier ±1 (CS2: silver…global; Dota: herald…immortal; Valorant: iron…radiant). Уже сидящие в одном BookingGroup не матчятся между собой.\n\nНа экране: «Твой тиммейт на ПК-07 (ник, ранг)». Если свободен сосед (имя ПК ±1, иначе x/y карты, порог 90) — can_sit и кнопка «Пересесть рядом»: POST /api/shell/lfg/sit вызывает BookingSeatTransferService (доплата/укорочение как у обычной пересадки, новый PIN на целевом ПК). Войс клуба / Discord не мержится — текст «включите голосовой чат в игре или сядьте рядом».\n\nСнять поиск: POST /api/shell/lfg/cancel; то же на logout. TTL 20 мин (lan_lfg_queues.expires_at). Статусы open / matched / seated / cancelled. Снимок в GET /api/shell/lan-live и poll /balance (поле lfg).\n\nНе подключено: автопересадка без кнопки, общий голосовой канал зала, Faceit ELO, пересадка тиммейта вместо себя.\nКод: LanMatchmakingService, модель LanLfgQueue. Тесты: LanLiveFeaturesTest::test_lfg_matches_two_solo_players_in_the_hall.",
                         'path' => null,
-                        'audience' => 'Shell',
+                        'audience' => 'Shell / Игрок',
                     ],
                     [
                         'title' => 'Party Energy Pool (котёл пати)',
@@ -744,7 +762,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Instant Replay (клипы)',
-                        'description' => "Буфер последних 60 с пишется на D:/ShellData/replay (том кэша), не на C: образа. ffmpeg + h264_nvenc если GPU умеет, иначе libx264. Бинарь: Replay/ffmpeg в config.ini или D:/Tools/ffmpeg.exe.\n\nF8 (Replay/hotkey) или авто по GSI-киллу (Replay/auto_on_kill, пауза kill_cooldown_sec) склеивает сегменты, кропает в 9:16 вокруг центра (прицел), накладывает ник, лого D:/ShellData/branding/logo.png и QR публичной ссылки /clips/{token} (токен шелл задаёт сам). POST /api/shell/clips с aspect=9:16.\n\nКлип в профиле гостя (guest_clips, до 20 шт.). TELEGRAM_CLIPS_AUTO=true — sendVideo в TELEGRAM_CLIPS_CHAT_ID и опционально TELEGRAM_CLIPS_GUEST_CHAT_ID, подпись с ником и URL. Кнопка «В канал» в кабинете. На logout шелл сначала грузит клип. Без ffmpeg на D: фича молча выключена.",
+                        'description' => "Cinematic Killcam / Reels: rolling-буфер последних 60 с на D:/ShellData/replay (том кэша), не на C: образа. ffmpeg + h264_nvenc если GPU умеет, иначе libx264. Бинарь: Replay/ffmpeg в config.ini или D:/Tools/ffmpeg.exe.\n\nТриггеры: F8 (Replay/hotkey), GSI-килл CS2 (Replay/auto_on_kill, пауза Replay/kill_cooldown_sec, по умолчанию 75 с), logout если Replay/save_on_logout. После concat шелл кропает центр кадра в 9:16 (прицел FPS), scale 1080×1920, drawtext ник+клуб, overlay лого Replay/logo или D:/ShellData/branding/logo.png, QR публичной ссылки (токен шелл генерирует и передаёт share_token). Если вертикальный проход ffmpeg падает — грузится исходный 16:9.\n\nPOST /api/shell/clips: файл .mp4 до 48 МБ, aspect=9:16|16:9, source=manual|kill|logout, опционально share_token 24–48 [a-z0-9]. Профиль: guest_clips до 20 шт., страница /clips/{token} (вертикальный плеер если 9:16), кабинет /account/dashboard — плеер, копия ссылки, удаление, «В канал».\n\nTelegram: TELEGRAM_BOT_TOKEN + TELEGRAM_CLIPS_CHAT_ID; TELEGRAM_CLIPS_AUTO=true постит сразу; TELEGRAM_CLIPS_GUEST_CHAT_ID — второй chat_id (не личка гостя). sendVideo с width/height 1080×1920 и подписью ник · ПК · URL. Личный DM гостю не шлётся: бот не знает chat_id без /start.\n\nНе подключено: трекинг модели игрока (кроп строго по центру), автонарезка только killcam-секунд, Stories/Reels API Instagram/TikTok, Telegram Login виджетом.\nКод: InstantReplay (Qt), GuestClipService. Тесты: GuestClipTest. Env: TELEGRAM_CLIPS_*.",
                         'path' => '/account/dashboard',
                         'audience' => 'Shell / Игрок',
                     ],
@@ -762,13 +780,13 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Logout',
-                        'description' => 'Завершение активной брони на этом ПК, освобождение игровых аккаунтов; опционально сохраняет settings_pack в облако клуба.',
+                        'description' => 'Завершение активной брони на этом ПК, освобождение игровых аккаунтов; опционально сохраняет settings_pack в облако клуба. Перед complete снимается открытый LFG (LanMatchmakingService::cancel). Instant Replay при save_on_logout сначала собирает вертикальный клип, потом logout.',
                         'path' => null,
                         'audience' => 'Shell',
                     ],
                     [
                         'title' => 'Питание и WOL на PC Shell',
-                        'description' => "POST /api/shell/power/heartbeat (~30 с) + MAC NIC + cache_ok/free_gb/data_root + maintenance + nic_link_mbps + SMART SSD + super_client + Steam/Epic inventory → online / очередь WOL / плитки кэша, линка, износа, Super Client.\nОтвет может содержать diskless {command_id, action, disk_mode} — шелл подтверждает diskless_ack_id.\nPOST /api/shell/power/offline при штатном уходе.\nВ ответах logout/balance/poll может прийти power_action=reboot|shutdown по desired питания (бронь ± warmup); в техрежиме и при Super Client всегда none.\nMagic packet шлёт MikroTik из /api/power/wol-targets, не шелл и не облако напрямую. Настройка токена и warmup — .env CLUB_*; статусы на дашборде. Подробности — «Питание ПК» в Конфигурации.",
+                        'description' => "POST /api/shell/power/heartbeat (~30 с) + MAC NIC + cache_ok/free_gb/data_root + maintenance + nic_link_mbps + SMART SSD + super_client + Steam/Epic inventory → online / очередь WOL / плитки кэша, линка, износа, Super Client.\nОтвет может содержать diskless {command_id, action, disk_mode} — шелл подтверждает diskless_ack_id; throne — King дня на этом ПК для idle-карточки (см. «King of the Hill»).\nPOST /api/shell/power/offline при штатном уходе.\nВ ответах logout/balance/poll может прийти power_action=reboot|shutdown по desired питания (бронь ± warmup); в техрежиме и при Super Client всегда none.\nMagic packet шлёт MikroTik из /api/power/wol-targets, не шелл и не облако напрямую. Настройка токена и warmup — .env CLUB_*; статусы на дашборде. Подробности — «Питание ПК» в Конфигурации.",
                         'path' => '/admin/dashboard',
                         'audience' => 'Shell / MikroTik',
                     ],
@@ -780,7 +798,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Свет на PC Shell',
-                        'description' => "Плитка под климатом: кружки цвета + rainbow + ползунок яркости + галка «интерактив». Desired комнаты и каталог событий — GET /api/shell/light и heartbeat (light.events, light.events_from=admin|presets, при смене сцены light.play_event). Шелл apply → POST /api/shell/light/applied; ручной цвет/яркость — POST /api/shell/light; галка — POST /api/shell/light/interactive.\n\nПитание/сессия (вкл ПК, логин, логаут, выкл) всегда по вкладке /admin/lights?tab=interactive. GSI :59898 слушает всю сессию (охота / котёл / Ghost Coach). Световой overlay игр — только при галке. Гаснет по событию «компьютер выключен». Железо узла — вкладка «Узлы и комнаты».",
+                        'description' => "Плитка под климатом: кружки цвета + rainbow + ползунок яркости + галка «интерактив». Desired комнаты и каталог событий — GET /api/shell/light и heartbeat (light.events, light.events_from=admin|presets, при смене сцены light.play_event). Шелл apply → POST /api/shell/light/applied; ручной цвет/яркость — POST /api/shell/light; галка — POST /api/shell/light/interactive.\n\nПитание/сессия (вкл ПК, логин, логаут, выкл) всегда по вкладке /admin/lights?tab=interactive. GSI :59898 слушает всю сессию (охота / котёл / Ghost Coach / трон ПК / killcam). Световой overlay игр — только при галке. Гаснет по событию «компьютер выключен». Железо узла — вкладка «Узлы и комнаты».",
                         'path' => '/admin/lights',
                         'audience' => 'Shell',
                     ],
@@ -804,7 +822,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Пересадка на другой ПК',
-                        'description' => "Статус: реализовано (самообслуживание).\n\nAPI Shell: GET /api/shell/transfer/targets, POST /api/shell/transfer/preview|confirm (terminal_id + target_computer_id) — список свободных ПК. ЛК: GET /account/transfer/targets отдаёт targets + map_config/computers/occupied_ids/selectable_ids; модалка «Пересесть» показывает ClubMap. Shell UI: «ПЕРЕСЕСТЬ» (список, без SVG-карты).\n\nПравила:\n• только status=active, целевой ПК свободен до ends_at, тот же клуб, kind=pc;\n• дороже: доплата с баланса с сохранением времени; если денег мало — укоротить ends_at (prepaid value + баланс / новый ₽/ч);\n• дешевле: без возврата, время не растёт;\n• доплата считается от оплаченной ставки брони (price/duration), а не только от текущего hourly исходного ПК — иначе пакет 375 ₽ при hourly 400 даёт ложное «тариф тот же»;\n• бронь не complete: меняются computer_id/pc_ids; старый Shell получает session_active=false на balance-poll (soft-kick, без logout-complete);\n• вход на новом ПК — при пересадке выдаётся новый PIN; бронь уже status=active на целевом ПК (Shell UI сам не открывается). Login по PIN после пересадки — resume без повторного activate;\n• если PIN не ввели за 10 мин (transfer_pending_at) — откат на исходный ПК (reclaimAbandonedTransfers в reactor:update-statuses и /api/shell/balance), целевой снова available.\n\nЗаказы бара: pc_name = ПК активной сессии на момент заказа (см. «Магазин»).\n\nНе путать с «Сесть за ПК» без живой сессии (заготовка входа) и с gift-причиной «Пересадка по вине клуба».",
+                        'description' => "Статус: реализовано (самообслуживание).\n\nAPI Shell: GET /api/shell/transfer/targets, POST /api/shell/transfer/preview|confirm (terminal_id + target_computer_id) — список свободных ПК. ЛК: GET /account/transfer/targets отдаёт targets + map_config/computers/occupied_ids/selectable_ids; модалка «Пересесть» показывает ClubMap. Shell UI: «ПЕРЕСЕСТЬ» (список, без SVG-карты).\n\nПравила:\n• только status=active, целевой ПК свободен до ends_at, тот же клуб, kind=pc;\n• дороже: доплата с баланса с сохранением времени; если денег мало — укоротить ends_at (prepaid value + баланс / новый ₽/ч);\n• дешевле: без возврата, время не растёт;\n• доплата считается от оплаченной ставки брони (price/duration), а не только от текущего hourly исходного ПК — иначе пакет 375 ₽ при hourly 400 даёт ложное «тариф тот же»;\n• бронь не complete: меняются computer_id/pc_ids; старый Shell получает session_active=false на balance-poll (soft-kick, без logout-complete);\n• вход на новом ПК — при пересадке выдаётся новый PIN; бронь уже status=active на целевом ПК (Shell UI сам не открывается). Login по PIN после пересадки — resume без повторного activate;\n• если PIN не ввели за 10 мин (transfer_pending_at) — откат на исходный ПК (reclaimAbandonedTransfers в reactor:update-statuses и /api/shell/balance), целевой снова available.\n\nЗаказы бара: pc_name = ПК активной сессии на момент заказа (см. «Магазин»).\n\nНе путать с «Сесть за ПК» без живой сессии (заготовка входа), с gift-причиной «Пересадка по вине клуба» и с «Пересесть рядом» из Blind Matchmaking (тот же transfer, но цель выбирает облако — соседний ПК к найденному тиммейту).",
                         'path' => '/account/dashboard',
                         'audience' => 'Игрок / Shell',
                     ],
