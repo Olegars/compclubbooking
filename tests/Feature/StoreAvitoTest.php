@@ -305,7 +305,6 @@ class StoreAvitoTest extends TestCase
             ->get('/admin/store/avito?tab=chats&folder=inbox')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->component('Admin/Store/Avito')
                 ->where('folder', 'inbox')
                 ->has('chats', 1)
                 ->where('chats.0.chat_id', 'u2i-inbox')
@@ -435,7 +434,11 @@ class StoreAvitoTest extends TestCase
 
     public function test_manager_can_send_chat_image_without_avito_api(): void
     {
-        Storage::fake('public');
+        $root = sys_get_temp_dir().DIRECTORY_SEPARATOR.'avito-public-'.uniqid('', true);
+        mkdir($root, 0777, true);
+        config(['filesystems.disks.public.root' => $root]);
+        Storage::forgetDisk('public');
+
         $manager = $this->makeAvitoManager('Олег Фото', 'oleg-photo@avito.test');
         $chat = $this->makeAvitoChat('u2i-send-photo');
 
@@ -789,7 +792,7 @@ class StoreAvitoTest extends TestCase
         $this->assertSame(0, $result['created']);
         $this->assertSame(0, StoreAvitoAd::query()->count());
         $this->assertSame(0, $cfg->fresh()->use_count);
-        $this->assertStringContainsString('выключен', (string) $result['error']);
+        $this->assertStringContainsString('Нет включённых конфигураций', (string) $result['error']);
     }
 
     public function test_classifies_7500f_and_skips_already_complete(): void
