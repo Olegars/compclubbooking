@@ -56,7 +56,7 @@ class OwnerSystemTestService
             'group' => 'phpunit',
             'group_title' => 'Автотесты PHPUnit',
             'title' => 'Весь набор PHPUnit',
-            'description' => 'php artisan test — Feature и Unit. Изолированная sqlite, прод-базу не трогает. Идёт через PHP CLI (не php-fpm). Может занять несколько минут.',
+            'description' => 'php artisan test — Feature и Unit. Только sqlite :memory: (DB_* из FPM принудительно сбрасываются). Прод-базу не трогает. Идёт через PHP CLI. Может занять несколько минут.',
             'kind' => 'phpunit',
         ];
 
@@ -1038,7 +1038,7 @@ class OwnerSystemTestService
         }
 
         try {
-            $process = new Process($args, base_path(), null, null, $timeout);
+            $process = new Process($args, base_path(), $this->phpunitProcessEnv(), null, $timeout);
             $process->run();
             $output = trim($process->getOutput()."\n".$process->getErrorOutput());
             $lines = array_values(array_filter(array_map('trim', preg_split('/\R/', $output) ?: [])));
@@ -1080,6 +1080,31 @@ class OwnerSystemTestService
         }
 
         return $out;
+    }
+
+    /**
+     * Env дочернего artisan test: перебить pgsql/compclub_db, которые FPM отдал в putenv.
+     *
+     * @return array<string, string>
+     */
+    public function phpunitProcessEnv(): array
+    {
+        return [
+            'APP_ENV' => 'testing',
+            'DB_CONNECTION' => 'sqlite',
+            'DB_DATABASE' => ':memory:',
+            'DB_URL' => '',
+            'DATABASE_URL' => '',
+            'DB_HOST' => '',
+            'DB_PORT' => '',
+            'DB_USERNAME' => '',
+            'DB_PASSWORD' => '',
+            'CACHE_STORE' => 'array',
+            'SESSION_DRIVER' => 'array',
+            'QUEUE_CONNECTION' => 'sync',
+            'MAIL_MAILER' => 'array',
+            'BROADCAST_CONNECTION' => 'null',
+        ];
     }
 
     /**

@@ -150,6 +150,15 @@ class OwnerSystemTestServiceTest extends TestCase
         $this->assertSame('/opt/php/bin/php', $cands[0]);
     }
 
+    public function test_phpunit_process_env_forces_sqlite_memory(): void
+    {
+        $env = app(OwnerSystemTestService::class)->phpunitProcessEnv();
+        $this->assertSame('sqlite', $env['DB_CONNECTION']);
+        $this->assertSame(':memory:', $env['DB_DATABASE']);
+        $this->assertSame('testing', $env['APP_ENV']);
+        $this->assertSame('', $env['DB_URL']);
+    }
+
     public function test_php_cli_binary_on_cli_sapi_is_not_fpm(): void
     {
         $php = app(OwnerSystemTestService::class)->phpCliBinary();
