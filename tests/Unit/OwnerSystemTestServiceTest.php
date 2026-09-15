@@ -8,11 +8,22 @@ use App\Models\Zone;
 use App\Services\OwnerSystemTestService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class OwnerSystemTestServiceTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_database_fails_when_sessions_table_missing(): void
+    {
+        config(['session.driver' => 'database', 'session.table' => 'sessions']);
+        Schema::dropIfExists('sessions');
+
+        $result = app(OwnerSystemTestService::class)->run('database');
+        $this->assertSame('fail', $result['status']);
+        $this->assertStringContainsString('sessions', $result['message']);
+    }
 
     public function test_cache_and_app_checks_pass_in_testing(): void
     {

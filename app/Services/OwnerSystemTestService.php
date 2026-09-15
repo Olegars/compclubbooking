@@ -23,6 +23,7 @@ use App\Support\AdminLocation;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\Process\PhpExecutableFinder;
 use Symfony\Component\Process\Process;
@@ -382,11 +383,17 @@ class OwnerSystemTestService
 
         $clubs = Club::query()->count();
         $computers = Computer::query()->when($club, fn ($q) => $q->where('club_id', $club->id))->count();
+        $sessionDriver = (string) config('session.driver');
+        $sessionTable = (string) config('session.table', 'sessions');
         $details = [
             'driver: '.(string) config('database.default'),
             'клубов: '.$clubs,
             'станций в локации: '.$computers,
+            'session: '.$sessionDriver,
         ];
+        if ($sessionDriver === 'database' && ! Schema::hasTable($sessionTable)) {
+            return $this->fail("Нет таблицы {$sessionTable} (SESSION_DRIVER=database). php artisan migrate.", $details);
+        }
         if ($clubs === 0) {
             return $this->fail('Нет ни одной локации (clubs).', $details);
         }
