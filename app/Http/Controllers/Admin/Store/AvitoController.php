@@ -59,9 +59,22 @@ class AvitoController extends StoreController
                 ?? StoreAvitoChat::query()->with('acceptedBy:id,name')->where('chat_id', $chatId)->first()
             : $chats->first();
 
-        if ($activeChat && $request->boolean('mark_read')) {
-            $activeChat->update(['unread' => false]);
-            StoreAvitoMessage::query()->where('chat_id', $activeChat->chat_id)->update(['read' => true]);
+        $messenger = app(StoreAvitoMessengerService::class);
+        if ($activeChat && $tab === 'chats') {
+            $messenger->ensureChatProfile($activeChat);
+            $activeChat->refresh();
+            $activeChat->loadMissing('acceptedBy:id,name');
+            $shouldSync = $request->boolean('mark_read')
+                || ($chatId !== '' && ! StoreAvitoMessage::query()->where('chat_id', $activeChat->chat_id)->exists());
+            if ($request->boolean('mark_read')) {
+                $activeChat->update(['unread' => false]);
+                StoreAvitoMessage::query()->where('chat_id', $activeChat->chat_id)->update(['read' => true]);
+                $messenger->markRead($activeChat->chat_id);
+            }
+            if ($shouldSync) {
+                $messenger->syncRecentMessages($activeChat);
+            }
+            $chats = $chats->map(fn (StoreAvitoChat $c) => $c->id === $activeChat->id ? $activeChat : $c);
         }
 
         $messages = $activeChat
@@ -283,6 +296,30 @@ class AvitoController extends StoreController
         );
     }
 
+    public function sendImage(Request $request, StoreAvitoMessengerService $messenger)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+
+        $data = $request->validate([
+            'chat_id' => 'required|string|max:128',
+            'image' => 'required|file|mimes:jpeg,jpg,png,gif,bmp,webp,heic|max:24576',
+        ]);
+        $chat = StoreAvitoChat::query()->where('chat_id', $data['chat_id'])->firstOrFail();
+        $file = $request->file('image');
+        abort_unless($file instanceof \Illuminate\Http\UploadedFile, 422);
+        $ok = $messenger->sendImage($data['chat_id'], $file, $this->admin());
+        abort_unless($ok, 502, 'Не удалось отправить изображение в Avito.');
+        $this->claimChat($chat);
+
+        return $this->redirectToChat(
+            $chat,
+            $chat->workflow === StoreAvitoChat::WORKFLOW_DONE
+                ? StoreAvitoChat::WORKFLOW_DONE
+                : StoreAvitoChat::WORKFLOW_IN_PROGRESS,
+            'Фото отправлено.'
+        );
+    }
+
     public function sendBom(Request $request, StoreAvitoMessengerService $messenger)
     {
         abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
@@ -451,6 +488,8 @@ class AvitoController extends StoreController
             'id' => $chat->id,
             'chat_id' => $chat->chat_id,
             'client_name' => $chat->client_name,
+            'client_avatar' => $chat->client_avatar,
+            'client_link' => $chat->client_link,
             'ad_title' => $chat->ad_title,
             'config_id' => $chat->config_id,
             'unread' => (bool) $chat->unread,
@@ -472,11 +511,25 @@ class AvitoController extends StoreController
             return [];
         }
         $messages->loadMissing('admin:id,name');
+        $voiceIds = $messages->map(fn (StoreAvitoMessage $m) => $m->voiceId())->filter()->values()->all();
+        $voiceUrls = $voiceIds === []
+            ? []
+            : app(StoreAvitoMessengerService::class)->voiceUrls($voiceIds);
 
         return $messages->map(fn (StoreAvitoMessage $m) => [
             'id' => $m->id,
+            'type' => $m->type ?: 'text',
             'from_us' => $m->from_us,
             'content' => $m->content,
+            'text' => $m->text(),
+            'image_url' => $m->imageUrl(false),
+            'image_thumb' => $m->imageUrl(true),
+            'item' => $m->itemPreview(),
+            'link' => $m->linkPreview(),
+            'is_voice' => $m->isVoice(),
+            'voice_url' => $m->voiceId() ? ($voiceUrls[$m->voiceId()] ?? null) : null,
+            'location' => $m->locationText(),
+            'call' => $m->callLabel(),
             'created_at' => ($m->avito_created_at ?? $m->created_at)?->toIso8601String(),
             'admin_id' => $m->admin_id,
             'admin_name' => $m->admin?->name,

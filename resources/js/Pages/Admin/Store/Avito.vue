@@ -50,6 +50,8 @@ type Chat = {
     id: number
     chat_id: string
     client_name?: string | null
+    client_avatar?: string | null
+    client_link?: string | null
     ad_title?: string | null
     config_id?: string | null
     unread: boolean
@@ -62,8 +64,18 @@ type Chat = {
 
 type Message = {
     id: number
+    type?: string
     from_us: boolean
     content?: { text?: string } | null
+    text?: string | null
+    image_url?: string | null
+    image_thumb?: string | null
+    item?: { title?: string | null, url?: string | null, price?: string | null, image?: string | null } | null
+    link?: { title?: string | null, url?: string | null, description?: string | null, image?: string | null } | null
+    is_voice?: boolean
+    voice_url?: string | null
+    location?: string | null
+    call?: string | null
     created_at?: string
     admin_id?: number | null
     admin_name?: string | null
@@ -153,6 +165,11 @@ const reply = useForm({
 })
 
 const openAd = ref<Ad | null>(null)
+const openImage = ref<string | null>(null)
+const photoFile = ref<File | null>(null)
+const photoInput = ref<HTMLInputElement | null>(null)
+const photoPreview = ref<string | null>(null)
+const sendingPhoto = ref(false)
 const generating = computed(() => props.settings?.last_generate_result?.status === 'running')
 const generateHint = computed(() => {
     const r = props.settings?.last_generate_result
@@ -178,6 +195,7 @@ watch([generating, dictSyncing], ([gen, dict]) => {
 }, { immediate: true })
 onUnmounted(() => {
     if (pollTimer) clearInterval(pollTimer)
+    if (photoPreview.value) URL.revokeObjectURL(photoPreview.value)
 })
 
 const statusLabel: Record<string, string> = {
@@ -348,10 +366,66 @@ const setStatus = (ad: Ad, status: string) => {
 
 const sendReply = () => {
     if (!props.active_chat) return
+    if (photoFile.value) {
+        sendPhoto()
+        return
+    }
+    if (!reply.text.trim()) return
     reply.chat_id = props.active_chat.chat_id
     reply.post('/admin/store/avito/chats/send', {
         preserveScroll: true,
         onSuccess: () => { reply.text = '' },
+    })
+}
+
+const pickPhoto = () => photoInput.value?.click()
+
+const onPhotoChosen = (e: Event) => {
+    const input = e.target as HTMLInputElement
+    photoFile.value = input.files?.[0] || null
+}
+
+const onPhotoDrop = (e: DragEvent) => {
+    const file = e.dataTransfer?.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+        photoFile.value = file
+    }
+}
+
+const clearPhoto = () => {
+    photoFile.value = null
+    if (photoInput.value) photoInput.value.value = ''
+}
+
+watch(() => props.active_chat?.chat_id, () => clearPhoto())
+
+watch(photoFile, (file) => {
+    if (photoPreview.value) URL.revokeObjectURL(photoPreview.value)
+    photoPreview.value = file ? URL.createObjectURL(file) : null
+})
+
+const sendPhoto = () => {
+    if (!props.active_chat || !photoFile.value || sendingPhoto.value) return
+    sendingPhoto.value = true
+    const text = reply.text.trim()
+    router.post('/admin/store/avito/chats/image', {
+        chat_id: props.active_chat.chat_id,
+        image: photoFile.value,
+    }, {
+        forceFormData: true,
+        preserveScroll: true,
+        onFinish: () => { sendingPhoto.value = false },
+        onSuccess: () => {
+            clearPhoto()
+            if (text) {
+                reply.chat_id = props.active_chat!.chat_id
+                reply.text = text
+                reply.post('/admin/store/avito/chats/send', {
+                    preserveScroll: true,
+                    onSuccess: () => { reply.text = '' },
+                })
+            }
+        },
     })
 }
 
@@ -375,7 +449,13 @@ const copyFeed = async () => {
     }
 }
 
-const messageText = (m: Message) => m.content?.text || ''
+const messageText = (m: Message) => (m.text || m.content?.text || '').trim()
+
+const initials = (name?: string | null) => {
+    const parts = (name || 'Гость').trim().split(/\s+/).filter(Boolean)
+    const letters = (parts[0]?.[0] || 'Г') + (parts[1]?.[0] || '')
+    return letters.toUpperCase()
+}
 </script>
 
 <template>
@@ -559,29 +639,49 @@ const messageText = (m: Message) => m.content?.text || ''
                              class="px-4 py-3 border-b border-white/5 cursor-pointer"
                              :class="active_chat?.chat_id === c.chat_id ? 'bg-amber-500/10' : 'hover:bg-white/[0.03]'"
                              @click="openChat(c)">
-                            <div class="flex justify-between gap-2">
-                                <div class="font-black uppercase text-sm truncate">{{ c.client_name || 'Гость' }}</div>
-                                <div class="flex items-center gap-2 shrink-0">
-                                    <span v-if="c.important" class="text-amber-400 text-xs">★</span>
-                                    <span v-if="c.unread" class="w-2 h-2 rounded-full bg-amber-400"></span>
+                            <div class="flex gap-3">
+                                <img v-if="c.client_avatar" :src="c.client_avatar" alt=""
+                                     class="w-9 h-9 rounded-full object-cover shrink-0 bg-white/10"
+                                     referrerpolicy="no-referrer" />
+                                <div v-else class="w-9 h-9 rounded-full bg-white/10 text-[10px] font-black text-white/50 flex items-center justify-center shrink-0">
+                                    {{ initials(c.client_name) }}
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex justify-between gap-2">
+                                        <div class="font-black uppercase text-sm truncate">{{ c.client_name || 'Гость' }}</div>
+                                        <div class="flex items-center gap-2 shrink-0">
+                                            <span v-if="c.important" class="text-amber-400 text-xs">★</span>
+                                            <span v-if="c.unread" class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                        </div>
+                                    </div>
+                                    <div class="text-[10px] text-white/30 truncate">{{ c.config_id || c.ad_title || c.chat_id }}</div>
+                                    <div v-if="c.accepted_by_name" class="text-[10px] text-amber-400/80 truncate mt-1">принял {{ c.accepted_by_name }}</div>
+                                    <div v-else-if="folder === 'favorite'" class="text-[10px] text-white/25 uppercase mt-1">{{ workflowLabel[c.workflow] }}</div>
                                 </div>
                             </div>
-                            <div class="text-[10px] text-white/30 truncate">{{ c.config_id || c.ad_title || c.chat_id }}</div>
-                            <div v-if="c.accepted_by_name" class="text-[10px] text-amber-400/80 truncate mt-1">принял {{ c.accepted_by_name }}</div>
-                            <div v-else-if="folder === 'favorite'" class="text-[10px] text-white/25 uppercase mt-1">{{ workflowLabel[c.workflow] }}</div>
                         </div>
                         <div v-if="!chats.length" class="p-6 text-white/30 text-sm">{{ q ? 'Нет чатов с таким ID' : folderEmpty[folder] }}</div>
                     </div>
                     <div class="border border-white/5 rounded-2xl bg-[#080808] flex flex-col min-h-[520px]">
                         <div v-if="active_chat" class="px-5 py-4 border-b border-white/5 space-y-3">
                             <div class="flex justify-between gap-3">
-                                <div>
-                                    <div class="font-black uppercase">{{ active_chat.client_name || 'Гость' }}</div>
-                                    <div class="text-[10px] text-white/30">{{ active_chat.ad_title }} · {{ active_chat.config_id }}</div>
-                                    <div v-if="active_chat.accepted_by_name" class="text-[10px] text-amber-400 mt-1">
-                                        принял {{ active_chat.accepted_by_name }} · {{ workflowLabel[active_chat.workflow] }}
+                                <div class="flex gap-3 min-w-0">
+                                    <img v-if="active_chat.client_avatar" :src="active_chat.client_avatar" alt=""
+                                         class="w-11 h-11 rounded-full object-cover shrink-0 bg-white/10"
+                                         referrerpolicy="no-referrer" />
+                                    <div v-else class="w-11 h-11 rounded-full bg-white/10 text-xs font-black text-white/50 flex items-center justify-center shrink-0">
+                                        {{ initials(active_chat.client_name) }}
                                     </div>
-                                    <div v-else class="text-[10px] text-white/25 uppercase mt-1">{{ workflowLabel[active_chat.workflow] }}</div>
+                                    <div class="min-w-0">
+                                        <a v-if="active_chat.client_link" :href="active_chat.client_link" target="_blank" rel="noreferrer"
+                                           class="font-black uppercase hover:text-amber-400">{{ active_chat.client_name || 'Гость' }}</a>
+                                        <div v-else class="font-black uppercase">{{ active_chat.client_name || 'Гость' }}</div>
+                                        <div class="text-[10px] text-white/30">{{ active_chat.ad_title }} · {{ active_chat.config_id }}</div>
+                                        <div v-if="active_chat.accepted_by_name" class="text-[10px] text-amber-400 mt-1">
+                                            принял {{ active_chat.accepted_by_name }} · {{ workflowLabel[active_chat.workflow] }}
+                                        </div>
+                                        <div v-else class="text-[10px] text-white/25 uppercase mt-1">{{ workflowLabel[active_chat.workflow] }}</div>
+                                    </div>
                                 </div>
                                 <button v-if="canManage && active_chat.config_id"
                                         class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400 h-fit"
@@ -604,15 +704,52 @@ const messageText = (m: Message) => m.content?.text || ''
                         </div>
                         <div class="flex-1 overflow-y-auto p-5 space-y-3">
                             <div v-for="m in messages" :key="m.id"
-                                 class="max-w-[80%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap"
+                                 class="max-w-[80%] rounded-2xl px-4 py-3 text-sm space-y-2"
                                  :class="m.from_us ? 'ml-auto bg-amber-500/15 text-amber-50' : 'bg-white/5'">
-                                <div class="text-[9px] uppercase tracking-widest opacity-50 mb-1">{{ messageAuthor(m) }}</div>
-                                {{ messageText(m) }}
+                                <div class="text-[9px] uppercase tracking-widest opacity-50">{{ messageAuthor(m) }}</div>
+                                <button v-if="m.image_url || m.image_thumb" type="button" class="block max-w-full text-left"
+                                        @click="openImage = m.image_url || m.image_thumb || null">
+                                    <img :src="m.image_thumb || m.image_url" alt=""
+                                         class="max-h-56 rounded-xl object-cover"
+                                         referrerpolicy="no-referrer" />
+                                </button>
+                                <a v-if="m.item?.url || m.item?.title" :href="m.item.url || undefined" target="_blank" rel="noreferrer"
+                                   class="flex gap-2 items-center border border-white/10 rounded-xl p-2 hover:border-amber-500/40">
+                                    <img v-if="m.item.image" :src="m.item.image" alt="" class="w-12 h-12 rounded-lg object-cover" referrerpolicy="no-referrer" />
+                                    <div class="min-w-0">
+                                        <div class="font-black uppercase text-[11px] truncate">{{ m.item.title || 'Объявление' }}</div>
+                                        <div v-if="m.item.price" class="text-[10px] text-amber-400">{{ m.item.price }}</div>
+                                    </div>
+                                </a>
+                                <a v-if="m.link?.url || m.link?.title" :href="m.link.url || undefined" target="_blank" rel="noreferrer"
+                                   class="block border border-white/10 rounded-xl p-2 hover:border-amber-500/40">
+                                    <img v-if="m.link.image" :src="m.link.image" alt="" class="w-full max-h-32 object-cover rounded-lg mb-2" referrerpolicy="no-referrer" />
+                                    <div class="font-black uppercase text-[11px]">{{ m.link.title || m.link.url }}</div>
+                                    <div v-if="m.link.description" class="text-[11px] text-white/50 line-clamp-2">{{ m.link.description }}</div>
+                                </a>
+                                <div v-if="m.is_voice" class="space-y-1">
+                                    <div class="text-[11px] text-white/40 uppercase tracking-widest">Голосовое сообщение</div>
+                                    <audio v-if="m.voice_url" :src="m.voice_url" controls class="w-full max-w-xs h-8" />
+                                </div>
+                                <div v-if="m.location" class="text-[11px] text-white/50">{{ m.location }}</div>
+                                <div v-if="m.call" class="text-[11px] text-white/50">{{ m.call }}</div>
+                                <div v-if="messageText(m)" class="whitespace-pre-wrap">{{ messageText(m) }}</div>
                             </div>
                         </div>
-                        <form v-if="canManage && active_chat" class="p-4 border-t border-white/5 flex gap-2" @submit.prevent="sendReply">
-                            <input v-model="reply.text" class="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" placeholder="Ответ в Avito…" />
-                            <button class="px-5 py-3 bg-amber-500 text-black text-[10px] uppercase font-black rounded-xl" :disabled="reply.processing">Отправить</button>
+                        <form v-if="canManage && active_chat" class="p-4 border-t border-white/5 space-y-2" @submit.prevent="sendReply" @dragover.prevent @drop.prevent="onPhotoDrop">
+                            <div v-if="photoFile" class="flex items-center gap-3 text-[11px] text-amber-400">
+                                <img v-if="photoPreview" :src="photoPreview" alt="" class="w-12 h-12 rounded-lg object-cover" />
+                                <span class="truncate">{{ photoFile.name }}</span>
+                                <button type="button" class="text-white/40 uppercase font-black" @click="clearPhoto">убрать</button>
+                            </div>
+                            <div class="flex gap-2">
+                                <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,.heic" class="hidden" @change="onPhotoChosen" />
+                                <button type="button" class="px-3 py-3 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50"
+                                        @click="pickPhoto">Фото</button>
+                                <input v-model="reply.text" class="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" placeholder="Ответ в Avito…" />
+                                <button class="px-5 py-3 bg-amber-500 text-black text-[10px] uppercase font-black rounded-xl"
+                                        :disabled="reply.processing || sendingPhoto">Отправить</button>
+                            </div>
                         </form>
                         <div v-if="!active_chat" class="m-auto text-white/30 text-sm">Выберите чат</div>
                     </div>
@@ -735,6 +872,10 @@ const messageText = (m: Message) => m.content?.text || ''
                 </dl>
                 <button class="px-4 py-2 text-[10px] uppercase font-black text-white/40" @click="openAd = null">Закрыть</button>
             </div>
+        </div>
+
+        <div v-if="openImage" class="fixed inset-0 bg-black/80 z-50 p-4 flex items-center justify-center" @click.self="openImage = null">
+            <img :src="openImage" alt="" class="max-w-full max-h-[90vh] rounded-2xl object-contain" referrerpolicy="no-referrer" />
         </div>
     </AdminLayout>
 </template>

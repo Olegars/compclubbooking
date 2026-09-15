@@ -19,7 +19,9 @@ use App\Services\StoreAvito\StoreAvitoPricer;
 use Database\Seeders\StoreAvitoPartsSeeder;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class StoreAvitoTest extends TestCase
@@ -377,6 +379,185 @@ class StoreAvitoTest extends TestCase
                 ->where('active_chat.accepted_by_name', 'Пётр Ответ')
                 ->has('messages', 2)
                 ->where('messages.1.admin_name', 'Пётр Ответ')
+            );
+    }
+
+    public function test_chat_payload_includes_avatar_and_incoming_image(): void
+    {
+        $manager = $this->makeAvitoManager('Мария Фото', 'maria-photo@avito.test');
+        $chat = $this->makeAvitoChat('u2i-photo', [
+            'client_name' => 'Клиент',
+            'client_avatar' => 'https://img.avito.ru/avatar.jpg',
+        ]);
+        StoreAvitoMessage::query()->create([
+            'chat_id' => $chat->chat_id,
+            'type' => 'image',
+            'content' => [
+                'image' => [
+                    'sizes' => [
+                        '1280x960' => 'https://img.avito.ru/full.jpg',
+                        '140x105' => 'https://img.avito.ru/thumb.jpg',
+                    ],
+                ],
+            ],
+            'from_us' => false,
+            'read' => false,
+            'avito_created_at' => now(),
+        ]);
+
+        StoreAvitoMessage::query()->create([
+            'chat_id' => $chat->chat_id,
+            'type' => 'item',
+            'content' => [
+                'item' => [
+                    'title' => 'Игровой ПК',
+                    'item_url' => 'https://www.avito.ru/item/1',
+                    'price_string' => '80 000 ₽',
+                    'image_url' => 'https://img.avito.ru/ad.jpg',
+                ],
+            ],
+            'from_us' => false,
+            'read' => false,
+            'avito_created_at' => now(),
+        ]);
+
+        $this->actingAs($manager, 'admin')
+            ->get('/admin/store/avito?tab=chats&folder=inbox&chat='.$chat->chat_id)
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('active_chat.client_avatar', 'https://img.avito.ru/avatar.jpg')
+                ->where('messages.0.image_url', 'https://img.avito.ru/full.jpg')
+                ->where('messages.0.image_thumb', 'https://img.avito.ru/thumb.jpg')
+                ->where('messages.1.item.title', 'Игровой ПК')
+                ->where('messages.1.item.image', 'https://img.avito.ru/ad.jpg')
+            );
+    }
+
+    public function test_manager_can_send_chat_image_without_avito_api(): void
+    {
+        Storage::fake('public');
+        $manager = $this->makeAvitoManager('Олег Фото', 'oleg-photo@avito.test');
+        $chat = $this->makeAvitoChat('u2i-send-photo');
+
+        $this->actingAs($manager, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/store/avito/chats/image', [
+                'chat_id' => $chat->chat_id,
+                'image' => UploadedFile::fake()->image('shot.jpg', 80, 60),
+            ])
+            ->assertRedirect();
+
+        $msg = StoreAvitoMessage::query()->where('chat_id', $chat->chat_id)->where('from_us', true)->first();
+        $this->assertNotNull($msg);
+        $this->assertSame('image', $msg->type);
+        $this->assertNotNull($msg->imageUrl());
+        $this->assertSame('in_progress', $chat->fresh()->workflow);
+    }
+
+    public function test_webhook_stores_incoming_image_once(): void
+    {
+        $payload = [
+            'payload' => [
+                'value' => [
+                    'id' => 'm-img-1',
+                    'chat_id' => 'u2i-img-hook',
+                    'user_id' => 1,
+                    'author_id' => 99,
+                    'type' => 'image',
+                    'content' => [
+                        'image' => [
+                            'sizes' => [
+                                '1280x960' => 'https://img.avito.ru/full.jpg',
+                                '140x105' => 'https://img.avito.ru/thumb.jpg',
+                            ],
+                        ],
+                    ],
+                    'created' => time(),
+                ],
+            ],
+        ];
+
+        $this->postJson('/api/store/avito/webhook', $payload)->assertOk();
+        $this->postJson('/api/store/avito/webhook', $payload)->assertOk();
+
+        $this->assertSame(1, StoreAvitoMessage::query()->where('avito_message_id', 'm-img-1')->count());
+        $msg = StoreAvitoMessage::query()->where('avito_message_id', 'm-img-1')->first();
+        $this->assertNotNull($msg);
+        $this->assertSame('image', $msg->type);
+        $this->assertSame('https://img.avito.ru/full.jpg', $msg->imageUrl());
+        $this->assertSame('https://img.avito.ru/thumb.jpg', $msg->imageUrl(true));
+    }
+
+    public function test_opening_chat_hydrates_avatar_and_syncs_images(): void
+    {
+        StoreAvitoSetting::current()->forceFill([
+            'client_id' => 'cid',
+            'client_secret' => 'secret',
+            'avito_user_id' => 111,
+            'access_token' => 'tok',
+            'access_token_expires_at' => now()->addHour(),
+        ])->save();
+
+        Http::fake(function ($request) {
+            $url = $request->url();
+            if (str_contains($url, '/read')) {
+                return Http::response(['ok' => true]);
+            }
+            if (str_contains($url, '/messages')) {
+                return Http::response([
+                    [
+                        'id' => 'img-1',
+                        'author_id' => 222,
+                        'type' => 'image',
+                        'direction' => 'in',
+                        'content' => [
+                            'image' => [
+                                'sizes' => ['1280x960' => 'https://img.avito.ru/full.jpg'],
+                            ],
+                        ],
+                        'created' => time(),
+                    ],
+                ]);
+            }
+            if (str_contains($url, '/chats/u2i-avatar')) {
+                return Http::response([
+                    'users' => [
+                        ['id' => 111, 'name' => 'Магазин'],
+                        [
+                            'id' => 222,
+                            'name' => 'Иван',
+                            'public_user_profile' => [
+                                'url' => 'https://www.avito.ru/user/abc',
+                                'avatar' => [
+                                    'default' => 'https://avito.st/stub.png',
+                                    'images' => [
+                                        '128x128' => 'https://avito.st/128.png',
+                                        '256x256' => 'https://avito.st/256.png',
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                    'context' => ['value' => ['title' => 'ПК тест', 'url' => 'https://avito.ru/item', 'id' => 1]],
+                ]);
+            }
+
+            return Http::response(['ok' => true]);
+        });
+
+        $manager = $this->makeAvitoManager('Гидра', 'hydra-avatar@avito.test');
+        $chat = $this->makeAvitoChat('u2i-avatar', [
+            'client_name' => null,
+            'client_avatar' => null,
+        ]);
+
+        $this->actingAs($manager, 'admin')
+            ->get('/admin/store/avito?tab=chats&folder=inbox&chat='.$chat->chat_id.'&mark_read=1')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('active_chat.client_avatar', 'https://avito.st/256.png')
+                ->where('active_chat.client_name', 'Иван')
+                ->where('messages.0.image_url', 'https://img.avito.ru/full.jpg')
             );
     }
 
