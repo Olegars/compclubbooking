@@ -2631,6 +2631,23 @@ class ShellApiController extends Controller
                 'data_root' => 'nullable|string|max:260',
                 'volume_letter' => 'nullable|string|max:8',
                 'ssd_temp_c' => 'nullable|numeric|min:0|max:150',
+                'nic_link_mbps' => 'nullable|integer|min:0|max:100000',
+                'ssd_wear_pct' => 'nullable|numeric|min:0|max:100',
+                'ssd_read_errors' => 'nullable|integer|min:0',
+                'ssd_write_errors' => 'nullable|integer|min:0',
+                'ssd_health' => 'nullable|string|in:healthy,warning,unhealthy,unknown',
+                'super_client' => 'nullable|boolean',
+                'games_steam_count' => 'nullable|integer|min:0|max:5000',
+                'games_epic_count' => 'nullable|integer|min:0|max:5000',
+                'games_inventory_hash' => 'nullable|string|max:64',
+                'games_inventory' => 'nullable|array|max:200',
+                'games_inventory.*.p' => 'nullable|string|max:16',
+                'games_inventory.*.id' => 'nullable|string|max:64',
+                'games_inventory.*.b' => 'nullable|string|max:32',
+                'games_inventory.*.n' => 'nullable|string|max:120',
+                'diskless_ack_id' => 'nullable|integer|min:1',
+                'diskless_result' => 'nullable|string|max:32',
+                'diskless_message' => 'nullable|string|max:240',
             ]);
 
             $computer = null;
@@ -2666,6 +2683,19 @@ class ShellApiController extends Controller
                     'data_root' => $request->input('data_root'),
                     'volume_letter' => $request->input('volume_letter'),
                     'ssd_temp_c' => $request->input('ssd_temp_c'),
+                    'nic_link_mbps' => $request->input('nic_link_mbps'),
+                    'ssd_wear_pct' => $request->input('ssd_wear_pct'),
+                    'ssd_read_errors' => $request->input('ssd_read_errors'),
+                    'ssd_write_errors' => $request->input('ssd_write_errors'),
+                    'ssd_health' => $request->input('ssd_health'),
+                    'super_client' => $request->has('super_client') ? $request->boolean('super_client') : null,
+                    'games_steam_count' => $request->input('games_steam_count'),
+                    'games_epic_count' => $request->input('games_epic_count'),
+                    'games_inventory_hash' => $request->input('games_inventory_hash'),
+                    'games_inventory' => $request->input('games_inventory'),
+                    'diskless_ack_id' => $request->input('diskless_ack_id'),
+                    'diskless_result' => $request->input('diskless_result'),
+                    'diskless_message' => $request->input('diskless_message'),
                 ]
             );
 

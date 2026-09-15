@@ -19,6 +19,7 @@ use App\Support\AdminAlerts;
 use App\Support\AdminLocation;
 use App\Support\OrderChannel;
 use App\Services\BookingSessionTimingService;
+use App\Services\DisklessCommandService;
 use App\Services\ProductStockService;
 use App\Models\Computer;
 use App\Services\PreSessionOrderService;
@@ -945,6 +946,49 @@ class AdminController extends Controller
                 : 'Активной сессии не было, статус ПК пересчитан.',
         ]);
     }
+
+    /**
+     * Super Client с дашборда: шелл забирает команду в heartbeat.
+     * Пароль CCBoot остаётся на ПК (config.ini), не в облаке.
+     */
+    public function enqueueDisklessCommand(Request $request, DisklessCommandService $diskless)
+    {
+        $data = $request->validate([
+            'computer_id' => 'required|integer|exists:computers,id',
+            'action' => 'required|string|in:enable_sc,disable_sc_save,disable_sc_discard',
+            'disk_mode' => 'nullable|string|in:image,disk,both',
+            'confirm_game_disk' => 'nullable|boolean',
+        ]);
+
+        $admin = Auth::guard('admin')->user();
+        $computer = Computer::query()->findOrFail((int) $data['computer_id']);
+        $clubId = AdminLocation::id($admin);
+        if ($clubId && $computer->club_id && (int) $computer->club_id !== (int) $clubId) {
+            abort(403, 'Этот ПК в другой локации.');
+        }
+
+        $queued = $diskless->enqueue(
+            $computer,
+            (string) $data['action'],
+            (string) ($data['disk_mode'] ?? 'image'),
+            $request->boolean('confirm_game_disk'),
+        );
+
+        $labels = [
+            'enable_sc' => 'Super Client будет включён на следующем heartbeat (reboot).',
+            'disable_sc_save' => 'Выключение Super Client с сохранением образа поставлено в очередь.',
+            'disable_sc_discard' => 'Выключение Super Client без сохранения поставлено в очередь.',
+        ];
+
+        return response()->json([
+            'status' => 'success',
+            'command_id' => $queued['command_id'],
+            'action' => $queued['action'],
+            'disk_mode' => $queued['disk_mode'],
+            'message' => $labels[$queued['action']] ?? 'Команда поставлена в очередь.',
+        ]);
+    }
+
     public function checkNewOrders()
     {
         // Считаем только те, что еще не приняты (статус pending)

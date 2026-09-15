@@ -29,6 +29,8 @@ const sosAlerts = ref<any[]>([])
 const inputAlerts = ref<any[]>([])
 const forceOffBusy = ref<number | null>(null)
 const releasingPc = ref(false)
+const disklessBusy = ref(false)
+const scDiskMode = ref('image')
 
 const orphanFans = computed(() => fanOrphans.value.filter((f: any) => f.fan_orphan_on))
 
@@ -38,12 +40,29 @@ const spaceNameHint = (spaceId: number) => {
     return `Space #${spaceId} · ${pcs.map((p: any) => p.name).slice(0, 3).join(', ')}`
 }
 
+const isSlowNic = (pc: any) => {
+    const mbps = Number(pc.nic_link_mbps)
+    return Number.isFinite(mbps) && mbps > 0 && mbps <= 100
+        && (pc.power_state === 'on' || pc.status === 'busy' || pc.super_client)
+}
+
+const isWornSsd = (pc: any) => {
+    const wear = Number(pc.ssd_wear_pct)
+    const health = String(pc.ssd_health || '')
+    const live = pc.power_state === 'on' || pc.status === 'busy' || pc.super_client
+    return live && (health === 'unhealthy' || (Number.isFinite(wear) && wear >= 90))
+}
+
 const powerTileClass = (pc: any) => {
+    if (pc.super_client) return 'bg-violet-500/15 border-violet-500/40'
+    if (pc.diskless_command) return 'bg-violet-500/10 border-violet-500/30'
     if (pc.status === 'maintenance' || pc.maintenance) return 'bg-orange-500/15 border-orange-500/40'
     if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'bg-fuchsia-500/15 border-fuchsia-500/40'
     if (Number(pc.ssd_temp_c) >= 80 && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'bg-red-500/15 border-red-500/40'
+    if (isSlowNic(pc)) return 'bg-yellow-500/20 border-yellow-500/50'
+    if (isWornSsd(pc)) return 'bg-rose-500/15 border-rose-500/40'
     if (pc.status === 'busy') return 'bg-cyan-500/10 border-cyan-500/40'
     const state = pc.power_state || 'off'
     if (state === 'on') return 'bg-emerald-500/15 border-emerald-500/40'
@@ -53,11 +72,14 @@ const powerTileClass = (pc: any) => {
 }
 
 const powerLabelClass = (pc: any) => {
+    if (pc.super_client || pc.diskless_command) return 'text-violet-300'
     if (pc.status === 'maintenance' || pc.maintenance) return 'text-orange-400'
     if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'text-fuchsia-300'
     if (Number(pc.ssd_temp_c) >= 80 && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'text-red-300'
+    if (isSlowNic(pc)) return 'text-yellow-300'
+    if (isWornSsd(pc)) return 'text-rose-300'
     if (Number(pc.ssd_temp_c) >= 70 && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'text-amber-300'
     if (pc.status === 'busy') return 'text-cyan-400'
@@ -69,11 +91,15 @@ const powerLabelClass = (pc: any) => {
 }
 
 const powerLabel = (pc: any) => {
+    if (pc.super_client) return 'super client'
+    if (pc.diskless_command) return 'очередь sc'
     if (pc.status === 'maintenance' || pc.maintenance) return 'сервис'
     if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'кэш'
     if (Number(pc.ssd_temp_c) >= 80 && (pc.power_state === 'on' || pc.status === 'busy'))
         return `ssd ${Math.round(Number(pc.ssd_temp_c))}°`
+    if (isSlowNic(pc)) return `${pc.nic_link_mbps}m`
+    if (isWornSsd(pc)) return `wear ${Math.round(Number(pc.ssd_wear_pct))}%`
     if (pc.status === 'busy') return 'сессия'
     const state = pc.power_state || 'off'
     if (state === 'on') return 'онлайн'
@@ -114,8 +140,25 @@ const refreshStatuses = async () => {
                 data_root: updated.data_root,
                 maintenance: updated.maintenance,
                 ssd_temp_c: updated.ssd_temp_c,
+                nic_link_mbps: updated.nic_link_mbps,
+                ssd_wear_pct: updated.ssd_wear_pct,
+                ssd_read_errors: updated.ssd_read_errors,
+                ssd_write_errors: updated.ssd_write_errors,
+                ssd_health: updated.ssd_health,
+                super_client: updated.super_client,
+                games_steam_count: updated.games_steam_count,
+                games_epic_count: updated.games_epic_count,
+                diskless_command: updated.diskless_command,
+                diskless_disk_mode: updated.diskless_disk_mode,
+                diskless_result: updated.diskless_result,
+                diskless_message: updated.diskless_message,
             }
         })
+
+        if (selectedPc.value) {
+            const live = localComputers.value.find((p: any) => Number(p.id) === Number(selectedPc.value.id))
+            if (live) selectedPc.value = live
+        }
 
         const [{ data: callData }, { data: alertData }] = await Promise.all([
             axios.get('/admin/api/active-calls'),
@@ -167,6 +210,46 @@ const releaseComputer = async () => {
         error(e?.response?.data?.message || 'Не удалось освободить компьютер')
     } finally {
         releasingPc.value = false
+    }
+}
+
+const enqueueDiskless = async (action: string) => {
+    const pc = selectedPc.value
+    if (!pc || disklessBusy.value) return
+    const mode = scDiskMode.value || 'image'
+    if (action === 'enable_sc') {
+        const gameDisk = mode === 'disk' || mode === 'both'
+        const ok = confirm(
+            gameDisk
+                ? `${pc.name}: Super Client на ${mode}. Game disk заблокируется для остальных. ПК уйдёт в reboot. Продолжить?`
+                : `${pc.name}: включить Super Client (диск ${mode})? ПК уйдёт в reboot, пароль берётся из config.ini на месте.`
+        )
+        if (!ok) return
+        if (gameDisk && !confirm('Ещё раз: Super Client на игровом томе — только если сознательно правите библиотеку игр.')) {
+            return
+        }
+    } else if (action === 'disable_sc_save') {
+        if (!confirm(`${pc.name}: выключить Super Client и сохранить образ?`)) return
+    } else if (!confirm(`${pc.name}: выключить Super Client БЕЗ сохранения?`)) {
+        return
+    }
+
+    disklessBusy.value = true
+    try {
+        const { data } = await axios.post('/admin/api/computers/diskless', {
+            computer_id: pc.id,
+            action,
+            disk_mode: mode,
+            confirm_game_disk: mode === 'disk' || mode === 'both',
+        })
+        success(data?.message || 'Команда поставлена в очередь')
+        await refreshStatuses()
+        const updated = localComputers.value.find((p: any) => Number(p.id) === Number(pc.id))
+        if (updated) selectedPc.value = updated
+    } catch (e: any) {
+        error(e?.response?.data?.message || 'Не удалось поставить команду')
+    } finally {
+        disklessBusy.value = false
     }
 }
 
@@ -371,8 +454,11 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span> Ошибка WOL</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Сессия</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-orange-400"></span> Обслуживание</span>
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-violet-400"></span> Super Client</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-fuchsia-400"></span> Кэш SSD мёртв</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red-400"></span> SSD перегрев</span>
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-yellow-400"></span> Линк ≤100 Мбит</span>
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-rose-400"></span> Износ SSD</span>
                     </div>
                     <div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
                         <div v-for="pc in localComputers" :key="pc.id" @click="selectedPc = pc"
@@ -395,22 +481,59 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                         </div>
                     </div>
 
-                    <div v-if="isOwner && selectedPc"
-                         class="mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-black/40 border border-amber-500/20 rounded-2xl p-5">
+                    <div v-if="selectedPc"
+                         class="mt-6 flex flex-col gap-4 bg-black/40 border border-white/10 rounded-2xl p-5">
                         <div>
                             <div class="text-sm font-black uppercase italic text-white">ПК {{ selectedPc.name }}</div>
                             <div class="text-[9px] text-white/30 uppercase font-black tracking-widest mt-1">
-                                {{ selectedPc.status === 'busy' ? 'есть сессия' : powerLabel(selectedPc) }}
-                                · закрыть, если шелл убили без logout
+                                {{ powerLabel(selectedPc) }}
+                                <span v-if="selectedPc.nic_link_mbps"> · {{ selectedPc.nic_link_mbps }} Мбит</span>
+                                <span v-if="selectedPc.ssd_wear_pct != null"> · wear {{ selectedPc.ssd_wear_pct }}%</span>
+                                <span v-if="selectedPc.ssd_health"> · {{ selectedPc.ssd_health }}</span>
+                                <span v-if="selectedPc.games_steam_count != null"> · steam {{ selectedPc.games_steam_count }}</span>
+                                <span v-if="selectedPc.games_epic_count"> · epic {{ selectedPc.games_epic_count }}</span>
+                            </div>
+                            <div v-if="selectedPc.diskless_command || selectedPc.diskless_result || selectedPc.diskless_message"
+                                 class="text-[10px] text-violet-300/80 mt-2 font-mono">
+                                {{ selectedPc.diskless_command ? ('очередь: ' + selectedPc.diskless_command) : '' }}
+                                {{ selectedPc.diskless_result ? (' · ' + selectedPc.diskless_result) : '' }}
+                                {{ selectedPc.diskless_message ? (' · ' + selectedPc.diskless_message) : '' }}
                             </div>
                         </div>
-                        <button
-                            type="button"
-                            @click="releaseComputer"
-                            :disabled="releasingPc"
-                            class="shrink-0 px-6 py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
-                            Освободить компьютер
-                        </button>
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <select v-model="scDiskMode"
+                                    class="bg-black border border-white/10 rounded-xl px-3 py-3 text-[10px] font-black uppercase tracking-widest text-white/70">
+                                <option value="image">диск: image</option>
+                                <option value="disk">диск: game</option>
+                                <option value="both">диск: both</option>
+                            </select>
+                            <button
+                                type="button"
+                                @click="enqueueDiskless('enable_sc')"
+                                :disabled="disklessBusy || selectedPc.status === 'busy'"
+                                class="shrink-0 px-5 py-3 bg-violet-500 hover:bg-violet-400 disabled:opacity-40 text-black font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
+                                Super Client
+                            </button>
+                            <button
+                                type="button"
+                                @click="enqueueDiskless('disable_sc_save')"
+                                :disabled="disklessBusy"
+                                class="shrink-0 px-5 py-3 bg-white/10 hover:bg-white/20 disabled:opacity-40 text-white font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
+                                Выкл + save
+                            </button>
+                        </div>
+                        <div v-if="isOwner" class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-white/5">
+                            <div class="text-[9px] text-white/30 uppercase font-black tracking-widest">
+                                закрыть, если шелл убили без logout
+                            </div>
+                            <button
+                                type="button"
+                                @click="releaseComputer"
+                                :disabled="releasingPc"
+                                class="shrink-0 px-6 py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
+                                Освободить компьютер
+                            </button>
+                        </div>
                     </div>
                 </div>
 

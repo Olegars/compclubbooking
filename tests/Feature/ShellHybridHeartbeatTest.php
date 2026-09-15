@@ -85,6 +85,67 @@ class ShellHybridHeartbeatTest extends TestCase
         $this->assertSame('AA:BB:CC:DD:EE:01', $this->computer->mac_address);
     }
 
+    public function test_heartbeat_stores_link_smart_and_game_inventory(): void
+    {
+        $game = \App\Models\Game::create([
+            'title' => 'Counter-Strike 2',
+            'platform' => 'Steam',
+            'exe_path' => 'D:\\Steam\\steamapps\\common\\Counter-Strike Global Offensive\\cs2.exe',
+        ]);
+        \App\Models\ComputerGame::create([
+            'computer_id' => $this->computer->id,
+            'game_id' => $game->id,
+            'is_installed' => true,
+            'verified_at' => null,
+        ]);
+
+        $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $this->computer->hwid,
+            'nic_link_mbps' => 100,
+            'ssd_wear_pct' => 12,
+            'ssd_read_errors' => 0,
+            'ssd_write_errors' => 1,
+            'ssd_health' => 'healthy',
+            'super_client' => false,
+            'games_inventory_hash' => 'abc123',
+            'games_inventory' => [
+                ['p' => 'steam', 'id' => '730', 'b' => '99', 'n' => 'Counter-Strike 2'],
+                ['p' => 'epic', 'id' => 'fortnite', 'b' => '1', 'n' => 'Fortnite'],
+            ],
+        ])->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('diskless', null);
+
+        $this->computer->refresh();
+        $this->assertSame(100, (int) $this->computer->nic_link_mbps);
+        $this->assertSame(12, (int) $this->computer->ssd_wear_pct);
+        $this->assertSame(1, (int) $this->computer->ssd_write_errors);
+        $this->assertSame('healthy', $this->computer->ssd_health);
+        $this->assertSame(1, (int) $this->computer->games_steam_count);
+        $this->assertSame(1, (int) $this->computer->games_epic_count);
+        $this->assertNotNull(
+            \App\Models\ComputerGame::query()
+                ->where('computer_id', $this->computer->id)
+                ->where('game_id', $game->id)
+                ->value('verified_at')
+        );
+    }
+
+    public function test_super_client_heartbeat_skips_idle_shutdown(): void
+    {
+        $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $this->computer->hwid,
+            'super_client' => true,
+        ])->assertOk()
+            ->assertJsonPath('power_action', 'none')
+            ->assertJsonPath('power_desired', 'on')
+            ->assertJsonPath('maintenance', true);
+
+        $this->computer->refresh();
+        $this->assertTrue($this->computer->super_client);
+        $this->assertTrue($this->computer->maintenance);
+    }
+
     public function test_leaving_maintenance_allows_idle_shutdown(): void
     {
         $this->computer->update([

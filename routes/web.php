@@ -385,6 +385,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
             Route::get('/pc-statuses', [AdminController::class, 'getPcStatuses']);
             Route::post('/computers/release', [AdminController::class, 'releaseComputer'])
                 ->middleware('role:owner');
+            Route::post('/computers/diskless', [AdminController::class, 'enqueueDisklessCommand']);
             Route::get('/check-orders', [AdminController::class, 'checkNewOrders']);
             Route::get('/sos-alerts', [AdminController::class, 'sosAlerts']);
             Route::post('/sos-alerts/{id}/ack', [AdminController::class, 'ackSosAlert']);

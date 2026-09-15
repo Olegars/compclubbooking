@@ -15,6 +15,11 @@ class Computer extends Model
         'power_state_updated_at', 'last_seen_at', 'wol_sent_at',
         'maintenance', 'maintenance_until',
         'cache_ok', 'cache_free_gb', 'data_root', 'volume_letter', 'ssd_temp_c',
+        'nic_link_mbps', 'ssd_wear_pct', 'ssd_read_errors', 'ssd_write_errors', 'ssd_health',
+        'super_client', 'games_steam_count', 'games_epic_count',
+        'games_inventory_hash', 'games_inventory',
+        'diskless_command', 'diskless_disk_mode', 'diskless_command_id',
+        'diskless_command_at', 'diskless_result', 'diskless_message',
     ];
 
     protected $casts = [
@@ -26,6 +31,16 @@ class Computer extends Model
         'cache_ok' => 'boolean',
         'cache_free_gb' => 'float',
         'ssd_temp_c' => 'float',
+        'nic_link_mbps' => 'integer',
+        'ssd_wear_pct' => 'integer',
+        'ssd_read_errors' => 'integer',
+        'ssd_write_errors' => 'integer',
+        'super_client' => 'boolean',
+        'games_steam_count' => 'integer',
+        'games_epic_count' => 'integer',
+        'games_inventory' => 'array',
+        'diskless_command_id' => 'integer',
+        'diskless_command_at' => 'immutable_datetime',
     ];
 
     public const KIND_PC = 'pc';

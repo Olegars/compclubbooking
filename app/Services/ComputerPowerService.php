@@ -189,9 +189,30 @@ class ComputerPowerService
      *     cache_free_gb?: float|int|string|null,
      *     data_root?: string|null,
      *     volume_letter?: string|null,
-     *     ssd_temp_c?: float|int|string|null
+     *     ssd_temp_c?: float|int|string|null,
+     *     nic_link_mbps?: int|string|null,
+     *     ssd_wear_pct?: int|string|null,
+     *     ssd_read_errors?: int|string|null,
+     *     ssd_write_errors?: int|string|null,
+     *     ssd_health?: string|null,
+     *     super_client?: bool|null,
+     *     games_steam_count?: int|string|null,
+     *     games_epic_count?: int|string|null,
+     *     games_inventory_hash?: string|null,
+     *     games_inventory?: array<int, mixed>|null,
+     *     diskless_ack_id?: int|string|null,
+     *     diskless_result?: string|null,
+     *     diskless_message?: string|null
      * }  $extras
-     * @return array{power_desired: string, power_state: string, power_action: string, session_active: bool, maintenance: bool, cache_ok: bool|null}
+     * @return array{
+     *     power_desired: string,
+     *     power_state: string,
+     *     power_action: string,
+     *     session_active: bool,
+     *     maintenance: bool,
+     *     cache_ok: bool|null,
+     *     diskless: array{command_id: int, action: string, disk_mode: string}|null
+     * }
      */
     public function heartbeat(Computer $computer, ?string $mac = null, array $extras = []): array
     {
@@ -200,8 +221,31 @@ class ComputerPowerService
         $this->applyHeartbeatExtras($id, $extras);
         $computer->refresh();
 
+        $diskless = app(DisklessCommandService::class);
+        $ackId = isset($extras['diskless_ack_id']) ? (int) $extras['diskless_ack_id'] : 0;
+        if ($ackId > 0) {
+            $diskless->ack(
+                $computer,
+                $ackId,
+                isset($extras['diskless_result']) ? (string) $extras['diskless_result'] : null,
+                isset($extras['diskless_message']) ? (string) $extras['diskless_message'] : null,
+            );
+            $computer->refresh();
+        }
+
+        if (! empty($extras['games_inventory']) && is_array($extras['games_inventory'])) {
+            try {
+                app(StationInventoryService::class)->sync($computer, $extras['games_inventory']);
+            } catch (\Throwable $e) {
+                Log::warning('Station inventory sync failed', [
+                    'computer_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         $now = CarbonImmutable::now();
-        $inMaintenance = $computer->isInMaintenance($now);
+        $inMaintenance = $computer->isInMaintenance($now) || (bool) $computer->super_client;
 
         $desired = self::DESIRED_OFF;
         try {
@@ -221,8 +265,9 @@ class ComputerPowerService
         }
 
         $sessionActive = $this->hasActiveSession($id);
+        $pendingDiskless = $diskless->pendingFor($computer);
         $action = 'none';
-        if (! $inMaintenance && ! $sessionActive) {
+        if (! $inMaintenance && ! $sessionActive && $pendingDiskless === null && ! $computer->super_client) {
             $action = $this->actionForDesired($desired);
         }
 
@@ -233,6 +278,7 @@ class ComputerPowerService
             'session_active' => $sessionActive,
             'maintenance' => $inMaintenance,
             'cache_ok' => $computer->cache_ok,
+            'diskless' => $pendingDiskless,
         ];
     }
 
@@ -300,7 +346,7 @@ class ComputerPowerService
 
         $desired = DB::table('computers')->where('id', $computerId)->value('power_desired');
         $computer = Computer::query()->find($computerId);
-        if ($computer && $computer->isInMaintenance($now)) {
+        if ($computer && ($computer->isInMaintenance($now) || $computer->super_client || $computer->diskless_command)) {
             return 'none';
         }
 
@@ -323,6 +369,10 @@ class ComputerPowerService
 
         $sql = "SELECT id, name, status, power_desired, last_seen_at, space_id, club_id,
                        cache_ok, cache_free_gb, data_root, volume_letter, ssd_temp_c, maintenance,
+                       nic_link_mbps, ssd_wear_pct, ssd_read_errors, ssd_write_errors, ssd_health,
+                       super_client, games_steam_count, games_epic_count, games_inventory_hash,
+                       diskless_command, diskless_disk_mode, diskless_command_id,
+                       diskless_result, diskless_message,
                        CASE
                            WHEN last_seen_at IS NOT NULL
                                 AND last_seen_at >= NOW() - (? * INTERVAL '1 second')
@@ -540,6 +590,56 @@ class ComputerPowerService
         if (array_key_exists('ssd_temp_c', $extras) && $extras['ssd_temp_c'] !== null && $extras['ssd_temp_c'] !== '') {
             $patch['ssd_temp_c'] = round((float) $extras['ssd_temp_c'], 1);
         }
+        if (array_key_exists('nic_link_mbps', $extras) && $extras['nic_link_mbps'] !== null && $extras['nic_link_mbps'] !== '') {
+            $patch['nic_link_mbps'] = max(0, (int) $extras['nic_link_mbps']);
+        }
+        if (array_key_exists('ssd_wear_pct', $extras) && $extras['ssd_wear_pct'] !== null && $extras['ssd_wear_pct'] !== '') {
+            $patch['ssd_wear_pct'] = max(0, min(100, (int) $extras['ssd_wear_pct']));
+        }
+        if (array_key_exists('ssd_read_errors', $extras) && $extras['ssd_read_errors'] !== null && $extras['ssd_read_errors'] !== '') {
+            $patch['ssd_read_errors'] = max(0, (int) $extras['ssd_read_errors']);
+        }
+        if (array_key_exists('ssd_write_errors', $extras) && $extras['ssd_write_errors'] !== null && $extras['ssd_write_errors'] !== '') {
+            $patch['ssd_write_errors'] = max(0, (int) $extras['ssd_write_errors']);
+        }
+        if (! empty($extras['ssd_health'])) {
+            $health = strtolower((string) $extras['ssd_health']);
+            if (in_array($health, ['healthy', 'warning', 'unhealthy', 'unknown'], true)) {
+                $patch['ssd_health'] = $health;
+            }
+        }
+        if (array_key_exists('super_client', $extras) && $extras['super_client'] !== null) {
+            $sc = filter_var($extras['super_client'], FILTER_VALIDATE_BOOLEAN);
+            $patch['super_client'] = $sc;
+            if ($sc) {
+                $patch['maintenance'] = true;
+                $patch['status'] = 'maintenance';
+            }
+        }
+        if (array_key_exists('games_steam_count', $extras) && $extras['games_steam_count'] !== null && $extras['games_steam_count'] !== '') {
+            $patch['games_steam_count'] = max(0, (int) $extras['games_steam_count']);
+        }
+        if (array_key_exists('games_epic_count', $extras) && $extras['games_epic_count'] !== null && $extras['games_epic_count'] !== '') {
+            $patch['games_epic_count'] = max(0, (int) $extras['games_epic_count']);
+        }
+        if (! empty($extras['games_inventory_hash'])) {
+            $patch['games_inventory_hash'] = mb_substr((string) $extras['games_inventory_hash'], 0, 64);
+        }
+        if (array_key_exists('games_inventory', $extras) && is_array($extras['games_inventory'])) {
+            $patch['games_inventory'] = array_slice(array_values($extras['games_inventory']), 0, 200);
+            if (! isset($patch['games_steam_count'])) {
+                $patch['games_steam_count'] = count(array_filter(
+                    $extras['games_inventory'],
+                    fn ($row) => is_array($row) && (($row['p'] ?? '') === 'steam')
+                ));
+            }
+            if (! isset($patch['games_epic_count'])) {
+                $patch['games_epic_count'] = count(array_filter(
+                    $extras['games_inventory'],
+                    fn ($row) => is_array($row) && (($row['p'] ?? '') === 'epic')
+                ));
+            }
+        }
 
         if (array_key_exists('maintenance', $extras) && $extras['maintenance'] !== null) {
             $on = filter_var($extras['maintenance'], FILTER_VALIDATE_BOOLEAN);
@@ -555,12 +655,17 @@ class ComputerPowerService
             }
         }
 
-        if ($patch !== []) {
-            $patch['updated_at'] = DB::raw('NOW()');
-            DB::table('computers')->where('id', $computerId)->update($patch);
+        if (! empty($patch['super_client'])) {
+            $patch['maintenance'] = true;
+            $patch['status'] = 'maintenance';
         }
 
-        if (isset($patch['maintenance']) && $patch['maintenance'] === false) {
+        if ($patch !== []) {
+            $patch['updated_at'] = DB::raw('NOW()');
+            Computer::query()->where('id', $computerId)->update($patch);
+        }
+
+        if (isset($patch['maintenance']) && $patch['maintenance'] === false && empty($patch['super_client'])) {
             app(ComputerStatusService::class)->syncFor([$computerId]);
         }
     }
