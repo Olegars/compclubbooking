@@ -118,6 +118,7 @@ class MapPresentationService
             $kind = $slug === 'tv' ? 'tv' : 'pc';
 
             $decorated[] = array_merge($rect, [
+                'c' => filled($zone?->color) ? (string) $zone->color : (string) ($rect['c'] ?? '#22c55e'),
                 'label' => $label,
                 'addons' => $addons,
                 'info' => $info,

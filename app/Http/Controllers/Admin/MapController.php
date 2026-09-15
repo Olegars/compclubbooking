@@ -196,7 +196,10 @@ class MapController extends Controller
             ->where('club_id', $clubId)
             ->get();
 
-        // Подмешиваем addon_ids и info комнаты из БД в прямоугольники карты.
+        $colorBySlug = Zone::query()->pluck('color', 'slug')
+            ->mapWithKeys(fn ($color, $slug) => [strtolower((string) $slug) => (string) $color]);
+
+        // Подмешиваем addon_ids, цвет из топологии и info комнаты из БД в прямоугольники карты.
         if (is_array($rects)) {
             foreach ($rects as &$rect) {
                 $space = $this->matchSpace($spaces, $rect);
@@ -204,6 +207,12 @@ class MapController extends Controller
                     ? $space->addons->pluck('id')->map(fn ($id) => (int) $id)->values()->all()
                     : array_values(array_map('intval', $rect['addon_ids'] ?? []));
                 $rect['space_id'] = $space?->id;
+                $slug = ZoneSlug::normalize($rect['type'] ?? '');
+                if ($slug !== '' && filled($colorBySlug[$slug] ?? null)) {
+                    $rect['c'] = $colorBySlug[$slug];
+                } elseif (empty($rect['c'])) {
+                    $rect['c'] = '#22c55e';
+                }
                 if ($space) {
                     $rect['info'] = RoomInfoEdge::normalizeInfo($space->roomInfo());
                 } else {

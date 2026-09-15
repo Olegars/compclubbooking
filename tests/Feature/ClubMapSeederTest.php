@@ -26,6 +26,12 @@ class ClubMapSeederTest extends TestCase
         $this->assertSame(30, Space::query()->where('club_id', $club->id)->count());
         $this->assertSame(0, Computer::query()->count());
 
+        $rects = collect($club->map_config['zoneRects']);
+        $this->assertSame('#22c55e', $rects->firstWhere('type', 'duo')['c'] ?? null);
+        $this->assertSame('#38bdf8', $rects->firstWhere('type', 'singl')['c'] ?? null);
+        $this->assertSame('#a855f7', $rects->firstWhere('type', 'tv')['c'] ?? null);
+        $this->assertSame('#ef4444', $rects->firstWhere('type', 'bootcamp')['c'] ?? null);
+
         $this->assertDatabaseHas('admins', [
             'email' => 'boss@0451.space',
             'role' => 'owner',

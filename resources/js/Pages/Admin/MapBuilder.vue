@@ -450,6 +450,12 @@ const normalizeZoneType = (type: unknown) => {
     return ZONE_SLUG_ALIASES[slug] || slug
 }
 
+const colorForZoneType = (type: unknown) => {
+    const slug = normalizeZoneType(type)
+    const zone = topologyZones.value.find(z => z.slug === slug)
+    return zone?.color || ''
+}
+
 const zoneAutoTitle = (zone: any) =>
     normalizeZoneType(zone.type).replace(/[-_]/g, ' ').toUpperCase()
 
@@ -784,15 +790,19 @@ const loadFromDB = async () => {
 
         if (rawConfig) {
             walls.value = cleanArray(rawConfig.walls).filter(w => w && w.d);
-            zones.value = cleanArray(rawConfig.zoneRects).filter(z => z && z.w !== undefined).map(z => ({
-                ...z,
-                type: normalizeZoneType(z.type) || z.type,
-                addon_ids: Array.isArray(z.addon_ids) ? z.addon_ids.map(Number) : [],
-                addon_positions: (z.addon_positions && typeof z.addon_positions === 'object')
-                    ? { ...z.addon_positions }
-                    : {},
-                info: normalizeRoomInfo(z.info),
-            })).filter(z => safeNum(z.w) >= 0.5 && safeNum(z.h) >= 0.5);
+            zones.value = cleanArray(rawConfig.zoneRects).filter(z => z && z.w !== undefined).map(z => {
+                const type = normalizeZoneType(z.type) || z.type
+                return {
+                    ...z,
+                    type,
+                    c: colorForZoneType(type) || z.c || '#22c55e',
+                    addon_ids: Array.isArray(z.addon_ids) ? z.addon_ids.map(Number) : [],
+                    addon_positions: (z.addon_positions && typeof z.addon_positions === 'object')
+                        ? { ...z.addon_positions }
+                        : {},
+                    info: normalizeRoomInfo(z.info),
+                }
+            }).filter(z => safeNum(z.w) >= 0.5 && safeNum(z.h) >= 0.5);
             labels.value = cleanArray(rawConfig.labels).filter(keepManualLabel);
             if (rawConfig.viewbox) viewbox.value = rawConfig.viewbox;
         }

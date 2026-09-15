@@ -44,6 +44,11 @@ class ClubMapSeeder extends Seeder
             $space->delete();
         });
 
+        $colorBySlug = [];
+        foreach ($this->zones() as $zone) {
+            $colorBySlug[$zone['slug']] = $zone['color'];
+        }
+
         $rects = [];
         foreach ($this->rooms() as $index => $room) {
             $slug = $room['slug'];
@@ -64,6 +69,7 @@ class ClubMapSeeder extends Seeder
                 'w' => $room['w'],
                 'h' => $room['h'],
                 'type' => $slug,
+                'c' => $colorBySlug[$slug] ?? '#22c55e',
             ];
         }
 
