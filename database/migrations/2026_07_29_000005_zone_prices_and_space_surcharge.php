@@ -27,19 +27,28 @@ return new class extends Migration
         // Старая матрица «класс × зона» больше не нужна — цены задаются по зоне.
         DB::table('tariff_prices')->delete();
 
-        // SQLite не даёт DROP COLUMN, пока колонка сидит в индексе.
-        DB::statement('DROP INDEX IF EXISTS tariff_prices_base_unique');
-        DB::statement('DROP INDEX IF EXISTS tariff_prices_zone_unique');
-        DB::statement('DROP INDEX IF EXISTS tariff_prices_club_id_seat_class_id_index');
-
         if (Schema::hasColumn('tariff_prices', 'seat_class_id')) {
-            Schema::table('tariff_prices', function (Blueprint $table) use ($driver) {
-                if ($driver !== 'sqlite') {
+            if ($driver === 'sqlite') {
+                // Native DROP COLUMN на SQLite падает: уникальные индексы
+                // (tariff_prices_base_unique) ссылаются на seat_class_id.
+                Schema::disableForeignKeyConstraints();
+                Schema::drop('tariff_prices');
+                Schema::create('tariff_prices', function (Blueprint $table) {
+                    $table->id();
+                    $table->foreignId('tariff_id')->constrained()->cascadeOnDelete();
+                    $table->foreignId('club_id')->constrained()->cascadeOnDelete();
+                    $table->foreignId('zone_id')->nullable()->constrained()->cascadeOnDelete();
+                    $table->decimal('price', 10, 2);
+                    $table->timestamps();
+                });
+                Schema::enableForeignKeyConstraints();
+            } else {
+                DB::statement('DROP INDEX IF EXISTS tariff_prices_base_unique');
+                DB::statement('DROP INDEX IF EXISTS tariff_prices_zone_unique');
+                Schema::table('tariff_prices', function (Blueprint $table) {
                     $table->dropConstrainedForeignId('seat_class_id');
-                } else {
-                    $table->dropColumn('seat_class_id');
-                }
-            });
+                });
+            }
         }
 
         // zone_id становится обязательным: нет цены без типа помещения.
