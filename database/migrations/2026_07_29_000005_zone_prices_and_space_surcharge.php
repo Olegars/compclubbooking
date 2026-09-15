@@ -27,14 +27,20 @@ return new class extends Migration
         // Старая матрица «класс × зона» больше не нужна — цены задаются по зоне.
         DB::table('tariff_prices')->delete();
 
-        if (Schema::hasColumn('tariff_prices', 'seat_class_id')) {
-            Schema::table('tariff_prices', function (Blueprint $table) {
-                $table->dropConstrainedForeignId('seat_class_id');
-            });
-        }
-
+        // SQLite не даёт DROP COLUMN, пока колонка сидит в индексе.
         DB::statement('DROP INDEX IF EXISTS tariff_prices_base_unique');
         DB::statement('DROP INDEX IF EXISTS tariff_prices_zone_unique');
+        DB::statement('DROP INDEX IF EXISTS tariff_prices_club_id_seat_class_id_index');
+
+        if (Schema::hasColumn('tariff_prices', 'seat_class_id')) {
+            Schema::table('tariff_prices', function (Blueprint $table) use ($driver) {
+                if ($driver !== 'sqlite') {
+                    $table->dropConstrainedForeignId('seat_class_id');
+                } else {
+                    $table->dropColumn('seat_class_id');
+                }
+            });
+        }
 
         // zone_id становится обязательным: нет цены без типа помещения.
         if (Schema::hasColumn('tariff_prices', 'zone_id') && $driver === 'pgsql') {
