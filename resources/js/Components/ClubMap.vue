@@ -18,10 +18,11 @@
                 <path
                     v-for="(wall, i) in safeConfig.walls" :key="'w-'+i"
                     :d="wall.d"
-                    fill="rgba(34,197,94,0.02)"
+                    :fill="wallIsClosed(wall.d) ? 'rgba(34,197,94,0.02)' : 'none'"
                     stroke="#22c55e"
                     stroke-width="0.2"
-                    stroke-linejoin="miter"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
                     filter="url(#wall-glow)"
                 />
             </g>
@@ -223,6 +224,7 @@ const emit = defineEmits<{
 }>()
 
 const PC_W = 6
+const wallIsClosed = (d: unknown) => /z\s*$/i.test(String(d || '').trim())
 const PC_H = 4.5
 const FIT_PAD = 8
 

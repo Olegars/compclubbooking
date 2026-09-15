@@ -39,8 +39,17 @@ const labels = ref<any[]>([])
 const computers = ref<any[]>([])
 
 const currentPoints = ref<any[]>([])
+const wallCursor = ref<{ x: number; y: number } | null>(null)
 const isDragging = ref(false)
 const dragTarget = ref<any>(null)
+const zoneDrag = ref<{
+    zone: any
+    kind: 'move' | 'resize'
+    handle?: string
+    startX: number
+    startY: number
+    orig: { x: number; y: number; w: number; h: number }
+} | null>(null)
 /** Перетаскивание маркера optional-допа: { zone, addonId } */
 const dragAddon = ref<{ zone: any; addonId: number } | null>(null)
 const selectedAddon = ref<{ zone: any; addonId: number } | null>(null)
@@ -242,17 +251,145 @@ const chessCells = computed(() => {
 const axisLabelSize = computed(() => Math.max(1.5, majorStep.value * 0.35))
 
 
+/** Shift при стенах: горизонталь / вертикаль / 45°. Без Shift — любой угол. */
+const constrainToOctant = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    const dx = to.x - from.x
+    const dy = to.y - from.y
+    const adx = Math.abs(dx)
+    const ady = Math.abs(dy)
+    if (adx < 1e-6 && ady < 1e-6) return { ...to }
+    if (ady < adx * 0.414) return { x: to.x, y: from.y }
+    if (adx < ady * 0.414) return { x: from.x, y: to.y }
+    const len = Math.max(adx, ady)
+    return {
+        x: from.x + Math.sign(dx || 1) * len,
+        y: from.y + Math.sign(dy || 1) * len,
+    }
+}
+
 const getSVGPoint = (evt: MouseEvent) => {
     if (!svgRef.value) return { x: 0, y: 0 }
     const pt = svgRef.value.createSVGPoint()
     pt.x = evt.clientX
     pt.y = evt.clientY
     const cursorPt = pt.matrixTransform(svgRef.value.getScreenCTM()!.inverse())
+    let x = cursorPt.x
+    let y = cursorPt.y
+
+    if (mode.value === 'walls' && evt.shiftKey && currentPoints.value.length) {
+        const last = currentPoints.value[currentPoints.value.length - 1]
+        const c = constrainToOctant(last, { x, y })
+        if (isMagnetOn.value) {
+            const dx = c.x - last.x
+            const dy = c.y - last.y
+            if (Math.abs(dy) < 1e-6) {
+                x = snap(c.x)
+                y = last.y
+            } else if (Math.abs(dx) < 1e-6) {
+                x = last.x
+                y = snap(c.y)
+            } else {
+                const s = snap(Math.abs(dx))
+                x = last.x + Math.sign(dx) * s
+                y = last.y + Math.sign(dy) * s
+            }
+            return { x, y }
+        }
+        return { x: softRound(c.x), y: softRound(c.y) }
+    }
 
     return {
-        x: isMagnetOn.value ? snap(cursorPt.x) : softRound(cursorPt.x),
-        y: isMagnetOn.value ? snap(cursorPt.y) : softRound(cursorPt.y)
+        x: isMagnetOn.value ? snap(x) : softRound(x),
+        y: isMagnetOn.value ? snap(y) : softRound(y),
     }
+}
+
+const wallIsClosed = (d: unknown) => /z\s*$/i.test(String(d || '').trim())
+
+const wallDraftPoints = computed(() => {
+    if (!currentPoints.value.length) return []
+    if (wallCursor.value) return [...currentPoints.value, wallCursor.value]
+    return currentPoints.value
+})
+
+const zoneResizeHandles = (z: any) => {
+    const x = safeNum(z.x)
+    const y = safeNum(z.y)
+    const w = safeNum(z.w)
+    const h = safeNum(z.h)
+    return [
+        { id: 'nw', x, y, cursor: 'nwse-resize' },
+        { id: 'n', x: x + w / 2, y, cursor: 'ns-resize' },
+        { id: 'ne', x: x + w, y, cursor: 'nesw-resize' },
+        { id: 'e', x: x + w, y: y + h / 2, cursor: 'ew-resize' },
+        { id: 'se', x: x + w, y: y + h, cursor: 'nwse-resize' },
+        { id: 's', x: x + w / 2, y: y + h, cursor: 'ns-resize' },
+        { id: 'sw', x, y: y + h, cursor: 'nesw-resize' },
+        { id: 'w', x, y: y + h / 2, cursor: 'ew-resize' },
+    ]
+}
+
+const applyZoneResize = (orig: { x: number; y: number; w: number; h: number }, handle: string, pt: { x: number; y: number }) => {
+    let x1 = orig.x
+    let y1 = orig.y
+    let x2 = orig.x + orig.w
+    let y2 = orig.y + orig.h
+    if (handle.includes('w')) x1 = pt.x
+    if (handle.includes('e')) x2 = pt.x
+    if (handle.includes('n')) y1 = pt.y
+    if (handle.includes('s')) y2 = pt.y
+    return {
+        x: Math.min(x1, x2),
+        y: Math.min(y1, y2),
+        w: Math.max(0.5, Math.abs(x2 - x1)),
+        h: Math.max(0.5, Math.abs(y2 - y1)),
+    }
+}
+
+const startZoneMove = (e: MouseEvent, zone: any) => {
+    const pt = getSVGPoint(e)
+    zoneDrag.value = {
+        zone,
+        kind: 'move',
+        startX: pt.x,
+        startY: pt.y,
+        orig: { x: safeNum(zone.x), y: safeNum(zone.y), w: safeNum(zone.w), h: safeNum(zone.h) },
+    }
+}
+
+const startZoneResize = (e: MouseEvent, zone: any, handle: string) => {
+    e.stopPropagation()
+    e.preventDefault()
+    ensureZoneInfo(zone)
+    selectedZone.value = zone
+    selectedPc.value = null
+    selectedLabel.value = null
+    selectedAddon.value = null
+    const pt = getSVGPoint(e)
+    zoneDrag.value = {
+        zone,
+        kind: 'resize',
+        handle,
+        startX: pt.x,
+        startY: pt.y,
+        orig: { x: safeNum(zone.x), y: safeNum(zone.y), w: safeNum(zone.w), h: safeNum(zone.h) },
+    }
+}
+
+const applySelectedZoneType = (slug: string) => {
+    if (!selectedZone.value) return
+    const type = normalizeZoneType(slug) || slug
+    selectedZone.value.type = type
+    const c = colorForZoneType(type)
+    if (c) selectedZone.value.c = c
+}
+
+const deleteSelectedZone = () => {
+    const z = selectedZone.value
+    if (!z) return
+    zones.value = zones.value.filter(item => item !== z)
+    selectedZone.value = null
+    zoneDrag.value = null
 }
 
 // --- ОБРАБОТЧИКИ МЫШИ ---
@@ -281,6 +418,7 @@ const handleItemMouseDown = (e: MouseEvent, item: any, type: 'zone' | 'wall' | '
         selectedPc.value = null
         selectedLabel.value = null
         selectedAddon.value = null
+        startZoneMove(e, item)
         return
     }
 
@@ -385,6 +523,11 @@ const applyNudgeCoord = (value: number, delta: number) =>
     Math.round((Number(value) + delta) * 1000) / 1000
 
 const nudgeSelectedMarker = (dx: number, dy: number) => {
+    if (selectedZone.value && mode.value === 'zones') {
+        selectedZone.value.x = applyNudgeCoord(selectedZone.value.x, dx)
+        selectedZone.value.y = applyNudgeCoord(selectedZone.value.y, dy)
+        return true
+    }
     if (selectedPc.value) {
         selectedPc.value.x = applyNudgeCoord(selectedPc.value.x, dx)
         selectedPc.value.y = applyNudgeCoord(selectedPc.value.y, dy)
@@ -410,12 +553,38 @@ const nudgeSelectedMarker = (dx: number, dy: number) => {
     return false
 }
 
-const handleArrowKey = (e: KeyboardEvent) => {
-    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return
-
+const handleKeyDown = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement | null
     const tag = target?.tagName
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return
+    const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean(target?.isContentEditable)
+
+    if (!inField && mode.value === 'walls') {
+        if (e.key === 'Escape') {
+            currentPoints.value = []
+            wallCursor.value = null
+            e.preventDefault()
+            return
+        }
+        if (e.key === 'Enter') {
+            finishWall(e.shiftKey)
+            e.preventDefault()
+            return
+        }
+        if (e.key === 'Backspace' && currentPoints.value.length) {
+            currentPoints.value.pop()
+            e.preventDefault()
+            return
+        }
+    }
+
+    if (!inField && (e.key === 'Delete' || e.key === 'Backspace') && selectedZone.value && mode.value === 'zones') {
+        deleteSelectedZone()
+        e.preventDefault()
+        return
+    }
+
+    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return
+    if (inField) return
     if (mode.value === 'erase') return
 
     let dx = 0
@@ -690,6 +859,7 @@ const handleSvgMouseDown = (e: MouseEvent) => {
 
     if (mode.value === 'walls') {
         currentPoints.value.push(pt)
+        wallCursor.value = pt
     } else if (mode.value === 'zones') {
         if (!currentZoneType.value || !topologyZones.value.length) return
         isDragging.value = true
@@ -700,6 +870,19 @@ const handleSvgMouseDown = (e: MouseEvent) => {
 
 const handleMouseMove = (e: MouseEvent) => {
     const pt = getSVGPoint(e)
+    if (mode.value === 'walls' && currentPoints.value.length) {
+        wallCursor.value = pt
+    }
+    if (zoneDrag.value) {
+        const { zone, kind, orig, startX, startY, handle } = zoneDrag.value
+        if (kind === 'move') {
+            zone.x = orig.x + (pt.x - startX)
+            zone.y = orig.y + (pt.y - startY)
+        } else if (handle) {
+            Object.assign(zone, applyZoneResize(orig, handle, pt))
+        }
+        return
+    }
     if (dragAddon.value) {
         const { zone, addonId } = dragAddon.value
         if (!zone.addon_positions || typeof zone.addon_positions !== 'object') zone.addon_positions = {}
@@ -715,7 +898,14 @@ const handleMouseMove = (e: MouseEvent) => {
 }
 
 const handleMouseUp = () => {
-    if (mode.value === 'zones' && isDragging.value && draftZone.value.w > 0 && currentZoneType.value) {
+    if (zoneDrag.value) {
+        zoneDrag.value = null
+        isDragging.value = false
+        dragTarget.value = null
+        dragAddon.value = null
+        return
+    }
+    if (mode.value === 'zones' && isDragging.value && draftZone.value.w >= 0.5 && draftZone.value.h >= 0.5 && currentZoneType.value) {
         const color = selectedTopologyZone.value?.color || currentZoneColor.value
         zones.value.push({
             ...draftZone.value,
@@ -739,12 +929,34 @@ const handleMouseUp = () => {
     dragAddon.value = null
 }
 
-const finishWall = () => {
-    if (currentPoints.value.length > 2) {
-        const d = `M${currentPoints.value.map(p => `${p.x},${p.y}`).join(' L')} Z`
-        walls.value.push({ d });
-        currentPoints.value = []
+const handleMouseLeave = () => {
+    wallCursor.value = null
+    handleMouseUp()
+}
+
+const finishWall = (closed = false) => {
+    const pts = currentPoints.value
+    if (closed) {
+        if (pts.length < 3) return
+        walls.value.push({ d: `M${pts.map(p => `${p.x},${p.y}`).join(' L')} Z` })
+    } else {
+        if (pts.length < 2) return
+        walls.value.push({ d: `M${pts.map(p => `${p.x},${p.y}`).join(' L')}` })
     }
+    currentPoints.value = []
+    wallCursor.value = null
+}
+
+const handleWallDblClick = (e: MouseEvent) => {
+    if (mode.value !== 'walls') return
+    e.preventDefault()
+    const pts = currentPoints.value
+    if (pts.length >= 2) {
+        const a = pts[pts.length - 1]
+        const b = pts[pts.length - 2]
+        if (Math.hypot(a.x - b.x, a.y - b.y) < 0.35) pts.pop()
+    }
+    finishWall(false)
 }
 
 const syncDefaultPcs = () => {
@@ -787,6 +999,10 @@ const loadFromDB = async () => {
 
         walls.value = []; zones.value = []; labels.value = []; computers.value = [];
         mapAddons.value = [];
+        currentPoints.value = [];
+        wallCursor.value = null;
+        selectedZone.value = null;
+        zoneDrag.value = null;
 
         if (rawConfig) {
             walls.value = cleanArray(rawConfig.walls).filter(w => w && w.d);
@@ -874,6 +1090,9 @@ const resetMap = () => {
     if (confirm('Очистить карту? Это действие нельзя отменить без перезагрузки страницы.')) {
         walls.value = []; zones.value = []; labels.value = []; computers.value = [];
         currentPoints.value = [];
+        wallCursor.value = null
+        selectedZone.value = null
+        zoneDrag.value = null
     }
 }
 
@@ -886,11 +1105,11 @@ onMounted(() => {
         activeClubId.value = 1;
     }
     loadFromDB();
-    window.addEventListener('keydown', handleArrowKey)
+    window.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
-    window.removeEventListener('keydown', handleArrowKey)
+    window.removeEventListener('keydown', handleKeyDown)
 })
 </script>
 
@@ -926,7 +1145,7 @@ onUnmounted(() => {
                                  :style="{ backgroundColor: currentZoneColor, boxShadow: `0 0 10px ${currentZoneColor}66` }"
                                  :title="selectedTopologyZone ? `${selectedTopologyZone.name} (${selectedTopologyZone.slug})` : ''"></div>
                             <span class="text-[11px] text-white/40 hidden xl:inline">
-                                {{ selectedTopologyZone?.slug }}
+                                {{ selectedTopologyZone?.slug }} · тяни / уголки
                             </span>
                         </template>
                         <span v-else class="text-xs text-amber-400/90 font-semibold">
@@ -955,13 +1174,24 @@ onUnmounted(() => {
                         🧲 {{ isMagnetOn ? 'МАГНИТ' : 'СВОБОДНО' }}
                     </button>
 
-                    <button v-if="mode === 'walls'"
-                            @click="finishWall"
-                            :disabled="currentPoints.length <= 2"
+                    <template v-if="mode === 'walls'">
+                        <button
+                            @click="finishWall(false)"
+                            :disabled="currentPoints.length < 2"
+                            class="shrink-0 bg-cyan-600/20 border border-cyan-500 text-cyan-400 px-4 py-1.5 text-xs font-semibold rounded-lg hover:bg-cyan-600 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-cyan-600/20 disabled:hover:text-cyan-400">
+                            Линия
+                            <span v-if="currentPoints.length" class="ml-1 opacity-70">({{ currentPoints.length }})</span>
+                        </button>
+                        <button
+                            @click="finishWall(true)"
+                            :disabled="currentPoints.length < 3"
                             class="shrink-0 bg-blue-600/20 border border-blue-500 text-blue-400 px-4 py-1.5 text-xs font-semibold rounded-lg hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-blue-600/20 disabled:hover:text-blue-400">
-                        Замкнуть контур
-                        <span v-if="currentPoints.length" class="ml-1 opacity-70">({{ currentPoints.length }})</span>
-                    </button>
+                            Замкнуть контур
+                        </button>
+                        <span class="text-[10px] text-white/35 hidden xl:inline max-w-[220px] leading-tight">
+                            любой угол · Shift — 0°/45°/90° · двойной клик — линия
+                        </span>
+                    </template>
                     <button v-if="mode === 'pcs'" @click="syncDefaultPcs" class="bg-purple-500/20 text-purple-400 border border-purple-500/30 px-4 py-1.5 text-xs font-semibold rounded-lg hover:bg-purple-500 hover:text-white transition-all shrink-0">Добавить ПК</button>
                     <div v-if="mode === 'pcs'" class="flex items-center gap-2 ml-2 px-3 border-l border-white/10 shrink-0">
                         <button v-for="opt in seatKindOptions" :key="opt.id"
@@ -987,7 +1217,7 @@ onUnmounted(() => {
                 <main class="flex-1 bg-[#020202] relative overflow-auto p-4 custom-scrollbar">
                     <svg ref="svgRef" :viewBox="viewbox" preserveAspectRatio="xMinYMin meet" overflow="hidden"
                          class="w-[150%] h-[200vh] border border-white/5 rounded-2xl bg-black"
-                         @mousedown="handleSvgMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseUp()" @dblclick="finishWall">
+                         @mousedown="handleSvgMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseLeave" @dblclick="handleWallDblClick">
                         <defs>
                             <pattern id="smallGrid" :width="gridSize" :height="gridSize" patternUnits="userSpaceOnUse">
                                 <path :d="`M ${gridSize} 0 L 0 0 0 ${gridSize}`" fill="none" stroke="rgba(6, 182, 212, 0.1)" stroke-width="0.1"/>
@@ -1029,7 +1259,8 @@ onUnmounted(() => {
                             <path v-for="(w, i) in walls" :key="'w'+i" :d="w.d"
                                   :class="['transition-colors hover:stroke-white', isLayerInteractive('wall') ? 'cursor-pointer' : 'pointer-events-none']"
                                   @mousedown.stop="isLayerInteractive('wall') && handleItemMouseDown($event, w, 'wall')"
-                                  fill="rgba(6,182,212,0.02)" stroke="#06b6d4" stroke-width="0.2" stroke-linejoin="miter" />
+                                  :fill="wallIsClosed(w.d) ? 'rgba(6,182,212,0.02)' : 'none'"
+                                  stroke="#06b6d4" stroke-width="0.2" stroke-linejoin="round" stroke-linecap="round" />
                         </g>
 
                         <g class="layer-zones">
@@ -1040,7 +1271,14 @@ onUnmounted(() => {
                                       :fill="z.c || '#22c55e'" :fill-opacity="z.c === '#4d4d4d' ? 0.8 : 0.2"
                                       :stroke="selectedZone === z ? '#fff' : (mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId) ? '#fff' : (z.c || '#22c55e'))"
                                       :stroke-width="selectedZone === z || (mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId)) ? 0.35 : 0.15"
-                                      :class="['transition-opacity', isLayerInteractive('zone') ? 'hover:fill-opacity-50 cursor-pointer' : '']" />
+                                      :class="['transition-opacity', isLayerInteractive('zone') ? (selectedZone === z ? 'cursor-move' : 'hover:fill-opacity-50 cursor-pointer') : '']" />
+                                <g v-if="mode === 'zones' && selectedZone === z">
+                                    <rect v-for="h in zoneResizeHandles(z)" :key="'zh'+h.id"
+                                          :x="h.x - 0.45" :y="h.y - 0.45" width="0.9" height="0.9"
+                                          fill="#fff" stroke="#06b6d4" stroke-width="0.12"
+                                          :style="{ cursor: h.cursor }"
+                                          @mousedown.stop="startZoneResize($event, z, h.id)" />
+                                </g>
                                 <g v-if="zoneBadgeMeta(z)" class="pointer-events-none">
                                     <rect
                                         :x="zoneBadgeMeta(z).x"
@@ -1173,7 +1411,8 @@ onUnmounted(() => {
                         </g>
 
                         <rect v-if="isDragging && mode === 'zones'" class="pointer-events-none" :x="draftZone.x" :y="draftZone.y" :width="draftZone.w" :height="draftZone.h" fill="none" stroke="#fff" stroke-width="0.3" stroke-dasharray="1,1" />
-                        <polyline v-if="currentPoints.length" class="pointer-events-none" :points="currentPoints.map(p => `${p.x},${p.y}`).join(' ')" fill="none" stroke="#06b6d4" stroke-width="0.3" stroke-dasharray="1,1" />
+                        <polyline v-if="wallDraftPoints.length" class="pointer-events-none" :points="wallDraftPoints.map(p => `${p.x},${p.y}`).join(' ')" fill="none" stroke="#06b6d4" stroke-width="0.3" stroke-dasharray="1,1" stroke-linecap="round" />
+                        <circle v-for="(p, i) in currentPoints" :key="'wp'+i" class="pointer-events-none" :cx="p.x" :cy="p.y" r="0.4" fill="#06b6d4" />
                         </g>
                     </svg>
                 </main>
@@ -1192,6 +1431,39 @@ onUnmounted(() => {
                         <p class="text-[10px] text-cyan-500 font-black uppercase tracking-widest">
                             Комната · {{ zoneAutoTitle(selectedZone) || 'ZONE' }}
                         </p>
+
+                        <div v-if="topologyZones.length">
+                            <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Тип зоны</label>
+                            <select :value="selectedZone.type"
+                                    @change="applySelectedZoneType(($event.target as HTMLSelectElement).value)"
+                                    class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-black uppercase"
+                                    :style="{ color: selectedZone.c || '#22c55e' }">
+                                <option v-for="z in topologyZones" :key="z.id" :value="z.slug">{{ z.name }}</option>
+                            </select>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">X</label>
+                                <input v-model.number="selectedZone.x" type="number" step="0.1"
+                                       class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-mono" />
+                            </div>
+                            <div>
+                                <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Y</label>
+                                <input v-model.number="selectedZone.y" type="number" step="0.1"
+                                       class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-mono" />
+                            </div>
+                            <div>
+                                <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Ширина</label>
+                                <input v-model.number="selectedZone.w" type="number" step="0.1" min="0.5"
+                                       class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-mono" />
+                            </div>
+                            <div>
+                                <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Высота</label>
+                                <input v-model.number="selectedZone.h" type="number" step="0.1" min="0.5"
+                                       class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-mono" />
+                            </div>
+                        </div>
 
                         <template v-if="isTvZone(selectedZone)">
                             <div>
@@ -1234,7 +1506,11 @@ onUnmounted(() => {
                                 <option value="bottom">Снизу</option>
                             </select>
                         </div>
-                        <p class="text-[9px] opacity-40 italic">Клик по зоне в режиме «Зоны». Сохраняется с картой.</p>
+                        <button @click="deleteSelectedZone"
+                                class="text-[10px] font-black tracking-widest uppercase bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white py-2.5 rounded-xl transition-colors border border-red-500/20">
+                            Удалить зону
+                        </button>
+                        <p class="text-[9px] opacity-40 italic">Перетаскивание, уголки — размер, стрелки — сдвиг. Сохраняется с картой.</p>
                     </div>
 
                     <div v-if="selectedPc" class="p-4 bg-cyan-500/5 border border-cyan-500/20 rounded-2xl animate-in zoom-in duration-200 flex flex-col gap-3">
