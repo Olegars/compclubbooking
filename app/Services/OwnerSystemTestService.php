@@ -56,7 +56,7 @@ class OwnerSystemTestService
             'group' => 'phpunit',
             'group_title' => 'Автотесты PHPUnit',
             'title' => 'Весь набор PHPUnit',
-            'description' => 'php artisan test — Feature и Unit. Только sqlite :memory: (DB_* из FPM принудительно сбрасываются). Прод-базу не трогает. Идёт через PHP CLI. Может занять несколько минут.',
+            'description' => 'php artisan test — Feature и Unit. Только sqlite :memory:. Идёт в фоне через PHP CLI (не php-fpm), иначе nginx рвёт запрос 504. Прод-базу не трогает. Может занять несколько минут.',
             'kind' => 'phpunit',
         ];
 
@@ -102,7 +102,9 @@ class OwnerSystemTestService
             'status' => $outcome['status'],
             'message' => $outcome['message'],
             'details' => $outcome['details'],
-            'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+            'duration_ms' => isset($outcome['duration_ms']) && (int) $outcome['duration_ms'] > 0
+                ? (int) $outcome['duration_ms']
+                : (int) round((microtime(true) - $started) * 1000),
         ];
     }
 
@@ -986,7 +988,9 @@ class OwnerSystemTestService
     }
 
     /**
-     * @return array{status:string,message:string,details:list<string>}
+     * HTTP-ветка: на Linux стартуем CLI в фоне и отдаём running, пока nginx не убил запрос 504.
+     *
+     * @return array{status:string,message:string,details:list<string>,duration_ms?:int}
      */
     private function runPhpunit(string $id): array
     {
@@ -994,43 +998,29 @@ class OwnerSystemTestService
             return $this->skip('Вложенный PHPUnit изнутри теста не запускаем.');
         }
 
-        $artisan = base_path('artisan');
-        if (! is_file($artisan)) {
-            return $this->fail('Не найден artisan.');
+        if (PHP_OS_FAMILY === 'Windows') {
+            return $this->runPhpunitSync($id);
         }
 
-        $phpunit = base_path('vendor/bin/phpunit');
-        $phpunitBat = base_path('vendor/bin/phpunit.bat');
-        if (! is_file($phpunit) && ! is_file($phpunitBat)) {
-            return $this->skip('PHPUnit не установлен (нет vendor/bin/phpunit). На сервере без require-dev автотесты не гоняются.');
+        return $this->runPhpunitBackground($id);
+    }
+
+    /**
+     * @return array{status:string,message:string,details:list<string>,duration_ms?:int}
+     */
+    public function runPhpunitSync(string $id): array
+    {
+        $prepared = $this->phpunitPrepare($id);
+        if ($prepared['error'] !== null) {
+            return $prepared['error'];
         }
 
-        $php = $this->phpCliBinary();
-        if ($php === null) {
-            return $this->fail(
-                'Не найден PHP CLI. Из php-fpm PHP_BINARY — это FPM, artisan test так не запустить. Задайте PHP_CLI_BINARY в .env (например /usr/bin/php).',
-                array_slice($this->phpCliCandidates(), 0, 8),
-            );
+        $php = (string) $prepared['php'];
+        $args = $prepared['args'] ?? [];
+        if ($php === '' || $args === []) {
+            return $this->fail('Не собран запуск PHPUnit.');
         }
-
-        $args = [$php, $artisan, 'test', '--no-ansi'];
-        $timeout = 120;
-        if ($id === 'phpunit:all') {
-            $timeout = 600;
-        } else {
-            $fileId = substr($id, strlen('phpunit:'));
-            $match = null;
-            foreach ($this->phpunitFiles() as $file) {
-                if ($file['id'] === $fileId) {
-                    $match = $file;
-                    break;
-                }
-            }
-            if (! $match) {
-                return $this->fail('Файл автотеста не найден.');
-            }
-            $args[] = $match['path'];
-        }
+        $timeout = $id === 'phpunit:all' ? 600 : 120;
 
         $lock = Cache::lock('owner-system-tests-phpunit', $timeout + 30);
         if (! $lock->get()) {
@@ -1053,6 +1043,196 @@ class OwnerSystemTestService
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * @return array{status:string,message:string,details:list<string>,duration_ms?:int}
+     */
+    private function runPhpunitBackground(string $id): array
+    {
+        $job = Cache::get($this->phpunitJobCacheKey());
+        if (is_array($job)) {
+            $jobId = (string) ($job['id'] ?? '');
+            $pid = (int) ($job['pid'] ?? 0);
+            $startedAt = (int) ($job['started_at'] ?? time());
+
+            if ($pid > 0 && $this->phpunitPidIsAlive($pid)) {
+                if ($jobId === $id) {
+                    return $this->running('PHPUnit идёт в фоне.', [
+                        'pid: '.$pid,
+                        'секунд: '.(time() - $startedAt),
+                    ]);
+                }
+
+                return $this->warn('Уже идёт другой прогон PHPUnit. Подождите.', [
+                    'id: '.$jobId,
+                    'pid: '.$pid,
+                ]);
+            }
+
+            $result = null;
+            $resultKey = $this->phpunitResultCacheKey($jobId !== '' ? $jobId : $id);
+            for ($i = 0; $i < 6; $i++) {
+                $cached = Cache::get($resultKey);
+                if (is_array($cached)) {
+                    $result = $cached;
+                    Cache::forget($resultKey);
+                    break;
+                }
+                if ($pid > 0 && $this->phpunitPidIsAlive($pid)) {
+                    return $this->running('PHPUnit идёт в фоне.', [
+                        'pid: '.$pid,
+                        'секунд: '.(time() - $startedAt),
+                    ]);
+                }
+                usleep(200000);
+            }
+            Cache::forget($this->phpunitJobCacheKey());
+
+            if ($jobId === $id && is_array($result) && isset($result['status'], $result['message'])) {
+                return [
+                    'status' => (string) $result['status'],
+                    'message' => (string) $result['message'],
+                    'details' => array_values(array_filter(
+                        is_array($result['details'] ?? null) ? $result['details'] : [],
+                        fn ($line) => is_string($line),
+                    )),
+                    'duration_ms' => (int) ($result['duration_ms'] ?? 0),
+                ];
+            }
+
+            if ($jobId === $id) {
+                return $this->fail('PHPUnit оборвался без отчёта.', [
+                    'pid: '.$pid,
+                    'лог: storage/logs/owner-phpunit.log',
+                ]);
+            }
+        }
+
+        $prepared = $this->phpunitPrepare($id);
+        if ($prepared['error'] !== null) {
+            return $prepared['error'];
+        }
+
+        $php = (string) $prepared['php'];
+        if ($php === '') {
+            return $this->fail('Не найден PHP CLI.');
+        }
+
+        Cache::forget($this->phpunitResultCacheKey($id));
+        $pid = $this->spawnOwnerPhpunit($php, $id);
+        if ($pid < 1) {
+            return $this->fail(
+                'Не удалось запустить PHPUnit в фоне (nohup/shell_exec).',
+                ['php: '.$php],
+            );
+        }
+
+        Cache::put($this->phpunitJobCacheKey(), [
+            'id' => $id,
+            'pid' => $pid,
+            'started_at' => time(),
+        ], 900);
+
+        return $this->running('PHPUnit запущен в фоне — nginx больше не режет 504.', [
+            'pid: '.$pid,
+            'php: '.$php,
+        ]);
+    }
+
+    /**
+     * @return array{php:string,args:list<string>,error:null}|array{php:?string,args:?list<string>,error:array{status:string,message:string,details:list<string>}}
+     */
+    private function phpunitPrepare(string $id): array
+    {
+        $artisan = base_path('artisan');
+        if (! is_file($artisan)) {
+            return ['php' => null, 'args' => null, 'error' => $this->fail('Не найден artisan.')];
+        }
+
+        $phpunit = base_path('vendor/bin/phpunit');
+        $phpunitBat = base_path('vendor/bin/phpunit.bat');
+        if (! is_file($phpunit) && ! is_file($phpunitBat)) {
+            return [
+                'php' => null,
+                'args' => null,
+                'error' => $this->skip('PHPUnit не установлен (нет vendor/bin/phpunit). На сервере без require-dev автотесты не гоняются.'),
+            ];
+        }
+
+        $php = $this->phpCliBinary();
+        if ($php === null) {
+            return [
+                'php' => null,
+                'args' => null,
+                'error' => $this->fail(
+                    'Не найден PHP CLI. Из php-fpm PHP_BINARY — это FPM, artisan test так не запустить. Задайте PHP_CLI_BINARY в .env (например /usr/bin/php).',
+                    array_slice($this->phpCliCandidates(), 0, 8),
+                ),
+            ];
+        }
+
+        $args = [$php, $artisan, 'test', '--no-ansi'];
+        if ($id !== 'phpunit:all') {
+            $fileId = substr($id, strlen('phpunit:'));
+            $match = null;
+            foreach ($this->phpunitFiles() as $file) {
+                if ($file['id'] === $fileId) {
+                    $match = $file;
+                    break;
+                }
+            }
+            if (! $match) {
+                return ['php' => null, 'args' => null, 'error' => $this->fail('Файл автотеста не найден.')];
+            }
+            $args[] = $match['path'];
+        }
+
+        return ['php' => $php, 'args' => $args, 'error' => null];
+    }
+
+    private function spawnOwnerPhpunit(string $php, string $id): int
+    {
+        if (! function_exists('shell_exec')) {
+            return 0;
+        }
+
+        $log = storage_path('logs/owner-phpunit.log');
+        $cmd = sprintf(
+            'nohup %s %s owner:run-phpunit %s >> %s 2>&1 & echo $!',
+            escapeshellarg($php),
+            escapeshellarg(base_path('artisan')),
+            escapeshellarg($id),
+            escapeshellarg($log),
+        );
+        $out = @shell_exec($cmd);
+
+        return (int) trim((string) $out);
+    }
+
+    public function phpunitJobCacheKey(): string
+    {
+        return 'owner-system-tests-phpunit-job';
+    }
+
+    public function phpunitResultCacheKey(string $id): string
+    {
+        return 'owner-system-tests-phpunit-result:'.$id;
+    }
+
+    public function phpunitPidIsAlive(int $pid): bool
+    {
+        if ($pid < 1) {
+            return false;
+        }
+        if (is_dir('/proc/'.$pid)) {
+            return true;
+        }
+        if (function_exists('posix_kill')) {
+            return @posix_kill($pid, 0);
+        }
+
+        return false;
     }
 
     /**
@@ -1089,7 +1269,17 @@ class OwnerSystemTestService
      */
     public function phpunitProcessEnv(): array
     {
-        return [
+        $inherited = [];
+        $fromEnv = getenv();
+        if (is_array($fromEnv)) {
+            foreach ($fromEnv as $key => $value) {
+                if (is_string($key) && is_string($value)) {
+                    $inherited[$key] = $value;
+                }
+            }
+        }
+
+        return array_merge($inherited, [
             'APP_ENV' => 'testing',
             'DB_CONNECTION' => 'sqlite',
             'DB_DATABASE' => ':memory:',
@@ -1104,7 +1294,7 @@ class OwnerSystemTestService
             'QUEUE_CONNECTION' => 'sync',
             'MAIL_MAILER' => 'array',
             'BROADCAST_CONNECTION' => 'null',
-        ];
+        ]);
     }
 
     /**
@@ -1284,5 +1474,14 @@ class OwnerSystemTestService
     private function skip(string $message, array $details = []): array
     {
         return ['status' => 'skip', 'message' => $message, 'details' => $details];
+    }
+
+    /**
+     * @param  list<string>  $details
+     * @return array{status:string,message:string,details:list<string>}
+     */
+    private function running(string $message, array $details = []): array
+    {
+        return ['status' => 'running', 'message' => $message, 'details' => $details];
     }
 }

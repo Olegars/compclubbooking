@@ -48,11 +48,7 @@ class OwnerSystemTestsController extends Controller
         $known = collect($this->tests->catalog())->contains(fn ($row) => $row['id'] === $id);
         abort_unless($known, 422, 'Неизвестный тест.');
 
-        if (str_starts_with($id, 'phpunit:')) {
-            set_time_limit($id === 'phpunit:all' ? 600 : 180);
-        } else {
-            set_time_limit(60);
-        }
+        set_time_limit(30);
 
         return response()->json($this->tests->run($id, AdminLocation::resolve($admin)));
     }
@@ -70,7 +66,7 @@ class OwnerSystemTestsController extends Controller
                 'results.*.group' => 'nullable|string|max:64',
                 'results.*.group_title' => 'nullable|string|max:191',
                 'results.*.kind' => 'nullable|string|in:live,phpunit',
-                'results.*.status' => 'nullable|string|in:pass,fail,warn,skip',
+                'results.*.status' => 'nullable|string|in:pass,fail,warn,skip,running',
                 'results.*.message' => 'nullable|string|max:4000',
                 'results.*.details' => 'nullable|array|max:40',
                 'results.*.details.*' => 'nullable|string|max:500',
@@ -90,7 +86,7 @@ class OwnerSystemTestsController extends Controller
         $summary = ['pass' => 0, 'fail' => 0, 'warn' => 0, 'skip' => 0, 'pending' => 0, 'ran' => 0];
         foreach ($rows as $row) {
             $status = $row['status'] ?? null;
-            if (! is_string($status) || $status === '') {
+            if (! is_string($status) || $status === '' || $status === 'running') {
                 $summary['pending']++;
                 continue;
             }

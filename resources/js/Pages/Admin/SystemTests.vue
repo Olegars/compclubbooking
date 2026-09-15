@@ -6,7 +6,7 @@ import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { useClubName } from '@/Composables/useClubName'
 
 type TestKind = 'live' | 'phpunit'
-type TestStatus = 'pass' | 'fail' | 'warn' | 'skip'
+type TestStatus = 'pass' | 'fail' | 'warn' | 'skip' | 'running'
 
 type CatalogItem = {
     id: string
@@ -52,13 +52,16 @@ const groups = computed(() => {
 })
 
 const liveIds = computed(() => props.tests.filter(t => t.kind === 'live').map(t => t.id))
-const allIds = computed(() => [...liveIds.value, 'phpunit:all'])
+const phpunitFileIds = computed(() => props.tests
+    .filter(t => t.kind === 'phpunit' && t.id !== 'phpunit:all')
+    .map(t => t.id))
+const allIds = computed(() => [...liveIds.value, ...phpunitFileIds.value])
 
 const summary = computed(() => {
     const counts = { pass: 0, fail: 0, warn: 0, skip: 0, ran: 0 }
     for (const id of Object.keys(results)) {
         const status = results[id]?.status
-        if (!status) continue
+        if (!status || status === 'running') continue
         counts.ran++
         counts[status]++
     }
@@ -96,27 +99,50 @@ const timeoutFor = (id: string) => {
     return 45000
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+const requestRun = async (id: string): Promise<RunResult> => {
+    const limit = timeoutFor(id)
+    const started = Date.now()
+    while (true) {
+        const { data } = await axios.post('/admin/system-tests/run', { id }, {
+            timeout: 25000,
+        })
+        if (data?.status !== 'running') {
+            return data
+        }
+        results[id] = data
+        if (Date.now() - started > limit) {
+            return {
+                id,
+                status: 'fail',
+                message: 'Таймаут ожидания PHPUnit. Процесс в фоне мог ещё работать — смотрите storage/logs/owner-phpunit.log',
+                details: data?.details ?? [],
+                duration_ms: Date.now() - started,
+            }
+        }
+        await sleep(1500)
+    }
+}
+
+const failFromAxios = (id: string, e: any, fallback: string): RunResult => ({
+    id,
+    status: 'fail',
+    message: e?.response?.data?.message || e?.message || fallback,
+    details: [],
+    duration_ms: 0,
+})
+
 const runOne = async (id: string) => {
     if (busy.value) return
     runningId.value = id
     error.value = null
     try {
-        const { data } = await axios.post('/admin/system-tests/run', { id }, {
-            timeout: timeoutFor(id),
-        })
-        results[id] = data
+        results[id] = await requestRun(id)
     } catch (e: any) {
-        const message = e?.response?.data?.message
-            || e?.message
-            || 'Не удалось выполнить тест'
-        results[id] = {
-            id,
-            status: 'fail',
-            message,
-            details: [],
-            duration_ms: 0,
-        }
-        error.value = message
+        const row = failFromAxios(id, e, 'Не удалось выполнить тест')
+        results[id] = row
+        error.value = row.message
     } finally {
         runningId.value = null
     }
@@ -133,18 +159,9 @@ const runList = async (ids: string[]) => {
             runningId.value = id
             runCursor.value += 1
             try {
-                const { data } = await axios.post('/admin/system-tests/run', { id }, {
-                    timeout: timeoutFor(id),
-                })
-                results[id] = data
+                results[id] = await requestRun(id)
             } catch (e: any) {
-                results[id] = {
-                    id,
-                    status: 'fail',
-                    message: e?.response?.data?.message || e?.message || 'Ошибка запроса',
-                    details: [],
-                    duration_ms: 0,
-                }
+                results[id] = failFromAxios(id, e, 'Ошибка запроса')
             }
         }
     } finally {
@@ -159,7 +176,7 @@ const runGroup = (groupId: string) => {
     const group = groups.value.find(g => g.id === groupId)
     if (!group) return
     if (groupId === 'phpunit') {
-        runList(['phpunit:all'])
+        runList(phpunitFileIds.value)
         return
     }
     runList(group.items.map(item => item.id))
@@ -204,7 +221,7 @@ const exportPdf = () => {
                         <span v-if="location"> · {{ location.name }}</span>
                     </p>
                     <p class="text-white/40 text-xs font-bold mt-3 max-w-2xl">
-                        «Все тесты» — живые проверки и весь PHPUnit. PDF — текущие результаты в печатный лист.
+                        «Все тесты» — живые проверки и PHPUnit по файлам. Автотесты идут в фоне, иначе nginx отвечает 504.
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-3">

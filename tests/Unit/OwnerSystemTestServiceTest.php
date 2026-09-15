@@ -159,6 +159,21 @@ class OwnerSystemTestServiceTest extends TestCase
         $this->assertSame('', $env['DB_URL']);
     }
 
+    public function test_phpunit_pid_zero_is_not_alive(): void
+    {
+        $this->assertFalse(app(OwnerSystemTestService::class)->phpunitPidIsAlive(0));
+        $this->assertFalse(app(OwnerSystemTestService::class)->phpunitPidIsAlive(-1));
+    }
+
+    public function test_phpunit_result_cache_key_includes_id(): void
+    {
+        $service = app(OwnerSystemTestService::class);
+        $this->assertSame(
+            'owner-system-tests-phpunit-result:phpunit:all',
+            $service->phpunitResultCacheKey('phpunit:all'),
+        );
+    }
+
     public function test_php_cli_binary_on_cli_sapi_is_not_fpm(): void
     {
         $php = app(OwnerSystemTestService::class)->phpCliBinary();
