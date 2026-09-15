@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class StoreAvitoSetting extends Model
@@ -47,16 +49,52 @@ class StoreAvitoSetting extends Model
         $row = self::query()->orderBy('id')->first();
         if ($row) {
             if (! filled($row->feed_token)) {
-                $row->forceFill(['feed_token' => Str::random(40)])->save();
+                $row->forceFill(['feed_token' => Str::random(40)]);
+            }
+            $row->fillFromEnv();
+            if ($row->isDirty()) {
+                $row->save();
             }
 
             return $row;
         }
 
-        return self::query()->create([
+        $row = self::query()->create([
             'feed_token' => Str::random(40),
             'auto_reply_text' => 'Здравствуйте. Спасибо, что обратились к нам. Магазин работает с 10:00 по московскому времени. После 10 часов обязательно ответим.',
         ]);
+        $row->fillFromEnv();
+        if ($row->isDirty()) {
+            $row->save();
+        }
+
+        return $row;
+    }
+
+    public function fillFromEnv(): void
+    {
+        if (! filled($this->client_id) && filled(config('store.avito.client_id'))) {
+            $this->client_id = (string) config('store.avito.client_id');
+        }
+        if (! filled($this->client_secret) && filled(config('store.avito.client_secret'))) {
+            $this->client_secret = (string) config('store.avito.client_secret');
+        }
+        if ((int) $this->avito_user_id < 1 && (int) config('store.avito.user_id') > 0) {
+            $this->avito_user_id = (int) config('store.avito.user_id');
+        }
+    }
+
+    public static function hasConfiguredApi(): bool
+    {
+        if (filled(config('store.avito.client_id')) && filled(config('store.avito.client_secret'))) {
+            return true;
+        }
+        if (! Schema::hasTable('store_avito_settings')) {
+            return false;
+        }
+        $row = DB::table('store_avito_settings')->orderBy('id')->first();
+
+        return $row && filled($row->client_id) && filled($row->client_secret);
     }
 
     public function hasAvitoApi(): bool

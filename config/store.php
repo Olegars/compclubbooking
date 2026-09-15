@@ -47,4 +47,26 @@ return [
         */
         'type_category_keywords' => null,
     ],
+
+    /*
+    | Avito OAuth (client_credentials). Токен ~24 часа, обновляет store:refresh-avito-token.
+    | Мессенджер магазина использует аккаунт Компстор (STORE_AVITO_*).
+    */
+    'avito' => [
+        'client_id' => env('STORE_AVITO_CLIENT_ID', ''),
+        'client_secret' => env('STORE_AVITO_CLIENT_SECRET', ''),
+        'user_id' => (int) env('STORE_AVITO_USER_ID', 0),
+        'shops' => [
+            'compmaster' => [
+                'client_id' => env('STORE_AVITO_COMPMASTER_CLIENT_ID', ''),
+                'client_secret' => env('STORE_AVITO_COMPMASTER_CLIENT_SECRET', ''),
+                'user_id' => (int) env('STORE_AVITO_COMPMASTER_USER_ID', 0),
+            ],
+            'dicomp' => [
+                'client_id' => env('STORE_AVITO_DICOMP_CLIENT_ID', ''),
+                'client_secret' => env('STORE_AVITO_DICOMP_CLIENT_SECRET', ''),
+                'user_id' => (int) env('STORE_AVITO_DICOMP_USER_ID', 0),
+            ],
+        ],
+    ],
 ];

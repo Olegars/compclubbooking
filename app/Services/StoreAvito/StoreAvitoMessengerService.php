@@ -162,10 +162,15 @@ class StoreAvitoMessengerService
         }
     }
 
-    public function accessToken(?StoreAvitoSetting $settings = null): string
+    public function accessToken(?StoreAvitoSetting $settings = null, bool $force = false): string
     {
         $settings ??= StoreAvitoSetting::current();
-        if (filled($settings->access_token) && $settings->access_token_expires_at && $settings->access_token_expires_at->isFuture()) {
+        if (
+            ! $force
+            && filled($settings->access_token)
+            && $settings->access_token_expires_at
+            && $settings->access_token_expires_at->isFuture()
+        ) {
             return (string) $settings->access_token;
         }
         if (! filled($settings->client_id) || ! filled($settings->client_secret)) {

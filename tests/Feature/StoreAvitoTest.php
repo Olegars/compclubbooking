@@ -19,6 +19,7 @@ use App\Services\StoreAvito\StoreAvitoPricer;
 use Database\Seeders\StoreAvitoPartsSeeder;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class StoreAvitoTest extends TestCase
@@ -470,6 +471,33 @@ class StoreAvitoTest extends TestCase
 
         $this->assertSame('running', StoreAvitoSetting::current()->last_dict_sync_result['status'] ?? null);
         $this->assertSame(0, StoreAvitoDictValue::query()->count());
+    }
+
+    public function test_refresh_avito_token_command_fetches_new_token(): void
+    {
+        config([
+            'store.avito.client_id' => 'cid-from-env',
+            'store.avito.client_secret' => 'secret-from-env',
+            'store.avito.user_id' => 362599859,
+        ]);
+        Http::fake([
+            'https://api.avito.ru/token' => Http::response([
+                'access_token' => 'new-token-1',
+                'expires_in' => 86400,
+            ]),
+        ]);
+
+        $this->artisan('store:refresh-avito-token')->assertSuccessful();
+
+        $settings = StoreAvitoSetting::query()->orderBy('id')->first();
+        $this->assertNotNull($settings);
+        $this->assertSame('cid-from-env', $settings->client_id);
+        $this->assertSame(362599859, (int) $settings->avito_user_id);
+        $this->assertSame('new-token-1', $settings->access_token);
+        $this->assertTrue($settings->access_token_expires_at?->isFuture());
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'api.avito.ru/token')
+            && $request['grant_type'] === 'client_credentials'
+            && $request['client_id'] === 'cid-from-env');
     }
 
     public function test_owner_creates_config_from_abstract_parts(): void

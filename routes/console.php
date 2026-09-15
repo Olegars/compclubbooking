@@ -27,18 +27,17 @@ Schedule::command('store:classify-catalog-parts')
     ->timezone('Europe/Moscow')
     ->withoutOverlapping(180)
     ->appendOutputTo(storage_path('logs/catalog-parts.log'));
+Schedule::command('store:refresh-avito-token')
+    ->dailyAt('03:00')
+    ->timezone('Europe/Moscow')
+    ->withoutOverlapping()
+    ->when(fn () => \App\Models\StoreAvitoSetting::hasConfiguredApi())
+    ->appendOutputTo(storage_path('logs/avito-token.log'));
 Schedule::command('store:sync-avito-dicts')
     ->dailyAt('03:20')
     ->timezone('Europe/Moscow')
     ->withoutOverlapping(120)
-    ->when(function () {
-        if (! \Illuminate\Support\Facades\Schema::hasTable('store_avito_settings')) {
-            return false;
-        }
-        $row = \Illuminate\Support\Facades\DB::table('store_avito_settings')->orderBy('id')->first();
-
-        return $row && filled($row->client_id) && filled($row->client_secret);
-    })
+    ->when(fn () => \App\Models\StoreAvitoSetting::hasConfiguredApi())
     ->appendOutputTo(storage_path('logs/avito-dicts.log'));
 Schedule::command('store:sync-avito-dicts')
     ->everyMinute()

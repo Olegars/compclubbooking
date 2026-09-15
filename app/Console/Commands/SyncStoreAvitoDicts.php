@@ -16,7 +16,7 @@ class SyncStoreAvitoDicts extends Command
     {
         $settings = StoreAvitoSetting::current();
         if (! filled($settings->client_id) || ! filled($settings->client_secret)) {
-            $this->error('Задайте client_id и client_secret Avito в админке Магазин → Avito.');
+            $this->error('Задайте STORE_AVITO_CLIENT_ID / STORE_AVITO_CLIENT_SECRET в .env или в админке Магазин → Avito.');
 
             return self::FAILURE;
         }

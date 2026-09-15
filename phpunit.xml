@@ -34,5 +34,8 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="STORE_AVITO_CLIENT_ID" value=""/>
+        <env name="STORE_AVITO_CLIENT_SECRET" value=""/>
+        <env name="STORE_AVITO_USER_ID" value=""/>
     </php>
 </phpunit>
