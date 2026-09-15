@@ -4,7 +4,9 @@ namespace App\Services\LanLive;
 
 use App\Models\Computer;
 use App\Models\User;
+use App\Services\AiAssistant\DeepSeekChat;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class GhostCoachService
 {
@@ -12,6 +14,7 @@ class GhostCoachService
 
     public function __construct(
         private readonly ShellGsiStore $gsi,
+        private readonly DeepSeekChat $llm,
     ) {
     }
 
@@ -49,6 +52,9 @@ class GhostCoachService
         }
 
         $text = $this->compose($computer, $snap);
+        if ($text === null || $text === '') {
+            $text = $this->llmWhisper($computer, $snap);
+        }
         if ($text === null || $text === '') {
             return null;
         }
@@ -126,6 +132,10 @@ class GhostCoachService
         foreach ($enemies as $e) {
             $em = isset($e['money']) ? (int) $e['money'] : null;
             $pc = (string) ($e['pc_name'] ?? 'соседа');
+            $w = strtolower((string) ($e['weapon'] ?? ''));
+            if (str_contains($w, 'awp')) {
+                return sprintf('У врага на %s AWP. Не стойте в длинных коридорах.', $pc);
+            }
             if ($em !== null && $em > 0 && $em < 2000) {
                 return sprintf('У них эко на %s, %d$. Жди раш с дробовиками.', $pc, $em);
             }
@@ -202,6 +212,20 @@ class GhostCoachService
             'magnataur' => 'Magnus',
             'earthshaker' => 'Earthshaker',
             'faceless_void' => 'Void',
+            'axe' => 'Axe',
+            'lion' => 'Lion',
+            'witch_doctor' => 'Witch Doctor',
+            'warlock' => 'Warlock',
+            'bane' => 'Bane',
+            'sand_king' => 'Sand King',
+            'batrider' => 'Batrider',
+            'slardar' => 'Slardar',
+            'primal_beast' => 'Primal Beast',
+            'mars' => 'Mars',
+            'clockwerk' => 'Clockwerk',
+            'rattletrap' => 'Clockwerk',
+            'puck' => 'Puck',
+            'enigma' => 'Enigma',
         ];
 
         return $map[$n] ?? (ucfirst(str_replace('_', ' ', $n)) ?: 'герой');
@@ -216,6 +240,18 @@ class GhostCoachService
             'magnataur_reverse_polarity' => 'RP',
             'earthshaker_echo_slam' => 'Echo Slam',
             'faceless_void_chronosphere' => 'Chrono',
+            'axe_culling_blade' => 'Culling Blade',
+            'lion_finger_of_death' => 'Finger',
+            'witch_doctor_death_ward' => 'Death Ward',
+            'warlock_rain_of_chaos' => 'Chaotic Offering',
+            'bane_fiends_grip' => 'Fiend\'s Grip',
+            'sandking_epicenter' => 'Epicenter',
+            'batrider_flaming_lasso' => 'Lasso',
+            'slardar_slithereen_crush' => 'Crush',
+            'primal_beast_pulverize' => 'Pulverize',
+            'mars_arena_of_blood' => 'Arena',
+            'rattletrap_hookshot' => 'Hookshot',
+            'puck_dream_coil' => 'Dream Coil',
         ];
         if (isset($map[$n])) {
             return $map[$n];
@@ -226,5 +262,65 @@ class GhostCoachService
         $short = preg_replace('/^[a-z]+_/', '', $n) ?? $n;
 
         return ucfirst(str_replace('_', ' ', $short));
+    }
+
+    /**
+     * @param  array<string, mixed>  $snap
+     */
+    private function llmWhisper(Computer $computer, array $snap): ?string
+    {
+        if (! ($snap['in_match'] ?? false)) {
+            return null;
+        }
+        $clubId = (int) ($computer->club_id ?? 0);
+        $others = $clubId > 0 ? $this->gsi->clubStates($clubId, (int) $computer->id) : [];
+        $facts = [
+            'me' => [
+                'pc' => (string) $computer->name,
+                'game' => $snap['game'] ?? '',
+                'map' => $snap['map'] ?? '',
+                'team' => $snap['team'] ?? '',
+                'money' => $snap['money'] ?? null,
+                'phase' => $snap['phase'] ?? '',
+                'hero' => $snap['hero'] ?? '',
+                'ult' => $snap['ult_name'] ?? '',
+                'ult_ready' => (bool) ($snap['ult_ready'] ?? false),
+                'alive' => $snap['alive'] ?? null,
+                'bomb' => $snap['bomb'] ?? '',
+                'clock' => $snap['game_time'] ?? $snap['clock'] ?? null,
+            ],
+            'lan' => array_map(fn ($row) => [
+                'pc' => $row['pc_name'] ?? '',
+                'team' => $row['team'] ?? '',
+                'money' => $row['money'] ?? null,
+                'hero' => $row['hero'] ?? '',
+                'ult' => $row['ult_name'] ?? '',
+                'ult_ready' => (bool) ($row['ult_ready'] ?? false),
+                'weapon' => $row['weapon'] ?? '',
+            ], array_slice($others, 0, 8)),
+        ];
+
+        try {
+            $text = $this->llm->complete(
+                'Ты Ghost Coach киберклуба. Одна короткая фраза по-русски в наушники (до 12 слов). '
+                .'Тактика: экономика CS2, ульты Dota, не кучковаться. Без мата и без префиксов.',
+                json_encode($facts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}',
+                0.4,
+                80,
+                $clubId > 0 ? $clubId : null,
+                4.0,
+            );
+        } catch (\Throwable $e) {
+            Log::info('Ghost Coach LLM skipped: '.$e->getMessage());
+
+            return null;
+        }
+
+        $text = trim(preg_replace('/\s+/', ' ', $text) ?? $text);
+        if ($text === '' || mb_strlen($text) > 160) {
+            return null;
+        }
+
+        return $text;
     }
 }

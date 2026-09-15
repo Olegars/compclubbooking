@@ -16,6 +16,7 @@ use App\Services\BookingSessionTimingService;
 use App\Services\FiscalService;
 use App\Services\GameBookingService;
 use App\Services\GuestClipService;
+use App\Services\TelegramGuestService;
 use Carbon\CarbonImmutable;
 
 class ProfileController extends Controller
@@ -309,6 +310,7 @@ class ProfileController extends Controller
         $achievements = app(AchievementService::class)->progressForUser($user);
 
         $clipService = app(GuestClipService::class);
+        $telegram = app(TelegramGuestService::class);
         $clips = GuestClip::query()
             ->with('computer:id,name')
             ->where('user_id', $user->id)
@@ -334,6 +336,7 @@ class ProfileController extends Controller
             'achievements' => $achievements,
             'clips' => $clips,
             'clips_telegram' => $clipService->telegramConfigured(),
+            'telegram' => $telegram->payload($user),
             'server_time' => $now->toIso8601String(),
         ]);
     }
@@ -452,6 +455,7 @@ class ProfileController extends Controller
         return response()->view('clips.show', [
             'clip' => $clip,
             'url' => $clip->publicUrl(),
+            'book_url' => url('/'),
         ]);
     }
 
@@ -460,12 +464,19 @@ class ProfileController extends Controller
         if ((int) $clip->user_id !== (int) Auth::id()) {
             abort(404);
         }
-        if (! $clips->telegramConfigured()) {
-            return back()->withErrors(['clip' => 'Канал клуба не подключён']);
+        if (! $clips->botConfigured()) {
+            return back()->withErrors(['clip' => 'Бот Telegram не настроен']);
         }
-        if (! $clips->postTelegram($clip)) {
+        if (! $clips->postTelegram($clip, true)) {
             return back()->withErrors(['clip' => $clip->fresh()->telegram_error ?: 'Telegram не принял клип']);
         }
+
+        return back();
+    }
+
+    public function unlinkTelegram(TelegramGuestService $telegram)
+    {
+        $telegram->unlink(Auth::user());
 
         return back();
     }

@@ -29,6 +29,7 @@ const sosAlerts = ref<any[]>([])
 const inputAlerts = ref<any[]>([])
 const forceOffBusy = ref<number | null>(null)
 const releasingPc = ref(false)
+const resettingThrone = ref(false)
 const disklessBusy = ref(false)
 const scDiskMode = ref('image')
 
@@ -210,6 +211,28 @@ const releaseComputer = async () => {
         error(e?.response?.data?.message || 'Не удалось освободить компьютер')
     } finally {
         releasingPc.value = false
+    }
+}
+
+const resetThrone = async () => {
+    const pc = selectedPc.value
+    if (!pc || resettingThrone.value) return
+    if (!confirm(`Сбросить King of the Hill на ${pc.name}? Карточка на idle-экране пропадёт.`)) {
+        return
+    }
+    resettingThrone.value = true
+    try {
+        const { data } = await axios.post('/admin/api/computers/throne-reset', {
+            computer_id: pc.id,
+        })
+        success(data?.message || 'Трон сброшен')
+        await refreshStatuses()
+        const updated = localComputers.value.find((p: any) => Number(p.id) === Number(pc.id))
+        if (updated) selectedPc.value = updated
+    } catch (e: any) {
+        error(e?.response?.data?.message || 'Не удалось сбросить King')
+    } finally {
+        resettingThrone.value = false
     }
 }
 
@@ -459,6 +482,7 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red-400"></span> SSD перегрев</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-yellow-400"></span> Линк ≤100 Мбит</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-rose-400"></span> Износ SSD</span>
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-amber-300"></span> King ПК</span>
                     </div>
                     <div class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
                         <div v-for="pc in localComputers" :key="pc.id" @click="selectedPc = pc"
@@ -473,6 +497,10 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                             <span class="text-[8px] font-black uppercase tracking-wider mt-1 opacity-60" :class="powerLabelClass(pc)">
                                 {{ powerLabel(pc) }}
                             </span>
+                            <div v-if="pc.king_nick"
+                                 class="text-[7px] font-black uppercase tracking-wider text-amber-300 truncate px-1 mt-0.5">
+                                ♔ {{ pc.king_nick }}
+                            </div>
                             <span v-if="pc.ssd_temp_c > 0 && Number(pc.ssd_temp_c) < 80"
                                   class="text-[8px] font-mono mt-0.5 opacity-50"
                                   :class="Number(pc.ssd_temp_c) >= 70 ? 'text-amber-300' : 'text-white/40'">
@@ -485,6 +513,9 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                          class="mt-6 flex flex-col gap-4 bg-black/40 border border-white/10 rounded-2xl p-5">
                         <div>
                             <div class="text-sm font-black uppercase italic text-white">ПК {{ selectedPc.name }}</div>
+                            <div v-if="selectedPc.king_line" class="text-[10px] text-amber-300 font-black uppercase tracking-widest mt-1">
+                                ♔ {{ selectedPc.king_line }}
+                            </div>
                             <div class="text-[9px] text-white/30 uppercase font-black tracking-widest mt-1">
                                 {{ powerLabel(selectedPc) }}
                                 <span v-if="selectedPc.nic_link_mbps"> · {{ selectedPc.nic_link_mbps }} Мбит</span>
@@ -532,6 +563,18 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                                 :disabled="releasingPc"
                                 class="shrink-0 px-6 py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
                                 Освободить компьютер
+                            </button>
+                        </div>
+                        <div v-if="isOwner && selectedPc.king_nick" class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-white/5">
+                            <div class="text-[9px] text-white/30 uppercase font-black tracking-widest">
+                                сбросить King of the Hill на этом месте
+                            </div>
+                            <button
+                                type="button"
+                                @click="resetThrone"
+                                :disabled="resettingThrone"
+                                class="shrink-0 px-6 py-3 bg-white/10 hover:bg-white/20 disabled:opacity-40 text-amber-300 font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
+                                Сбросить King
                             </button>
                         </div>
                     </div>

@@ -270,6 +270,91 @@ class LanLiveFeaturesTest extends TestCase
         ]);
         $match->assertOk()->assertJsonPath('lfg.queue.status', 'matched');
         $this->assertStringContainsString('PC-11', (string) $match->json('lfg.queue.line'));
+        $this->assertNotNull($bA->fresh()->booking_group_id);
+        $this->assertSame(
+            (int) $bA->fresh()->booking_group_id,
+            (int) $bB->fresh()->booking_group_id
+        );
+        $this->assertTrue((bool) $match->json('party_energy.available'));
+    }
+
+    public function test_better_winrate_steals_the_throne(): void
+    {
+        $king = $this->player('FragKing', '79001110051', 0);
+        $challenger = $this->player('Clutch', '79001110052', 0);
+        $pc = $this->pc('PC-09');
+        $first = $this->activeSeat($king, $pc);
+        for ($i = 0; $i < 5; $i++) {
+            $this->postJson('/api/shell/gsi', [
+                'terminal_id' => $pc->id,
+                'booking_id' => $first->id,
+                'event' => 'kill',
+                'game' => 'cs2',
+                'player_name' => 'FragKing',
+                'in_match' => true,
+            ])->assertOk();
+        }
+        $this->assertSame('FragKing', $this->postJson('/api/shell/gsi', [
+            'terminal_id' => $pc->id,
+            'booking_id' => $first->id,
+            'event' => 'round_loss',
+            'game' => 'cs2',
+            'in_match' => true,
+        ])->json('throne.nickname'));
+
+        $first->update(['status' => 'completed']);
+        $second = $this->activeSeat($challenger, $pc);
+        for ($i = 0; $i < 3; $i++) {
+            $this->postJson('/api/shell/gsi', [
+                'terminal_id' => $pc->id,
+                'booking_id' => $second->id,
+                'event' => 'kill',
+                'game' => 'cs2',
+                'player_name' => 'Clutch',
+                'in_match' => true,
+            ])->assertOk();
+        }
+        for ($i = 0; $i < 3; $i++) {
+            $this->postJson('/api/shell/gsi', [
+                'terminal_id' => $pc->id,
+                'booking_id' => $second->id,
+                'event' => 'round_win',
+                'game' => 'cs2',
+                'player_name' => 'Clutch',
+                'in_match' => true,
+            ])->assertOk();
+        }
+
+        $last = $this->postJson('/api/shell/gsi', [
+            'terminal_id' => $pc->id,
+            'booking_id' => $second->id,
+            'event' => 'round_win',
+            'game' => 'cs2',
+            'player_name' => 'Clutch',
+            'in_match' => true,
+        ]);
+        $last->assertOk()->assertJsonPath('throne.nickname', 'Clutch');
+        $this->assertSame('winrate', $last->json('throne.metric'));
+    }
+
+    public function test_throne_reset_clears_today_king(): void
+    {
+        $king = $this->player('Volt', '79001110061', 0);
+        $pc = $this->pc('PC-33');
+        $booking = $this->activeSeat($king, $pc);
+        for ($i = 0; $i < 3; $i++) {
+            $this->postJson('/api/shell/gsi', [
+                'terminal_id' => $pc->id,
+                'booking_id' => $booking->id,
+                'event' => 'kill',
+                'game' => 'cs2',
+                'in_match' => true,
+            ])->assertOk();
+        }
+        $this->assertTrue(app(\App\Services\LanLive\PcThroneService::class)->resetToday($pc));
+        $this->postJson('/api/shell/qr/challenge', ['terminal_id' => $pc->id])
+            ->assertOk()
+            ->assertJsonPath('throne', null);
     }
 
     public function test_guest_cannot_create_bounty_without_session(): void

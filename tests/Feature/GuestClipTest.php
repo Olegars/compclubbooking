@@ -124,4 +124,83 @@ class GuestClipTest extends TestCase
         $this->assertNotNull($clip->fresh()->telegram_sent_at);
         Http::assertSent(fn ($request) => str_contains($request->url(), 'sendVideo'));
     }
+
+    public function test_telegram_start_links_guest_and_clip_goes_to_dm(): void
+    {
+        Storage::fake('public');
+        Http::fake([
+            'api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]], 200),
+        ]);
+        config([
+            'services.telegram.bot_token' => 'test-token',
+            'services.telegram.bot_username' => 'clubclipsbot',
+            'services.telegram.clips_auto' => false,
+            'services.telegram.clips_chat_id' => null,
+        ]);
+
+        $user = User::create([
+            'name' => 'Clip User',
+            'phone' => '+79990001124',
+            'email' => 'clip3@example.test',
+            'password' => 'password',
+        ]);
+        $user->forceFill(['telegram_link_token' => 'abcdeffedcbaabcdeffedcba'])->save();
+
+        $this->postJson('/api/telegram/webhook', [
+            'message' => [
+                'chat' => ['id' => 424242, 'username' => 'stalker'],
+                'text' => '/start abcdeffedcbaabcdeffedcba',
+            ],
+        ])->assertOk();
+
+        $user->refresh();
+        $this->assertSame('424242', (string) $user->telegram_chat_id);
+
+        $club = Club::create(['name' => 'Clip Club 2', 'slug' => 'clip-club-2']);
+        $pc = Computer::create([
+            'club_id' => $club->id,
+            'name' => 'PC-01',
+            'status' => 'available',
+            'kind' => 'pc',
+        ]);
+        Wallet::create([
+            'user_id' => $user->id,
+            'deposit_balance' => 50,
+            'bonus_balance' => 0,
+            'total_spent' => 0,
+        ]);
+        Booking::create([
+            'user_id' => $user->id,
+            'computer_id' => $pc->id,
+            'pc_ids' => [(string) $pc->id],
+            'date' => now()->toDateString(),
+            'start_time' => 12,
+            'duration' => 2,
+            'price' => 100,
+            'price_minor' => 10000,
+            'status' => 'active',
+            'pin_code' => '1234',
+            'starts_at' => now()->subHour(),
+            'ends_at' => now()->addHour(),
+        ]);
+
+        $file = UploadedFile::fake()->create('kill.mp4', 120, 'video/mp4');
+        $this->post('/api/shell/clips', [
+            'terminal_id' => $pc->id,
+            'duration_sec' => 12,
+            'aspect' => '9:16',
+            'source' => 'kill',
+            'clip' => $file,
+        ])->assertOk()->assertJsonPath('clip.telegram_sent', true);
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'sendVideo')) {
+                return false;
+            }
+            $data = $request->data();
+
+            return (string) ($data['chat_id'] ?? '') === '424242'
+                || str_contains($request->body(), '424242');
+        });
+    }
 }

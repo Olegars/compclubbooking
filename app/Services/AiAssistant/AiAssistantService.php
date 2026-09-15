@@ -8,6 +8,7 @@ use App\Models\Club;
 use App\Models\Computer;
 use App\Models\Game;
 use App\Models\User;
+use App\Services\LanLive\ShellGsiStore;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -65,6 +66,21 @@ class AiAssistantService
         $resolvedGame = $this->resolveGame($gameId, $gameTitle);
 
         $transcript = $this->speech->transcribe($audio, $settings);
+        $gsi = app(ShellGsiStore::class)->get($terminalId);
+        if (is_array($gsi) && ($gsi['in_match'] ?? false)) {
+            $bits = array_filter([
+                'игра '.($gsi['game'] ?? ''),
+                ! empty($gsi['map']) ? 'карта '.$gsi['map'] : null,
+                ! empty($gsi['phase']) ? 'фаза '.$gsi['phase'] : null,
+                isset($gsi['money']) ? 'деньги '.$gsi['money'] : null,
+                ! empty($gsi['hero']) ? 'герой '.$gsi['hero'] : null,
+                ! empty($gsi['ult_name']) ? 'ульт '.$gsi['ult_name'].((! empty($gsi['ult_ready'])) ? ' готов' : '') : null,
+                ! empty($gsi['bomb']) ? 'бомба '.$gsi['bomb'] : null,
+            ]);
+            if ($bits !== []) {
+                $transcript .= "\n[GSI] ".implode(', ', $bits);
+            }
+        }
         $reply = $this->llm->reply($transcript, [
             'game_title' => $resolvedGame['title'],
             'player_name' => $user?->name,

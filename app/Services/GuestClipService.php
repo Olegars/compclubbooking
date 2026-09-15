@@ -70,8 +70,8 @@ class GuestClipService
 
         $this->pruneUser($user);
         $clip = $clip->fresh();
-        if ($clip && $this->telegramConfigured() && config('services.telegram.clips_auto')) {
-            $this->postTelegram($clip);
+        if ($clip && $this->botConfigured()) {
+            $this->postTelegram($clip, (bool) config('services.telegram.clips_auto'));
         }
 
         return $clip->fresh();
@@ -93,15 +93,19 @@ class GuestClipService
         ];
     }
 
-    public function telegramConfigured(): bool
+    public function botConfigured(): bool
     {
-        return filled(config('services.telegram.bot_token'))
-            && filled(config('services.telegram.clips_chat_id'));
+        return filled(config('services.telegram.bot_token'));
     }
 
-    public function postTelegram(GuestClip $clip): bool
+    public function telegramConfigured(): bool
     {
-        if (! $this->telegramConfigured()) {
+        return $this->botConfigured() && filled(config('services.telegram.clips_chat_id'));
+    }
+
+    public function postTelegram(GuestClip $clip, bool $includeChannel = true): bool
+    {
+        if (! $this->botConfigured()) {
             $clip->update(['telegram_error' => 'Бот Telegram не настроен']);
 
             return false;
@@ -115,19 +119,31 @@ class GuestClipService
         }
 
         $full = $disk->path($clip->path);
-        $clip->loadMissing(['user:id,name', 'computer:id,name']);
+        $clip->loadMissing(['user:id,name,telegram_chat_id', 'computer:id,name']);
         $nick = trim((string) ($clip->user?->name ?? ''));
         $pc = trim((string) ($clip->computer?->name ?? ''));
         $caption = trim(implode("\n", array_filter([
             ($nick !== '' ? $nick : 'Клип клуба').($pc !== '' ? ' · '.$pc : ''),
             $clip->aspect === '9:16' ? 'Reels / Shorts 9:16' : null,
             $clip->shareUrl(),
+            url('/'),
         ])));
         $token = (string) config('services.telegram.bot_token');
-        $chats = array_values(array_unique(array_filter([
-            (string) config('services.telegram.clips_chat_id'),
-            (string) config('services.telegram.clips_guest_chat_id'),
-        ])));
+        $chats = [];
+        $guestChat = trim((string) ($clip->user?->telegram_chat_id ?? ''));
+        if ($guestChat !== '') {
+            $chats[] = $guestChat;
+        }
+        if ($includeChannel) {
+            $chats[] = (string) config('services.telegram.clips_chat_id');
+            $chats[] = (string) config('services.telegram.clips_guest_chat_id');
+        }
+        $chats = array_values(array_unique(array_filter($chats)));
+        if ($chats === []) {
+            $clip->update(['telegram_error' => 'Нет Telegram: привяжите бота в кабинете или задайте канал клуба']);
+
+            return false;
+        }
 
         $okAny = false;
         $lastError = null;

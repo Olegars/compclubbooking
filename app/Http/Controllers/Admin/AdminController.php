@@ -21,6 +21,7 @@ use App\Support\OrderChannel;
 use App\Services\BookingSessionTimingService;
 use App\Services\DisklessCommandService;
 use App\Services\ProductStockService;
+use App\Services\LanLive\PcThroneService;
 use App\Models\Computer;
 use App\Services\PreSessionOrderService;
 // Если у тебя есть модель BonusLog, раскомментируй:
@@ -39,6 +40,7 @@ class AdminController extends Controller
         $clubId = DB::table('clubs')->first()->id ?? 1;
 
         $computers = app(\App\Services\ComputerPowerService::class)->statusSnapshot((int) $clubId);
+        $computers = app(PcThroneService::class)->decorateComputers($computers);
         $fanOrphans = app(\App\Services\Fan\FanControlService::class)->orphanSnapshot((int) $clubId);
 
         return Inertia::render('Admin/Dashboard', [
@@ -903,6 +905,7 @@ class AdminController extends Controller
     public function getPcStatuses()
     {
         $computers = app(\App\Services\ComputerPowerService::class)->statusSnapshot();
+        $computers = app(PcThroneService::class)->decorateComputers($computers);
         $fanOrphans = app(\App\Services\Fan\FanControlService::class)->orphanSnapshot();
 
         return response()->json([
@@ -944,6 +947,32 @@ class AdminController extends Controller
             'message' => $result['had_session']
                 ? 'Сессия закрыта, компьютер освобождён.'
                 : 'Активной сессии не было, статус ПК пересчитан.',
+        ]);
+    }
+
+    public function resetThrone(Request $request, PcThroneService $thrones)
+    {
+        $data = $request->validate([
+            'computer_id' => 'required|integer|exists:computers,id',
+        ]);
+
+        $admin = Auth::guard('admin')->user();
+        $computer = Computer::query()->findOrFail((int) $data['computer_id']);
+        $clubId = AdminLocation::id($admin);
+        if ($clubId && $computer->club_id && (int) $computer->club_id !== (int) $clubId) {
+            abort(403, 'Этот ПК в другой локации.');
+        }
+
+        $had = $thrones->resetToday($computer);
+        Log::info('[ADMIN] throne reset', [
+            'admin_id' => $admin?->id,
+            'computer_id' => $computer->id,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'had_king' => $had,
+            'message' => $had ? 'King этого ПК сброшен.' : 'Трона на этом ПК сегодня не было.',
         ]);
     }
 

@@ -12,6 +12,7 @@ use App\Http\Controllers\BookingController;
 use App\Http\Controllers\ShopController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\TelegramWebhookController;
 use App\Http\Controllers\Api\PromoCodeController;
 use App\Http\Controllers\Api\QueueController;
 
@@ -223,6 +224,10 @@ Route::prefix('api/wifi')->group(function () {
     Route::post('/grant-applied', [WifiGrantRelayController::class, 'applied']);
 });
 
+Route::post('/api/telegram/webhook', TelegramWebhookController::class)
+    ->middleware('throttle:60,1')
+    ->name('telegram.webhook');
+
 // ЮKassa HTTP-уведомления (без сессии / CSRF)
 Route::post('/api/billing/yookassa/webhook', [BillingController::class, 'webhook'])
     ->name('billing.yookassa.webhook');
@@ -265,6 +270,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
         Route::post('/clips/{clip}/telegram', [ProfileController::class, 'shareClipTelegram']);
+        Route::post('/telegram/unlink', [ProfileController::class, 'unlinkTelegram']);
         Route::delete('/clips/{clip}', [ProfileController::class, 'destroyClip']);
         Route::get('/transfer/targets', [ProfileController::class, 'transferTargets']);
         Route::post('/transfer/preview', [ProfileController::class, 'transferPreview']);
@@ -390,6 +396,8 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::prefix('api')->group(function () {
             Route::get('/pc-statuses', [AdminController::class, 'getPcStatuses']);
             Route::post('/computers/release', [AdminController::class, 'releaseComputer'])
+                ->middleware('role:owner');
+            Route::post('/computers/throne-reset', [AdminController::class, 'resetThrone'])
                 ->middleware('role:owner');
             Route::post('/computers/diskless', [AdminController::class, 'enqueueDisklessCommand']);
             Route::get('/check-orders', [AdminController::class, 'checkNewOrders']);

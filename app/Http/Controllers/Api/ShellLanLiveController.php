@@ -158,6 +158,7 @@ class ShellLanLiveController extends Controller
             'alive' => 'nullable|boolean',
             'bomb' => 'nullable|string|max:24',
             'game_time' => 'nullable|integer',
+            'player_name' => 'nullable|string|max:48',
             'clock' => 'nullable|integer',
         ]);
 
@@ -167,6 +168,7 @@ class ShellLanLiveController extends Controller
             'in_match' => $request->boolean('in_match'),
             'pc_name' => (string) $computer->name,
             'user_id' => $user->id,
+            'player_name' => trim((string) ($data['player_name'] ?? '')),
         ]);
 
         $this->gsi->put((int) $computer->id, (int) ($computer->club_id ?? 0), $snap);
@@ -179,7 +181,7 @@ class ShellLanLiveController extends Controller
             $settled = $ingested['settled'] ?? null;
             $throne = $this->thrones->observe($computer, $user, $booking, $snap);
             if ($throne && (int) $throne->user_id === (int) $user->id
-                && in_array($event, ['kill', 'match_win'], true)) {
+                && in_array($event, ['kill', 'match_win', 'round_win'], true)) {
                 $crowned = $this->thrones->payload($computer, $user);
             }
         }
@@ -219,13 +221,21 @@ class ShellLanLiveController extends Controller
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
         }
 
+        $extra = [
+            'status' => 'success',
+            'message' => $queue['message'] ?? $queue['line'] ?? 'Ищем пати в зале',
+            'lfg_queue' => $queue,
+        ];
+        if (! empty($queue['moved'])) {
+            $extra['moved'] = true;
+            $extra['auto_sat'] = true;
+            $extra['pin_code'] = $queue['pin_code'] ?? null;
+            $extra['to'] = $queue['to'] ?? null;
+        }
+
         return response()->json(array_merge(
-            $this->livePayload($computer, $booking, $user->fresh()),
-            [
-                'status' => 'success',
-                'message' => $queue['line'] ?? 'Ищем пати в зале',
-                'lfg_queue' => $queue,
-            ]
+            $this->livePayload($computer, $booking->fresh() ?? $booking, $user->fresh()),
+            $extra
         ));
     }
 

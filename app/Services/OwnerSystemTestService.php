@@ -872,10 +872,11 @@ class OwnerSystemTestService
         $details = [
             'клипов в БД: '.$count,
             'telegram bot: '.(filled($bot) ? 'задан' : 'нет'),
+            'bot username: '.(filled(config('services.telegram.bot_username')) ? (string) config('services.telegram.bot_username') : 'нет'),
             'clips chat: '.(filled($chat) ? 'задан' : 'нет'),
         ];
-        if ($bot !== '' && $chat === '') {
-            return $this->warn('Бот есть, чат для клипов не задан.', $details);
+        if ($bot !== '' && $chat === '' && ! filled(config('services.telegram.bot_username'))) {
+            return $this->warn('Бот есть, нет канала и @username для лички гостя.', $details);
         }
 
         return $this->pass('Контур клипов живой.', $details);

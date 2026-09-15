@@ -42,6 +42,8 @@ return [
 
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'bot_username' => env('TELEGRAM_BOT_USERNAME'),
+        'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
         'clips_chat_id' => env('TELEGRAM_CLIPS_CHAT_ID'),
         'clips_guest_chat_id' => env('TELEGRAM_CLIPS_GUEST_CHAT_ID'),
         'clips_auto' => env('TELEGRAM_CLIPS_AUTO', false),

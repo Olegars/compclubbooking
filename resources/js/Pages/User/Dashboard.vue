@@ -167,7 +167,7 @@ const cancelBooking = async (b: any) => {
 
 const fetchDashboardData = () => {
     router.reload({
-        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'clips', 'clips_telegram', 'server_time'],
+        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'clips', 'clips_telegram', 'telegram', 'server_time'],
         preserveScroll: true
     })
 }
@@ -177,6 +177,7 @@ const achievements = computed(() => {
 })
 const clips = computed(() => (page.props.clips as any[]) || [])
 const clipsTelegram = computed(() => !!(page.props as any).clips_telegram)
+const telegramLink = computed(() => (page.props as any).telegram || {})
 
 const copyClipLink = async (url: string) => {
     try {
@@ -186,6 +187,10 @@ const copyClipLink = async (url: string) => {
 
 const shareClipTelegram = (id: number) => {
     router.post(`/account/clips/${id}/telegram`, {}, { preserveScroll: true })
+}
+
+const unlinkTelegram = () => {
+    router.post('/account/telegram/unlink', {}, { preserveScroll: true })
 }
 
 const deleteClip = (id: number) => {
@@ -679,6 +684,25 @@ onMounted(() => {
                         <h3 class="text-xl md:text-3xl font-black uppercase italic tracking-tighter text-white truncate">{{ page.props.user?.name }}</h3>
                         <div class="mt-2 md:mt-4 inline-flex px-4 md:px-6 py-1.5 md:py-2 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[9px] md:text-[10px] text-[#22c55e] font-black uppercase italic tracking-widest">СТАЛКЕР</div>
                     </div>
+                </div>
+
+                <div v-if="telegramLink.bot || telegramLink.linked || telegramLink.deep_link"
+                     class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-cyan-500/20 rounded-xl md:rounded-[1.125rem] p-4 sm:p-6 md:p-8 md:shadow-xl">
+                    <span class="text-[10px] uppercase text-cyan-400 tracking-[0.35em] font-black italic block mb-3">Telegram клипы</span>
+                    <p v-if="telegramLink.linked" class="text-[11px] text-white/50 mb-3">
+                        Привязан{{ telegramLink.username ? ' @' + telegramLink.username : '' }}. Killcam уходит в личку.
+                    </p>
+                    <a v-else-if="telegramLink.deep_link"
+                       :href="telegramLink.deep_link"
+                       target="_blank"
+                       rel="noopener"
+                       class="inline-flex text-[10px] uppercase tracking-widest font-black text-cyan-400">
+                        Привязать Telegram
+                    </a>
+                    <p v-else class="text-[11px] text-white/30">Бот клипов не настроен.</p>
+                    <button v-if="telegramLink.linked" type="button" class="text-[10px] uppercase tracking-widest text-red-400 mt-2" @click="unlinkTelegram">
+                        Отвязать
+                    </button>
                 </div>
 
                 <div v-if="clips.length > 0" class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-cyan-500/20 rounded-xl md:rounded-[1.125rem] p-4 sm:p-6 md:p-8 md:shadow-xl">
