@@ -17,6 +17,7 @@ class OwnerSystemTestsTest extends TestCase
     public function test_guest_is_sent_to_login(): void
     {
         $this->get('/admin/system-tests')->assertRedirect('/admin/login');
+        $this->get('/admin/system-tests/pdf')->assertRedirect('/admin/login');
         $guest = $this->postJson('/admin/system-tests/run', ['id' => 'cache']);
         $this->assertTrue(in_array($guest->status(), [401, 302], true));
     }
@@ -187,6 +188,79 @@ class OwnerSystemTestsTest extends TestCase
         $this->assertTrue($ids->contains('phpunit:all'));
         $this->assertTrue($ids->contains('phpunit:feature-OwnerSystemTestsTest'));
         $this->assertTrue($ids->contains('phpunit:feature-LightControlTest'));
+    }
+
+    public function test_owner_prints_results_pdf_and_guest_cannot(): void
+    {
+        $owner = $this->makeAdmin('owner');
+        Club::query()->create([
+            'name' => '0451',
+            'slug' => 'club-pdf-'.uniqid(),
+            'type' => 'club',
+        ]);
+
+        $payload = [
+            'results' => [
+                [
+                    'id' => 'cache',
+                    'title' => 'Кэш',
+                    'group' => 'platform',
+                    'group_title' => 'Платформа',
+                    'kind' => 'live',
+                    'status' => 'pass',
+                    'message' => 'Кэш пишет и читает.',
+                    'details' => ['store: array'],
+                    'duration_ms' => 12,
+                ],
+                [
+                    'id' => 'sms',
+                    'title' => 'SMS-вход',
+                    'group' => 'services',
+                    'group_title' => 'Сервисы зала',
+                    'kind' => 'live',
+                    'status' => 'skip',
+                    'message' => 'Боевой SMS-шлюз не подключён.',
+                    'details' => [],
+                    'duration_ms' => 1,
+                ],
+            ],
+        ];
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/system-tests/pdf', $payload)
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SystemTestsPrint')
+                ->has('results', 2)
+                ->where('summary.pass', 1)
+                ->where('summary.skip', 1)
+                ->where('summary.ran', 2)
+                ->where('owner', $owner->name)
+            );
+
+        $this->actingAs($owner, 'admin')
+            ->get('/admin/system-tests/pdf')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SystemTestsPrint')
+                ->where('summary.pass', 1)
+            );
+
+        $supervisor = $this->makeAdmin('supervisor');
+        $this->actingAs($supervisor, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/system-tests/pdf', $payload)
+            ->assertForbidden();
+    }
+
+    public function test_owner_pdf_without_results_returns_to_tests_page(): void
+    {
+        $owner = $this->makeAdmin('owner');
+
+        $this->actingAs($owner, 'admin')
+            ->get('/admin/system-tests/pdf')
+            ->assertRedirect('/admin/system-tests');
     }
 
     private function makeAdmin(string $role): Admin

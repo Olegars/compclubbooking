@@ -655,6 +655,8 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
     Route::middleware(['role:owner'])->group(function () {
         Route::get('/system-tests', [OwnerSystemTestsController::class, 'index'])->name('admin.system-tests');
         Route::post('/system-tests/run', [OwnerSystemTestsController::class, 'run'])->name('admin.system-tests.run');
+        Route::match(['get', 'post'], '/system-tests/pdf', [OwnerSystemTestsController::class, 'printPdf'])
+            ->name('admin.system-tests.pdf');
 
         Route::delete('/staff/{admin}', [StaffController::class, 'destroy'])->name('admin.staff.destroy');
 

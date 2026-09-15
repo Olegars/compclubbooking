@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { Head } from '@inertiajs/vue3'
+import { Head, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { useClubName } from '@/Composables/useClubName'
@@ -34,6 +34,9 @@ const props = defineProps<{
 const clubName = useClubName()
 const runningId = ref<string | null>(null)
 const runningAll = ref(false)
+const pdfBusy = ref(false)
+const runCursor = ref(0)
+const runTotal = ref(0)
 const results = reactive<Record<string, RunResult>>({})
 const error = ref<string | null>(null)
 
@@ -49,6 +52,7 @@ const groups = computed(() => {
 })
 
 const liveIds = computed(() => props.tests.filter(t => t.kind === 'live').map(t => t.id))
+const allIds = computed(() => [...liveIds.value, 'phpunit:all'])
 
 const summary = computed(() => {
     const counts = { pass: 0, fail: 0, warn: 0, skip: 0, ran: 0 }
@@ -61,7 +65,12 @@ const summary = computed(() => {
     return counts
 })
 
-const busy = computed(() => runningId.value !== null || runningAll.value)
+const busy = computed(() => runningId.value !== null || runningAll.value || pdfBusy.value)
+
+const progressLabel = computed(() => {
+    if (!runningAll.value || runTotal.value === 0) return ''
+    return `${runCursor.value} / ${runTotal.value}`
+})
 
 const statusLabel = (status?: TestStatus | 'running') => {
     if (status === 'pass') return 'OK'
@@ -81,14 +90,19 @@ const statusClass = (status?: TestStatus | 'running') => {
     return 'border-white/10 bg-black/30 text-white/35'
 }
 
+const timeoutFor = (id: string) => {
+    if (id === 'phpunit:all') return 620000
+    if (id.startsWith('phpunit:')) return 200000
+    return 45000
+}
+
 const runOne = async (id: string) => {
     if (busy.value) return
     runningId.value = id
     error.value = null
     try {
-        const isPhpunit = id.startsWith('phpunit:')
         const { data } = await axios.post('/admin/system-tests/run', { id }, {
-            timeout: isPhpunit ? (id === 'phpunit:all' ? 620000 : 200000) : 45000,
+            timeout: timeoutFor(id),
         })
         results[id] = data
     } catch (e: any) {
@@ -111,14 +125,16 @@ const runOne = async (id: string) => {
 const runList = async (ids: string[]) => {
     if (busy.value || ids.length === 0) return
     runningAll.value = true
+    runCursor.value = 0
+    runTotal.value = ids.length
     error.value = null
     try {
         for (const id of ids) {
             runningId.value = id
+            runCursor.value += 1
             try {
-                const isPhpunit = id.startsWith('phpunit:')
                 const { data } = await axios.post('/admin/system-tests/run', { id }, {
-                    timeout: isPhpunit ? 200000 : 45000,
+                    timeout: timeoutFor(id),
                 })
                 results[id] = data
             } catch (e: any) {
@@ -134,6 +150,8 @@ const runList = async (ids: string[]) => {
     } finally {
         runningId.value = null
         runningAll.value = false
+        runCursor.value = 0
+        runTotal.value = 0
     }
 }
 
@@ -145,6 +163,30 @@ const runGroup = (groupId: string) => {
         return
     }
     runList(group.items.map(item => item.id))
+}
+
+const exportPdf = () => {
+    if (busy.value || summary.value.ran === 0) return
+    pdfBusy.value = true
+    error.value = null
+    router.post('/admin/system-tests/pdf', {
+        results: props.tests.map((item) => {
+            const row = results[item.id]
+            return {
+                id: item.id,
+                title: item.title,
+                group: item.group,
+                group_title: item.group_title,
+                kind: item.kind,
+                status: row?.status ?? null,
+                message: String(row?.message ?? '').slice(0, 4000),
+                details: (row?.details ?? []).slice(0, 40).map((line) => String(line).slice(0, 500)),
+                duration_ms: row?.duration_ms ?? 0,
+            }
+        }),
+    }, {
+        onFinish: () => { pdfBusy.value = false },
+    })
 }
 </script>
 
@@ -162,15 +204,27 @@ const runGroup = (groupId: string) => {
                         <span v-if="location"> · {{ location.name }}</span>
                     </p>
                     <p class="text-white/40 text-xs font-bold mt-3 max-w-2xl">
-                        Живые проверки не включают ПК, не бьют чек и не шлют SMS. Автотесты PHPUnit идут в sqlite и прод-базу не трогают.
+                        «Все тесты» — живые проверки и весь PHPUnit. PDF — текущие результаты в печатный лист.
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-3">
                     <button type="button"
                             class="px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-yellow-500 text-black disabled:opacity-40"
                             :disabled="busy"
+                            @click="runList(allIds)">
+                        {{ runningAll ? `Идёт ${progressLabel}` : 'Запустить все тесты' }}
+                    </button>
+                    <button type="button"
+                            class="px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/15 text-white/70 hover:border-yellow-500/40 hover:text-yellow-300 disabled:opacity-40"
+                            :disabled="busy"
                             @click="runList(liveIds)">
                         Все живые проверки
+                    </button>
+                    <button type="button"
+                            class="px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-widest border border-yellow-500/30 text-yellow-300 hover:bg-yellow-500/10 disabled:opacity-40"
+                            :disabled="busy || summary.ran === 0"
+                            @click="exportPdf">
+                        Вывести результаты в PDF
                     </button>
                 </div>
             </div>

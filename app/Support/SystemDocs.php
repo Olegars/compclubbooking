@@ -78,7 +78,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Тесты системы',
-                        'description' => "Страница /admin/system-tests только для роли owner (сайдбар Конфигурация и кабинет владельца). Кнопки живых проверок контуров: БД, кэш, файлы, ЮKassa /me, касса, heartbeat шелла, SMART/линк, WOL-токен, diskless, вентиляторы, DMX, кухня, видео-метки, Wi-Fi, клипы, ИИ, Avito, QuickFox. Не включает ПК, не бьёт чек, не шлёт SMS и Art-Net.\n\nОтдельно — кнопки PHPUnit (tests/Feature и tests/Unit): php artisan test по файлу или весь набор. Изолированная sqlite из phpunit.xml, прод-базу не трогает. На сервере без require-dev кнопка напишет, что PHPUnit нет. Не замена Zabbix: это ручной прогон по кнопке, не ping WAN и не баланс SMS-шлюза.",
+                        'description' => "Страница /admin/system-tests только для роли owner (сайдбар Конфигурация и кабинет владельца). «Запустить все тесты» гоняет живые проверки и весь PHPUnit; «Вывести результаты в PDF» открывает печатный лист (диалог «Сохранить как PDF»). Кнопки по контурам: БД, кэш, файлы, ЮKassa /me, касса, heartbeat шелла, SMART/линк, WOL-токен, diskless, вентиляторы, DMX, кухня, видео-метки, Wi-Fi, клипы, ИИ, Avito, QuickFox. Не включает ПК, не бьёт чек, не шлёт SMS и Art-Net.\n\nОтдельно — кнопки PHPUnit (tests/Feature и tests/Unit): php artisan test по файлу или весь набор. Изолированная sqlite из phpunit.xml, прод-базу не трогает. На сервере без require-dev кнопка напишет, что PHPUnit нет. Не замена Zabbix: это ручной прогон по кнопке, не ping WAN и не баланс SMS-шлюза.",
                         'path' => '/admin/system-tests',
                         'audience' => 'Owner',
                     ],
