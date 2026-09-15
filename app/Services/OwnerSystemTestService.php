@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Process\PhpExecutableFinder;
 use Symfony\Component\Process\Process;
 use Throwable;
 
@@ -54,7 +55,7 @@ class OwnerSystemTestService
             'group' => 'phpunit',
             'group_title' => 'Автотесты PHPUnit',
             'title' => 'Весь набор PHPUnit',
-            'description' => 'php artisan test — Feature и Unit. Изолированная sqlite, прод-базу не трогает. Может занять несколько минут.',
+            'description' => 'php artisan test — Feature и Unit. Изолированная sqlite, прод-базу не трогает. Идёт через PHP CLI (не php-fpm). Может занять несколько минут.',
             'kind' => 'phpunit',
         ];
 
@@ -991,7 +992,21 @@ class OwnerSystemTestService
             return $this->fail('Не найден artisan.');
         }
 
-        $args = [PHP_BINARY, $artisan, 'test'];
+        $phpunit = base_path('vendor/bin/phpunit');
+        $phpunitBat = base_path('vendor/bin/phpunit.bat');
+        if (! is_file($phpunit) && ! is_file($phpunitBat)) {
+            return $this->skip('PHPUnit не установлен (нет vendor/bin/phpunit). На сервере без require-dev автотесты не гоняются.');
+        }
+
+        $php = $this->phpCliBinary();
+        if ($php === null) {
+            return $this->fail(
+                'Не найден PHP CLI. Из php-fpm PHP_BINARY — это FPM, artisan test так не запустить. Задайте PHP_CLI_BINARY в .env (например /usr/bin/php).',
+                array_slice($this->phpCliCandidates(), 0, 8),
+            );
+        }
+
+        $args = [$php, $artisan, 'test', '--no-ansi'];
         $timeout = 120;
         if ($id === 'phpunit:all') {
             $timeout = 600;
@@ -1020,7 +1035,7 @@ class OwnerSystemTestService
             $process->run();
             $output = trim($process->getOutput()."\n".$process->getErrorOutput());
             $lines = array_values(array_filter(array_map('trim', preg_split('/\R/', $output) ?: [])));
-            $tail = array_slice($lines, -12);
+            $tail = array_merge(['php: '.$php], array_slice($lines, -12));
             if ($process->isSuccessful()) {
                 return $this->pass('Автотесты прошли.', $tail);
             }
@@ -1058,6 +1073,141 @@ class OwnerSystemTestService
         }
 
         return $out;
+    }
+
+    /**
+     * PHP CLI для artisan test. PHP_BINARY под FPM — это php-fpm (код 64 и справка FPM).
+     */
+    public function phpCliBinary(): ?string
+    {
+        foreach ($this->phpCliCandidates() as $bin) {
+            if (! is_file($bin)) {
+                continue;
+            }
+            $sapi = $this->phpBinarySapi($bin);
+            if (in_array($sapi, ['cli', 'phpdbg'], true)) {
+                return $bin;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function phpCliCandidates(?string $phpBinary = null, ?string $sapi = null, ?string $bindir = null): array
+    {
+        $phpBinary = $phpBinary ?? PHP_BINARY;
+        $sapi = strtolower($sapi ?? PHP_SAPI);
+        $bindir = $bindir ?? PHP_BINDIR;
+
+        $raw = [];
+        $env = trim((string) config('app.php_cli_binary', ''));
+        if ($env !== '') {
+            $raw[] = $env;
+        }
+
+        if (! $this->binaryNameLooksLikeFpmOrCgi($phpBinary)
+            && in_array($sapi, ['cli', 'phpdbg', 'cli-server'], true)) {
+            $raw[] = $phpBinary;
+        }
+
+        foreach ($this->phpCliSiblingsOf($phpBinary) as $sibling) {
+            $raw[] = $sibling;
+        }
+
+        if ($bindir !== '') {
+            $sep = str_contains($bindir, '\\') && ! str_contains($bindir, '/') ? '\\' : '/';
+            $raw[] = $bindir.$sep.'php';
+            $raw[] = $bindir.$sep.'php.exe';
+            $parent = dirname($bindir);
+            if ($parent !== '' && $parent !== '.' && $parent !== $bindir) {
+                $raw[] = $parent.$sep.'bin'.$sep.'php';
+                $raw[] = $parent.$sep.'bin'.$sep.'php.exe';
+            }
+        }
+
+        $finder = (new PhpExecutableFinder)->find(false);
+        if (is_string($finder) && $finder !== '') {
+            $raw[] = $finder;
+        }
+
+        $raw[] = '/usr/bin/php';
+        $raw[] = '/usr/local/bin/php';
+
+        $out = [];
+        $seen = [];
+        foreach ($raw as $path) {
+            $path = trim($path);
+            if ($path === '') {
+                continue;
+            }
+            $key = strtolower($path);
+            if (isset($seen[$key]) || $this->binaryNameLooksLikeFpmOrCgi($path)) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = $path;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function phpCliSiblingsOf(string $binary): array
+    {
+        if ($binary === '' || ! $this->binaryNameLooksLikeFpmOrCgi($binary)) {
+            return [];
+        }
+
+        $sep = str_contains($binary, '\\') && ! str_contains($binary, '/') ? '\\' : '/';
+        $base = basename(str_replace('\\', '/', $binary));
+        $cliName = (string) preg_replace('/php-fpm/i', 'php', $base);
+        $cliName = (string) preg_replace('/php-cgi/i', 'php', $cliName);
+        $dir = dirname($binary);
+        $parent = dirname($dir);
+
+        $dirs = [$dir];
+        if ($parent !== '' && $parent !== '.' && $parent !== $dir) {
+            $dirs[] = $parent.$sep.'bin';
+        }
+
+        $names = array_unique([$cliName, 'php', 'php.exe']);
+        $out = [];
+        foreach ($dirs as $folder) {
+            foreach ($names as $name) {
+                $out[] = $folder.$sep.$name;
+            }
+        }
+
+        return $out;
+    }
+
+    private function binaryNameLooksLikeFpmOrCgi(string $path): bool
+    {
+        $base = strtolower(basename(str_replace('\\', '/', $path)));
+
+        return str_contains($base, 'php-fpm') || str_contains($base, 'php-cgi');
+    }
+
+    private function phpBinarySapi(string $path): ?string
+    {
+        try {
+            $process = new Process([$path, '-r', 'echo PHP_SAPI;']);
+            $process->setTimeout(8);
+            $process->run();
+            if (! $process->isSuccessful()) {
+                return null;
+            }
+            $sapi = strtolower(trim($process->getOutput()));
+
+            return $sapi !== '' ? $sapi : null;
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private function humanTestName(string $class): string

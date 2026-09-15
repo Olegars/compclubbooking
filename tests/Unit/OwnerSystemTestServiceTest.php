@@ -114,4 +114,36 @@ class OwnerSystemTestServiceTest extends TestCase
         $this->assertSame('pass', $result['status']);
         $this->assertGreaterThan(0, $result['duration_ms']);
     }
+
+    public function test_php_cli_candidates_drop_fpm_and_keep_versioned_cli(): void
+    {
+        $service = app(OwnerSystemTestService::class);
+        $cands = $service->phpCliCandidates('/usr/sbin/php-fpm8.4', 'fpm-fcgi', '/usr/sbin');
+        $bases = array_map(
+            static fn (string $path) => basename(str_replace('\\', '/', $path)),
+            $cands,
+        );
+
+        $this->assertNotContains('php-fpm8.4', $bases);
+        $this->assertContains('php8.4', $bases);
+        $this->assertContains('php', $bases);
+        $this->assertFalse(collect($cands)->contains(
+            fn (string $path) => str_contains(strtolower($path), 'php-fpm'),
+        ));
+    }
+
+    public function test_php_cli_candidates_prefer_configured_binary(): void
+    {
+        config(['app.php_cli_binary' => '/opt/php/bin/php']);
+        $cands = app(OwnerSystemTestService::class)->phpCliCandidates('/usr/sbin/php-fpm8.4', 'fpm-fcgi', '/usr/sbin');
+        $this->assertSame('/opt/php/bin/php', $cands[0]);
+    }
+
+    public function test_php_cli_binary_on_cli_sapi_is_not_fpm(): void
+    {
+        $php = app(OwnerSystemTestService::class)->phpCliBinary();
+        $this->assertNotNull($php);
+        $this->assertFileExists($php);
+        $this->assertStringNotContainsString('php-fpm', strtolower($php));
+    }
 }

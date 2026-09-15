@@ -55,6 +55,12 @@ return [
     'url' => env('APP_URL', 'http://localhost'),
 
     /*
+    | PHP CLI for owner system tests (php artisan test). Under php-fpm
+    | PHP_BINARY is the FPM daemon and cannot run artisan.
+    */
+    'php_cli_binary' => env('PHP_CLI_BINARY'),
+
+    /*
     |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
