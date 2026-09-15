@@ -294,6 +294,56 @@ class LightControlTest extends TestCase
         $this->assertSame(80, $state['events']['pc_on']['brightness']);
         $this->assertArrayHasKey('cs2.bomb', $state['events']);
         $this->assertTrue($state['events']['cs2.bomb']['strobe']);
+        $this->assertSame('presets', $state['events_from']);
+    }
+
+    public function test_admin_events_override_defaults_in_shell_payload(): void
+    {
+        \App\Models\ClubLightSetting::query()->create([
+            'club_id' => $this->club->id,
+            'events' => [
+                'cs2.bomb' => [
+                    'color' => 'blue',
+                    'strobe' => false,
+                    'duration_sec' => 4,
+                    'strobe_on_ms' => 20,
+                    'strobe_off_ms' => 40,
+                    'fade_sec' => 1.5,
+                ],
+            ],
+        ]);
+
+        $state = $this->lights->stateForComputer($this->pcA->id);
+
+        $this->assertSame('blue', $state['events']['cs2.bomb']['color']);
+        $this->assertFalse($state['events']['cs2.bomb']['strobe']);
+        $this->assertEquals(4.0, $state['events']['cs2.bomb']['duration_sec']);
+        $this->assertSame(20, $state['events']['cs2.bomb']['strobe_on_ms']);
+        $this->assertSame(40, $state['events']['cs2.bomb']['strobe_off_ms']);
+        $this->assertEquals(1.5, $state['events']['cs2.bomb']['fade_sec']);
+        $this->assertSame('white', $state['events']['pc_on']['color']);
+        $this->assertSame('admin', $state['events_from']);
+    }
+
+    public function test_events_are_sent_even_without_space_light(): void
+    {
+        $this->light->delete();
+        \App\Models\ClubLightSetting::query()->create([
+            'club_id' => $this->club->id,
+            'events' => [
+                'dota.win' => [
+                    'color' => 'green',
+                    'duration_sec' => 3,
+                ],
+            ],
+        ]);
+
+        $state = $this->lights->stateForComputer($this->pcA->id);
+
+        $this->assertFalse($state['available']);
+        $this->assertSame('green', $state['events']['dota.win']['color']);
+        $this->assertEquals(3.0, $state['events']['dota.win']['duration_sec']);
+        $this->assertSame('admin', $state['events_from']);
     }
 
     public function test_custom_pc_on_color_and_play_event(): void
@@ -321,6 +371,8 @@ class LightControlTest extends TestCase
         $this->assertSame('pc_on', $state['play_event']);
         $this->assertGreaterThan(0, $state['play_event_at']);
         $this->assertSame(500, $state['fade_ms']);
+        $this->assertSame('admin', $state['events_from']);
+        $this->assertSame('red', $state['events']['pc_on']['color']);
     }
 
     public function test_session_end_plays_configured_overlay(): void

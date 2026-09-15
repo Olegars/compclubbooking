@@ -255,8 +255,12 @@ class LightControlService
     public function stateForComputer(int $computerId): array
     {
         $computer = Computer::query()->find($computerId);
-        if (! $computer || ! $this->fans->ensureSpaceForComputer($computer)) {
-            return ['available' => false];
+        if (! $computer) {
+            return $this->unavailablePayload(null);
+        }
+
+        if (! $this->fans->ensureSpaceForComputer($computer)) {
+            return $this->unavailablePayload((int) $computer->club_id);
         }
 
         $this->reconcileForSpace((int) $computer->space_id, (int) $computer->club_id);
@@ -268,10 +272,22 @@ class LightControlService
             ->first();
 
         if (! $light) {
-            return ['available' => false];
+            return $this->unavailablePayload((int) $computer->club_id);
         }
 
         return $this->statePayload($light, (int) $computer->id);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function unavailablePayload(?int $clubId): array
+    {
+        return [
+            'available' => false,
+            'events' => $this->events->shellPayload($clubId),
+            'events_from' => $this->events->sourceForClub($clubId),
+        ];
     }
 
     public function statePayload(SpaceLight $light, ?int $forComputerId = null): array
@@ -328,6 +344,7 @@ class LightControlService
             ] : null,
             'nodes' => $nodes,
             'events' => $this->events->shellPayload((int) $light->club_id),
+            'events_from' => $this->events->sourceForClub((int) $light->club_id),
             'facts' => [
                 'session' => $occupied,
                 'sessions_in_space' => $this->spaceActiveSessionCount($light),

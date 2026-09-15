@@ -368,6 +368,17 @@ class LightEventCatalog
         return $this->forClub($clubId);
     }
 
+    public function sourceForClub(?int $clubId): string
+    {
+        if (! $clubId) {
+            return 'presets';
+        }
+
+        return ClubLightSetting::query()->where('club_id', $clubId)->exists()
+            ? 'admin'
+            : 'presets';
+    }
+
     /**
      * @param  array<string, mixed>  $raw
      * @param  array<string, mixed>  $default

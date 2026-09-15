@@ -12,6 +12,7 @@ use App\Models\ClubLightSetting;
 use App\Services\Fan\FanControlService;
 use App\Services\Light\LightControlService;
 use App\Services\Light\LightEventCatalog;
+use App\Support\AdminLocation;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
@@ -22,7 +23,8 @@ class LightAdminController extends Controller
     public function index(Request $request, LightEventCatalog $catalog)
     {
         $clubs = Club::query()->select('id', 'name')->orderBy('name')->get();
-        $clubId = (int) ($request->integer('club_id') ?: ($clubs->first()?->id ?? 0));
+        $clubId = (int) ($request->integer('club_id')
+            ?: (AdminLocation::id() ?: ($clubs->first()?->id ?? 0)));
 
         $nodes = DmxNode::query()
             ->when($clubId, fn ($q) => $q->where('club_id', $clubId))
