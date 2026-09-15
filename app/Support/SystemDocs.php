@@ -794,4 +794,42 @@ class SystemDocs
             ],
         ];
     }
+
+    /**
+     * @return list<array{id:string,title:string,items:list<array{title:string,description:string,path:?string,audience:string}}>>
+     */
+    public static function filtered(string $sectionId = 'all', string $query = ''): array
+    {
+        $sections = self::sections();
+        $sectionId = trim($sectionId);
+        $query = trim($query);
+
+        if ($sectionId !== '' && $sectionId !== 'all') {
+            $sections = array_values(array_filter(
+                $sections,
+                static fn (array $section): bool => $section['id'] === $sectionId
+            ));
+        }
+
+        if ($query === '') {
+            return $sections;
+        }
+
+        $needle = mb_strtolower($query);
+
+        return array_values(array_filter(array_map(static function (array $section) use ($needle): array {
+            $section['items'] = array_values(array_filter(
+                $section['items'],
+                static function (array $item) use ($needle): bool {
+                    $haystack = mb_strtolower(
+                        $item['title']."\n".$item['description']."\n".$item['audience']."\n".($item['path'] ?? '')
+                    );
+
+                    return str_contains($haystack, $needle);
+                }
+            ));
+
+            return $section;
+        }, $sections), static fn (array $section): bool => $section['items'] !== []));
+    }
 }

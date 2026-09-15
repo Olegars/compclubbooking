@@ -62,6 +62,17 @@ const totalItems = computed(() =>
     props.sections.reduce((n, s) => n + s.items.length, 0)
 )
 
+const pdfHref = computed(() => {
+    const params = new URLSearchParams()
+    if (activeSection.value && activeSection.value !== 'all') {
+        params.set('section', activeSection.value)
+    }
+    const q = query.value.trim()
+    if (q) params.set('q', q)
+    const qs = params.toString()
+    return '/admin/docs/pdf' + (qs ? `?${qs}` : '')
+})
+
 const isOpen = (id: string) => Boolean(openMap.value[id])
 
 const toggle = (id: string) => {
@@ -101,13 +112,22 @@ watch([query, activeSection, filtered], () => {
         <div class="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-500 font-mono pb-20 px-4">
 
             <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem] shadow-2xl space-y-6">
-                <div>
-                    <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">
-                        О <span class="text-[#22c55e]">системе</span>
-                    </h1>
-                    <p class="text-white/25 text-[10px] uppercase tracking-[0.35em] font-black mt-2 italic">
-                        Справочник функций {{ clubName }} · {{ totalItems }} модулей · разделы свёрнуты
-                    </p>
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                        <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">
+                            О <span class="text-[#22c55e]">системе</span>
+                        </h1>
+                        <p class="text-white/25 text-[10px] uppercase tracking-[0.35em] font-black mt-2 italic">
+                            Справочник функций {{ clubName }} · {{ totalItems }} модулей · разделы свёрнуты
+                        </p>
+                    </div>
+                    <a
+                        :href="pdfHref"
+                        target="_blank"
+                        class="px-4 py-3 rounded-xl border border-[#22c55e]/40 text-[10px] font-black uppercase tracking-widest text-[#22c55e] hover:bg-[#22c55e]/10 transition-colors"
+                    >
+                        Экспорт PDF
+                    </a>
                 </div>
 
                 <div class="flex flex-col md:flex-row gap-3">

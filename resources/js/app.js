@@ -32,6 +32,7 @@ const storePages = import.meta.glob([
     './Pages/Admin/Salary.vue',
     './Pages/Admin/StoreCabinet.vue',
     './Pages/Admin/SystemDocs.vue',
+    './Pages/Admin/SystemDocsPrint.vue',
     './Pages/Admin/Store/**/*.vue',
     './Pages/Auth/StoreLogin.vue',
     './Pages/Auth/StoreHire.vue',
@@ -40,6 +41,7 @@ const isStoreAppPage = (name) => (
     name === 'Admin/Salary'
     || name === 'Admin/StoreCabinet'
     || name === 'Admin/SystemDocs'
+    || name === 'Admin/SystemDocsPrint'
     || name.startsWith('Admin/Store/')
     || name === 'Auth/StoreLogin'
     || name === 'Auth/StoreHire'

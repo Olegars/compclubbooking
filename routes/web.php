@@ -321,6 +321,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
 
     // Справка — всем ролям
     Route::get('/docs', [SystemDocsController::class, 'index'])->name('admin.docs');
+    Route::get('/docs/pdf', [SystemDocsController::class, 'printPdf'])->name('admin.docs.pdf');
 
     // Личный кабинет владельца — отдельно от зарплаты зала и магазина
     Route::get('/cabinet', [OwnerCabinetController::class, 'index'])

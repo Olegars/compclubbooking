@@ -1,0 +1,70 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Admin;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class SystemDocsTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_guest_is_sent_to_login(): void
+    {
+        $this->get('/admin/docs')->assertRedirect('/admin/login');
+        $this->get('/admin/docs/pdf')->assertRedirect('/admin/login');
+    }
+
+    public function test_admin_can_open_docs_and_pdf(): void
+    {
+        $admin = $this->makeAdmin('supervisor');
+
+        $this->actingAs($admin, 'admin')
+            ->get('/admin/docs')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SystemDocs')
+                ->has('sections')
+            );
+
+        $this->actingAs($admin, 'admin')
+            ->get('/admin/docs/pdf')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SystemDocsPrint')
+                ->has('sections')
+                ->has('printedAt')
+                ->where('section', 'all')
+                ->where('query', '')
+            );
+    }
+
+    public function test_pdf_respects_section_and_search(): void
+    {
+        $admin = $this->makeAdmin('supervisor');
+
+        $this->actingAs($admin, 'admin')
+            ->get('/admin/docs/pdf?section=ops&q=дашборд')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SystemDocsPrint')
+                ->where('section', 'ops')
+                ->where('query', 'дашборд')
+                ->has('sections', 1)
+                ->where('sections.0.id', 'ops')
+                ->where('sections.0.items.0.title', 'Дашборд')
+            );
+    }
+
+    private function makeAdmin(string $role): Admin
+    {
+        return Admin::query()->create([
+            'name' => ucfirst($role).' '.uniqid(),
+            'email' => $role.'.'.uniqid().'@docs.test',
+            'password' => 'password',
+            'role' => $role,
+            'pay_type' => 'shift',
+        ]);
+    }
+}
