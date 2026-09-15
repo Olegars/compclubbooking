@@ -1,13 +1,12 @@
 <?php
 
-namespace Database\Seeders;
+namespace App\Services\StoreAvito;
 
 use App\Models\StoreAvitoPart;
-use Illuminate\Database\Seeder;
 
-class StoreAvitoPartsSeeder extends Seeder
+class StoreAvitoPartsCatalog
 {
-    public function run(): void
+    public function seed(): void
     {
         $order = 0;
         foreach ($this->cpus() as $row) {

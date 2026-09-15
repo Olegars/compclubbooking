@@ -5,122 +5,60 @@ namespace Database\Seeders;
 use App\Models\Admin;
 use App\Models\Club;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class AdminSeeder extends Seeder
 {
     public function run(): void
     {
-        $club = Club::query()->first();
-        if (! $club) {
-            $club = Club::query()->create([
-                'name' => 'REACTOR PROTOCOL',
-                'slug' => 'reactor-protocol',
-                'type' => 'both',
-                'address' => 'Sector 7, Moscow',
-            ]);
-        } else {
-            $club->update(['type' => 'both']);
-        }
-
-        $password = Hash::make('123');
+        $club = Club::query()->orderBy('id')->first();
 
         $accounts = [
             [
-                'email' => 'admin@0451.space',
-                'legacy_emails' => ['admin@reactor.club'],
-                'name' => 'администратор',
-                'role' => 'admin',
-                'club_id' => $club->id,
-                'is_official_employee' => true,
-                'base_rate' => 2000.00,
-                'pay_type' => 'shift',
-            ],
-            [
-                'email' => 'intern@0451.space',
-                'legacy_emails' => ['intern@reactor.club'],
-                'name' => 'стажёр',
-                'role' => 'intern',
-                'club_id' => $club->id,
-                'is_official_employee' => false,
-                'base_rate' => 1500.00,
-                'pay_type' => 'shift',
-            ],
-            [
-                'email' => 'super@0451.space',
-                'legacy_emails' => ['super@reactor.club'],
-                'name' => 'управляющий',
-                'role' => 'supervisor',
-                'club_id' => $club->id,
-                'is_official_employee' => true,
-                'base_rate' => 3000.00,
-                'pay_type' => 'shift',
-            ],
-            [
                 'email' => 'boss@0451.space',
-                'legacy_emails' => ['boss@reactor.club'],
                 'name' => 'владелец',
                 'role' => 'owner',
                 'club_id' => null,
                 'is_official_employee' => false,
                 'base_rate' => null,
                 'pay_type' => null,
+                'password' => '123',
             ],
             [
-                'email' => 'store@0451.space',
-                'legacy_emails' => ['store@reactor.club'],
-                'name' => 'менеджер магазина',
-                'role' => 'store_manager',
-                'club_id' => $club->id,
+                'email' => 'admin@0451.space',
+                'name' => 'администратор',
+                'role' => 'admin',
+                'club_id' => $club?->id,
                 'is_official_employee' => true,
-                'base_rate' => 2500.00,
+                'base_rate' => 2000.00,
                 'pay_type' => 'shift',
-            ],
-            [
-                'email' => 'build@0451.space',
-                'legacy_emails' => ['build@reactor.club'],
-                'name' => 'сборщик',
-                'role' => 'assembler',
-                'club_id' => $club->id,
-                'is_official_employee' => true,
-                'base_rate' => 2200.00,
-                'pay_type' => 'shift',
-            ],
-            [
-                'email' => 'senior-store@0451.space',
-                'legacy_emails' => ['senior-store@reactor.club'],
-                'name' => 'старший менеджер',
-                'role' => 'senior_manager',
-                'club_id' => $club->id,
-                'is_official_employee' => true,
-                'base_rate' => 3500.00,
-                'pay_type' => 'monthly',
+                'password' => '123',
             ],
         ];
 
         foreach ($accounts as $account) {
-            $emails = array_values(array_unique(array_merge(
-                [$account['email']],
-                $account['legacy_emails']
-            )));
-            unset($account['legacy_emails']);
-
-            // Сначала по новому/старому email, иначе — единственная запись с этой ролью
-            $admin = Admin::query()->whereIn('email', $emails)->first()
+            $admin = Admin::query()->where('email', $account['email'])->first()
                 ?? Admin::query()->where('role', $account['role'])->first();
 
-            $payload = array_merge($account, ['password' => $password]);
-
             if ($admin) {
-                $admin->fill($payload)->save();
+                $admin->fill($account)->save();
             } else {
-                Admin::query()->create($payload);
+                Admin::query()->create($account);
             }
         }
 
-        if (! $club->slug) {
-            $club->update(['slug' => Str::slug($club->name)]);
-        }
+        Admin::query()->whereIn('email', [
+            'intern@0451.space',
+            'super@0451.space',
+            'store@0451.space',
+            'build@0451.space',
+            'senior-store@0451.space',
+            'admin@reactor.club',
+            'intern@reactor.club',
+            'super@reactor.club',
+            'boss@reactor.club',
+            'store@reactor.club',
+            'build@reactor.club',
+            'senior-store@reactor.club',
+        ])->delete();
     }
 }

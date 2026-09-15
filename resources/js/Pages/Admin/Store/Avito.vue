@@ -581,7 +581,7 @@ const initials = (name?: string | null) => {
                 <form v-if="canManage" class="border border-white/5 rounded-2xl p-5 bg-[#080808] space-y-4" @submit.prevent="saveConfig">
                     <div class="font-black uppercase italic text-sm">Новая конфигурация</div>
                     <p v-if="!parts.cpu.length || !parts.motherboard?.length" class="text-[11px] text-amber-400/80">
-                        Абстрактные комплектующие пусты. На сервере: php artisan db:seed --class=StoreAvitoPartsSeeder
+                        Абстрактные комплектующие пусты.
                     </p>
                     <p v-if="createCfg.errors.mb_part_id" class="text-[11px] text-red-400">{{ createCfg.errors.mb_part_id }}</p>
                     <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-3">

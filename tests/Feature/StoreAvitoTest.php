@@ -16,7 +16,7 @@ use App\Models\StoreSupplierCatalogProduct;
 use App\Services\StoreAvito\StoreAvitoAdGenerator;
 use App\Services\StoreAvito\StoreAvitoDictMatcher;
 use App\Services\StoreAvito\StoreAvitoPricer;
-use Database\Seeders\StoreAvitoPartsSeeder;
+use App\Services\StoreAvito\StoreAvitoPartsCatalog;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -62,7 +62,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_makes_unique_pc_ads_with_config_id(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->seedPcPool();
         $this->makeConfig('cpu-12400f', 'ram-ddr4-32', 'ssd-m2-256', 'psu-650', 'gpu-rtx-4060-ti');
         $this->makeConfig('cpu-14700f', 'ram-ddr4-32', 'ssd-m2-256', 'psu-650', 'gpu-rtx-4070');
@@ -112,7 +112,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_ignores_printer_drum_epyc_and_laptop_junk(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->seedPcPool();
         $this->addCatalogRow(
             901,
@@ -156,7 +156,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_xml_feed_contains_avito_pc_fields(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->seedPcPool();
         $this->makeConfig('cpu-12400f', 'ram-ddr4-32', 'ssd-m2-256', 'psu-650', 'gpu-rtx-4060-ti');
         $settings = StoreAvitoSetting::current();
@@ -178,7 +178,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_webhook_replies_with_live_bom_for_config_id(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->seedPcPool();
         $this->makeConfig('cpu-12400f', 'ram-ddr4-32', 'ssd-m2-256', 'psu-650', 'gpu-rtx-4060-ti');
         StoreAvitoSetting::current()->forceFill(['auto_reply_enabled' => false])->save();
@@ -733,7 +733,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_owner_creates_config_from_abstract_parts(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->assertSame(4, StoreAvitoPart::query()->where('type', 'ram')->count());
         $this->assertSame(2, StoreAvitoPart::query()->where('type', 'ssd')->count());
         $this->assertSame(8, StoreAvitoPart::query()->where('type', 'psu')->count());
@@ -780,7 +780,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_walks_configs_in_order(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->seedPcPool();
         $this->addCatalogRow(211, 'motherboard', 'MSI B760 DDR5', 'MSI', 10000, ['socket' => 'LGA1700', 'ddr' => 'DDR5', 'avito_brand' => 'MSI', 'avito_code' => 'B760']);
         $this->addCatalogRow(311, 'ram', 'Kingston DDR5 16GB 2x8', 'Kingston', 5000, ['ddr' => 'DDR5', 'ram_gb' => 16, 'avito_code' => '16 ГБ']);
@@ -825,7 +825,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_disabled_configs_do_not_fall_back_to_random_catalog(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->seedPcPool();
         $cfg = $this->makeConfig('cpu-12400f', 'ram-ddr5-16', 'ssd-m2-256', 'psu-600', 'gpu-rtx-4060-ti');
         $cfg->forceFill(['enabled' => false])->save();
@@ -1187,7 +1187,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_matches_ryzen_5_7500f_catalog_name(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 7500F Soc-AM5 3.7GHz OEM', 'AMD', 12000, [
             'socket' => 'AM5',
             'avito_brand' => 'AMD',
@@ -1228,7 +1228,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_finds_7500f_by_type_and_standard(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 OEM', 'AMD', 12000, [
             'socket' => 'AM5', 'avito_brand' => 'AMD', 'avito_model' => 'Ryzen 5', 'type' => 'cpu', 'standard' => '7500F', 'avito_code' => '7500F',
         ]);
@@ -1256,7 +1256,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_finds_ssd_256_when_standard_is_template_label(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 7500F Soc-AM5', 'AMD', 12000, [
             'socket' => 'AM5', 'avito_brand' => 'AMD', 'avito_model' => 'Ryzen 5', 'avito_code' => '7500F',
         ]);
@@ -1284,7 +1284,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_ignores_cpu_with_wrong_standard(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 7500F Soc-AM5 3.7GHz OEM', 'AMD', 12000, [
             'socket' => 'AM5', 'avito_brand' => 'AMD', 'avito_model' => 'Ryzen 5', 'standard' => '12400F', 'avito_code' => '12400F',
         ]);
@@ -1309,7 +1309,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_ignores_psu_without_standard(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 7500F Soc-AM5 3.7GHz OEM', 'AMD', 12000, [
             'socket' => 'AM5', 'avito_brand' => 'AMD', 'avito_model' => 'Ryzen 5', 'avito_code' => '7500F',
         ]);
@@ -1334,7 +1334,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_does_not_pick_workstation_gpu_for_rtx_4060(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [
             'socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F',
         ]);
@@ -1372,7 +1372,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_fails_when_only_workstation_gpus_for_4060(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [
             'socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F',
         ]);
@@ -1397,7 +1397,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_skips_gpu_without_standard(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [
             'socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F',
         ]);
@@ -1422,7 +1422,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_finds_rtx_4060_from_gpu_pool(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [
             'socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F',
         ]);
@@ -1448,7 +1448,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_finds_4060_from_videocard_name_without_rtx_word(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [
             'socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F',
         ]);
@@ -1475,7 +1475,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_skips_gpu_when_standard_empty(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [
             'socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F',
         ]);
@@ -1502,7 +1502,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_finds_gpu_only_by_type_and_standard(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [
             'socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F',
         ]);
@@ -1527,7 +1527,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_finds_rtx_4060_when_title_says_not_for_laptop(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [
             'socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F',
         ]);
@@ -1552,7 +1552,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_does_not_match_rtx4060ti_for_4060_template(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(101, 'cpu', 'Процессор Intel Core i5-12400F', 'Intel', 15000, [
             'socket' => 'LGA1700', 'avito_brand' => 'Intel', 'avito_model' => 'Core i5', 'avito_code' => '12400F',
         ]);
@@ -1577,7 +1577,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_picks_b650_board_not_b650e(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 7500F Soc-AM5', 'AMD', 12000, [
             'socket' => 'AM5', 'avito_brand' => 'AMD', 'avito_model' => 'Ryzen 5', 'avito_code' => '7500F',
         ]);
@@ -1607,7 +1607,7 @@ class StoreAvitoTest extends TestCase
 
     public function test_generator_fails_when_only_b650e_for_b650_config(): void
     {
-        $this->seed(StoreAvitoPartsSeeder::class);
+        app(StoreAvitoPartsCatalog::class)->seed();
         $this->addCatalogRow(10718447, 'cpu', 'Процессор AMD Ryzen 5 7500F Soc-AM5', 'AMD', 12000, [
             'socket' => 'AM5', 'avito_brand' => 'AMD', 'avito_model' => 'Ryzen 5', 'avito_code' => '7500F',
         ]);
