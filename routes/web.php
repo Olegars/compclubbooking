@@ -624,6 +624,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::post('/lights', [LightAdminController::class, 'storeLight']);
         Route::put('/lights/{light}', [LightAdminController::class, 'updateLight']);
         Route::delete('/lights/{light}', [LightAdminController::class, 'destroyLight']);
+        Route::post('/lights/events', [LightAdminController::class, 'saveEvents']);
     });
 
     // УРОВЕНЬ: SUPERVISOR / OWNER — штат и проверка анкет
@@ -754,6 +755,7 @@ Route::prefix('api/shell')->group(function () {
     Route::post('/light', [ShellApiController::class, 'controlLight']);
     Route::post('/light/applied', [ShellApiController::class, 'acknowledgeLightApplied']);
     Route::get('/light', [ShellApiController::class, 'getLightState']);
+    Route::post('/light/interactive', [ShellApiController::class, 'setLightInteractive']);
 
     // --- F1 AI-компаньон (голос → ответ в наушники) ---
     Route::post('/ai-assistant', [ShellApiController::class, 'aiAssistant']);

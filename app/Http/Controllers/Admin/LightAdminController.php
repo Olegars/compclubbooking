@@ -8,8 +8,10 @@ use App\Models\Computer;
 use App\Models\DmxNode;
 use App\Models\Space;
 use App\Models\SpaceLight;
+use App\Models\ClubLightSetting;
 use App\Services\Fan\FanControlService;
 use App\Services\Light\LightControlService;
+use App\Services\Light\LightEventCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
@@ -17,7 +19,7 @@ use Inertia\Inertia;
 
 class LightAdminController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, LightEventCatalog $catalog)
     {
         $clubs = Club::query()->select('id', 'name')->orderBy('name')->get();
         $clubId = (int) ($request->integer('club_id') ?: ($clubs->first()?->id ?? 0));
@@ -64,11 +66,35 @@ class LightAdminController extends Controller
             'lights' => $lights,
             'spaces' => $spaces,
             'computers' => $computers,
+            'tab' => $request->string('tab')->toString() === 'interactive' ? 'interactive' : 'nodes',
+            'interactiveEvents' => $catalog->adminPayload($clubId ?: null),
+            'colorOptions' => array_merge(SpaceLight::COLORS, [SpaceLight::EFFECT_RAINBOW]),
             'defaults' => [
                 'port' => (int) config('light.artnet_port', 6454),
                 'brightness' => (int) config('light.default_brightness', 80),
             ],
         ]);
+    }
+
+    public function saveEvents(Request $request, LightEventCatalog $catalog)
+    {
+        $data = $request->validate([
+            'club_id' => 'required|integer|exists:clubs,id',
+            'events' => 'required|array',
+        ]);
+
+        $events = $catalog->sanitizeIncoming($data['events']);
+        ClubLightSetting::query()->updateOrCreate(
+            ['club_id' => (int) $data['club_id']],
+            ['events' => $events],
+        );
+
+        return redirect()
+            ->route('admin.lights', [
+                'club_id' => (int) $data['club_id'],
+                'tab' => 'interactive',
+            ])
+            ->with('success', 'Интерактивный свет сохранён');
     }
 
     public function storeNode(Request $request)

@@ -15,8 +15,13 @@ class LightControlService
 {
     private int $nextFadeMs = 0;
 
+    private ?string $nextPlayEvent = null;
+
+    private int $nextPlayEventAt = 0;
+
     public function __construct(
         private FanControlService $fans,
+        private LightEventCatalog $events,
     ) {}
 
     public function reconcileForComputer(int $computerId): ?SpaceLight
@@ -64,13 +69,25 @@ class LightControlService
 
         $first = $this->isFirstVisit((int) $user->id, $bookingId);
         $saved = $user->lightScene();
-        $useGreen = $first || $saved === null;
+        $start = $this->events->event((int) $computer->club_id, 'session_start');
+        $usePresetColor = $first || $saved === null;
 
-        $color = $useGreen ? 'green' : $saved['color'];
-        $brightness = $useGreen
-            ? SpaceLight::normalizeBrightness((int) config('light.default_brightness', 80))
+        $color = $usePresetColor
+            ? (string) $start['color']
+            : $saved['color'];
+        if ($color === LightEventCatalog::COLOR_AUTO || $color === '') {
+            $color = $usePresetColor ? 'green' : ($saved['color'] ?? 'green');
+        }
+        $color = SpaceLight::normalizeColor($color);
+        $brightness = $usePresetColor
+            ? SpaceLight::normalizeBrightness((int) $start['brightness'])
             : $saved['brightness'];
-        $effect = $useGreen ? SpaceLight::EFFECT_NONE : $saved['effect'];
+        $effect = $usePresetColor
+            ? (string) $start['effect']
+            : $saved['effect'];
+        if ($effect === LightEventCatalog::EFFECT_CYCLE) {
+            $effect = SpaceLight::EFFECT_NONE;
+        }
         if ($brightness <= 0) {
             $brightness = SpaceLight::normalizeBrightness((int) config('light.default_brightness', 80));
         }
@@ -89,6 +106,7 @@ class LightControlService
             $light->desired_effect = $effect;
             $light->desired_brightness = $brightness;
             $light->vacant = false;
+            $light->scene_kind = 'session';
             $light->last_on_color = $color;
             $light->last_on_brightness = $brightness;
             $light->last_on_effect = $effect;
@@ -97,11 +115,14 @@ class LightControlService
             return $light->fresh();
         });
 
-        if ($useGreen) {
-            $user->saveLightScene('green', $brightness, SpaceLight::EFFECT_NONE);
+        if ($usePresetColor) {
+            $user->saveLightScene($color, $brightness, $effect === SpaceLight::EFFECT_RAINBOW
+                ? SpaceLight::EFFECT_RAINBOW
+                : SpaceLight::EFFECT_NONE);
         }
 
-        $this->nextFadeMs = max(0, (int) config('light.fade_login_ms', 2500));
+        $this->nextFadeMs = $this->events->fadeMs((int) $computer->club_id, 'session_start');
+        $this->queuePlayEvent('session_start');
 
         return ['light' => $light, 'first_visit' => $first];
     }
@@ -278,8 +299,12 @@ class LightControlService
 
         $fadeMs = $this->nextFadeMs;
         $this->nextFadeMs = 0;
+        $playEvent = $this->nextPlayEvent;
+        $playEventAt = $this->nextPlayEventAt;
+        $this->nextPlayEvent = null;
+        $this->nextPlayEventAt = 0;
 
-        return [
+        $payload = [
             'available' => $available,
             'light_id' => (int) $light->id,
             'club_id' => (int) $light->club_id,
@@ -302,10 +327,12 @@ class LightControlService
                 'universe' => (int) $node->universe,
             ] : null,
             'nodes' => $nodes,
+            'events' => $this->events->shellPayload((int) $light->club_id),
             'facts' => [
                 'session' => $occupied,
                 'sessions_in_space' => $this->spaceActiveSessionCount($light),
                 'all_pcs_off' => $allOff,
+                'scene' => (string) ($light->scene_kind ?: 'off'),
             ],
             'manual_lock' => [
                 'locked' => $manualRemaining > 0,
@@ -318,6 +345,13 @@ class LightControlService
             'last_error' => $light->last_error,
             'for_computer_id' => $forComputerId,
         ];
+
+        if ($playEvent) {
+            $payload['play_event'] = $playEvent;
+            $payload['play_event_at'] = $playEventAt;
+        }
+
+        return $payload;
     }
 
     /**
@@ -378,54 +412,106 @@ class LightControlService
 
     /**
      * Off only when every PC in the room is powered off (same heartbeat/state
-     * as ventilation orphan). Any PC on/booting → lobby white if no session.
+     * as ventilation orphan). Any PC on/booting → lobby from pc_on if no session.
      */
     private function applyPowerPolicy(SpaceLight $light): void
     {
-        $defaultBr = SpaceLight::normalizeBrightness((int) config('light.default_brightness', 80));
+        $clubId = (int) $light->club_id;
+        $pcOn = $this->events->event($clubId, 'pc_on');
+        $pcOff = $this->events->event($clubId, 'pc_off');
         $allOff = $this->spaceAllComputersOffline($light);
+        $hasSession = $this->spaceHasActiveSession($light);
+        $prevKind = $this->normalizeSceneKind((string) ($light->scene_kind ?? ''));
+        if ($prevKind === 'off' && ! $light->vacant && (int) $light->desired_brightness > 0) {
+            $prevKind = $hasSession ? 'session' : 'idle';
+        }
 
         if ($allOff) {
-            if ((int) $light->desired_brightness !== 0) {
-                $this->nextFadeMs = max($this->nextFadeMs, (int) config('light.fade_off_ms', 800));
-            }
-            $light->desired_brightness = 0;
+            $this->applyEventScene($light, $pcOff);
             $light->vacant = true;
+            $light->scene_kind = 'off';
+            if ($prevKind !== 'off') {
+                $this->nextFadeMs = max($this->nextFadeMs, $this->events->fadeMs($clubId, 'pc_shutdown'));
+                $this->queuePlayEvent('pc_shutdown');
+            }
 
             return;
         }
 
-        $wasOff = (bool) $light->vacant || (int) $light->desired_brightness <= 0;
         $light->vacant = false;
 
-        if ($this->spaceHasActiveSession($light)) {
-            if ($wasOff) {
+        if ($hasSession) {
+            if ($prevKind === 'off' || (int) $light->desired_brightness <= 0) {
                 $light->desired_color = SpaceLight::normalizeColor((string) ($light->last_on_color ?: 'white'));
                 $light->desired_effect = SpaceLight::normalizeEffect(
                     (string) ($light->last_on_effect ?: SpaceLight::EFFECT_NONE),
                     (string) $light->desired_color,
                 );
                 $restore = SpaceLight::normalizeBrightness((int) $light->last_on_brightness);
-                $light->desired_brightness = $restore > 0 ? $restore : $defaultBr;
-                $this->nextFadeMs = max($this->nextFadeMs, (int) config('light.fade_idle_ms', 1200));
+                $defaultBr = SpaceLight::normalizeBrightness((int) $pcOn['brightness']);
+                $light->desired_brightness = $restore > 0 ? $restore : ($defaultBr > 0 ? $defaultBr : 80);
+                $this->nextFadeMs = max($this->nextFadeMs, $this->events->fadeMs($clubId, 'pc_on'));
+                if ($prevKind === 'off') {
+                    $this->queuePlayEvent('pc_on');
+                }
             }
+            $light->scene_kind = 'session';
 
             return;
         }
 
-        $idleColor = 'white';
-        $idleEffect = SpaceLight::EFFECT_NONE;
-        $changed = SpaceLight::normalizeColor((string) $light->desired_color) !== $idleColor
-            || SpaceLight::normalizeEffect((string) $light->desired_effect) !== $idleEffect
-            || SpaceLight::normalizeBrightness((int) $light->desired_brightness) !== $defaultBr;
-
-        $light->desired_color = $idleColor;
-        $light->desired_effect = $idleEffect;
-        $light->desired_brightness = $defaultBr;
-
-        if ($changed || $wasOff) {
-            $this->nextFadeMs = max($this->nextFadeMs, (int) config('light.fade_idle_ms', 1200));
+        $this->applyEventScene($light, $pcOn);
+        $light->scene_kind = 'idle';
+        if ($prevKind === 'off') {
+            $this->nextFadeMs = max($this->nextFadeMs, $this->events->fadeMs($clubId, 'pc_on'));
+            $this->queuePlayEvent('pc_on');
+        } elseif ($prevKind === 'session') {
+            $this->nextFadeMs = max($this->nextFadeMs, $this->events->fadeMs($clubId, 'session_end'));
+            $this->queuePlayEvent('session_end');
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $event
+     */
+    private function applyEventScene(SpaceLight $light, array $event): void
+    {
+        $color = (string) ($event['color'] ?? 'white');
+        $effect = (string) ($event['effect'] ?? SpaceLight::EFFECT_NONE);
+        if ($color === LightEventCatalog::COLOR_AUTO) {
+            $color = 'white';
+        }
+        if ($effect === LightEventCatalog::EFFECT_CYCLE) {
+            $effect = SpaceLight::EFFECT_NONE;
+        }
+        if ($effect === LightEventCatalog::EFFECT_RAINBOW || $color === SpaceLight::EFFECT_RAINBOW) {
+            $color = SpaceLight::EFFECT_RAINBOW;
+            $effect = SpaceLight::EFFECT_RAINBOW;
+        } else {
+            $color = SpaceLight::normalizeColor($color);
+            $effect = SpaceLight::EFFECT_NONE;
+        }
+        $brightness = SpaceLight::normalizeBrightness((int) ($event['brightness'] ?? 0));
+
+        $light->desired_color = $color;
+        $light->desired_effect = $effect;
+        $light->desired_brightness = $brightness;
+        if ($brightness > 0) {
+            $light->last_on_color = $color;
+            $light->last_on_brightness = $brightness;
+            $light->last_on_effect = $effect;
+        }
+    }
+
+    private function queuePlayEvent(string $id): void
+    {
+        $this->nextPlayEvent = $id;
+        $this->nextPlayEventAt = (int) round(microtime(true) * 1000);
+    }
+
+    private function normalizeSceneKind(string $kind): string
+    {
+        return in_array($kind, ['off', 'idle', 'session'], true) ? $kind : 'off';
     }
 
     private function persistSceneForActiveUser(Computer $computer, SpaceLight $light): void

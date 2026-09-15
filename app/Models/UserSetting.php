@@ -14,11 +14,13 @@ class UserSetting extends Model
         'light_color',
         'light_brightness',
         'light_effect',
+        'light_interactive',
     ];
 
     protected $casts = [
         'payload' => 'array',
         'light_brightness' => 'integer',
+        'light_interactive' => 'boolean',
     ];
 
     public function user(): BelongsTo

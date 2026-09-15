@@ -28,6 +28,7 @@ Route::prefix('shell')->group(function () {
     Route::post('/light', [ShellApiController::class, 'controlLight']);
     Route::post('/light/applied', [ShellApiController::class, 'acknowledgeLightApplied']);
     Route::get('/light', [ShellApiController::class, 'getLightState']);
+    Route::post('/light/interactive', [ShellApiController::class, 'setLightInteractive']);
     Route::post('/ai-assistant', [ShellApiController::class, 'aiAssistant']);
     Route::get('/ai-voices', [ShellApiController::class, 'aiVoices']);
     Route::post('/ai-voice', [ShellApiController::class, 'setAiVoice']);

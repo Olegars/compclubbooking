@@ -19,6 +19,10 @@ return [
     | empty sessions: all PCs off → off; any PC on without a session → white;
     | login fades to the player's last color (green on first visit).
     |
+    | Interactive event presets (duration, color/effect, strobe on/off,
+    | color cycle, fade_sec) live in club_light_settings and are edited on
+    | /admin/lights?tab=interactive. Shell receives them as light.events.
+    |
     */
     'artnet_port' => (int) env('LIGHT_ARTNET_PORT', 6454),
     'manual_cooldown_sec' => (int) env('LIGHT_MANUAL_COOLDOWN_SEC', 2),

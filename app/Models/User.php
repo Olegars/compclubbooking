@@ -90,6 +90,22 @@ class User extends Authenticatable
         ];
     }
 
+    public function lightInteractiveEnabled(): bool
+    {
+        $this->loadMissing('settings');
+
+        return (bool) ($this->settings?->light_interactive ?? false);
+    }
+
+    public function saveLightInteractive(bool $enabled): void
+    {
+        \App\Models\UserSetting::query()->updateOrCreate(
+            ['user_id' => $this->id],
+            ['light_interactive' => $enabled]
+        );
+        $this->unsetRelation('settings');
+    }
+
     public function saveLightScene(string $color, int $brightness, string $effect): void
     {
         \App\Models\UserSetting::query()->updateOrCreate(

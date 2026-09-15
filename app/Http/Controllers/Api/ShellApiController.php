@@ -255,6 +255,7 @@ class ShellApiController extends Controller
             } catch (\Throwable $e) {
                 Log::warning('Light state after login failed: '.$e->getMessage());
             }
+            $lightState['interactive'] = $user->lightInteractiveEnabled();
 
             try {
                 app(ComputerPowerService::class)->touchOnline($terminalId);
@@ -1101,6 +1102,35 @@ class ShellApiController extends Controller
         return response()->json([
             'status' => 'success',
             'light' => app(LightControlService::class)->stateForComputer((int) $request->terminal_id),
+        ]);
+    }
+
+    /**
+     * Persist CS2 Game Sync (reactive DMX) preference on the logged-in guest.
+     * Shell listens to GSI locally; cloud only stores the checkbox.
+     */
+    public function setLightInteractive(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'enabled' => 'required|boolean',
+        ]);
+
+        $terminalId = (int) $request->terminal_id;
+        $user = $this->resolveShellSessionUser($terminalId);
+        if (! $user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Активная сессия не найдена.',
+            ], 403);
+        }
+
+        $enabled = $request->boolean('enabled');
+        $user->saveLightInteractive($enabled);
+
+        return response()->json([
+            'status' => 'success',
+            'interactive' => $enabled,
         ]);
     }
 

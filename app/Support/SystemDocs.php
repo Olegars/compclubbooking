@@ -384,7 +384,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Свет DMX: кто шлёт пакеты',
-                        'description' => "Пресеты: белый / красный / синий / зелёный / жёлтый / фиолетовый / rainbow (HSV по wall-clock, период LIGHT_RAINBOW_PERIOD_MS). Ползунок яркости 0–100%.\n\nСвет живёт от питания ПК (как WOL/heartbeat), не от пустой сессии:\n• все ПК комнаты off (power_state + stale last_seen) → brightness 0\n• любой ПК on/booting без сессии → белый (лобби после старта образа)\n• логин в шелл → плавный fade в последний цвет игрока (user_settings); первый визит — зелёный\n• логаут при живых ПК → снова белый, не off\n\nРучной кулдаун LIGHT_MANUAL_COOLDOWN_SEC (2 с). API: GET/POST /api/shell/light, POST /api/shell/light/applied; heartbeat и power/offline тоже отдают light.",
+                        'description' => "Пресеты: белый / красный / синий / зелёный / жёлтый / фиолетовый / rainbow (HSV по wall-clock, период LIGHT_RAINBOW_PERIOD_MS). Ползунок яркости 0–100%.\n\nВкладка «Интерактивный свет» (/admin/lights?tab=interactive): у каждого события длительность (0 = держать до следующего), цвет или эффект (цвет / радуга / смена цветов), строб вкл/выкл мс, какие цвета чередовать и сколько секунд каждым, плавность fade в секундах. События питания: включение ПК, открытие сессии, конец сессии, выключение, компьютер выключен. Игры: CS2 бомба/раунд/смерть, Dota победа/смерть, GameSense bomb/win/death/hit/ambient, Chroma. Хранится в club_light_settings, уходит в light.events; play_event — разовый overlay.\n\nГалка «интерактив» в шелле включает GSI/Chroma/GameSense. Игры кормят шелл локально:\n• CS2 / Dota 2 GSI → 127.0.0.1:59898, cfg gamestate_integration_reactor.cfg.\n• Razer Chroma REST на 127.0.0.1:54235 (без Synapse).\n• SteelSeries GameSense: coreProps.json + JSON событий.\nПриоритет: бомба > раунд/победа > смерть/удар > chroma/gamesense ambient > desired. Флаг user_settings.light_interactive, POST /api/shell/light/interactive. Комната одна на SpaceLight — кто последний пакет, тот и красит.\n\nСвет живёт от питания ПК (как WOL/heartbeat), не от пустой сессии. Дефолты: все ПК off → pc_off (яркость 0); ПК on без сессии → pc_on (белый); логин → session_start (первый визит — цвет события, иначе цвет игрока); логаут при живых ПК → session_end затем pc_on, не off.\n\nРучной кулдаун LIGHT_MANUAL_COOLDOWN_SEC (2 с). API: GET/POST /api/shell/light, POST /api/shell/light/applied; heartbeat и power/offline тоже отдают light.",
                         'path' => '/admin/lights',
                         'audience' => 'Supervisor+ / Shell',
                     ],
@@ -726,7 +726,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Свет на PC Shell',
-                        'description' => 'Плитка под климатом: кружки цвета + rainbow + ползунок яркости. Старт ПК → белый; после логина шелл плавно (fade_ms) уводит в цвет игрока (первый визит — зелёный). Гаснет только когда все ПК комнаты выключены. Узел — /admin/lights.',
+                        'description' => 'Плитка под климатом: кружки цвета + rainbow + ползунок яркости + галка «интерактив». Старт ПК / логин / логаут / выкл — пресеты с вкладки «Интерактивный свет». Гаснет по событию «компьютер выключен». Узел — /admin/lights.',
                         'path' => '/admin/lights',
                         'audience' => 'Shell',
                     ],

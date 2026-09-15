@@ -255,6 +255,146 @@ class LightControlTest extends TestCase
         $this->lights->assertChannelsFree((int) $this->node->id, 2, 6);
     }
 
+    public function test_interactive_flag_persists_on_session_user(): void
+    {
+        $this->pcA->update(['power_state' => 'on', 'last_seen_at' => now()]);
+        $user = User::create([
+            'name' => 'GSI',
+            'phone' => '+79991110009',
+            'email' => 'light-gsi@example.test',
+            'password' => 'password',
+        ]);
+        $this->makeActiveBooking($user);
+
+        $this->postJson('/api/shell/light/interactive', [
+            'terminal_id' => $this->pcA->id,
+            'enabled' => true,
+        ])->assertOk()
+            ->assertJsonPath('interactive', true);
+
+        $this->assertTrue($user->fresh()->lightInteractiveEnabled());
+
+        $this->postJson('/api/shell/light/interactive', [
+            'terminal_id' => $this->pcA->id,
+            'enabled' => false,
+        ])->assertOk()
+            ->assertJsonPath('interactive', false);
+
+        $this->assertFalse($user->fresh()->lightInteractiveEnabled());
+    }
+
+    public function test_light_state_includes_event_catalog(): void
+    {
+        $this->pcA->update(['power_state' => 'on', 'last_seen_at' => now()]);
+
+        $state = $this->lights->stateForComputer($this->pcA->id);
+
+        $this->assertArrayHasKey('events', $state);
+        $this->assertSame('white', $state['events']['pc_on']['color']);
+        $this->assertSame(80, $state['events']['pc_on']['brightness']);
+        $this->assertArrayHasKey('cs2.bomb', $state['events']);
+        $this->assertTrue($state['events']['cs2.bomb']['strobe']);
+    }
+
+    public function test_custom_pc_on_color_and_play_event(): void
+    {
+        \App\Models\ClubLightSetting::query()->create([
+            'club_id' => $this->club->id,
+            'events' => [
+                'pc_on' => [
+                    'color' => 'red',
+                    'brightness' => 70,
+                    'duration_sec' => 2,
+                    'strobe' => true,
+                    'strobe_on_ms' => 40,
+                    'strobe_off_ms' => 80,
+                    'fade_sec' => 0.5,
+                ],
+            ],
+        ]);
+        $this->pcA->update(['power_state' => 'on', 'last_seen_at' => now()]);
+
+        $state = $this->lights->stateForComputer($this->pcA->id);
+
+        $this->assertSame('red', $state['color']);
+        $this->assertSame(70, $state['brightness']);
+        $this->assertSame('pc_on', $state['play_event']);
+        $this->assertGreaterThan(0, $state['play_event_at']);
+        $this->assertSame(500, $state['fade_ms']);
+    }
+
+    public function test_session_end_plays_configured_overlay(): void
+    {
+        \App\Models\ClubLightSetting::query()->create([
+            'club_id' => $this->club->id,
+            'events' => [
+                'session_end' => [
+                    'color' => 'blue',
+                    'duration_sec' => 1.5,
+                    'fade_sec' => 0.4,
+                ],
+                'pc_on' => [
+                    'color' => 'yellow',
+                    'brightness' => 60,
+                ],
+            ],
+        ]);
+        $this->pcA->update(['power_state' => 'on', 'last_seen_at' => now()]);
+        $this->light->update([
+            'vacant' => false,
+            'scene_kind' => 'session',
+            'desired_color' => 'purple',
+            'desired_brightness' => 55,
+        ]);
+
+        $state = $this->lights->stateForComputer($this->pcA->id);
+
+        $this->assertSame('yellow', $state['color']);
+        $this->assertSame(60, $state['brightness']);
+        $this->assertSame('session_end', $state['play_event']);
+        $this->assertSame(400, $state['fade_ms']);
+    }
+
+    public function test_admin_saves_interactive_events(): void
+    {
+        $admin = \App\Models\Admin::create([
+            'name' => 'Light Supervisor',
+            'email' => 'light-sv@test.local',
+            'password' => 'password',
+            'role' => 'supervisor',
+            'club_id' => $this->club->id,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class)
+            ->post('/admin/lights/events', [
+                'club_id' => $this->club->id,
+                'events' => [
+                    'pc_off' => [
+                        'color' => 'purple',
+                        'brightness' => 10,
+                        'duration_sec' => 0,
+                        'effect' => 'cycle',
+                        'cycle_colors' => ['red', 'blue'],
+                        'cycle_hold_sec' => 0.25,
+                        'strobe' => true,
+                        'strobe_on_ms' => 30,
+                        'strobe_off_ms' => 70,
+                        'fade_sec' => 1.2,
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $row = \App\Models\ClubLightSetting::query()->where('club_id', $this->club->id)->first();
+        $this->assertNotNull($row);
+        $this->assertSame('purple', $row->events['pc_off']['color']);
+        $this->assertSame(['red', 'blue'], $row->events['pc_off']['cycle_colors']);
+        $this->assertTrue($row->events['pc_off']['strobe']);
+        $this->assertSame(30, $row->events['pc_off']['strobe_on_ms']);
+        $this->assertSame('cycle', $row->events['pc_off']['effect']);
+    }
+
     private function makeActiveBooking(User $user): Booking
     {
         return Booking::create([

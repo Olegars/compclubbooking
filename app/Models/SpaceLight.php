@@ -36,11 +36,16 @@ class SpaceLight extends Model
         'last_on_brightness',
         'last_on_effect',
         'vacant',
+        'scene_kind',
         'last_error',
         'last_applied_at',
         'last_manual_at',
         'last_manual_by_computer_id',
         'last_applied_by_computer_id',
+    ];
+
+    protected $attributes = [
+        'scene_kind' => 'off',
     ];
 
     protected $casts = [
@@ -53,6 +58,7 @@ class SpaceLight extends Model
         'applied_brightness' => 'integer',
         'last_on_brightness' => 'integer',
         'vacant' => 'boolean',
+        'scene_kind' => 'string',
         'last_applied_at' => 'datetime',
         'last_manual_at' => 'datetime',
         'last_manual_by_computer_id' => 'integer',

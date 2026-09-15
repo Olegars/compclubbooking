@@ -431,6 +431,7 @@ class ShellQrLoginService
         } catch (\Throwable $e) {
             // ignore
         }
+        $lightState['interactive'] = $user->lightInteractiveEnabled();
 
         $primaryReceipt = collect($fiscalReceipts)
             ->first(fn ($r) => filled($r['fiscal_receipt_url'] ?? null));
