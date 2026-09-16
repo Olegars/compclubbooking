@@ -561,11 +561,9 @@ class GameBookingService
                 $query->where('club_id', $clubId)->orWhereNull('club_id');
             })
             ->whereDoesntHave('reservations', function ($query) use ($startsAt, $endsAt) {
-                $startsAtUtc = $startsAt->utc()->toIso8601String();
-                $endsAtUtc = $endsAt->utc()->toIso8601String();
-                $query->whereIn('status', ['held', 'confirmed', 'active'])
-                    ->whereRaw('starts_at < '.SqlTime::instant(), [$endsAtUtc])
-                    ->whereRaw('ends_at > '.SqlTime::instant(), [$startsAtUtc]);
+                $query->whereIn('status', ['held', 'confirmed', 'active']);
+                SqlTime::applyWhere($query, 'starts_at', '<', $endsAt);
+                SqlTime::applyWhere($query, 'ends_at', '>', $startsAt);
             });
     }
 
@@ -666,22 +664,14 @@ class GameBookingService
         CarbonImmutable $endsAt,
         array $except
     ): array {
-        $startsAtUtc = $startsAt->utc()->toIso8601String();
-        $endsAtUtc = $endsAt->utc()->toIso8601String();
-
         return Booking::query()
             ->whereIn('computer_id', $ids)
             ->whereIn('status', self::OCCUPYING_STATUSES)
             ->when($except !== [], fn ($query) => $query->whereNotIn('id', $except))
             ->whereNotNull('starts_at')
-            ->where(function ($modern) use ($startsAt, $endsAt, $startsAtUtc, $endsAtUtc) {
-                if (DB::connection()->getDriverName() === 'pgsql') {
-                    $modern->whereRaw('starts_at < ?::timestamptz', [$endsAtUtc])
-                        ->whereRaw('ends_at > ?::timestamptz', [$startsAtUtc]);
-                } else {
-                    $modern->where('starts_at', '<', $endsAt)
-                        ->where('ends_at', '>', $startsAt);
-                }
+            ->where(function ($modern) use ($startsAt, $endsAt) {
+                SqlTime::applyWhere($modern, 'starts_at', '<', $endsAt);
+                SqlTime::applyWhere($modern, 'ends_at', '>', $startsAt);
             })
             ->pluck('computer_id')
             ->map(fn ($id) => (int) $id)

@@ -23,6 +23,10 @@ class TaxReportTest extends TestCase
     public function test_owner_sees_tax_page_with_employee_and_vat_profile(): void
     {
         Carbon::setTestNow('2026-09-13 12:00:00');
+        config([
+            'taxes.has_employees' => true,
+            'taxes.usn_rate' => 0.06,
+        ]);
         $owner = $this->makeAdmin('owner', false);
 
         $this->actingAs($owner, 'admin')

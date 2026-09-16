@@ -9,6 +9,7 @@ use App\Services\ClubOccupancyService;
 use App\Services\MapPresentationService;
 use App\Services\ReviewBonusService;
 use App\Services\TariffService;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 class HomeController extends Controller
@@ -22,7 +23,7 @@ class HomeController extends Controller
 
     public function index()
     {
-        $club = Club::query()->orderBy('id')->first();
+        $club = Schema::hasTable('clubs') ? Club::query()->orderBy('id')->first() : null;
         $siteReviews = $this->reviews->siteReviews()->map(fn ($r) => [
             'id' => (int) $r->id,
             'author' => (string) ($r->author_name ?: 'Гость'),

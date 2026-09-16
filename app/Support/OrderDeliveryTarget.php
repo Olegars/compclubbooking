@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Booking;
 use App\Models\Computer;
+use App\Support\SqlTime;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 
@@ -49,19 +50,16 @@ class OrderDeliveryTarget
     public static function activeBookingForUser(int $userId): ?Booking
     {
         $now = now();
-        $nowIso = $now->utc()->toIso8601String();
         $today = $now->toDateString();
         $nowH = $now->hour + ($now->minute / 60);
 
-        // status=active недостаточно: просроченные брони могут оставаться active,
-        // пока не отработает reactor:update-statuses. Для доставки смотрим окно времени.
         return Booking::query()
             ->where('user_id', $userId)
             ->where('status', 'active')
-            ->where(function ($query) use ($nowIso, $today, $nowH) {
-                $query->where(function ($modern) use ($nowIso) {
-                    $modern->whereNotNull('ends_at')
-                        ->whereRaw('ends_at > '.SqlTime::instant(), [$nowIso]);
+            ->where(function ($query) use ($now, $today, $nowH) {
+                $query->where(function ($modern) use ($now) {
+                    $modern->whereNotNull('ends_at');
+                    SqlTime::applyWhere($modern, 'ends_at', '>', $now);
                 })->orWhere(function ($legacy) use ($today, $nowH) {
                     $legacy->whereNull('ends_at')
                         ->where('date', $today)

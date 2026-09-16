@@ -10,6 +10,7 @@ use App\Models\Computer;
 use App\Models\Order;
 use App\Models\OrderKitchenPrint;
 use App\Models\Product;
+use App\Models\Shift;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
@@ -260,6 +261,12 @@ class PreSessionShopOrderTest extends TestCase
             'password' => 'password',
             'role' => 'admin',
             'club_id' => $this->club->id,
+        ]);
+        Shift::query()->create([
+            'admin_id' => $admin->id,
+            'status' => 'open',
+            'started_at' => now()->subHour(),
+            'cash_start' => 0,
         ]);
 
         $this->actingAs($admin, 'admin')

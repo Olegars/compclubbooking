@@ -157,12 +157,15 @@ class OwnerSystemTestServiceTest extends TestCase
         $this->assertSame(':memory:', $env['DB_DATABASE']);
         $this->assertSame('testing', $env['APP_ENV']);
         $this->assertSame('', $env['DB_URL']);
+        $this->assertSame('', $env['YOOKASSA_SHOP_ID']);
+        $this->assertSame('', $env['YOOKASSA_SECRET_KEY']);
     }
 
     public function test_sql_time_instant_has_no_timestamptz_on_sqlite(): void
     {
         $this->assertSame('?', \App\Support\SqlTime::instant());
         $this->assertStringNotContainsString('timestamptz', \App\Support\SqlTime::instant());
+        $this->assertSame("datetime('now')", \App\Support\SqlTime::nowSql());
     }
 
     public function test_phpunit_pid_zero_is_not_alive(): void

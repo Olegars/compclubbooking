@@ -329,7 +329,12 @@ class FanControlTest extends TestCase
 
     public function test_bind_assigns_space_from_shell_zone(): void
     {
-        $this->zone->update(['slug' => 'bootcamp']);
+        $bootcamp = Zone::query()->where('slug', 'bootcamp')->first();
+        if ($bootcamp) {
+            $this->zone = $bootcamp;
+        } else {
+            $this->zone->update(['slug' => 'bootcamp']);
+        }
 
         $pc = Computer::create([
             'club_id' => $this->club->id,

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Admin;
+use App\Models\Club;
 use App\Models\Product;
 use App\Models\Shift;
 use App\Models\StaffLedger;
@@ -241,6 +242,12 @@ class ShiftHandoverTest extends TestCase
 
     private function makeAdmin(string $role, ?float $rate = 2000): Admin
     {
+        $club = Club::query()->first() ?? Club::query()->create([
+            'name' => 'Handover Club',
+            'slug' => 'handover-club',
+            'type' => 'club',
+        ]);
+
         return Admin::create([
             'name' => ucfirst($role).' '.uniqid(),
             'email' => $role.'.'.uniqid().'@handover.test',
@@ -248,6 +255,7 @@ class ShiftHandoverTest extends TestCase
             'role' => $role,
             'base_rate' => $rate,
             'pay_type' => 'shift',
+            'club_id' => $club->id,
         ]);
     }
 

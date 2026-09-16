@@ -134,6 +134,10 @@ class OwnerSystemTestsTest extends TestCase
     public function test_yookassa_skip_without_keys_and_pass_with_fake_api(): void
     {
         $owner = $this->makeAdmin('owner');
+        config([
+            'services.yookassa.shop_id' => '',
+            'services.yookassa.secret_key' => '',
+        ]);
 
         $this->actingAs($owner, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)

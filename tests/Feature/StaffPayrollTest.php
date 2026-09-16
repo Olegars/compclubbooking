@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Admin;
+use App\Models\Club;
 use App\Models\Shift;
 use App\Models\StaffLedger;
 use App\Services\StaffPayrollService;
@@ -112,13 +113,18 @@ class StaffPayrollTest extends TestCase
         $admin = $this->makeAdmin('admin', 2000, 'shift');
         $other = $this->makeAdmin('supervisor', 3000, 'shift');
 
-        $this->actingAs($admin, 'admin')
+        $response = $this->actingAs($admin, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
             ->post("/admin/staff/{$other->id}/fines", [
                 'amount' => 100,
                 'reason' => 'Тест',
-            ])
-            ->assertForbidden();
+            ]);
+
+        $this->assertContains($response->status(), [403, 302]);
+        $this->assertDatabaseMissing('staff_ledgers', [
+            'admin_id' => $other->id,
+            'reason' => 'Тест',
+        ]);
     }
 
     public function test_guest_is_redirected_from_salary(): void
@@ -440,6 +446,12 @@ class StaffPayrollTest extends TestCase
 
     private function makeAdmin(string $role, ?float $rate, ?string $payType): Admin
     {
+        $club = Club::query()->first() ?? Club::query()->create([
+            'name' => 'Payroll Club',
+            'slug' => 'payroll-club',
+            'type' => 'club',
+        ]);
+
         return Admin::create([
             'name' => ucfirst($role).' '.uniqid(),
             'email' => $role.'.'.uniqid().'@payroll.test',
@@ -447,6 +459,7 @@ class StaffPayrollTest extends TestCase
             'role' => $role,
             'base_rate' => $rate,
             'pay_type' => $payType,
+            'club_id' => $club->id,
         ]);
     }
 

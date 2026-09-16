@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Admin;
+use App\Models\Club;
 use App\Models\Shift;
 use App\Models\ShiftIntern;
 use App\Models\StaffLedger;
@@ -153,6 +154,12 @@ class AdminDutyAccessTest extends TestCase
 
     private function makeAdmin(string $role, ?int $rate = 2000): Admin
     {
+        $club = Club::query()->first() ?? Club::query()->create([
+            'name' => 'Duty Club',
+            'slug' => 'duty-club',
+            'type' => 'club',
+        ]);
+
         return Admin::create([
             'name' => ucfirst($role).' '.uniqid(),
             'email' => $role.'.'.uniqid().'@duty.test',
@@ -160,6 +167,7 @@ class AdminDutyAccessTest extends TestCase
             'role' => $role,
             'base_rate' => $rate,
             'pay_type' => 'shift',
+            'club_id' => $club->id,
         ]);
     }
 

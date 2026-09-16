@@ -436,21 +436,19 @@ class BookingSessionTimingService
     public function completeExpiredSessions(?CarbonImmutable $now = null): int
     {
         $now = $now ?? CarbonImmutable::now();
-        $nowIso = $now->utc()->toIso8601String();
         $today = $now->timezone(config('app.timezone'))->toDateString();
         $local = $now->timezone(config('app.timezone'));
         $nowH = $local->hour + ($local->minute / 60);
 
-        // Eloquent where('ends_at', '<=', $now) на timestamptz в PG даёт ложные промахи —
-        // сравниваем через ::timestamptz.
+        // Eloquent where('ends_at', '<=', $now) на timestamptz в PG даёт ложные промахи.
         // Только реально начатые сессии: иначе soft-grace / no-show + fiscal settle ломаются.
         $expiredIds = Booking::query()
             ->where('status', 'active')
             ->whereNotNull('actual_started_at')
-            ->where(function ($query) use ($nowIso, $today, $nowH) {
-                $query->where(function ($modern) use ($nowIso) {
-                    $modern->whereNotNull('ends_at')
-                        ->whereRaw('ends_at <= '.SqlTime::instant(), [$nowIso]);
+            ->where(function ($query) use ($now, $today, $nowH) {
+                $query->where(function ($modern) use ($now) {
+                    $modern->whereNotNull('ends_at');
+                    SqlTime::applyWhere($modern, 'ends_at', '<=', $now);
                 })->orWhere(function ($legacy) use ($today, $nowH) {
                     $legacy->whereNull('ends_at')
                         ->where('date', '<=', $today)

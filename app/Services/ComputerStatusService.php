@@ -89,19 +89,17 @@ class ComputerStatusService
      */
     private function busyComputerIds(array $ids, CarbonImmutable $now): array
     {
-        $nowIso = $now->utc()->toIso8601String();
         $local = $now->timezone(config('app.timezone'));
         $today = $local->toDateString();
         $nowH = $local->hour + ($local->minute / 60);
 
-        // timestamptz: сравнение через ::timestamptz, иначе Eloquent даёт ложные промахи.
         return Booking::query()
             ->where('status', 'active')
             ->whereIn('computer_id', $ids)
-            ->where(function ($query) use ($nowIso, $today, $nowH) {
-                $query->where(function ($modern) use ($nowIso) {
-                    $modern->whereNotNull('ends_at')
-                        ->whereRaw('ends_at > '.SqlTime::instant(), [$nowIso]);
+            ->where(function ($query) use ($now, $today, $nowH) {
+                $query->where(function ($modern) use ($now) {
+                    $modern->whereNotNull('ends_at');
+                    SqlTime::applyWhere($modern, 'ends_at', '>', $now);
                 })->orWhere(function ($legacy) use ($today, $nowH) {
                     $legacy->whereNull('ends_at')
                         ->where('date', $today)

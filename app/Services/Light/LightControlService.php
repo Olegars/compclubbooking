@@ -438,6 +438,14 @@ class LightControlService
         $pcOff = $this->events->event($clubId, 'pc_off');
         $allOff = $this->spaceAllComputersOffline($light);
         $hasSession = $this->spaceHasActiveSession($light);
+        $manualCooldown = max(0, (int) config('light.manual_cooldown_sec', 2));
+        if ($this->manualLockRemainingSec($light, $manualCooldown) > 0 && ! $allOff) {
+            $light->vacant = false;
+            $light->scene_kind = $hasSession ? 'session' : 'idle';
+
+            return;
+        }
+
         $prevKind = $this->normalizeSceneKind((string) ($light->scene_kind ?? ''));
         if ($prevKind === 'off' && ! $light->vacant && (int) $light->desired_brightness > 0) {
             $prevKind = $hasSession ? 'session' : 'idle';

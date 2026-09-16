@@ -1302,6 +1302,15 @@ class OwnerSystemTestService
             'QUEUE_CONNECTION' => 'sync',
             'MAIL_MAILER' => 'array',
             'BROADCAST_CONNECTION' => 'null',
+            'YOOKASSA_SHOP_ID' => '',
+            'YOOKASSA_SECRET_KEY' => '',
+            'STORE_AVITO_CLIENT_ID' => '',
+            'STORE_AVITO_CLIENT_SECRET' => '',
+            'STORE_AVITO_USER_ID' => '',
+            'DEEPSEEK_API_KEY' => '',
+            'OPENAI_API_KEY' => '',
+            'YANDEX_SPEECHKIT_API_KEY' => '',
+            'AI_ASSISTANT_ENABLED' => 'false',
         ]);
     }
 

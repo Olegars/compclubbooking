@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Booking;
 use App\Models\Computer;
+use App\Support\SqlTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -111,8 +112,8 @@ class ComputerPowerService
         $now = $now ?? CarbonImmutable::now();
         $this->syncAll($now);
 
-        $staleSec = $this->staleSeconds();
-        $retrySec = $this->wolTimeoutSeconds();
+        $staleCutoff = $now->subSeconds($this->staleSeconds());
+        $retryCutoff = $now->subSeconds($this->wolTimeoutSeconds());
 
         $rows = DB::table('computers')
             ->whereNotNull('hwid')
@@ -120,18 +121,18 @@ class ComputerPowerService
             ->where('power_desired', self::DESIRED_ON)
             ->whereNotNull('mac_address')
             ->where('mac_address', '!=', '')
-            ->where(function ($q) use ($staleSec) {
+            ->where(function ($q) use ($staleCutoff) {
                 $q->whereNull('last_seen_at')
-                    ->orWhereRaw("last_seen_at < NOW() - (? * INTERVAL '1 second')", [$staleSec]);
+                    ->orWhere('last_seen_at', '<', $staleCutoff);
             })
-            ->where(function ($q) use ($retrySec) {
+            ->where(function ($q) use ($retryCutoff) {
                 $q->whereIn('power_state', [self::STATE_OFF, self::STATE_ERROR])
                     ->orWhereNull('power_state')
-                    ->orWhere(function ($booting) use ($retrySec) {
+                    ->orWhere(function ($booting) use ($retryCutoff) {
                         $booting->where('power_state', self::STATE_BOOTING)
-                            ->where(function ($w) use ($retrySec) {
+                            ->where(function ($w) use ($retryCutoff) {
                                 $w->whereNull('wol_sent_at')
-                                    ->orWhereRaw("wol_sent_at <= NOW() - (? * INTERVAL '1 second')", [$retrySec]);
+                                    ->orWhere('wol_sent_at', '<=', $retryCutoff);
                             });
                     });
             })
@@ -175,8 +176,8 @@ class ComputerPowerService
             ->whereIn('id', $ids)
             ->update([
                 'power_state' => self::STATE_BOOTING,
-                'power_state_updated_at' => DB::raw('NOW()'),
-                'wol_sent_at' => DB::raw('NOW()'),
+                'power_state_updated_at' => SqlTime::now(),
+                'wol_sent_at' => SqlTime::now(),
             ]);
     }
 
@@ -318,10 +319,10 @@ class ComputerPowerService
 
         DB::table('computers')->where('id', $computerId)->update([
             'power_state' => self::STATE_OFF,
-            'power_state_updated_at' => DB::raw('NOW()'),
+            'power_state_updated_at' => SqlTime::now(),
             // null → statusSnapshot не считает ПК онлайн
             'last_seen_at' => null,
-            'updated_at' => DB::raw('NOW()'),
+            'updated_at' => SqlTime::now(),
         ]);
     }
 
@@ -335,10 +336,10 @@ class ComputerPowerService
         }
 
         $patch = [
-            'last_seen_at' => DB::raw('NOW()'),
+            'last_seen_at' => SqlTime::now(),
             'power_state' => self::STATE_ON,
-            'power_state_updated_at' => DB::raw('NOW()'),
-            'updated_at' => DB::raw('NOW()'),
+            'power_state_updated_at' => SqlTime::now(),
+            'updated_at' => SqlTime::now(),
         ];
 
         if ($mac) {
@@ -391,7 +392,8 @@ class ComputerPowerService
      */
     public function statusSnapshot(?int $clubId = null)
     {
-        $stale = $this->staleSeconds();
+        $cutoff = CarbonImmutable::now()->subSeconds($this->staleSeconds());
+        $instant = SqlTime::instant();
 
         $sql = "SELECT id, name, status, power_desired, last_seen_at, space_id, club_id,
                        cache_ok, cache_free_gb, data_root, volume_letter, ssd_temp_c, maintenance,
@@ -404,14 +406,14 @@ class ComputerPowerService
                        resync_command, resync_command_id, resync_result, resync_message,
                        CASE
                            WHEN last_seen_at IS NOT NULL
-                                AND last_seen_at >= NOW() - (? * INTERVAL '1 second')
+                                AND last_seen_at >= {$instant}
                            THEN 'on'
                            WHEN power_state = 'booting' THEN 'booting'
                            WHEN power_state = 'error' THEN 'error'
                            ELSE 'off'
                        END AS power_state
                 FROM computers";
-        $bindings = [$stale];
+        $bindings = [SqlTime::binding($cutoff)];
 
         if ($clubId !== null) {
             $sql .= ' WHERE club_id = ?';
@@ -433,11 +435,12 @@ class ComputerPowerService
             return [];
         }
 
-        $stale = $this->staleSeconds();
+        $cutoff = CarbonImmutable::now()->subSeconds($this->staleSeconds());
 
         return DB::table('computers')
             ->whereIn('id', $ids)
-            ->whereRaw("last_seen_at IS NOT NULL AND last_seen_at >= NOW() - (? * INTERVAL '1 second')", [$stale])
+            ->whereNotNull('last_seen_at')
+            ->where('last_seen_at', '>=', $cutoff)
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->all();
@@ -516,7 +519,7 @@ class ComputerPowerService
         if ($alive) {
             if ($state !== self::STATE_ON) {
                 $patch['power_state'] = self::STATE_ON;
-                $patch['power_state_updated_at'] = DB::raw('NOW()');
+                $patch['power_state_updated_at'] = SqlTime::now();
             }
 
             return $patch;
@@ -525,7 +528,7 @@ class ComputerPowerService
         if ($desired === self::DESIRED_OFF) {
             if ($state !== self::STATE_OFF) {
                 $patch['power_state'] = self::STATE_OFF;
-                $patch['power_state_updated_at'] = DB::raw('NOW()');
+                $patch['power_state_updated_at'] = SqlTime::now();
             }
 
             return $patch;
@@ -537,7 +540,7 @@ class ComputerPowerService
             $timeoutAt = CarbonImmutable::now()->subSeconds($this->wolTimeoutSeconds());
             if ($wolSent->lessThanOrEqualTo($timeoutAt)) {
                 $patch['power_state'] = self::STATE_ERROR;
-                $patch['power_state_updated_at'] = DB::raw('NOW()');
+                $patch['power_state_updated_at'] = SqlTime::now();
                 Log::warning('WOL timeout (relay)', ['computer_id' => $row->id, 'mac' => $row->mac_address]);
             }
 
@@ -548,7 +551,7 @@ class ComputerPowerService
         if ($mac === '' || $this->wol->normalizeMac($mac) === null) {
             if ($state !== self::STATE_ERROR) {
                 $patch['power_state'] = self::STATE_ERROR;
-                $patch['power_state_updated_at'] = DB::raw('NOW()');
+                $patch['power_state_updated_at'] = SqlTime::now();
                 Log::warning('WOL pending skipped: no MAC', ['computer_id' => $row->id]);
             }
 
@@ -558,7 +561,7 @@ class ComputerPowerService
         // Зависший on без heartbeat → off (ждём WOL-релей).
         if ($state === self::STATE_ON || ($state !== self::STATE_OFF && $state !== self::STATE_ERROR && $state !== self::STATE_BOOTING)) {
             $patch['power_state'] = self::STATE_OFF;
-            $patch['power_state_updated_at'] = DB::raw('NOW()');
+            $patch['power_state_updated_at'] = SqlTime::now();
         }
 
         return $patch;
@@ -715,7 +718,7 @@ class ComputerPowerService
         }
 
         if ($patch !== []) {
-            $patch['updated_at'] = DB::raw('NOW()');
+            $patch['updated_at'] = SqlTime::now();
             Computer::query()->where('id', $computerId)->update($patch);
         }
 

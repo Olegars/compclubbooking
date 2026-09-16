@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Computer;
+use App\Support\SqlTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -53,7 +54,7 @@ class DisklessCommandService
                 'diskless_command_at' => null,
                 'diskless_result' => 'timeout',
                 'diskless_message' => 'Шелл не подтвердил команду за '.$this->ttlMinutes().' мин',
-                'updated_at' => DB::raw('NOW()'),
+                'updated_at' => SqlTime::now(),
             ]);
             $computer->diskless_command = null;
             $computer->diskless_command_id = null;
@@ -82,7 +83,7 @@ class DisklessCommandService
         $patch = [
             'diskless_result' => $result ? mb_substr($result, 0, 32) : 'accepted',
             'diskless_message' => $message ? mb_substr($message, 0, 240) : null,
-            'updated_at' => DB::raw('NOW()'),
+            'updated_at' => SqlTime::now(),
         ];
 
         if ((int) $computer->diskless_command_id === $ackId) {
@@ -177,7 +178,7 @@ class DisklessCommandService
             'diskless_message' => null,
             'maintenance' => true,
             'status' => 'maintenance',
-            'updated_at' => DB::raw('NOW()'),
+            'updated_at' => SqlTime::now(),
         ]);
 
         Log::warning('Diskless command queued', [

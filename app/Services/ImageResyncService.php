@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Computer;
+use App\Support\SqlTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -40,7 +41,7 @@ class ImageResyncService
                 'resync_command_at' => null,
                 'resync_result' => 'timeout',
                 'resync_message' => 'Шелл не подтвердил re-sync за '.$this->ttlMinutes().' мин',
-                'updated_at' => DB::raw('NOW()'),
+                'updated_at' => SqlTime::now(),
             ]);
             $computer->resync_command = null;
             $computer->resync_command_id = null;
@@ -63,7 +64,7 @@ class ImageResyncService
         $patch = [
             'resync_result' => $result ? mb_substr($result, 0, 32) : 'accepted',
             'resync_message' => $message ? mb_substr($message, 0, 240) : null,
-            'updated_at' => DB::raw('NOW()'),
+            'updated_at' => SqlTime::now(),
         ];
 
         if (in_array($result, ['ok', 'done', 'accepted', 'running'], true)) {
@@ -111,7 +112,7 @@ class ImageResyncService
             'resync_result' => 'queued',
             'resync_message' => null,
             'integrity_status' => 'resyncing',
-            'updated_at' => DB::raw('NOW()'),
+            'updated_at' => SqlTime::now(),
         ]);
 
         Log::warning('Image resync queued', [

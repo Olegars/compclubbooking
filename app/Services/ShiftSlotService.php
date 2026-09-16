@@ -241,17 +241,21 @@ class ShiftSlotService
                     continue;
                 }
 
-                ShiftSlot::query()->firstOrCreate(
-                    [
-                        'club_id' => $clubId,
-                        'template_id' => $template->id,
-                        'starts_at' => $starts,
-                    ],
-                    [
-                        'ends_at' => $ends,
-                        'intern_capacity' => (int) $template->intern_capacity,
-                    ]
-                );
+                try {
+                    ShiftSlot::query()->firstOrCreate(
+                        [
+                            'club_id' => $clubId,
+                            'template_id' => $template->id,
+                            'starts_at' => $starts,
+                        ],
+                        [
+                            'ends_at' => $ends,
+                            'intern_capacity' => (int) $template->intern_capacity,
+                        ]
+                    );
+                } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+                    continue;
+                }
             }
         }
     }

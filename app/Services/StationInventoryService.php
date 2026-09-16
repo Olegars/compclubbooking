@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Computer;
 use App\Models\ComputerGame;
 use App\Models\Game;
+use App\Support\SqlTime;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -62,8 +63,8 @@ class StationInventoryService
             ->whereIn('game_id', $matched)
             ->update([
                 'is_installed' => true,
-                'verified_at' => DB::raw('NOW()'),
-                'updated_at' => DB::raw('NOW()'),
+                'verified_at' => SqlTime::now(),
+                'updated_at' => SqlTime::now(),
             ]);
     }
 }

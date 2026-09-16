@@ -130,11 +130,18 @@ class OwnerCabinetTest extends TestCase
 
     private function makeAdmin(string $role): Admin
     {
+        $club = Club::query()->first() ?? Club::query()->create([
+            'name' => '0451',
+            'slug' => 'club-'.uniqid(),
+            'type' => 'both',
+        ]);
+
         return Admin::query()->create([
             'name' => ucfirst($role),
             'email' => $role.'.'.uniqid().'@cabinet.test',
             'password' => 'password',
             'role' => $role,
+            'club_id' => $role === 'owner' ? null : $club->id,
         ]);
     }
 }

@@ -36,8 +36,14 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
-        <env name="STORE_AVITO_CLIENT_ID" value=""/>
-        <env name="STORE_AVITO_CLIENT_SECRET" value=""/>
-        <env name="STORE_AVITO_USER_ID" value=""/>
+        <env name="STORE_AVITO_CLIENT_ID" value="" force="true"/>
+        <env name="STORE_AVITO_CLIENT_SECRET" value="" force="true"/>
+        <env name="STORE_AVITO_USER_ID" value="" force="true"/>
+        <env name="YOOKASSA_SHOP_ID" value="" force="true"/>
+        <env name="YOOKASSA_SECRET_KEY" value="" force="true"/>
+        <env name="DEEPSEEK_API_KEY" value="" force="true"/>
+        <env name="OPENAI_API_KEY" value="" force="true"/>
+        <env name="YANDEX_SPEECHKIT_API_KEY" value="" force="true"/>
+        <env name="AI_ASSISTANT_ENABLED" value="false" force="true"/>
     </php>
 </phpunit>
