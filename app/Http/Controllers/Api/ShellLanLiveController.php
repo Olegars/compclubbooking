@@ -213,11 +213,17 @@ class ShellLanLiveController extends Controller
 
         $booking = $booking->fresh() ?? $booking;
 
+        $viewer = $user->fresh() ?? $user;
         try {
-            $payload = $this->livePayload($computer, $booking, $user->fresh() ?? $user);
+            $payload = $this->livePayload($computer, $booking, $viewer);
         } catch (\Throwable $e) {
             report($e);
             $payload = ['status' => 'success'];
+        }
+        try {
+            $payload['throne'] = $this->thrones->payload($computer, $viewer);
+        } catch (\Throwable $e) {
+            report($e);
         }
 
         return response()->json(array_merge(

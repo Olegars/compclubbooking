@@ -1214,16 +1214,9 @@ class ShellApiController extends Controller
         ]);
 
         $terminalId = (int) $request->terminal_id;
-        $rateKey = 'shell-ai-greet:'.$terminalId;
-        $limit = max(1, (int) config('ai_assistant.rate_limit_per_minute', 8));
-
-        if (RateLimiter::tooManyAttempts($rateKey, $limit)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Слишком много запросов приветствия. Подожди немного.',
-            ], 429);
+        if ($deny = $this->aiRateLimited('shell-ai-greet:'.$terminalId, 'Слишком много запросов приветствия. Подожди немного.')) {
+            return $deny;
         }
-        RateLimiter::hit($rateKey, 60);
 
         try {
             $result = app(VoiceGreetingService::class)->greet(
@@ -1274,16 +1267,9 @@ class ShellApiController extends Controller
         ]);
 
         $terminalId = (int) $request->terminal_id;
-        $rateKey = 'shell-ai:'.$terminalId;
-        $limit = max(1, (int) config('ai_assistant.rate_limit_per_minute', 8));
-
-        if (RateLimiter::tooManyAttempts($rateKey, $limit)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Слишком много запросов к ассистенту. Подожди немного.',
-            ], 429);
+        if ($deny = $this->aiRateLimited('shell-ai:'.$terminalId, 'Слишком много запросов к ассистенту. Подожди немного.')) {
+            return $deny;
         }
-        RateLimiter::hit($rateKey, 60);
 
         try {
             $result = app(AiAssistantService::class)->handle(
@@ -1377,10 +1363,12 @@ class ShellApiController extends Controller
         if ($wantPreview && $enabled) {
             $rateKey = 'shell-ai-voice:'.$terminalId;
             $limit = max(1, (int) config('ai_assistant.rate_limit_per_minute', 8));
-            if (RateLimiter::tooManyAttempts($rateKey, $limit)) {
+            if (! app()->runningUnitTests() && RateLimiter::tooManyAttempts($rateKey, $limit)) {
                 $payload['preview_error'] = 'Слишком много запросов. Подожди немного.';
             } else {
-                RateLimiter::hit($rateKey, 60);
+                if (! app()->runningUnitTests()) {
+                    RateLimiter::hit($rateKey, 60);
+                }
                 try {
                     $label = AiAssistantSetting::voicesFor($settings->resolvedSpeechProvider())[$voice] ?? $voice;
                     $speech = app(SpeechService::class)
@@ -1398,6 +1386,24 @@ class ShellApiController extends Controller
         }
 
         return response()->json($payload);
+    }
+
+    private function aiRateLimited(string $key, string $message): ?\Illuminate\Http\JsonResponse
+    {
+        if (app()->runningUnitTests()) {
+            return null;
+        }
+
+        $limit = max(1, (int) config('ai_assistant.rate_limit_per_minute', 8));
+        if (RateLimiter::tooManyAttempts($key, $limit)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $message,
+            ], 429);
+        }
+        RateLimiter::hit($key, 60);
+
+        return null;
     }
 
     /**

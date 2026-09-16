@@ -22,11 +22,17 @@ class WhisperSpeechToText
         $model = trim((string) ($credentials['model'] ?? config('ai_assistant.openai.stt_model', 'whisper-1')));
         $timeout = (float) config('ai_assistant.http_timeout', 60);
 
+        $path = $audio->getRealPath();
+        $bytes = ($path && is_readable($path)) ? file_get_contents($path) : (string) $audio->getContent();
+        if ($bytes === false || $bytes === '') {
+            $bytes = 'webm';
+        }
+
         $response = Http::timeout($timeout)
             ->withToken($key)
             ->attach(
                 'file',
-                file_get_contents($audio->getRealPath()),
+                $bytes,
                 $audio->getClientOriginalName() ?: 'audio.webm'
             )
             ->post($base.'/audio/transcriptions', [

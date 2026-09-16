@@ -17,6 +17,14 @@ class PcThroneService
 
     public const SESSION_TTL = 28800;
 
+    /** @var array<string, array{kills:int,deaths:int,wins:int,losses:int,game:string,player_name?:string}> */
+    private static array $sessions = [];
+
+    public static function flushSessions(): void
+    {
+        self::$sessions = [];
+    }
+
     /**
      * @param  array<string, mixed>  $snap
      */
@@ -58,10 +66,9 @@ class PcThroneService
             return null;
         }
 
-        return PcThrone::query()
-            ->where('computer_id', $computer->id)
-            ->where('recorded_on', now()->toDateString())
-            ->first();
+        return $this->constrainToday(
+            PcThrone::query()->where('computer_id', $computer->id)
+        )->first();
     }
 
     /**
@@ -110,10 +117,9 @@ class PcThroneService
 
     public function resetToday(Computer $computer): bool
     {
-        $deleted = PcThrone::query()
-            ->where('computer_id', $computer->id)
-            ->where('recorded_on', now()->toDateString())
-            ->delete();
+        $deleted = $this->constrainToday(
+            PcThrone::query()->where('computer_id', $computer->id)
+        )->delete();
 
         return $deleted > 0;
     }
@@ -132,9 +138,9 @@ class PcThroneService
         if ($ids === []) {
             return $rows;
         }
-        $kings = PcThrone::query()
-            ->whereIn('computer_id', $ids)
-            ->where('recorded_on', now()->toDateString())
+        $kings = $this->constrainToday(
+            PcThrone::query()->whereIn('computer_id', $ids)
+        )
             ->get()
             ->keyBy('computer_id');
 
@@ -164,7 +170,7 @@ class PcThroneService
      * @param  array{kills:int,deaths:int,wins:int,losses:int,game:string,player_name?:string}  $stats
      * @param  array<string, mixed>  $snap
      */
-    private function maybeCrown(Computer $computer, User $user, Booking $booking, array $stats, array $snap = []): PcThrone
+    private function maybeCrown(Computer $computer, User $user, Booking $booking, array $stats, array $snap = []): ?PcThrone
     {
         $kd = round($stats['kills'] / max(1, $stats['deaths']), 2);
         $games = (int) $stats['wins'] + (int) $stats['losses'];
@@ -192,30 +198,45 @@ class PcThroneService
             $nick = trim((string) $user->name) ?: ('Игрок #'.$user->id);
         }
 
-        try {
-            return PcThrone::query()->updateOrCreate(
-                [
-                    'computer_id' => $computer->id,
-                    'recorded_on' => $today,
-                ],
-                [
-                    'club_id' => (int) ($computer->club_id ?? 0),
-                    'user_id' => $user->id,
-                    'booking_id' => $booking->id,
-                    'nickname' => mb_substr($nick, 0, 48),
-                    'avatar' => $user->avatar ?: 'avatar_1.png',
-                    'game' => $stats['game'],
-                    'metric' => $metric,
-                    'kills' => $stats['kills'],
-                    'deaths' => $stats['deaths'],
-                    'wins' => $stats['wins'],
-                    'losses' => $stats['losses'],
-                    'kd' => $kd,
-                ]
-            );
-        } catch (\Throwable) {
-            return $this->forComputer($computer) ?? $existing;
+        $values = [
+            'club_id' => (int) ($computer->club_id ?? 0),
+            'user_id' => $user->id,
+            'booking_id' => $booking->id,
+            'nickname' => mb_substr($nick, 0, 48),
+            'avatar' => (string) ($user->getAttribute('avatar') ?: 'avatar_1.png'),
+            'game' => $stats['game'],
+            'metric' => $metric,
+            'kills' => $stats['kills'],
+            'deaths' => $stats['deaths'],
+            'wins' => $stats['wins'],
+            'losses' => $stats['losses'],
+            'kd' => $kd,
+        ];
+
+        if ($existing) {
+            $existing->fill($values)->save();
+
+            return $existing->refresh();
         }
+
+        return PcThrone::query()->create(array_merge($values, [
+            'computer_id' => $computer->id,
+            'recorded_on' => $today,
+        ]));
+    }
+
+    /**
+     * sqlite date cast may store Y-m-d or Y-m-d 00:00:00.
+     */
+    private function constrainToday(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        $today = now()->toDateString();
+
+        return $query->where(function ($q) use ($today) {
+            $q->whereDate('recorded_on', $today)
+                ->orWhere('recorded_on', $today)
+                ->orWhere('recorded_on', 'like', $today.'%');
+        });
     }
 
     /**
@@ -223,7 +244,8 @@ class PcThroneService
      */
     private function sessionStats(int $bookingId, string $game): array
     {
-        $row = Cache::get($this->sessionKey($bookingId));
+        $key = $this->sessionKey($bookingId);
+        $row = self::$sessions[$key] ?? Cache::get($key);
         if (! is_array($row)) {
             return ['kills' => 0, 'deaths' => 0, 'wins' => 0, 'losses' => 0, 'game' => $game];
         }
@@ -243,7 +265,9 @@ class PcThroneService
      */
     private function putSession(int $bookingId, array $stats): void
     {
-        Cache::put($this->sessionKey($bookingId), $stats, self::SESSION_TTL);
+        $key = $this->sessionKey($bookingId);
+        self::$sessions[$key] = $stats;
+        Cache::put($key, $stats, self::SESSION_TTL);
     }
 
     private function sessionKey(int $bookingId): string

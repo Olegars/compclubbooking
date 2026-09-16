@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\Wallet;
 use App\Services\LanLive\GhostCoachService;
 use App\Services\LanLive\PartyEnergyPoolService;
+use App\Services\LanLive\PcThroneService;
 use App\Services\LanLive\ShellGsiStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -30,6 +31,7 @@ class LanLiveFeaturesTest extends TestCase
     {
         parent::setUp();
         Cache::flush();
+        PcThroneService::flushSessions();
         $this->club = Club::create(['name' => 'LAN Club', 'slug' => 'lan-live-club']);
     }
 

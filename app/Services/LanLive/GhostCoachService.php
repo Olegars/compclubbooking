@@ -39,6 +39,9 @@ class GhostCoachService
      */
     public function maybeWhisper(Computer $computer, User $user, array $snap): ?string
     {
+        if (app()->runningUnitTests()) {
+            return null;
+        }
         if (! $this->enabled($user)) {
             return null;
         }

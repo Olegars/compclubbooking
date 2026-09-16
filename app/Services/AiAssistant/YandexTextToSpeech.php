@@ -147,7 +147,16 @@ class YandexTextToSpeech
             }
         }
 
-        return $binary;
+        if ($binary !== '') {
+            return $binary;
+        }
+
+        $trim = ltrim($body);
+        if ($trim !== '' && ! str_starts_with($trim, '{') && ! str_starts_with($trim, '[')) {
+            return $body;
+        }
+
+        return '';
     }
 
     /**

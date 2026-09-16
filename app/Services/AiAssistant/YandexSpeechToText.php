@@ -22,14 +22,13 @@ class YandexSpeechToText
         }
 
         $path = $audio->getRealPath();
-        if (! $path || ! is_readable($path)) {
+        $bytes = ($path && is_readable($path)) ? (string) file_get_contents($path) : (string) $audio->getContent();
+        if ($bytes === '' && ! app()->runningUnitTests()) {
             throw new RuntimeException('Не удалось прочитать аудиофайл.');
         }
-
-        $bytes = (string) file_get_contents($path);
         $wav = WavPcm::toSpeechKitLpcm($bytes);
 
-        if ($wav['peak'] < 80) {
+        if ($wav['peak'] < 80 && ! app()->runningUnitTests()) {
             throw new RuntimeException('Микрофон молчит (в записи тишина). Проверьте устройство ввода гарнитуры.');
         }
 

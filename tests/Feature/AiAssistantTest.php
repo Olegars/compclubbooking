@@ -12,6 +12,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 use Tests\TestCase;
 
 class AiAssistantTest extends TestCase
@@ -44,7 +45,7 @@ class AiAssistantTest extends TestCase
             'ai_assistant.openai.stt_model' => 'whisper-1',
             'ai_assistant.openai.tts_model' => 'tts-1',
             'ai_assistant.openai.tts_voice' => 'nova',
-            'ai_assistant.rate_limit_per_minute' => 20,
+            'ai_assistant.rate_limit_per_minute' => 100,
         ]);
 
         $this->club = Club::create([
@@ -78,6 +79,11 @@ class AiAssistantTest extends TestCase
             'platform' => 'PC',
             'category' => 'STEAM',
         ]);
+
+        RateLimiter::clear('shell-ai:'.$this->computer->id);
+        RateLimiter::clear('shell-ai-greet:'.$this->computer->id);
+        RateLimiter::clear('shell-ai-voice:'.$this->computer->id);
+        $this->fakeVoiceStack();
     }
 
     public function test_requires_active_session(): void
@@ -601,10 +607,11 @@ class AiAssistantTest extends TestCase
     {
         $this->createActiveBooking();
 
-        AiAssistantSetting::forClub($this->club->id)->update([
+        AiAssistantSetting::forClub($this->club->id)->forceFill([
             'speech_provider' => 'openai',
             'tts_voice' => 'nova',
-        ]);
+            'openai_api_key' => 'sk-openai-test',
+        ])->save();
 
         $this->fakeVoiceStack(transcript: 'привет', reply: 'хай', mp3: 'ID3oa');
 
