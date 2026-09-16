@@ -41,6 +41,10 @@ class GhostCoachService
      */
     public function maybeWhisper(Computer $computer, User $user, array $snap, ?Booking $booking = null): ?string
     {
+        $clubId = $computer->club_id ? (int) $computer->club_id : null;
+        if (! app(\App\Services\ClubFeatureService::class)->enabled($clubId, 'ghost_coach')) {
+            return null;
+        }
         if (! $this->enabled($user)) {
             return null;
         }
@@ -50,7 +54,7 @@ class GhostCoachService
 
         $partyText = $booking ? $this->partyEco->maybeAnnounce($computer, $booking, $snap) : null;
         if ($partyText !== null && $partyText !== '') {
-            Cache::put('coach:cd:'.$computer->id, 1, self::COOLDOWN_SECONDS);
+            Cache::put('coach:cd:'.$computer->id, 1, $this->cooldownSeconds($computer));
 
             return $partyText;
         }
@@ -68,7 +72,7 @@ class GhostCoachService
             return null;
         }
 
-        Cache::put($key, 1, self::COOLDOWN_SECONDS);
+        Cache::put($key, 1, $this->cooldownSeconds($computer));
 
         return $text;
     }
@@ -345,5 +349,15 @@ class GhostCoachService
         }
 
         return $text;
+    }
+
+    private function cooldownSeconds(Computer $computer): int
+    {
+        return max(10, app(\App\Services\ClubFeatureService::class)->int(
+            $computer->club_id ? (int) $computer->club_id : null,
+            'ghost_coach',
+            'cooldown_seconds',
+            self::COOLDOWN_SECONDS
+        ));
     }
 }

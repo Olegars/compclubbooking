@@ -8,6 +8,7 @@ use App\Models\ClanWar;
 use App\Models\ClanWarEvent;
 use App\Models\Club;
 use App\Models\Computer;
+use App\Models\Booking;
 use App\Models\User;
 use App\Support\ZoneSlug;
 use Carbon\CarbonImmutable;
@@ -28,6 +29,12 @@ class ClanWarService
      */
     public function ingest(Computer $computer, User $user, array $snap): ?array
     {
+        if (! app(\App\Services\ClubFeatureService::class)->enabled(
+            $computer->club_id ? (int) $computer->club_id : null,
+            'clan_wars'
+        )) {
+            return null;
+        }
         $event = strtolower((string) ($snap['event'] ?? ''));
         if (! in_array($event, ['match_win', 'round_win'], true)) {
             return null;
@@ -99,6 +106,11 @@ class ClanWarService
 
     public function start(ClanWar $war): ClanWar
     {
+        app(\App\Services\ClubFeatureService::class)->assertEnabled(
+            $war->host_club_id ? (int) $war->host_club_id : null,
+            'clan_wars',
+            'Clan Wars выключены'
+        );
         if ($war->status !== ClanWar::STATUS_PLANNED) {
             throw new RuntimeException('Стартовать можно только запланированную войну.');
         }
@@ -186,6 +198,12 @@ class ClanWarService
         $computer = $terminalId && $terminalId > 0
             ? Computer::query()->with('space.zone')->find($terminalId)
             : null;
+        if ($computer && ! app(\App\Services\ClubFeatureService::class)->enabled(
+            $computer->club_id ? (int) $computer->club_id : null,
+            'clan_wars'
+        )) {
+            return null;
+        }
 
         $war = $computer
             ? $this->liveWarForComputer($computer)
@@ -203,6 +221,12 @@ class ClanWarService
      */
     public function livePayload(?Computer $computer = null): ?array
     {
+        if ($computer && ! app(\App\Services\ClubFeatureService::class)->enabled(
+            $computer->club_id ? (int) $computer->club_id : null,
+            'clan_wars'
+        )) {
+            return null;
+        }
         $this->expireOverdue();
         $war = $computer
             ? $this->liveWarForComputer($computer)
@@ -244,7 +268,12 @@ class ClanWarService
     public function cabinetForUser(User $user): array
     {
         $this->expireOverdue();
-        $live = $this->livePayload();
+        $clubId = Computer::query()
+            ->whereIn('id', Booking::query()->where('user_id', $user->id)->select('computer_id'))
+            ->value('club_id');
+        $live = ($clubId && ! app(ClubFeatureService::class)->enabled((int) $clubId, 'clan_wars'))
+            ? null
+            : $this->livePayload();
         $mine = ClanPlayerRating::query()
             ->with('clan')
             ->where('user_id', $user->id)
@@ -341,13 +370,19 @@ class ClanWarService
 
     public function create(array $data, ?int $hostClubId): ClanWar
     {
+        app(\App\Services\ClubFeatureService::class)->assertEnabled($hostClubId, 'clan_wars', 'Clan Wars выключены');
         $mode = ($data['mode'] ?? '') === ClanWar::MODE_LOCATION
             ? ClanWar::MODE_LOCATION
             : ClanWar::MODE_ZONE;
         $game = in_array($data['game'] ?? 'any', ['cs2', 'dota', 'any'], true)
             ? ($data['game'] ?? 'any')
             : 'any';
-        $minutes = max(10, min(240, (int) ($data['duration_minutes'] ?? 60)));
+        $minutes = max(10, min(240, (int) ($data['duration_minutes'] ?? app(\App\Services\ClubFeatureService::class)->int(
+            $hostClubId,
+            'clan_wars',
+            'default_duration_minutes',
+            60
+        ))));
 
         if ($mode === ClanWar::MODE_ZONE) {
             if (! $hostClubId) {

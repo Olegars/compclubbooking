@@ -25,6 +25,13 @@ class LanMatchmakingService
      */
     public function payload(Booking $booking, User $user): array
     {
+        $computer = Computer::query()->find((int) $booking->computer_id);
+        if ($computer && ! app(\App\Services\ClubFeatureService::class)->enabled(
+            $computer->club_id ? (int) $computer->club_id : null,
+            'lfg'
+        )) {
+            return ['looking' => false, 'queue' => null];
+        }
         $this->expireStale();
         $row = $this->activeFor($user, $booking);
 
@@ -39,6 +46,8 @@ class LanMatchmakingService
      */
     public function enqueue(User $user, Computer $computer, Booking $booking, string $game, string $rank): array
     {
+        $clubId = $computer->club_id ? (int) $computer->club_id : null;
+        app(\App\Services\ClubFeatureService::class)->assertEnabled($clubId, 'lfg', 'Поиск пати выключен');
         $this->expireStale();
         $game = $this->normalizeGame($game);
         $rank = $this->normalizeRank($rank);
@@ -69,7 +78,7 @@ class LanMatchmakingService
             'matched_computer_id' => null,
             'matched_queue_id' => null,
             'matched_at' => null,
-            'expires_at' => now()->addMinutes(self::TTL_MINUTES),
+            'expires_at' => now()->addMinutes($this->ttlMinutes((int) ($computer->club_id ?? 0))),
         ]);
         $row->save();
 
@@ -109,7 +118,7 @@ class LanMatchmakingService
                     'matched_computer_id' => null,
                     'matched_queue_id' => null,
                     'matched_at' => null,
-                    'expires_at' => now()->addMinutes(self::TTL_MINUTES),
+                    'expires_at' => now()->addMinutes($this->ttlMinutes((int) ($row->club_id ?? 0))),
                 ]);
             }
         }
@@ -256,8 +265,14 @@ class LanMatchmakingService
             ->get();
 
         $myGroup = (int) ($booking->booking_group_id ?? 0);
+        $delta = max(0, app(\App\Services\ClubFeatureService::class)->int(
+            (int) ($row->club_id ?? 0),
+            'lfg',
+            'rank_delta',
+            1
+        ));
         foreach ($candidates as $cand) {
-            if (abs((int) $cand->rank_tier - (int) $row->rank_tier) > 1) {
+            if (abs((int) $cand->rank_tier - (int) $row->rank_tier) > $delta) {
                 continue;
             }
             if ($myGroup > 0) {
@@ -492,5 +507,10 @@ class LanMatchmakingService
             'valorant' => 'Valorant',
             default => 'CS2',
         };
+    }
+
+    private function ttlMinutes(?int $clubId): int
+    {
+        return max(5, app(\App\Services\ClubFeatureService::class)->int($clubId, 'lfg', 'ttl_minutes', self::TTL_MINUTES));
     }
 }

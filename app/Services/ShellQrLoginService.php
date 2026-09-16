@@ -49,7 +49,12 @@ class ShellQrLoginService
             ->update(['status' => ShellQrChallenge::STATUS_EXPIRED]);
 
         $token = (string) Str::uuid();
-        $expiresAt = $now->addSeconds(self::TTL_SECONDS);
+        $expiresAt = $now->addSeconds(max(60, app(\App\Services\ClubFeatureService::class)->int(
+            $computer->club_id ? (int) $computer->club_id : null,
+            'qr_login',
+            'ttl_seconds',
+            self::TTL_SECONDS
+        )));
 
         ShellQrChallenge::create([
             'token' => $token,
@@ -118,6 +123,12 @@ class ShellQrLoginService
     {
         $challenge = $this->pendingChallengeOrFail($token);
         $computer = Computer::query()->with('space.zone')->findOrFail($challenge->computer_id);
+        if (! app(\App\Services\ClubFeatureService::class)->enabled(
+            $computer->club_id ? (int) $computer->club_id : null,
+            'qr_login'
+        )) {
+            throw ValidationException::withMessages(['token' => 'Вход по QR выключен']);
+        }
         $terminalId = (int) $computer->id;
 
         $booking = $this->findUserBookingOnComputer($user, $terminalId);

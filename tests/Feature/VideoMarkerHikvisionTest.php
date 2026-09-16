@@ -134,6 +134,25 @@ class VideoMarkerHikvisionTest extends TestCase
         $this->assertStringContainsString('SOS', (string) VideoSurveillanceMarkerJob::query()->value('title'));
     }
 
+    public function test_hid_alert_places_marker_without_preconfigured_event(): void
+    {
+        Http::fake();
+        $this->enableHikvision();
+
+        $this->postJson('/api/shell/hid/alert', [
+            'computer_id' => $this->pc->id,
+            'type' => 'disconnected',
+        ])->assertOk()->assertJsonPath('status', 'success');
+
+        $this->assertSame(1, VideoSurveillanceMarkerJob::query()->count());
+        $this->assertTrue(
+            VideoSurveillanceEvent::query()
+                ->where('club_id', $this->club->id)
+                ->where('trigger_key', 'hid.disconnected')
+                ->exists()
+        );
+    }
+
     public function test_generic_webhook_still_posts_json(): void
     {
         Http::fake([

@@ -7,6 +7,7 @@ use App\Models\TournamentMatch;
 use App\Models\TournamentPlayer;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Models\Computer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -137,6 +138,10 @@ class TournamentService
 
     public function lockGameIdForComputer(int $computerId): ?int
     {
+        $clubId = Computer::query()->where('id', $computerId)->value('club_id');
+        if ($clubId && ! app(\App\Services\ClubFeatureService::class)->enabled((int) $clubId, 'tournaments')) {
+            return null;
+        }
         $row = DB::table('tournaments')
             ->join('tournament_computer', 'tournament_computer.tournament_id', '=', 'tournaments.id')
             ->where('tournament_computer.computer_id', $computerId)

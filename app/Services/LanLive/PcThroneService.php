@@ -30,6 +30,12 @@ class PcThroneService
      */
     public function observe(Computer $computer, User $user, Booking $booking, array $snap): ?PcThrone
     {
+        if (! app(\App\Services\ClubFeatureService::class)->enabled(
+            $computer->club_id ? (int) $computer->club_id : null,
+            'pc_throne'
+        )) {
+            return null;
+        }
         $event = strtolower((string) ($snap['event'] ?? ''));
         if (! in_array($event, ['kill', 'death', 'match_win', 'match_loss', 'round_win', 'round_loss'], true)) {
             return $this->forComputer($computer);
@@ -53,7 +59,13 @@ class PcThroneService
         $stats['game'] = $game;
         $this->putSession((int) $booking->id, $stats);
 
-        if ((int) $stats['kills'] < self::MIN_KILLS) {
+        $minKills = max(1, app(\App\Services\ClubFeatureService::class)->int(
+            $computer->club_id ? (int) $computer->club_id : null,
+            'pc_throne',
+            'min_kills',
+            self::MIN_KILLS
+        ));
+        if ((int) $stats['kills'] < $minKills) {
             return $this->forComputer($computer);
         }
 
@@ -76,6 +88,12 @@ class PcThroneService
      */
     public function payload(?Computer $computer, ?User $viewer = null): ?array
     {
+        if ($computer && ! app(\App\Services\ClubFeatureService::class)->enabled(
+            $computer->club_id ? (int) $computer->club_id : null,
+            'pc_throne'
+        )) {
+            return null;
+        }
         $king = $this->forComputer($computer);
         if (! $king) {
             return null;

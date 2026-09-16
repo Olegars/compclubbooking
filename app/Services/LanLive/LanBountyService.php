@@ -37,6 +37,12 @@ class LanBountyService
      */
     public function boardForComputer(Computer $computer, ?Booking $booking): array
     {
+        if (! app(\App\Services\ClubFeatureService::class)->enabled(
+            $computer->club_id ? (int) $computer->club_id : null,
+            'lan_bounty'
+        )) {
+            return [];
+        }
         $this->expireOpen($computer->club_id ? (int) $computer->club_id : 0);
 
         $clubId = (int) ($computer->club_id ?? 0);
@@ -126,6 +132,8 @@ class LanBountyService
      */
     public function create(User $poster, Computer $from, Booking $booking, array $input): LanBounty
     {
+        $clubId = $from->club_id ? (int) $from->club_id : null;
+        app(\App\Services\ClubFeatureService::class)->assertEnabled($clubId, 'lan_bounty', 'Охота выключена');
         $targetId = (int) ($input['target_computer_id'] ?? 0);
         if ($targetId < 1 || $targetId === (int) $from->id) {
             throw new RuntimeException('Выберите чужой ПК в клубе');
@@ -173,7 +181,7 @@ class LanBountyService
         $expires = $ends->greaterThan(now()->addHours(4)) ? now()->addHours(4) : $ends;
 
         return DB::transaction(function () use (
-            $poster, $from, $booking, $target, $kind, $game, $weapon, $stakeType, $title, $expires, $input
+            $poster, $from, $booking, $target, $kind, $game, $weapon, $stakeType, $title, $expires, $input, $clubId
         ) {
             $user = User::query()->lockForUpdate()->findOrFail($poster->id);
             $user->syncBalanceToWallet();
@@ -197,9 +205,14 @@ class LanBountyService
                 $amount = (float) $product->price;
                 $productName = (string) $product->name;
             } else {
+                $min = (float) app(\App\Services\ClubFeatureService::class)->int($clubId, 'lan_bounty', 'min_deposit', (int) self::MIN_DEPOSIT);
+                $max = (float) app(\App\Services\ClubFeatureService::class)->int($clubId, 'lan_bounty', 'max_deposit', (int) self::MAX_DEPOSIT);
+                if ($max < $min) {
+                    $max = $min;
+                }
                 $amount = round((float) ($input['stake_amount'] ?? 0), 2);
-                if ($amount + 0.009 < self::MIN_DEPOSIT || $amount > self::MAX_DEPOSIT) {
-                    throw new RuntimeException('Ставка от '.((int) self::MIN_DEPOSIT).' до '.((int) self::MAX_DEPOSIT).' ₽');
+                if ($amount + 0.009 < $min || $amount > $max) {
+                    throw new RuntimeException('Ставка от '.((int) $min).' до '.((int) $max).' ₽');
                 }
             }
 

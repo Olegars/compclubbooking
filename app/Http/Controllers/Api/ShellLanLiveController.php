@@ -362,7 +362,11 @@ class ShellLanLiveController extends Controller
             'bounty_targets' => $this->bounties->targets($computer, $booking),
             'bounty_products' => $this->bounties->stakeProducts(),
             'party_energy' => $this->energy->payload($booking, $user),
-            'ghost_coach' => $this->coach->enabled($user),
+            'ghost_coach' => $this->coach->enabled($user)
+                && app(\App\Services\ClubFeatureService::class)->enabled(
+                    $computer->club_id ? (int) $computer->club_id : null,
+                    'ghost_coach'
+                ),
             'throne' => $this->thrones->payload($computer, $user),
             'lfg' => $this->lfg->payload($booking, $user),
             'lootbox' => $this->loot->pendingPayload($user, $booking),
@@ -371,6 +375,7 @@ class ShellLanLiveController extends Controller
             'time_remaining' => $timing->formatRemainingHms($booking),
             'balance' => $user->availableBalance(),
             'deposit_balance' => $user->availableBalance(),
+            'features' => app(\App\Services\ClubFeatureService::class)->shellPayloadForComputer($computer),
         ];
     }
 

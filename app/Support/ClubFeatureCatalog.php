@@ -107,7 +107,7 @@ class ClubFeatureCatalog
             [
                 'key' => 'ghost_coach',
                 'title' => 'Ghost Coach',
-                'description' => 'Шёпот в наушники по GSI зала. Игрок может выключить галкой в шелле; этот тумблер — мастер клуба.',
+                'description' => 'Шёпот в наушники по GSI зала. Пати CS2: общий банк → эко-раунд или дроп AWP (Coach Whisper). Игрок может выключить галкой в шелле; этот тумблер — мастер клуба.',
                 'group' => self::GROUP_SHELL,
                 'icon' => '🎧',
                 'admin_path' => '/admin/ai-assistant',

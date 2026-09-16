@@ -227,6 +227,12 @@ class SystemDocs
                         'audience' => 'Shell / Игрок',
                     ],
                     [
+                        'title' => 'Coach Whisper: Eco-Round & Drop Synchronizer',
+                        'description' => "Расширение Ghost Coach для пати (BookingGroup, 2+ ПК). В freeze CS2 облако суммирует банк команды по GSI всех мест группы. Сумма < N×2000$ → одна фраза всей пати: «Эко-раунд, копим на бай». Иначе при избытке у одного (≥5500$) и союзнике без AWP (<4750$) — «Скинь AWP на ПК-05». Одна строка на раунд, шеллы забирают её своим POST /api/shell/gsi. Галка Ghost Coach.\nПодробности — глава Shell «Coach Whisper».",
+                        'path' => '/admin/ai-assistant',
+                        'audience' => 'Shell / Игрок',
+                    ],
+                    [
                         'title' => 'Clan Wars (межзонный / межлокационный баттл)',
                         'description' => "Счёт CS2/Dota GSI в реальном времени между сторонами зала или локациями сети. Не турнир Single Elim (это «Менеджер ивентов») и не King of the Hill (трон одного ПК).\n\nРежимы: зоны одной локации — Bootcamp vs Standard; сеть — Club A vs Club B. Сайдбар Киберспорт → /admin/clan-wars: создать, «В эфир», завершить. Одна live-война, длительность 10–240 мин (по умолчанию 60), игра any / cs2 / dota. match_win = 10 очков + победа, round_win = 1. По окончании Elo фракции (старт 1000) и личный вклад в ЛК.\n\nСчёт на TV/PC lobby (оверлеи DAT mid_left/mid_right) и в блоке Clan Wars кабинета игрока.\nПодробности — глава Shell «Clan Wars».",
                         'path' => '/admin/clan-wars',
@@ -332,6 +338,12 @@ class SystemDocs
                         'title' => 'Конфигурация смен',
                         'description' => 'Схема рабочих слотов локации: 12 часов (день/ночь) или 24 часа, час начала (10:00, 11:00, 12:00…). Конец считается автоматически. Уже выбранные смены сотрудников сохраняются, свободные слоты другой схемы снимаются. Админ зала занимает lead, стажёр — intern, магазин — kind=store (не блокирует lead). Доступ: владелец и управляющий.',
                         'path' => '/admin/config',
+                        'audience' => 'Supervisor+',
+                    ],
+                    [
+                        'title' => 'Фичи',
+                        'description' => "Страница /admin/config/features (Конфигурация → Фичи), supervisor+. Тумблеры опциональных контуров клуба и их настройки. Выключенная фича не рисуется в шелле и не пишет события (GSI/дропы/оверлеи).\n\nШелл: вход по QR (TTL кода), King of the Hill (мин. фраги), пати в зале (TTL и допуск ранга), охота (мин/макс ставка), котёл пати (порция и порог), Lucky Seat (кулдаун, стрики, бонусы, промокод), Ghost Coach (пауза шёпота; пати CS2 — Coach Whisper эко/дроп AWP), Instant Replay (автоклип, logout, длина killcam).\n\nКиберспорт: Clan Wars (длительность по умолчанию; пункт сайдбара прячется), турниры (lock каталога и сетка).\nМаркетинг: достижения (награды после сессии).\n\nПустой club_features = всё включено, как до страницы. Шелл забирает features из heartbeat / login / lan-live. Код: ClubFeatureCatalog, ClubFeatureService. Тесты: ClubFeaturesTest.",
+                        'path' => '/admin/config/features',
                         'audience' => 'Supervisor+',
                     ],
                     [
@@ -504,7 +516,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Видео-метки: зачем и куда смотреть',
-                        'description' => "Закладка на записи NVR, чтобы не мотать 40 каналов: HID (мышь/клава) или SOS → флажок с текстом «HID · PC-08». Это не иконка лица/машины и не «Событие AIOP».\n\nИскать: Воспроизведение → камера (канал из админки, 1 = D1) → шкала; либо бэкап/поиск по тегу.\n\nТриггеры: hid.disconnected / hid.device_changed / hid.unstable (POST /api/shell/hid/alert), sos (POST /api/shell/sos), store.assembly_start / store.assembly_done (магазин, камера стола сборщика), тест в админке. События — /admin/video-surveillance. Канал = номер камеры NVR (1 → track 101). ПК зала→камера пока нет; стол сборки — STORE_ASSEMBLY_NVR_CHANNEL или канал события.",
+                        'description' => "Закладка на записи NVR, чтобы не мотать 40 каналов: HID (мышь/клава), SOS или Rage-Smash → флажок с текстом «HID · PC-08» / «Rage-Smash · ПК-12». Это не иконка лица/машины и не «Событие AIOP».\n\nИскать: Воспроизведение → камера (канал из админки, 1 = D1) → шкала; либо бэкап/поиск по тегу.\n\nТриггеры: hid.disconnected / hid.device_changed / hid.unstable (POST /api/shell/hid/alert), sos (POST /api/shell/sos), hardware.abuse (POST /api/shell/incidents type=hardware_abuse — метка 1 с + 1 с pre), store.assembly_start / store.assembly_done (магазин, камера стола сборщика), тест в админке. События — /admin/video-surveillance; при первом срабатывании недостающее событие создаётся само. Канал = номер камеры NVR (1 → track 101). ПК зала→камера пока нет; стол сборки — STORE_ASSEMBLY_NVR_CHANNEL или канал события.",
                         'path' => '/admin/video-surveillance',
                         'audience' => 'Supervisor+ / Админ / Техник',
                     ],
@@ -594,7 +606,7 @@ class SystemDocs
                 'items' => [
                     [
                         'title' => 'Инциденты',
-                        'description' => "Единая лента /admin/incidents: late_order, low_stock, расхождения склада, SOS, HID, ручные записи, shell-инциденты (fan_bearing_wear, golden_image_drift, nic_link_flap — «Заменить патч-корд на ПК-ХХ», hardware_switch_fault — «Проверить свитч/микрик на ПК-ХХ»).\n\nТипы с ПК: POST /api/shell/incidents (ShellIncidentService, dedupe по computer_id+type пока не закрыт). Link flap ≥2 за смену пишет nic_link_flap из heartbeat (см. «Деградация кабеля» в Shell). Дребезг мыши / залипание клавиши — Hardware Health поверх HID-сессии (глава Shell).\n\nAck и закрытие (resolve — supervisor+).",
+                        'description' => "Единая лента /admin/incidents: late_order, low_stock, расхождения склада, SOS, HID, ручные записи, shell-инциденты (fan_bearing_wear, golden_image_drift, nic_link_flap — «Заменить патч-корд на ПК-ХХ», hardware_switch_fault — «Проверить свитч/микрик на ПК-ХХ», hardware_abuse — «Удар по столу на ПК-ХХ»).\n\nТипы с ПК: POST /api/shell/incidents (ShellIncidentService, dedupe по computer_id+type пока не закрыт). Link flap ≥2 за смену пишет nic_link_flap из heartbeat (см. «Деградация кабеля» в Shell). Дребезг мыши / залипание клавиши — Hardware Health поверх HID-сессии (глава Shell). Rage-Smash (IMU/key-mash + K/D) — hardware_abuse и секундная метка NVR (глава Shell).\n\nAck и закрытие (resolve — supervisor+).",
                         'path' => '/admin/incidents',
                         'audience' => 'Админ / Shell / Система',
                     ],
@@ -606,7 +618,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'HID-алерты',
-                        'description' => 'Снимки периферии и алерты: смена / отключение / нестабильность устройств. Триггеры hid.disconnected / hid.device_changed / hid.unstable опционально ставят видео-метки на NVR (события в /admin/video-surveillance).\n\nПоверх той же HID-сессии шелл (HardwareHealthWatchdog) смотрит физические события ввода: дребезг микрика мыши (фантомный дабл-клик) и залипание/дребезг скан-кода. Это не computer_input_alerts, а тикет hardware_switch_fault «Проверить свитч/микрик на ПК-ХХ» в этой ленте.',
+                        'description' => 'Снимки периферии и алерты: смена / отключение / нестабильность устройств. Триггеры hid.disconnected / hid.device_changed / hid.unstable ставят видео-метки на NVR (событие создаётся само, если его не завели в /admin/video-surveillance).\n\nПоверх той же HID-сессии шелл (HardwareHealthWatchdog) смотрит физические события ввода: дребезг микрика мыши (фантомный дабл-клик) и залипание/дребезг скан-кода. Это не computer_input_alerts, а тикет hardware_switch_fault «Проверить свитч/микрик на ПК-ХХ» в этой ленте. Удар по столу / key-mash — Rage-Smash (hardware_abuse), отдельная глава Shell.',
                         'path' => '/admin/incidents',
                         'audience' => 'Shell → Админ',
                     ],
@@ -768,15 +780,21 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Party Energy Pool (котёл пати)',
-                        'description' => "Если бронь в BookingGroup на 2+ ПК (мультибронь друзей или LFG-матч в зале): общий котёл минут. Капитан POST /api/shell/party/energy/auto-fuel включает бесшовную подпитку. Любой из пати кладёт минуты POST /api/shell/party/energy/contribute (с депозита или со своей сессии). Когда у участника <90 с и GSI говорит in_match, сессия не выбивается в паузу: шелл держит игру, сервер сифонит 10 мин из котла (и на completeExpiredSessions). Без согласия капитана и пустой котёл — обычный logout.",
+                        'description' => "Если бронь в BookingGroup на 2+ ПК (мультибронь друзей или LFG-матч в зале): общий котёл минут. Капитан POST /api/shell/party/energy/auto-fuel включает бесшовную подпитку. Любой из пати кладёт минуты POST /api/shell/party/energy/contribute (с депозита или со своей сессии). Когда у участника <90 с и GSI говорит in_match, сессия не выбивается в паузу: шелл держит игру, сервер сифонит 10 мин из котла (и на completeExpiredSessions). Без согласия капитана и пустой котёл — обычный logout.\n\nЭкономика CS$ пати — не котёл, а Coach Whisper (эко-раунд / дроп AWP) поверх Ghost Coach.",
                         'path' => null,
                         'audience' => 'Shell',
                     ],
                     [
                         'title' => 'Ghost Coach (ИИ-тактик)',
-                        'description' => "GSI на шелле работает всю сессию. POST /api/shell/gsi + экономика/ульт. Шаблоны: «У вражеского Enigma на ПК-14 готов Black Hole» / «У них эко, жди раш с дробовиками» / AWP на линии. Если шаблон молчит — короткий LLM (DeepSeek, 4 с) по снимку GSI зала. Шёпот раз в ~28 с, галка в шелле (POST /api/shell/coach). F1 hold-to-talk дополнительно получает строку [GSI] в промпт (микрофон + live state). Пуш в наушники через SAPI/TTS.",
+                        'description' => "GSI на шелле работает всю сессию. POST /api/shell/gsi + экономика/ульт. Шаблоны: «У вражеского Enigma на ПК-14 готов Black Hole» / «У них эко, жди раш с дробовиками» / AWP на линии. Если шаблон молчит — короткий LLM (DeepSeek, 4 с) по снимку GSI зала. Шёпот раз в ~28 с, галка в шелле (POST /api/shell/coach). F1 hold-to-talk дополнительно получает строку [GSI] в промпт (микрофон + live state). Пуш в наушники через SAPI/TTS.\n\nПати (BookingGroup): см. «Coach Whisper: Eco-Round & Drop Synchronizer» — общий банк команды и синхронный шёпот эко/дропа AWP.",
                         'path' => '/admin/ai-assistant',
                         'audience' => 'Shell',
+                    ],
+                    [
+                        'title' => 'Coach Whisper: Eco-Round & Drop Synchronizer',
+                        'description' => "Расширение Ghost Coach, только CS2 и только пати: бронь в BookingGroup на 2+ ПК (мультибронь «сесть рядом» или LFG в зале). Соло-сессия этот канал не включает — остаётся обычный Ghost Coach.\n\nОткуда деньги. GSI CS2 на каждом ПК шлёт player.state.money (allplayers у Valve нет). POST /api/shell/gsi кладёт снимок в ShellGsiStore (TTL 30 с). Облако склеивает кошельки всех computer_id группы, та же сторона (team T/CT), in_match. Нужно ≥2 живых банка. Срабатывает в freeze (event=freezetime или phase=freezetime) — пока ещё можно сейвить или скинуть AWP.\n\nЭко-раунд. Сумма $ пати < N × 2000 (N — число тиммейтов с деньгами в снимке; порог тот же, что личное эко Ghost Coach). Одна фраза на всю команду: «Эко-раунд, копим на бай». Личные «у вас эко / фуллбай» в этот freeze глушатся, чтобы не спорить с командным решением.\n\nДроп AWP. Если эко нет, и у одного избыток (≥5500$ — хватает на AWP 4750 плюс запас), а у союзника нет AWP в руках и банка <4750$ — «Скинь AWP на ПК-05» (имя computers.name получателя, обычно беднейший без AWP). Эко важнее дропа: при нищем общем банке AWP не предлагается.\n\nСинхрон. Первое место, у которого набралось ≥2 кошелька, считает фразу и кладёт её в кэш coach:party:{group}:{match}:{round} на 18 с (окно freeze). Остальные POST /api/shell/gsi той же пати в том же раунде получают ту же строку — даже если их $ чуть разъехались. Повтор на том же ПК в том же раунде глушится (heard-once). Дальше кулдаун Ghost Coach (по умолчанию 28 с, /admin/config/features). Галка POST /api/shell/coach и мастер-фича клуба ghost_coach выключают и это расширение. В наушники — тот же SessionAlert / SAPI, что у Ghost Coach; отдельного оверлея нет.\n\nНе путать с Party Energy Pool (минуты сессии, не CS$) и Lucky Seat (кейс за стрик).\nКод: PartyEcoDropSynchronizer, GhostCoachService::maybeWhisper. Тесты: GhostCoachPartyTest.",
+                        'path' => '/admin/ai-assistant',
+                        'audience' => 'Shell / Игрок',
                     ],
                     [
                         'title' => 'Lucky Seat Lootbox (дроп за стрик)',
@@ -839,6 +857,12 @@ class SystemDocs
                         'audience' => 'Техник / Shell / Админ',
                     ],
                     [
+                        'title' => 'Rage-Smash (удар по столу / Peripheral Shock)',
+                        'description' => "Зачем. Гость в тильте бьёт по столу или молотит клавиатуру — нужен тикет hardware_abuse, закладка на NVR и вежливый оффер напитка, пока админ не мотает 40 каналов.\n\nШелл (RageSmashWatchdog) живёт поверх HID-сессии: startWatch логина ставит WH_MOUSE_LL + WH_KEYBOARD_LL и Raw Input HID Sensor (usage page 0x20 — акселерометр/гироскоп современных игровых мышей). Logout снимает. Синтетику (LLKHF_INJECTED) игнорирует.\n\nIMU: скачок магнитуды HID-репорта относительно EMA-базы ≥ imu_spike (~2.4). Этого достаточно — стол ударили, K/D не обязателен.\nKey-mash: ≥ mash_keys (10) разных VK за mash_window_ms (100 мс). Mouse-shock: сумма |dx|+|dy| ≥ mouse_shock_px за mouse_shock_ms (прокси, если IMU нет). Для mash/shock нужно падение K/D по GSI: ≥ death_need смертей в окне kd_window_ms и смертей больше, чем киллов, либо K/D сессии просел < 70% пика. Сервер дублирует окно по POST /api/shell/gsi (RageSmashService::noteGsi).\n\nТикет: POST /api/shell/incidents type=hardware_abuse, description «Удар по столу на ПК-ХХ», severity high, payload {source=imu|keymash|mouse_shock, keys/g, kills/deaths, kd_*}. Dedupe открытой строки, но каждая вспышка снова ставит метку. Cooldown config.ini [RageSmash] ~3 мин.\n\nNVR: триггер hardware.abuse в /admin/video-surveillance, метка 1 с (pre 1 с) даже если событие не заводили вручную — VideoMarkerService создаёт его при первом fire. Ответ шеллу: calm_down {title, message, drinks[]} — оверлей RageCalmOverlay, заказ через /api/shell/store/checkout, TTS SessionAlert.\n\nЛента /admin/incidents, подпись «Удар по столу / Rage-Smash». Тесты: RageSmashAlertTest, VideoMarkerHikvisionTest (метка без заранее созданного события).",
+                        'path' => '/admin/incidents',
+                        'audience' => 'Техник / Shell / Админ',
+                    ],
+                    [
                         'title' => 'Деградация кабеля (Link Flap / патч-корд)',
                         'description' => "Зачем. Плохой патч-корд или порт даёт дропы линка с 1 Гбит до 100 Мбит — зал «тупит», но на дашборде раньше был только текущий nic_link_mbps. Нужен счётчик за смену и тикет технику.\n\nШелл (LinkFlapWatchdog): опрос NIC ~15 с (config.ini [LinkFlap] poll_ms / cooldown_ms). Событие: был ≥900 Мбит → стал ≤100 Мбит, либо рост InErrors при уже деградированном линке. Cooldown ~45 с, чтобы один дребезг не накрутил десятки.\n\nHeartbeat: nic_flap_events (сколько накопили) + nic_flap_payload {from_mbps,to_mbps,in_errors}. Сервер NicLinkFlapService::ingest копит computers.nic_flap_count в рамках открытой смены (AdminShift); без смены — окно 12 ч. Ответ nic_flap_acked — шелл сбрасывает pending.\n\nПорог: ≥2 события за смену → инцидент type=nic_link_flap, description «Заменить патч-корд на ПК-ХХ», severity high, лента /admin/incidents (dedupe пока не закрыт). Дашборд: жёлтая плитка «flap N», в карточке места — flap рядом с Мбит.\n\nSystem-tests «Здоровье станций»: warn при nic_flap_count≥2. Тесты: ShellLanPatchAndLinkFlapTest.\nКод: stationhealth::nicInfo (GetIfTable2), LinkFlapWatchdog, NicLinkFlapService, ShellIncidentService::TYPE_NIC_LINK_FLAP.",
                         'path' => '/admin/incidents',
@@ -858,7 +882,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Голосовой ИИ (F1 и приветствие)',
-                        'description' => "Hold-to-talk во время сессии: запись с микрофона → POST /api/shell/ai-assistant → SpeechKit STT (или Whisper) → LLM (DeepSeek/OpenAI из админки) → SpeechKit/OpenAI TTS в наушники. В промпт добавляется живой [GSI] (карта, деньги, ульт, бомба), если игрок в матче.\n\nПосле логина: POST /api/shell/voice-greeting. Промпты и ключи — /admin/ai-assistant.\n\nОтдельно: Ghost Coach — пуш-шёпот по GSI без удержания F1 (шаблоны + LLM fallback).",
+                        'description' => "Hold-to-talk во время сессии: запись с микрофона → POST /api/shell/ai-assistant → SpeechKit STT (или Whisper) → LLM (DeepSeek/OpenAI из админки) → SpeechKit/OpenAI TTS в наушники. В промпт добавляется живой [GSI] (карта, деньги, ульт, бомба), если игрок в матче.\n\nПосле логина: POST /api/shell/voice-greeting. Промпты и ключи — /admin/ai-assistant.\n\nОтдельно: Ghost Coach — пуш-шёпот по GSI без удержания F1 (шаблоны + LLM fallback). Пати CS2: Coach Whisper синхронно шепчет эко-раунд или дроп AWP всей BookingGroup.",
                         'path' => '/admin/ai-assistant',
                         'audience' => 'Shell / Supervisor+',
                     ],

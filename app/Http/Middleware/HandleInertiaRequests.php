@@ -3,9 +3,11 @@
 namespace App\Http\Middleware;
 
 use App\Models\StoreAvitoSetting;
+use App\Services\ClubFeatureService;
 use App\Support\AdminAlerts;
 use App\Support\AdminLocation;
 use App\Support\AdminShift;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Illuminate\Support\Facades\Auth;
@@ -80,6 +82,10 @@ class HandleInertiaRequests extends Middleware
                 ])->values()->all()
                 : [],
             'admin_alerts' => $admin ? fn () => AdminAlerts::counts() : null,
+            'club_features' => $admin ? fn () => Schema::hasTable('club_features')
+                ? app(ClubFeatureService::class)->enabledMap(AdminLocation::id($admin))
+                : []
+            : [],
             'avito_ringtone_url' => $admin ? fn () => StoreAvitoSetting::sharedRingtoneUrl() : StoreAvitoSetting::DEFAULT_RINGTONE,
             'admin_shift' => $admin ? fn () => AdminShift::current($admin->id) : null,
         ]);

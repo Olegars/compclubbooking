@@ -22,6 +22,12 @@ class AchievementService
      */
     public function evaluateForUser(User $user): array
     {
+        $clubId = \App\Models\Computer::query()
+            ->whereIn('id', Booking::query()->where('user_id', $user->id)->select('computer_id'))
+            ->value('club_id');
+        if ($clubId && ! app(ClubFeatureService::class)->enabled((int) $clubId, 'achievements')) {
+            return [];
+        }
         $awarded = [];
 
         $achievements = Achievement::query()
@@ -76,6 +82,12 @@ class AchievementService
      */
     public function progressForUser(User $user): array
     {
+        $clubId = \App\Models\Computer::query()
+            ->whereIn('id', Booking::query()->where('user_id', $user->id)->select('computer_id'))
+            ->value('club_id');
+        if ($clubId && ! app(ClubFeatureService::class)->enabled((int) $clubId, 'achievements')) {
+            return [];
+        }
         $achievements = Achievement::query()
             ->where('is_active', true)
             ->orderBy('sort_order')

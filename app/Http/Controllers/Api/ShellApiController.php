@@ -90,13 +90,17 @@ class ShellApiController extends Controller
             });
 
         $data = $overlays->toArray();
+        $features = app(\App\Services\ClubFeatureService::class);
+        $computer = $terminalId > 0 ? Computer::query()->find($terminalId) : null;
         $clanWar = null;
         try {
-            $wars = app(\App\Services\ClanWarService::class);
-            $clanWar = $wars->liveForTerminal($terminalId);
-            if ($clanWar) {
-                $data['clan_war'] = $clanWar;
-                $data = $wars->paintOverlayBlocks($data, $clanWar);
+            if ($features->enabled($computer?->club_id ? (int) $computer->club_id : null, 'clan_wars')) {
+                $wars = app(\App\Services\ClanWarService::class);
+                $clanWar = $wars->liveForTerminal($terminalId);
+                if ($clanWar) {
+                    $data['clan_war'] = $clanWar;
+                    $data = $wars->paintOverlayBlocks($data, $clanWar);
+                }
             }
         } catch (\Throwable $e) {
             Log::warning('clan-war overlay: '.$e->getMessage());
@@ -106,6 +110,7 @@ class ShellApiController extends Controller
             'status' => 'success',
             'data' => $data,
             'clan_war' => $clanWar,
+            'features' => $features->shellPayloadForComputer($computer),
         ]);
     }
 
@@ -324,6 +329,7 @@ class ShellApiController extends Controller
                 ] : null,
                 'fiscal_receipts' => $fiscalReceipts,
                 'party' => app(PartyBookingService::class)->payloadForBooking($booking),
+                'features' => app(\App\Services\ClubFeatureService::class)->shellPayloadForComputer($loginComputer),
                 ...$this->lanLiveExtras($booking, $user),
             ]);
 
@@ -349,10 +355,23 @@ class ShellApiController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Терминал не найден']);
         }
 
+        $features = app(\App\Services\ClubFeatureService::class);
+        $payload = ['features' => $features->shellPayloadForComputer($computer)];
+        if (! $features->enabled($computer->club_id ? (int) $computer->club_id : null, 'qr_login')) {
+            return response()->json(array_merge($payload, [
+                'status' => 'ok',
+                'enabled' => false,
+                'qr_payload' => '',
+                'throne' => $features->enabled($computer->club_id ? (int) $computer->club_id : null, 'pc_throne')
+                    ? app(\App\Services\LanLive\PcThroneService::class)->payload($computer)
+                    : null,
+            ]));
+        }
+
         $issued = $qr->issue($computer);
         $throne = app(\App\Services\LanLive\PcThroneService::class)->payload($computer);
 
-        return response()->json(array_merge(['status' => 'ok'], $issued, [
+        return response()->json(array_merge(['status' => 'ok', 'enabled' => true], $issued, $payload, [
             'throne' => $throne,
         ]));
     }
@@ -2959,6 +2978,7 @@ class ShellApiController extends Controller
 
             return response()->json(array_merge(['status' => 'success', 'light' => $lightState], $result, [
                 'throne' => app(\App\Services\LanLive\PcThroneService::class)->payload($computer),
+                'features' => app(\App\Services\ClubFeatureService::class)->shellPayloadForComputer($computer),
             ]), 200);
         } catch (\Throwable $e) {
             Log::error('Shell API Power Heartbeat Error: '.$e->getMessage());
@@ -3137,6 +3157,13 @@ class ShellApiController extends Controller
         if (! $user) {
             return response()->json(['status' => 'error', 'message' => 'Гость не найден'], 404);
         }
+        $computer = Computer::query()->find($terminalId);
+        if (! app(\App\Services\ClubFeatureService::class)->enabled(
+            $computer?->club_id ? (int) $computer->club_id : null,
+            'instant_replay'
+        )) {
+            return response()->json(['status' => 'error', 'message' => 'Instant Replay выключен'], 403);
+        }
 
         $computer = Computer::query()->find($terminalId);
         $clip = $clips->storeUpload(
@@ -3294,6 +3321,7 @@ class ShellApiController extends Controller
                 'lootbox_dropped' => $dropped
                     ? app(\App\Services\LanLive\LuckySeatLootService::class)->payload($dropped, false)
                     : null,
+                'features' => $pack['features'] ?? app(\App\Services\ClubFeatureService::class)->shellPayloadForComputer($computer),
             ];
         } catch (\Throwable $e) {
             Log::warning('lan-live extras: '.$e->getMessage());

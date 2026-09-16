@@ -12,6 +12,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Services\KitchenOrderPrintService;
 use App\Services\ProductStockService;
+use App\Services\ClubFeatureService;
 use App\Support\OrderChannel;
 use App\Support\OrderDeliveryTarget;
 use Illuminate\Support\Facades\Cache;
@@ -60,6 +61,9 @@ class LuckySeatLootService
      */
     public function observe(Computer $computer, User $user, Booking $booking, array $snap): ?LuckySeatDrop
     {
+        if (! $this->features()->enabled($this->clubId($computer), 'lucky_seat')) {
+            return null;
+        }
         $event = strtolower((string) ($snap['event'] ?? 'heartbeat'));
         $stats = $this->sessionStats((int) $booking->id);
 
@@ -74,8 +78,9 @@ class LuckySeatLootService
         }
         $this->putSession((int) $booking->id, $stats);
 
-        $streakHit = $stats['match_streak'] >= self::MATCH_STREAK
-            || $stats['round_streak'] >= self::ROUND_STREAK;
+        $clubId = $this->clubId($computer);
+        $streakHit = $stats['match_streak'] >= $this->matchStreak($clubId)
+            || $stats['round_streak'] >= $this->roundStreak($clubId);
         if ($streakHit && in_array($event, ['match_win', 'round_win'], true)) {
             $drop = $this->tryGrant($computer, $user, $booking, LuckySeatDrop::TRIGGER_WIN_STREAK);
             if ($drop) {
@@ -92,6 +97,10 @@ class LuckySeatLootService
 
     public function maybePlaytime(Computer $computer, User $user, Booking $booking): ?LuckySeatDrop
     {
+        if (! $this->features()->enabled($this->clubId($computer), 'lucky_seat')) {
+            return null;
+        }
+
         return $this->tryGrant($computer, $user, $booking, LuckySeatDrop::TRIGGER_PLAYTIME);
     }
 
@@ -100,6 +109,10 @@ class LuckySeatLootService
      */
     public function pendingPayload(User $user, Booking $booking): ?array
     {
+        $computer = Computer::query()->find((int) $booking->computer_id);
+        if ($computer && ! $this->features()->enabled($this->clubId($computer), 'lucky_seat')) {
+            return null;
+        }
         $drop = $this->pendingDrop($user, $booking);
         if (! $drop) {
             return null;
@@ -162,7 +175,7 @@ class LuckySeatLootService
             'status' => $drop->status,
             'trigger' => $drop->trigger,
             'trigger_label' => $drop->trigger === LuckySeatDrop::TRIGGER_PLAYTIME
-                ? '3 часа в клубе'
+                ? $this->playtimeLabel((int) ($drop->club_id ?: 0))
                 : 'Серия побед',
             'title' => 'Lucky Seat',
             'subtitle' => $drop->trigger === LuckySeatDrop::TRIGGER_PLAYTIME
@@ -178,10 +191,11 @@ class LuckySeatLootService
         if ($this->pendingDrop($user, $booking)) {
             return null;
         }
-        if ($this->onCooldown($user)) {
+        $clubId = $this->clubId($computer);
+        if ($this->onCooldown($user, $clubId)) {
             return null;
         }
-        if ($trigger === LuckySeatDrop::TRIGGER_PLAYTIME && ! $this->playtimeReady($user, $booking)) {
+        if ($trigger === LuckySeatDrop::TRIGGER_PLAYTIME && ! $this->playtimeReady($user, $booking, $clubId)) {
             return null;
         }
 
@@ -221,15 +235,15 @@ class LuckySeatLootService
         return $drop;
     }
 
-    private function onCooldown(User $user): bool
+    private function onCooldown(User $user, ?int $clubId): bool
     {
         return LuckySeatDrop::query()
             ->where('user_id', $user->id)
-            ->where('created_at', '>=', now()->subSeconds(self::COOLDOWN_SECONDS))
+            ->where('created_at', '>=', now()->subSeconds($this->cooldownSeconds($clubId)))
             ->exists();
     }
 
-    private function playtimeReady(User $user, Booking $booking): bool
+    private function playtimeReady(User $user, Booking $booking, ?int $clubId): bool
     {
         $start = $booking->actual_started_at ?? $booking->starts_at ?? $booking->created_at;
         if (! $start) {
@@ -243,7 +257,7 @@ class LuckySeatLootService
         $anchor = $last ? \Carbon\CarbonImmutable::parse($last) : $start;
         $elapsed = now()->getTimestamp() - $anchor->getTimestamp();
 
-        return $elapsed >= self::COOLDOWN_SECONDS;
+        return $elapsed >= $this->playtimeSeconds($clubId);
     }
 
     private function fulfill(LuckySeatDrop $drop, User $user, Booking $booking, Computer $computer): void
@@ -256,7 +270,7 @@ class LuckySeatLootService
         };
         if (! $reward) {
             $rolled = LuckySeatDrop::REWARD_BONUS;
-            $reward = $this->grantBonus($user);
+            $reward = $this->grantBonus($user, (int) ($drop->club_id ?: 0));
         }
 
         $drop->update([
@@ -290,9 +304,10 @@ class LuckySeatLootService
     /**
      * @return array<string, mixed>
      */
-    private function grantBonus(User $user): array
+    private function grantBonus(User $user, ?int $clubId = null): array
     {
-        $amount = self::BONUS_AMOUNTS[array_rand(self::BONUS_AMOUNTS)];
+        $amounts = $this->bonusAmounts($clubId);
+        $amount = $amounts[array_rand($amounts)];
         $user->syncBalanceToWallet();
         $wallet = $user->wallet()->firstOrCreate(['user_id' => $user->id]);
         $wallet->increment('bonus_balance', $amount);
@@ -370,12 +385,15 @@ class LuckySeatLootService
      */
     private function grantPromo(User $user, LuckySeatDrop $drop): array
     {
+        $clubId = (int) ($drop->club_id ?: 0);
+        $percent = max(5, $this->features()->int($clubId, 'lucky_seat', 'promo_percent', self::PROMO_PERCENT));
+        $days = max(1, $this->features()->int($clubId, 'lucky_seat', 'promo_days', self::PROMO_DAYS));
         $code = $this->uniquePromoCode();
-        $expires = now()->addDays(self::PROMO_DAYS);
+        $expires = now()->addDays($days);
         StorePromoCode::query()->create([
             'code' => $code,
             'user_id' => $user->id,
-            'percent' => self::PROMO_PERCENT,
+            'percent' => $percent,
             'scope' => StorePromoCode::SCOPE_PERIPHERAL,
             'status' => StorePromoCode::STATUS_ACTIVE,
             'lucky_seat_drop_id' => $drop->id,
@@ -385,9 +403,9 @@ class LuckySeatLootService
         return [
             'type' => LuckySeatDrop::REWARD_STORE_PROMO,
             'code' => $code,
-            'percent' => self::PROMO_PERCENT,
+            'percent' => $percent,
             'expires_at' => $expires->toIso8601String(),
-            'label' => 'Промокод '.$code.' — '.self::PROMO_PERCENT.'% на периферию в REACTOR Store',
+            'label' => 'Промокод '.$code.' — '.$percent.'% на периферию в REACTOR Store',
         ];
     }
 
@@ -460,5 +478,59 @@ class LuckySeatLootService
     private function cacheKey(int $bookingId): string
     {
         return 'lucky:sess:'.$bookingId;
+    }
+
+    private function features(): ClubFeatureService
+    {
+        return app(ClubFeatureService::class);
+    }
+
+    private function clubId(Computer $computer): ?int
+    {
+        return $computer->club_id ? (int) $computer->club_id : null;
+    }
+
+    private function matchStreak(?int $clubId): int
+    {
+        return max(1, $this->features()->int($clubId, 'lucky_seat', 'match_streak', self::MATCH_STREAK));
+    }
+
+    private function roundStreak(?int $clubId): int
+    {
+        return max(2, $this->features()->int($clubId, 'lucky_seat', 'round_streak', self::ROUND_STREAK));
+    }
+
+    private function cooldownSeconds(?int $clubId): int
+    {
+        $hours = $this->features()->float($clubId, 'lucky_seat', 'cooldown_hours', self::COOLDOWN_SECONDS / 3600);
+
+        return max(60, (int) round($hours * 3600));
+    }
+
+    private function playtimeSeconds(?int $clubId): int
+    {
+        $hours = $this->features()->float($clubId, 'lucky_seat', 'playtime_hours', self::COOLDOWN_SECONDS / 3600);
+
+        return max(60, (int) round($hours * 3600));
+    }
+
+    private function playtimeLabel(?int $clubId): string
+    {
+        $hours = $this->features()->float($clubId, 'lucky_seat', 'playtime_hours', 3);
+        $label = fmod($hours, 1.0) < 0.05 ? (string) (int) $hours : rtrim(rtrim(number_format($hours, 1, '.', ''), '0'), '.');
+
+        return $label.' ч в клубе';
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function bonusAmounts(?int $clubId): array
+    {
+        $low = max(1, $this->features()->int($clubId, 'lucky_seat', 'bonus_low', 50));
+        $mid = max(1, $this->features()->int($clubId, 'lucky_seat', 'bonus_mid', 75));
+        $high = max(1, $this->features()->int($clubId, 'lucky_seat', 'bonus_high', 100));
+
+        return [$low, $mid, $high];
     }
 }

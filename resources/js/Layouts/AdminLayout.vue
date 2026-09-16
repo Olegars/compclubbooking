@@ -36,6 +36,8 @@ const adminName = computed(() => admin.value?.name || admin.value?.email || 'О�
 const adminRole = computed(() => admin.value?.role || null)
 const isOwner = computed(() => adminRole.value === 'owner')
 const isSupervisorPlus = computed(() => adminRole.value === 'supervisor' || adminRole.value === 'owner')
+const clubFeatures = computed(() => (page.props.club_features as Record<string, boolean> | undefined) || {})
+const featureOn = (key: string) => clubFeatures.value[key] !== false
 const canAccessClub = computed(() => Boolean(page.props.can_access_club))
 const canAccessStore = computed(() => isOwner.value || Boolean(page.props.can_access_store))
 const isSalaryOnly = computed(() => Boolean(page.props.is_salary_only))
@@ -367,12 +369,12 @@ onUnmounted(() => {
                     </button>
                     <div class="grid transition-[grid-template-rows] duration-200 ease-out" :class="isMenuOpen('esports') ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
                         <div class="overflow-hidden min-h-0 space-y-2 mt-2">
-                    <Link href="/admin/tournaments"
+                    <Link v-if="featureOn('tournaments')" href="/admin/tournaments"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/tournaments') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🏆</span> Менеджер ивентов
                     </Link>
-                    <Link href="/admin/clan-wars"
+                    <Link v-if="featureOn('clan_wars')" href="/admin/clan-wars"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/clan-wars') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>⚔</span> Clan Wars
@@ -382,7 +384,7 @@ onUnmounted(() => {
                           :class="isActive('/admin/promocodes') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🎁</span> Маркетинг
                     </Link>
-                    <Link href="/admin/achievements"
+                    <Link v-if="featureOn('achievements')" href="/admin/achievements"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/achievements') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>⭐</span> Достижения и трофеи
@@ -473,6 +475,11 @@ onUnmounted(() => {
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/system-tests') ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🧪</span> Тесты системы
+                    </Link>
+                    <Link href="/admin/config/features"
+                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
+                          :class="isActive('/admin/config/features') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                        <span>✦</span> Фичи
                     </Link>
                     <Link href="/admin/config/documents"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"

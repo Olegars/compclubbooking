@@ -61,6 +61,7 @@ use App\Http\Controllers\Admin\OverlayAdminController;
 use App\Http\Controllers\Admin\VideoSurveillanceController;
 use App\Http\Controllers\Admin\BookingSettingsController;
 use App\Http\Controllers\Admin\ClubConfigController;
+use App\Http\Controllers\Admin\ClubFeatureController;
 use App\Http\Controllers\Admin\AiAssistantSettingsController;
 use App\Http\Controllers\Admin\SystemDocsController;
 use App\Http\Controllers\Admin\SupplierController;
@@ -520,6 +521,8 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
 
         Route::get('/config', [ClubConfigController::class, 'index'])->name('admin.config');
         Route::post('/config/shifts', [ClubConfigController::class, 'updateShifts'])->name('admin.config.shifts');
+        Route::get('/config/features', [ClubFeatureController::class, 'index'])->name('admin.config.features');
+        Route::post('/config/features/{key}', [ClubFeatureController::class, 'update'])->name('admin.config.features.update');
         Route::get('/config/documents', [ClubConfigController::class, 'documents'])->name('admin.config.documents');
         Route::post('/config/documents', [ClubConfigController::class, 'saveDocument'])->name('admin.config.documents.store');
         Route::put('/config/documents/{document}', [ClubConfigController::class, 'saveDocument'])->name('admin.config.documents.update');

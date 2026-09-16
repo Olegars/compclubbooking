@@ -43,6 +43,10 @@ class PartyEnergyPoolService
         if (! $booking?->booking_group_id) {
             return $empty;
         }
+        $clubId = Computer::query()->where('id', $booking->computer_id)->value('club_id');
+        if (! app(\App\Services\ClubFeatureService::class)->enabled($clubId ? (int) $clubId : null, 'party_energy')) {
+            return $empty;
+        }
         $partyCount = Booking::query()
             ->where('booking_group_id', $booking->booking_group_id)
             ->whereIn('status', ['confirmed', 'paid', 'active'])
@@ -67,6 +71,7 @@ class PartyEnergyPoolService
 
     public function setAutoFuel(Booking $booking, User $actor, bool $on): PartyEnergyPool
     {
+        $this->assertFeature($booking);
         $pool = $this->poolFor($booking, create: true);
         if ((int) $actor->id !== (int) $pool->captain_user_id) {
             throw new RuntimeException('Котёл включает только капитан пати');
@@ -81,6 +86,7 @@ class PartyEnergyPoolService
      */
     public function contribute(Booking $booking, User $actor, int $minutes, string $source = 'deposit'): PartyEnergyPool
     {
+        $this->assertFeature($booking);
         $minutes = max(5, min(60, $minutes));
         $pool = $this->poolFor($booking, create: true);
         $this->assertPartyMember($booking, $actor);
@@ -106,8 +112,13 @@ class PartyEnergyPoolService
         if (! $booking->booking_group_id || $booking->status !== 'active') {
             return false;
         }
+        if (! $this->featureOn($booking)) {
+            return false;
+        }
         $remaining = $this->timing->remainingSeconds($booking);
-        if ($remaining > self::TRIGGER_SECONDS && $remaining > 0) {
+        $clubId = $this->clubId($booking);
+        $trigger = max(30, app(\App\Services\ClubFeatureService::class)->int($clubId, 'party_energy', 'trigger_seconds', self::TRIGGER_SECONDS));
+        if ($remaining > $trigger && $remaining > 0) {
             return false;
         }
         if ($requireMatch && ! $this->gsi->inMatch((int) $booking->computer_id)) {
@@ -118,7 +129,7 @@ class PartyEnergyPoolService
             return false;
         }
 
-        $take = min(self::SIPHON_MINUTES, (int) $pool->minutes_remaining);
+        $take = min($this->siphonMinutes($clubId), (int) $pool->minutes_remaining);
 
         return $this->applySiphon($booking, $pool, $take);
     }
@@ -131,6 +142,9 @@ class PartyEnergyPoolService
         if (! $booking->booking_group_id || $booking->status !== 'active') {
             return false;
         }
+        if (! $this->featureOn($booking)) {
+            return false;
+        }
         if (! $this->gsi->inMatch((int) $booking->computer_id)) {
             return false;
         }
@@ -138,7 +152,7 @@ class PartyEnergyPoolService
         if (! $pool || ! $pool->auto_fuel || $pool->minutes_remaining < 1) {
             return false;
         }
-        $take = min(self::SIPHON_MINUTES, (int) $pool->minutes_remaining);
+        $take = min($this->siphonMinutes($this->clubId($booking)), (int) $pool->minutes_remaining);
 
         return $this->applySiphon($booking, $pool, $take);
     }
@@ -294,5 +308,27 @@ class PartyEnergyPoolService
         if (! $ok && (int) $booking->user_id !== (int) $actor->id) {
             throw new RuntimeException('Вы не в этой пати');
         }
+    }
+
+    private function clubId(Booking $booking): ?int
+    {
+        $id = Computer::query()->where('id', $booking->computer_id)->value('club_id');
+
+        return $id ? (int) $id : null;
+    }
+
+    private function featureOn(Booking $booking): bool
+    {
+        return app(\App\Services\ClubFeatureService::class)->enabled($this->clubId($booking), 'party_energy');
+    }
+
+    private function assertFeature(Booking $booking): void
+    {
+        app(\App\Services\ClubFeatureService::class)->assertEnabled($this->clubId($booking), 'party_energy', 'Котёл пати выключен');
+    }
+
+    private function siphonMinutes(?int $clubId): int
+    {
+        return max(5, app(\App\Services\ClubFeatureService::class)->int($clubId, 'party_energy', 'siphon_minutes', self::SIPHON_MINUTES));
     }
 }
