@@ -605,7 +605,7 @@ class OwnerSystemTestService
             ->where('club_id', $club->id)
             ->whereNotNull('last_seen_at')
             ->where('last_seen_at', '>=', $cutoff)
-            ->get(['id', 'name', 'cache_ok', 'nic_link_mbps', 'nic_flap_count', 'ssd_health', 'ssd_wear_pct', 'integrity_status', 'patch_seed_port', 'patch_pull_command_id']);
+            ->get(['id', 'name', 'cache_ok', 'nic_link_mbps', 'nic_flap_count', 'ssd_health', 'ssd_wear_pct', 'integrity_status', 'patch_seed_port', 'patch_pull_command_id', 'last_crash_at', 'last_crash_reason']);
         if ($online->isEmpty()) {
             return $this->skip('Нет онлайн-станций — нечего проверять.');
         }
@@ -614,6 +614,7 @@ class OwnerSystemTestService
         $deadCache = $online->filter(fn ($pc) => $pc->cache_ok === false);
         $badSsd = $online->filter(fn ($pc) => in_array((string) $pc->ssd_health, ['warning', 'unhealthy'], true));
         $drift = $online->filter(fn ($pc) => in_array((string) $pc->integrity_status, ['drift', 'resyncing'], true));
+        $crashed = $online->filter(fn ($pc) => ! empty($pc->last_crash_at));
         $switchFaultIds = DB::table('incidents')
             ->where('type', ShellIncidentService::TYPE_HARDWARE_SWITCH)
             ->whereNull('resolved_at')
@@ -629,10 +630,14 @@ class OwnerSystemTestService
             'кэш мёртв: '.$deadCache->pluck('name')->implode(', ') ?: 'нет',
             'SMART warning/unhealthy: '.$badSsd->pluck('name')->implode(', ') ?: 'нет',
             'drift игрового диска: '.$drift->pluck('name')->implode(', ') ?: 'нет',
+            'BSOD/crash: '.$crashed->pluck('name')->implode(', ') ?: 'нет',
             'свитч/микрик: '.$switchFault->pluck('name')->implode(', ') ?: 'нет',
         ];
         if ($deadCache->isNotEmpty() || $badSsd->isNotEmpty()) {
             return $this->fail('Есть станции с мёртвым кэшем или плохим SSD.', $details);
+        }
+        if ($crashed->isNotEmpty()) {
+            return $this->warn('Есть ПК с нештатной перезагрузкой (BSOD / драйвер).', $details);
         }
         if ($flappy->isNotEmpty()) {
             return $this->warn('Есть ПК с деградацией патч-корда (flap ≥2 за смену).', $details);

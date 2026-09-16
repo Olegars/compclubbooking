@@ -1220,10 +1220,12 @@ class AdminController extends Controller
             ->map(function ($row) {
                 $createdAt = $row->created_at ? Carbon::parse($row->created_at) : now();
                 $computerId = isset($row->computer_id) ? (int) $row->computer_id : 0;
+                $clubId = null;
                 $pcName = null;
                 if ($computerId > 0) {
-                    $name = DB::table('computers')->where('id', $computerId)->value('name');
-                    $pcName = $this->pcName(is_string($name) ? $name : null, $computerId);
+                    $pc = DB::table('computers')->where('id', $computerId)->first(['name', 'club_id']);
+                    $pcName = $this->pcName($pc && is_string($pc->name) ? $pc->name : null, $computerId);
+                    $clubId = $pc && isset($pc->club_id) ? (int) $pc->club_id : null;
                 }
 
                 return [
@@ -1237,7 +1239,8 @@ class AdminController extends Controller
                     'computer_id' => $computerId > 0 ? $computerId : null,
                     'pc_name' => $pcName,
                     'can_resync' => $row->type === 'golden_image_drift' && $computerId > 0,
-                    'can_rollback' => $row->type === 'golden_image_crash' && $computerId > 0,
+                    'can_rollback' => $row->type === 'golden_image_crash' && $computerId > 0
+                        && app(\App\Services\ClubFeatureService::class)->enabled($clubId, 'rollback_markers'),
                     'created_at' => $createdAt->toIso8601String(),
                     'sort_ts' => $createdAt->getTimestamp(),
                     'resolved' => false,

@@ -47,7 +47,7 @@
                             :ry="ZONE_BADGE_RX"
                             fill="rgba(0,0,0,0.72)"
                             stroke="rgba(255,255,255,0.28)"
-                            stroke-width="0.12"
+                            stroke-width="0.08"
                         />
                         <text
                             :x="zoneBadge(r).cx"
@@ -59,7 +59,7 @@
                             :font-size="ZONE_BADGE_FONT"
                             font-weight="700"
                             font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
-                            letter-spacing="0.04em"
+                            letter-spacing="0.02em"
                             class="uppercase"
                         >{{ zoneBadge(r).title }}</text>
                         <text
@@ -73,7 +73,7 @@
                             :font-size="ZONE_BADGE_SUB_FONT"
                             font-weight="700"
                             font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
-                            letter-spacing="0.04em"
+                            letter-spacing="0.02em"
                             class="uppercase"
                         >{{ zoneBadge(r).sub }}</text>
                     </g>
@@ -319,19 +319,19 @@ const zoneTitle = (r: any) => {
     return type ? type.replace(/[-_]/g, ' ').toUpperCase() : ''
 }
 
-const ZONE_BADGE_FONT = 1.3
-const ZONE_BADGE_SUB_FONT = 1.1
-const ZONE_BADGE_INSET = 0.85
-const ZONE_BADGE_PAD_X = 0.75
-const ZONE_BADGE_PAD_Y = 0.4
-const ZONE_BADGE_RX = 0.55
-const ZONE_BADGE_CHAR_W = 0.7
+const ZONE_BADGE_FONT = 1.1
+const ZONE_BADGE_SUB_FONT = 0.95
+const ZONE_BADGE_INSET = 1.05
+const ZONE_BADGE_PAD_X = 0.42
+const ZONE_BADGE_PAD_Y = 0.24
+const ZONE_BADGE_RX = 0.38
+const ZONE_BADGE_CHAR_W = 0.62
 
 const estimateBadgeTextWidth = (text: string, fontSize: number) => {
     const t = text.trim()
     if (!t) return 0
     const letters = t.length * fontSize * ZONE_BADGE_CHAR_W
-    const tracking = Math.max(0, t.length - 1) * fontSize * 0.04
+    const tracking = Math.max(0, t.length - 1) * fontSize * 0.02
     return letters + tracking
 }
 
@@ -344,18 +344,21 @@ const zoneBadge = (r: any) => {
     const sub = extras.length ? extras.join(' ') : ''
     const titleW = estimateBadgeTextWidth(title, ZONE_BADGE_FONT)
     const subW = sub ? estimateBadgeTextWidth(sub, ZONE_BADGE_SUB_FONT) : 0
-    const w = Math.max(titleW, subW) + ZONE_BADGE_PAD_X * 2
-    const lineGap = sub ? 0.35 : 0
+    const lineGap = sub ? 0.22 : 0
     const contentH = sub
         ? ZONE_BADGE_FONT + lineGap + ZONE_BADGE_SUB_FONT
         : ZONE_BADGE_FONT
     const h = contentH + ZONE_BADGE_PAD_Y * 2
     const zw = Number(r.w) || 0
     const zh = Number(r.h) || 0
-    const insetX = Math.min(ZONE_BADGE_INSET, Math.max(0.35, zw * 0.08))
-    const insetY = Math.min(ZONE_BADGE_INSET, Math.max(0.35, zh * 0.1))
-    const x = Number(r.x) + zw - insetX - w
-    const y = Number(r.y) + insetY
+    const insetX = Math.min(ZONE_BADGE_INSET, Math.max(0.55, zw * 0.12))
+    const insetY = Math.min(ZONE_BADGE_INSET, Math.max(0.45, zh * 0.12))
+    const maxW = Math.max(zw - insetX * 2, 2.4)
+    const w = Math.min(Math.max(titleW, subW) + ZONE_BADGE_PAD_X * 2, maxW)
+    const zx = Number(r.x)
+    const zy = Number(r.y)
+    const x = Math.max(zx + insetX, zx + zw - insetX - w)
+    const y = zy + insetY
     const titleY = sub
         ? y + ZONE_BADGE_PAD_Y + ZONE_BADGE_FONT / 2
         : y + h / 2

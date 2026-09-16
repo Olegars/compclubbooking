@@ -47,6 +47,18 @@ class ClubFeaturesTest extends TestCase
         $this->assertTrue($keys->contains('lucky_seat'));
         $this->assertTrue($keys->contains('qr_login'));
         $this->assertTrue($keys->contains('clan_wars'));
+        $this->assertTrue($keys->contains('rollback_markers'));
+
+        $this->actingAs($this->supervisor(), 'admin')
+            ->get('/admin/config/features')
+            ->assertInertia(fn ($page) => $page
+                ->where('features', fn ($rows) => collect($rows)->contains(
+                    fn ($row) => ($row['key'] ?? '') === 'rollback_markers'
+                        && ($row['group'] ?? '') === 'stations'
+                        && ($row['group_title'] ?? '') === 'Станции и образ'
+                        && ($row['enabled'] ?? false) === true
+                ))
+            );
     }
 
     public function test_intern_cannot_open_features_page(): void
@@ -91,6 +103,30 @@ class ClubFeaturesTest extends TestCase
             ->assertRedirect();
 
         $this->assertSame(2, app(ClubFeatureService::class)->int($this->club->id, 'lucky_seat', 'round_streak'));
+    }
+
+    public function test_can_save_rollback_markers_from_features_page(): void
+    {
+        $admin = $this->supervisor();
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/admin/config/features')
+            ->post('/admin/config/features/rollback_markers', [
+                'enabled' => true,
+                'settings' => [
+                    'crash_ticket' => false,
+                    'auto_verify' => true,
+                    'keep' => 12,
+                ],
+            ])
+            ->assertRedirect();
+
+        $features = app(ClubFeatureService::class);
+        $this->assertTrue($features->enabled($this->club->id, 'rollback_markers'));
+        $this->assertFalse($features->bool($this->club->id, 'rollback_markers', 'crash_ticket', true));
+        $this->assertTrue($features->bool($this->club->id, 'rollback_markers', 'auto_verify', false));
+        $this->assertSame(12, $features->int($this->club->id, 'rollback_markers', 'keep'));
     }
 
     public function test_disabled_lootbox_does_not_drop(): void
@@ -163,7 +199,8 @@ class ClubFeaturesTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('features.lfg.enabled', false)
-            ->assertJsonPath('features.lucky_seat.enabled', true);
+            ->assertJsonPath('features.lucky_seat.enabled', true)
+            ->assertJsonPath('features.rollback_markers.enabled', true);
     }
 
     public function test_lfg_enqueue_rejected_when_off(): void
