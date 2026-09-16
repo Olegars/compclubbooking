@@ -32,7 +32,12 @@ const releasingPc = ref(false)
 const resettingThrone = ref(false)
 const disklessBusy = ref(false)
 const resyncBusy = ref(false)
+const rollbackBusy = ref(false)
+const verifyBusy = ref(false)
 const scDiskMode = ref('image')
+
+const clubFeatures = computed(() => (page.props.club_features as Record<string, boolean> | undefined) || {})
+const rollbackOn = computed(() => clubFeatures.value.rollback_markers !== false)
 
 const orphanFans = computed(() => fanOrphans.value.filter((f: any) => f.fan_orphan_on))
 
@@ -54,6 +59,13 @@ const isFlappyNic = (pc: any) => {
         && (pc.power_state === 'on' || pc.status === 'busy' || pc.super_client)
 }
 
+const isRecentCrash = (pc: any) => {
+    if (!pc?.last_crash_at) return false
+    const at = Date.parse(pc.last_crash_at)
+    if (!Number.isFinite(at)) return false
+    return Date.now() - at < 24 * 60 * 60 * 1000
+}
+
 const isWornSsd = (pc: any) => {
     const wear = Number(pc.ssd_wear_pct)
     const health = String(pc.ssd_health || '')
@@ -66,6 +78,7 @@ const powerTileClass = (pc: any) => {
     if (pc.patch_seed_role === 'fallback') return 'bg-sky-500/15 border-sky-500/40'
     if (pc.diskless_command) return 'bg-violet-500/10 border-violet-500/30'
     if (pc.status === 'maintenance' || pc.maintenance) return 'bg-orange-500/15 border-orange-500/40'
+    if (rollbackOn.value && isRecentCrash(pc)) return 'bg-red-500/20 border-red-400/50'
     if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'bg-fuchsia-500/15 border-fuchsia-500/40'
     if (Number(pc.ssd_temp_c) >= 80 && (pc.power_state === 'on' || pc.status === 'busy'))
@@ -107,6 +120,7 @@ const powerLabel = (pc: any) => {
     if (pc.patch_seed_role === 'fallback') return 'mirror d:'
     if (pc.diskless_command) return 'очередь sc'
     if (pc.status === 'maintenance' || pc.maintenance) return 'сервис'
+    if (rollbackOn.value && isRecentCrash(pc)) return 'bsod'
     if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'кэш'
     if (Number(pc.ssd_temp_c) >= 80 && (pc.power_state === 'on' || pc.status === 'busy'))
@@ -183,6 +197,19 @@ const refreshStatuses = async () => {
                 patch_pull_message: updated.patch_pull_message,
                 patch_ingest_result: updated.patch_ingest_result,
                 patch_ingest_message: updated.patch_ingest_message,
+                golden_revision_id: updated.golden_revision_id,
+                rollback_command: updated.rollback_command,
+                rollback_result: updated.rollback_result,
+                rollback_message: updated.rollback_message,
+                last_crash_at: updated.last_crash_at,
+                last_crash_reason: updated.last_crash_reason,
+                last_crash_detail: updated.last_crash_detail,
+                verified_revision_id: updated.verified_revision_id,
+                verified_revision_hash: updated.verified_revision_hash,
+                verified_revision_at: updated.verified_revision_at,
+                pending_revision_id: updated.pending_revision_id,
+                pending_revision_changed: updated.pending_revision_changed,
+                can_rollback: updated.can_rollback,
             }
         })
 
@@ -325,6 +352,51 @@ const enqueueResync = async () => {
         error(e?.response?.data?.message || 'Не удалось поставить re-sync')
     } finally {
         resyncBusy.value = false
+    }
+}
+
+const enqueueRollback = async () => {
+    const pc = selectedPc.value
+    if (!pc || rollbackBusy.value || !rollbackOn.value) return
+    if (!confirm(`${pc.name}: откатить манифесты Steam/Epic и конфиги на проверенную ревизию? Super Client не включается.`)) {
+        return
+    }
+    rollbackBusy.value = true
+    try {
+        const { data } = await axios.post('/admin/api/computers/rollback', {
+            computer_id: pc.id,
+        })
+        success(data?.message || 'Откат поставлен в очередь')
+        await refreshStatuses()
+        const updated = localComputers.value.find((p: any) => Number(p.id) === Number(pc.id))
+        if (updated) selectedPc.value = updated
+    } catch (e: any) {
+        error(e?.response?.data?.message || e?.response?.data?.errors?.feature?.[0] || 'Не удалось поставить откат')
+    } finally {
+        rollbackBusy.value = false
+    }
+}
+
+const verifyRevision = async () => {
+    const pc = selectedPc.value
+    if (!pc || verifyBusy.value || !rollbackOn.value) return
+    if (!confirm('Подтвердить текущую ревизию золотого образа? Откат BSOD будет идти на неё.')) {
+        return
+    }
+    verifyBusy.value = true
+    try {
+        const { data } = await axios.post('/admin/api/golden-image/verify', {
+            computer_id: pc.id,
+            revision_id: pc.pending_revision_id || undefined,
+        })
+        success(data?.message || 'Ревизия подтверждена')
+        await refreshStatuses()
+        const updated = localComputers.value.find((p: any) => Number(p.id) === Number(pc.id))
+        if (updated) selectedPc.value = updated
+    } catch (e: any) {
+        error(e?.response?.data?.message || 'Не удалось подтвердить ревизию')
+    } finally {
+        verifyBusy.value = false
     }
 }
 
@@ -530,6 +602,7 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Сессия</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-orange-400"></span> Обслуживание</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-violet-400"></span> Super Client</span>
+                        <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red-400"></span> BSOD / драйвер</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-fuchsia-400"></span> Кэш SSD мёртв</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red-400"></span> SSD перегрев</span>
                         <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-yellow-400"></span> Линк ≤100 Мбит</span>
@@ -583,6 +656,13 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                                 <span v-if="selectedPc.gpu_mode === 'idle'" class="text-emerald-400"> · eco {{ selectedPc.gpu_power_limit_w || 45 }}Вт</span>
                                 <span v-if="selectedPc.integrity_status === 'drift'" class="text-amber-400"> · drift D:</span>
                                 <span v-if="selectedPc.integrity_status === 'resyncing'" class="text-cyan-400"> · re-sync…</span>
+                                <span v-if="rollbackOn && selectedPc.verified_revision_hash" class="text-emerald-400/80">
+                                    · rev {{ selectedPc.verified_revision_hash }}
+                                </span>
+                                <span v-if="rollbackOn && selectedPc.pending_revision_id" class="text-amber-300"> · pending save</span>
+                                <span v-if="rollbackOn && selectedPc.last_crash_reason" class="text-red-400">
+                                    · {{ selectedPc.last_crash_reason }}
+                                </span>
                             </div>
                             <div v-if="selectedPc.integrity_message"
                                  class="text-[10px] text-amber-300/80 mt-2 font-mono">
@@ -605,11 +685,15 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                                 {{ selectedPc.resync_result ? (' · ' + selectedPc.resync_result) : '' }}
                                 {{ selectedPc.resync_message ? (' · ' + selectedPc.resync_message) : '' }}
                             </div>
-                            <div v-if="selectedPc.diskless_command || selectedPc.diskless_result || selectedPc.diskless_message"
-                                 class="text-[10px] text-violet-300/80 mt-2 font-mono">
-                                {{ selectedPc.diskless_command ? ('очередь: ' + selectedPc.diskless_command) : '' }}
-                                {{ selectedPc.diskless_result ? (' · ' + selectedPc.diskless_result) : '' }}
-                                {{ selectedPc.diskless_message ? (' · ' + selectedPc.diskless_message) : '' }}
+                            <div v-if="rollbackOn && (selectedPc.rollback_command || selectedPc.rollback_result || selectedPc.rollback_message)"
+                                 class="text-[10px] text-rose-300/80 mt-2 font-mono">
+                                {{ selectedPc.rollback_command ? ('rollback: ' + selectedPc.rollback_command) : '' }}
+                                {{ selectedPc.rollback_result ? (' · ' + selectedPc.rollback_result) : '' }}
+                                {{ selectedPc.rollback_message ? (' · ' + selectedPc.rollback_message) : '' }}
+                            </div>
+                            <div v-if="rollbackOn && selectedPc.last_crash_detail"
+                                 class="text-[10px] text-red-300/80 mt-2 font-mono">
+                                crash {{ selectedPc.last_crash_reason || '' }} · {{ selectedPc.last_crash_detail }}
                             </div>
                         </div>
                         <div class="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -639,6 +723,22 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                                 :disabled="resyncBusy"
                                 class="shrink-0 px-5 py-3 bg-cyan-500/20 hover:bg-cyan-400 disabled:opacity-40 text-cyan-200 hover:text-black font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
                                 Re-sync D:
+                            </button>
+                            <button
+                                v-if="rollbackOn && selectedPc.pending_revision_id"
+                                type="button"
+                                @click="verifyRevision"
+                                :disabled="verifyBusy"
+                                class="shrink-0 px-5 py-3 bg-emerald-500/20 hover:bg-emerald-400 disabled:opacity-40 text-emerald-200 hover:text-black font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
+                                Проверена
+                            </button>
+                            <button
+                                v-if="rollbackOn"
+                                type="button"
+                                @click="enqueueRollback"
+                                :disabled="rollbackBusy || !selectedPc.can_rollback"
+                                class="shrink-0 px-5 py-3 bg-rose-500/20 hover:bg-rose-400 disabled:opacity-40 text-rose-200 hover:text-black font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
+                                Откатить образ
                             </button>
                         </div>
                         <div v-if="isOwner" class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-white/5">

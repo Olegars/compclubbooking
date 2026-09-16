@@ -177,6 +177,12 @@ const formatDate = (dateStr: string) => {
                                             class="p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-2xl text-[10px] font-black uppercase tracking-widest text-cyan-300 hover:bg-cyan-500 hover:text-black hover:border-cyan-500 transition-all active:scale-95 disabled:opacity-30">
                                         Re-sync D:
                                     </button>
+                                    <button v-if="canResolve && incident.can_rollback"
+                                            @click="enqueueRollback(incident)"
+                                            :disabled="rollbackBusy"
+                                            class="p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-[10px] font-black uppercase tracking-widest text-rose-300 hover:bg-rose-500 hover:text-black hover:border-rose-500 transition-all active:scale-95 disabled:opacity-30">
+                                        Откатить образ
+                                    </button>
                                     <button v-if="canResolve"
                                             @click="resolveTarget = incident"
                                             :disabled="isProcessing"

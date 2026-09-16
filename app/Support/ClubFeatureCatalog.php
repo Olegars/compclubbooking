@@ -9,6 +9,8 @@ class ClubFeatureCatalog
 {
     public const GROUP_SHELL = 'shell';
 
+    public const GROUP_STATIONS = 'stations';
+
     public const GROUP_ESPORTS = 'esports';
 
     public const GROUP_MARKETING = 'marketing';
@@ -130,6 +132,19 @@ class ClubFeatureCatalog
                 ],
             ],
             [
+                'key' => 'rollback_markers',
+                'title' => 'Rollback Markers',
+                'description' => 'При сохранении Super Client архивирует хэши манифестов Steam/Epic и конфигов. После BSOD или сбоя драйвера админ откатывает станцию на проверенную ревизию в один клик.',
+                'group' => self::GROUP_STATIONS,
+                'icon' => '↩',
+                'admin_path' => '/admin/dashboard',
+                'fields' => [
+                    self::boolField('crash_ticket', 'Тикет при BSOD / сбое драйвера', true, 'Нештатная перезагрузка пишет инцидент и кнопку отката на дашборде.'),
+                    self::boolField('auto_verify', 'Автоподтверждение ревизии', false, 'Если выкл — техник жмёт «Проверена» после проверки второго ПК. Первая ревизия клуба всегда verified.'),
+                    self::intField('keep', 'Сколько ревизий хранить', 24, 4, 60, 1, '', 'Старые pending/superseded чистятся. Проверенная не удаляется.'),
+                ],
+            ],
+            [
                 'key' => 'clan_wars',
                 'title' => 'Clan Wars',
                 'description' => 'Счёт CS2/Dota между зонами зала или локациями сети. Сайдбар Киберспорт → Clan Wars.',
@@ -168,6 +183,7 @@ class ClubFeatureCatalog
     {
         return [
             self::GROUP_SHELL => 'Шелл и зал',
+            self::GROUP_STATIONS => 'Станции и образ',
             self::GROUP_ESPORTS => 'Киберспорт',
             self::GROUP_MARKETING => 'Маркетинг',
         ];

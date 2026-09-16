@@ -20,6 +20,8 @@ Route::prefix('shell')->group(function () {
     Route::post('/hid/alert', [ShellApiController::class, 'reportHidAlert']);
     Route::post('/sos', [ShellApiController::class, 'reportSos']);
     Route::post('/incidents', [ShellApiController::class, 'reportIncident']);
+    Route::post('/golden-image/revision', [ShellApiController::class, 'postGoldenRevision']);
+    Route::get('/golden-image/revisions/{id}', [ShellApiController::class, 'goldenRevision']);
     Route::post('/thermal', [ShellApiController::class, 'reportThermal']);
     Route::post('/fan', [ShellApiController::class, 'controlFan']);
     Route::post('/fan/applied', [ShellApiController::class, 'acknowledgeFanApplied']);

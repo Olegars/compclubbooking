@@ -414,6 +414,8 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
                 ->middleware('role:owner');
             Route::post('/computers/diskless', [AdminController::class, 'enqueueDisklessCommand']);
             Route::post('/computers/resync', [AdminController::class, 'enqueueImageResync']);
+            Route::post('/computers/rollback', [AdminController::class, 'enqueueImageRollback']);
+            Route::post('/golden-image/verify', [AdminController::class, 'verifyGoldenRevision']);
             Route::get('/check-orders', [AdminController::class, 'checkNewOrders']);
             Route::get('/sos-alerts', [AdminController::class, 'sosAlerts']);
             Route::post('/sos-alerts/{id}/ack', [AdminController::class, 'ackSosAlert']);
@@ -786,6 +788,8 @@ Route::prefix('api/shell')->group(function () {
     // --- SOS вызов администратора с причиной ---
     Route::post('/sos', [ShellApiController::class, 'reportSos']);
     Route::post('/incidents', [ShellApiController::class, 'reportIncident']);
+    Route::post('/golden-image/revision', [ShellApiController::class, 'postGoldenRevision']);
+    Route::get('/golden-image/revisions/{id}', [ShellApiController::class, 'goldenRevision']);
 
     // --- Вентиляция комнаты (Space): Shell только события ---
     Route::post('/thermal', [ShellApiController::class, 'reportThermal']);

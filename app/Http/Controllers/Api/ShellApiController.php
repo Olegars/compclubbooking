@@ -949,6 +949,100 @@ class ShellApiController extends Controller
     }
 
     /**
+     * Снимок манифестов/конфигов после сохранения Super Client.
+     */
+    public function postGoldenRevision(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'nullable|integer',
+            'hwid' => 'nullable|string',
+            'disk_mode' => 'nullable|string|in:image,disk,both',
+            'note' => 'nullable|string|max:240',
+            'aggregate_hash' => 'nullable|string|max:64',
+            'inventory_hash' => 'nullable|string|max:64',
+            'steam_count' => 'nullable|integer|min:0|max:5000',
+            'epic_count' => 'nullable|integer|min:0|max:5000',
+            'files' => 'required|array|min:1|max:280',
+            'files.*.rel' => 'required|string|max:260',
+            'files.*.sha256' => 'required|string|max:64',
+            'files.*.kind' => 'nullable|string|max:32',
+            'files.*.body' => 'nullable|string|max:24576',
+        ]);
+
+        $computer = $this->resolveShellComputer($request);
+        if (! $computer) {
+            return response()->json(['status' => 'error', 'message' => 'Терминал не найден'], 404);
+        }
+
+        try {
+            $stored = app(\App\Services\GoldenImageRevisionService::class)->ingest(
+                $computer,
+                $request->only([
+                    'disk_mode', 'note', 'aggregate_hash', 'inventory_hash',
+                    'steam_count', 'epic_count', 'files',
+                ]),
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'revision_id' => $stored['id'],
+                'created' => $stored['created'],
+                'revision_status' => $stored['status'],
+                'changed_count' => $stored['changed_count'],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            Log::error('Shell API postGoldenRevision: '.$e->getMessage());
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function goldenRevision(Request $request, int $id)
+    {
+        $request->validate([
+            'terminal_id' => 'nullable|integer',
+            'hwid' => 'nullable|string',
+        ]);
+
+        $computer = $this->resolveShellComputer($request);
+        if (! $computer) {
+            return response()->json(['status' => 'error', 'message' => 'Терминал не найден'], 404);
+        }
+
+        $revision = \App\Models\GoldenImageRevision::query()->find($id);
+        if (! $revision) {
+            return response()->json(['status' => 'error', 'message' => 'Ревизия не найдена'], 404);
+        }
+        if ($computer->club_id && $revision->club_id && (int) $computer->club_id !== (int) $revision->club_id) {
+            return response()->json(['status' => 'error', 'message' => 'Ревизия из другой локации'], 403);
+        }
+
+        return response()->json(array_merge(
+            ['status' => 'success'],
+            app(\App\Services\GoldenImageRevisionService::class)->payloadFor($revision),
+        ));
+    }
+
+    private function resolveShellComputer(Request $request): ?Computer
+    {
+        $computer = null;
+        if ($request->filled('computer_id')) {
+            $computer = Computer::find((int) $request->computer_id);
+        }
+        if (! $computer && $request->filled('terminal_id')) {
+            $computer = Computer::find((int) $request->terminal_id);
+        }
+        $hwid = strtolower(trim((string) $request->input('hwid', '')));
+        if (! $computer && $hwid !== '') {
+            $computer = $this->findComputerByHwid($hwid);
+        }
+
+        return $computer;
+    }
+
+    /**
      * Shell reports CPU temperature; backend stores thermal facts for the room.
      * Physical relay control is done by the shell on LAN (NetMod / W5100).
      */
@@ -2887,6 +2981,12 @@ class ShellApiController extends Controller
                 'resync_ack_id' => 'nullable|integer|min:1',
                 'resync_result' => 'nullable|string|max:32',
                 'resync_message' => 'nullable|string|max:240',
+                'rollback_ack_id' => 'nullable|integer|min:1',
+                'rollback_result' => 'nullable|string|max:32',
+                'rollback_message' => 'nullable|string|max:240',
+                'crash_detected' => 'nullable|boolean',
+                'crash_reason' => 'nullable|string|in:bsod,driver,unexpected',
+                'crash_detail' => 'nullable|string|max:240',
                 'lan_ip' => 'nullable|ip',
                 'patch_seed_port' => 'nullable|integer|min:0|max:65535',
                 'nic_flap_events' => 'nullable|integer|min:0|max:50',
@@ -2955,6 +3055,12 @@ class ShellApiController extends Controller
                     'resync_ack_id' => $request->input('resync_ack_id'),
                     'resync_result' => $request->input('resync_result'),
                     'resync_message' => $request->input('resync_message'),
+                    'rollback_ack_id' => $request->input('rollback_ack_id'),
+                    'rollback_result' => $request->input('rollback_result'),
+                    'rollback_message' => $request->input('rollback_message'),
+                    'crash_detected' => $request->has('crash_detected') ? $request->boolean('crash_detected') : null,
+                    'crash_reason' => $request->input('crash_reason'),
+                    'crash_detail' => $request->input('crash_detail'),
                     'lan_ip' => $request->input('lan_ip'),
                     'patch_seed_port' => $request->input('patch_seed_port'),
                     'nic_flap_events' => $request->input('nic_flap_events'),

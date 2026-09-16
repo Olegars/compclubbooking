@@ -41,6 +41,7 @@ class AdminController extends Controller
 
         $computers = app(\App\Services\ComputerPowerService::class)->statusSnapshot((int) $clubId);
         $computers = app(PcThroneService::class)->decorateComputers($computers);
+        $computers = app(\App\Services\GoldenImageRevisionService::class)->decorateSnapshot($computers);
         $fanOrphans = app(\App\Services\Fan\FanControlService::class)->orphanSnapshot((int) $clubId);
 
         return Inertia::render('Admin/Dashboard', [
@@ -906,6 +907,7 @@ class AdminController extends Controller
     {
         $computers = app(\App\Services\ComputerPowerService::class)->statusSnapshot();
         $computers = app(PcThroneService::class)->decorateComputers($computers);
+        $computers = app(\App\Services\GoldenImageRevisionService::class)->decorateSnapshot($computers);
         $fanOrphans = app(\App\Services\Fan\FanControlService::class)->orphanSnapshot();
 
         return response()->json([
@@ -1044,6 +1046,76 @@ class AdminController extends Controller
         ]);
     }
 
+    /**
+     * Откат манифестов/конфигов на проверенную ревизию золотого образа.
+     */
+    public function enqueueImageRollback(Request $request, \App\Services\GoldenImageRevisionService $markers)
+    {
+        $data = $request->validate([
+            'computer_id' => 'required|integer|exists:computers,id',
+            'revision_id' => 'nullable|integer|min:1',
+        ]);
+
+        $admin = Auth::guard('admin')->user();
+        $computer = Computer::query()->findOrFail((int) $data['computer_id']);
+        $clubId = AdminLocation::id($admin);
+        if ($clubId && $computer->club_id && (int) $computer->club_id !== (int) $clubId) {
+            abort(403, 'Этот ПК в другой локации.');
+        }
+
+        $queued = $markers->enqueueRollback(
+            $computer,
+            isset($data['revision_id']) ? (int) $data['revision_id'] : null,
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'command_id' => $queued['command_id'],
+            'action' => $queued['action'],
+            'revision_id' => $queued['revision_id'],
+            'message' => 'Откат на проверенную ревизию поставлен в очередь — шелл заберёт на следующем heartbeat.',
+        ]);
+    }
+
+    public function verifyGoldenRevision(Request $request, \App\Services\GoldenImageRevisionService $markers)
+    {
+        $data = $request->validate([
+            'revision_id' => 'nullable|integer|min:1',
+            'computer_id' => 'nullable|integer|exists:computers,id',
+        ]);
+
+        $admin = Auth::guard('admin')->user();
+        $clubId = AdminLocation::id($admin);
+        $revision = null;
+        if (! empty($data['revision_id'])) {
+            $revision = \App\Models\GoldenImageRevision::query()->findOrFail((int) $data['revision_id']);
+        } elseif (! empty($data['computer_id'])) {
+            $computer = Computer::query()->findOrFail((int) $data['computer_id']);
+            if ($clubId && $computer->club_id && (int) $computer->club_id !== (int) $clubId) {
+                abort(403, 'Этот ПК в другой локации.');
+            }
+            $revision = $markers->latestForClub($computer->club_id);
+        }
+
+        if (! $revision) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Нет ревизии для подтверждения.',
+            ], 422);
+        }
+        if ($clubId && $revision->club_id && (int) $revision->club_id !== (int) $clubId) {
+            abort(403, 'Ревизия из другой локации.');
+        }
+
+        $revision = $markers->verify($revision, $admin?->id);
+
+        return response()->json([
+            'status' => 'success',
+            'revision_id' => $revision->id,
+            'message' => 'Ревизия золотого образа подтверждена.',
+        ]);
+    }
+
     public function checkNewOrders()
     {
         // Считаем только те, что еще не приняты (статус pending)
@@ -1165,6 +1237,7 @@ class AdminController extends Controller
                     'computer_id' => $computerId > 0 ? $computerId : null,
                     'pc_name' => $pcName,
                     'can_resync' => $row->type === 'golden_image_drift' && $computerId > 0,
+                    'can_rollback' => $row->type === 'golden_image_crash' && $computerId > 0,
                     'created_at' => $createdAt->toIso8601String(),
                     'sort_ts' => $createdAt->getTimestamp(),
                     'resolved' => false,
@@ -1421,6 +1494,7 @@ class AdminController extends Controller
             'nic_link_flap' => 'Деградация патч-корда',
             'hardware_switch_fault' => 'Неисправность свитча/микрика',
             'hardware_abuse' => 'Удар по столу / Rage-Smash',
+            'golden_image_crash' => 'Синий экран / сбой драйвера',
             default => 'Нарушение протокола',
         };
     }

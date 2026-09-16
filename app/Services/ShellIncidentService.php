@@ -23,12 +23,15 @@ class ShellIncidentService
 
     public const TYPE_HARDWARE_ABUSE = 'hardware_abuse';
 
+    public const TYPE_GOLDEN_CRASH = 'golden_image_crash';
+
     public const TYPES = [
         self::TYPE_FAN_BEARING,
         self::TYPE_GOLDEN_IMAGE,
         self::TYPE_NIC_LINK_FLAP,
         self::TYPE_HARDWARE_SWITCH,
         self::TYPE_HARDWARE_ABUSE,
+        self::TYPE_GOLDEN_CRASH,
     ];
 
     /**
@@ -124,6 +127,7 @@ class ShellIncidentService
             self::TYPE_NIC_LINK_FLAP => "Заменить патч-корд на {$pc}",
             self::TYPE_HARDWARE_SWITCH => "Проверить свитч/микрик на {$pc}",
             self::TYPE_HARDWARE_ABUSE => "Удар по столу на {$pc}",
+            self::TYPE_GOLDEN_CRASH => "Синий экран или сбой драйвера на {$pc} — откатить образ на проверенную ревизию",
             default => "Инцидент на {$pc}",
         };
     }

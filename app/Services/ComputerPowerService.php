@@ -222,6 +222,12 @@ class ComputerPowerService
      *     resync_ack_id?: int|string|null,
      *     resync_result?: string|null,
      *     resync_message?: string|null,
+     *     rollback_ack_id?: int|string|null,
+     *     rollback_result?: string|null,
+     *     rollback_message?: string|null,
+     *     crash_detected?: bool|null,
+     *     crash_reason?: string|null,
+     *     crash_detail?: string|null,
      *     lan_ip?: string|null,
      *     patch_seed_port?: int|string|null,
      *     nic_flap_events?: int|string|null,
@@ -242,6 +248,7 @@ class ComputerPowerService
      *     cache_ok: bool|null,
      *     diskless: array{command_id: int, action: string, disk_mode: string}|null,
      *     resync: array{command_id: int, action: string}|null,
+     *     rollback: array{command_id: int, action: string, revision_id: int}|null,
      *     patch_seed: array{enabled: bool, port: int, role: string}|null,
      *     patch_pull: array{command_id: int, apps: list<array<string, mixed>>}|null,
      *     patch_ingest: array{enabled: bool}|null,
@@ -277,6 +284,34 @@ class ComputerPowerService
                 isset($extras['resync_message']) ? (string) $extras['resync_message'] : null,
             );
             $computer->refresh();
+        }
+
+        $rollback = app(GoldenImageRevisionService::class);
+        $rollbackAckId = isset($extras['rollback_ack_id']) ? (int) $extras['rollback_ack_id'] : 0;
+        if ($rollbackAckId > 0) {
+            $rollback->ack(
+                $computer,
+                $rollbackAckId,
+                isset($extras['rollback_result']) ? (string) $extras['rollback_result'] : null,
+                isset($extras['rollback_message']) ? (string) $extras['rollback_message'] : null,
+            );
+            $computer->refresh();
+        }
+
+        if (filter_var($extras['crash_detected'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            try {
+                $rollback->noteCrash(
+                    $computer,
+                    isset($extras['crash_reason']) ? (string) $extras['crash_reason'] : 'unexpected',
+                    isset($extras['crash_detail']) ? (string) $extras['crash_detail'] : null,
+                );
+                $computer->refresh();
+            } catch (\Throwable $e) {
+                Log::warning('Golden image crash ingest failed', [
+                    'computer_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         if (! empty($extras['games_inventory']) && is_array($extras['games_inventory'])) {
@@ -358,9 +393,10 @@ class ComputerPowerService
         $sessionActive = $this->hasActiveSession($id);
         $pendingDiskless = $diskless->pendingFor($computer);
         $pendingResync = $resync->pendingFor($computer);
+        $pendingRollback = $rollback->pendingFor($computer);
         $action = 'none';
         if (! $inMaintenance && ! $sessionActive && $pendingDiskless === null
-            && $pendingResync === null && ! $computer->super_client
+            && $pendingResync === null && $pendingRollback === null && ! $computer->super_client
             && $patchPull === null && ! $keepPatchPower) {
             $action = $this->actionForDesired($desired);
         }
@@ -374,6 +410,7 @@ class ComputerPowerService
             'cache_ok' => $computer->cache_ok,
             'diskless' => $pendingDiskless,
             'resync' => $pendingResync,
+            'rollback' => $pendingRollback,
             'patch_seed' => $patchSeed,
             'patch_pull' => $patchPull,
             'patch_ingest' => $patchIngest,
@@ -454,7 +491,7 @@ class ComputerPowerService
         }
         if ($computer && ($computer->isInMaintenance($now) || $computer->super_client
             || $computer->diskless_command || $computer->resync_command
-            || $computer->patch_pull_command_id || $keepPatch)) {
+            || $computer->rollback_command || $computer->patch_pull_command_id || $keepPatch)) {
             return 'none';
         }
 
@@ -485,6 +522,9 @@ class ComputerPowerService
                        integrity_status, integrity_hash, integrity_message,
                        gpu_power_limit_w, gpu_mode,
                        resync_command, resync_command_id, resync_result, resync_message,
+                       golden_revision_id, rollback_command, rollback_command_id, rollback_revision_id,
+                       rollback_result, rollback_message,
+                       last_crash_at, last_crash_reason, last_crash_detail,
                        lan_ip, patch_seed_port, patch_seed_role,
                        patch_pull_command_id, patch_pull_result, patch_pull_message,
                        patch_ingest_result, patch_ingest_message,

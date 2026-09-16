@@ -25,6 +25,10 @@ class Computer extends Model
         'gpu_power_limit_w', 'gpu_mode',
         'resync_command', 'resync_command_id', 'resync_command_at',
         'resync_result', 'resync_message',
+        'golden_revision_id',
+        'rollback_command', 'rollback_command_id', 'rollback_revision_id',
+        'rollback_command_at', 'rollback_result', 'rollback_message',
+        'last_crash_at', 'last_crash_reason', 'last_crash_detail',
         'patch_pull_command_id', 'patch_pull_command_at', 'patch_pull_payload',
         'patch_pull_result', 'patch_pull_message',
         'patch_ingest_at', 'patch_ingest_result', 'patch_ingest_message',
@@ -58,6 +62,11 @@ class Computer extends Model
         'gpu_power_limit_w' => 'integer',
         'resync_command_id' => 'integer',
         'resync_command_at' => 'immutable_datetime',
+        'golden_revision_id' => 'integer',
+        'rollback_command_id' => 'integer',
+        'rollback_revision_id' => 'integer',
+        'rollback_command_at' => 'immutable_datetime',
+        'last_crash_at' => 'immutable_datetime',
         'patch_pull_command_id' => 'integer',
         'patch_pull_command_at' => 'immutable_datetime',
         'patch_pull_payload' => 'array',
@@ -111,6 +120,11 @@ class Computer extends Model
     public function installedGames(): HasMany
     {
         return $this->hasMany(ComputerGame::class);
+    }
+
+    public function goldenRevisions(): HasMany
+    {
+        return $this->hasMany(GoldenImageRevision::class);
     }
 
     public function inputDevice()
