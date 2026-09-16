@@ -24,6 +24,7 @@ class Space extends Model
         'w',
         'h',
         'rotate',
+        'points',
         'surcharge_per_hour',
         'cpu',
         'gpu',
@@ -40,6 +41,7 @@ class Space extends Model
         'w' => 'float',
         'h' => 'float',
         'rotate' => 'float',
+        'points' => 'array',
         'surcharge_per_hour' => 'decimal:2',
         'sort' => 'integer',
     ];
@@ -161,6 +163,20 @@ class Space extends Model
 
     public function containsPoint(float $x, float $y): bool
     {
+        $points = is_array($this->points) ? $this->points : [];
+        $poly = [];
+        foreach ($points as $p) {
+            if (! is_array($p)) {
+                continue;
+            }
+            $px = (float) ($p['x'] ?? 0);
+            $py = (float) ($p['y'] ?? 0);
+            $poly[] = [$px, $py];
+        }
+        if (count($poly) >= 3) {
+            return self::pointInPolygon($poly, $x, $y);
+        }
+
         if ($this->w <= 0 || $this->h <= 0) {
             return false;
         }
@@ -182,5 +198,26 @@ class Space extends Model
             && $px <= $this->x + $this->w
             && $py >= $this->y
             && $py <= $this->y + $this->h;
+    }
+
+    /**
+     * @param  list<array{0:float,1:float}>  $poly
+     */
+    private static function pointInPolygon(array $poly, float $x, float $y): bool
+    {
+        $inside = false;
+        $n = count($poly);
+        for ($i = 0, $j = $n - 1; $i < $n; $j = $i++) {
+            [$xi, $yi] = $poly[$i];
+            [$xj, $yj] = $poly[$j];
+            $dy = ($yj - $yi) ?: 1e-12;
+            $intersect = (($yi > $y) !== ($yj > $y))
+                && ($x < ($xj - $xi) * ($y - $yi) / $dy + $xi);
+            if ($intersect) {
+                $inside = ! $inside;
+            }
+        }
+
+        return $inside;
     }
 }

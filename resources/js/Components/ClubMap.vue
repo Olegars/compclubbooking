@@ -28,14 +28,13 @@
             </g>
 
             <g v-if="drawableZones.length" class="zones-layer">
-                <g v-for="(r, i) in drawableZones" :key="'zr-'+i" :transform="zoneSvgTransform(r)">
-                    <rect
-                        :x="Number(r.x)" :y="Number(r.y)" :width="Number(r.w)" :height="Number(r.h)"
+                <g v-for="(r, i) in drawableZones" :key="'zr-'+i">
+                    <polygon
+                        :points="zoneSvgPoints(r)"
                         :fill="r.c || '#22c55e'"
                         :fill-opacity="r.c === '#4d4d4d' ? 1 : 0.25"
                         :stroke="r.c || '#22c55e'"
                         stroke-width="0.15"
-                        rx="0"
                     />
                     <g v-if="zoneBadge(r)" class="pointer-events-none">
                         <rect
@@ -189,7 +188,6 @@
 import { computed } from 'vue'
 import {
     INFO_MARKER_R,
-    infoMarkerCenter,
     isTvZone,
     resolveInfoEdge,
     type RoomInfoFields,
@@ -197,7 +195,8 @@ import {
 import {
     localToWorld,
     pointInZone,
-    zoneSvgTransform,
+    zoneEdgeMidpoint,
+    zoneSvgPoints,
     zoneWorldCorners,
 } from '@/utils/zoneGeom'
 
@@ -258,14 +257,13 @@ const roomInfoMarkers = computed(() => {
         const others = zones.filter((_: any, j: number) => j !== i)
         const override = r.info_edge || r.info?.info_edge || null
         const edge = resolveInfoEdge(r, others, override)
-        const local = infoMarkerCenter(r, edge)
-        const world = localToWorld(r, local.cx, local.cy)
+        const { cx, cy } = zoneEdgeMidpoint(r, edge)
         const title = zoneTitle(r) || 'Комната'
         const kind: 'pc' | 'tv' = (r.info_kind === 'tv' || isTvZone(r)) ? 'tv' : 'pc'
         return {
             key: `${i}-${edge}`,
-            cx: world.x,
-            cy: world.y,
+            cx,
+            cy,
             payload: {
                 title,
                 color: String(r.c || '#22c55e'),

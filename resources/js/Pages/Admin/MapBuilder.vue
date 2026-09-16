@@ -5,18 +5,20 @@ import AdminLayout from '@/Layouts/AdminLayout.vue'
 import {
     INFO_MARKER_R,
     emptyRoomInfo,
-    infoMarkerCenter,
     isTvZone,
     normalizeRoomInfo,
     resolveInfoEdge,
 } from '@/utils/roomInfoEdge'
 import {
-    localToWorld,
+    ensureZonePoints,
     pointInZone,
-    worldToLocal,
+    rotateZonePoints,
+    syncZoneBounds,
     zoneCenter,
+    zoneEdgeMidpoint,
+    zonePoints,
     zoneRotate,
-    zoneSvgTransform,
+    zoneSvgPoints,
 } from '@/utils/zoneGeom'
 
 // --- ПРОПСЫ ---
@@ -57,12 +59,12 @@ const isDragging = ref(false)
 const dragTarget = ref<any>(null)
 const zoneDrag = ref<{
     zone: any
-    kind: 'move' | 'resize' | 'rotate'
-    handle?: string
+    kind: 'move' | 'vertex' | 'rotate'
+    vertexIndex?: number
     startX: number
     startY: number
     startAngle?: number
-    orig: { x: number; y: number; w: number; h: number; rotate: number }
+    orig: { x: number; y: number; w: number; h: number; rotate: number; points: { x: number; y: number }[] }
 } | null>(null)
 /** Перетаскивание маркера optional-допа: { zone, addonId } */
 const dragAddon = ref<{ zone: any; addonId: number } | null>(null)
@@ -325,14 +327,33 @@ const applyWallMagnet = (x: number, y: number) => {
     return { x: freeRound(x), y: freeRound(y) }
 }
 
-const getSVGPoint = (evt: MouseEvent) => {
+const getRawSVGPoint = (evt: MouseEvent) => {
     if (!svgRef.value) return { x: 0, y: 0 }
     const pt = svgRef.value.createSVGPoint()
     pt.x = evt.clientX
     pt.y = evt.clientY
     const cursorPt = pt.matrixTransform(svgRef.value.getScreenCTM()!.inverse())
-    let x = cursorPt.x
-    let y = cursorPt.y
+    return { x: cursorPt.x, y: cursorPt.y }
+}
+
+const getSVGPoint = (evt: MouseEvent) => {
+    if (!svgRef.value) return { x: 0, y: 0 }
+    const raw = getRawSVGPoint(evt)
+    let x = raw.x
+    let y = raw.y
+
+    if (mode.value === 'zones' && zoneDrag.value?.kind === 'rotate') {
+        return raw
+    }
+
+    if (mode.value === 'zones' && zoneDrag.value?.kind === 'vertex') {
+        const last = zoneDrag.value.orig.points[zoneDrag.value.vertexIndex ?? 0]
+        if (evt.shiftKey && last) {
+            const c = constrainToOctant(last, { x, y })
+            return applyWallMagnet(c.x, c.y)
+        }
+        return applyWallMagnet(x, y)
+    }
 
     if (mode.value === 'walls') {
         const drag = wallVertexDrag.value
@@ -384,51 +405,25 @@ const wallDraftPoints = computed(() => {
     return currentPoints.value
 })
 
-const zoneResizeHandles = (z: any) => {
-    const x = safeNum(z.x)
-    const y = safeNum(z.y)
-    const w = safeNum(z.w)
-    const h = safeNum(z.h)
-    return [
-        { id: 'nw', x, y, cursor: 'nwse-resize' },
-        { id: 'ne', x: x + w, y, cursor: 'nesw-resize' },
-        { id: 'se', x: x + w, y: y + h, cursor: 'nwse-resize' },
-        { id: 'sw', x, y: y + h, cursor: 'nesw-resize' },
-    ]
+const zoneVertexHandles = (z: any) =>
+    zonePoints(z).map((p, i) => ({ id: i, x: p.x, y: p.y, cursor: 'move' }))
+
+const zoneRotateHandle = (z: any) => {
+    const pts = zonePoints(z)
+    const { cx } = zoneCenter(z)
+    const top = pts.length ? Math.min(...pts.map(p => p.y)) : safeNum(z.y)
+    return { x: cx, y: top - 2.4, fromY: top }
 }
 
-const zoneRotateHandle = (z: any) => ({
-    x: safeNum(z.x) + safeNum(z.w) / 2,
-    y: safeNum(z.y) - 2.4,
-})
-
-const zoneOrig = (zone: any) => ({
-    x: safeNum(zone.x),
-    y: safeNum(zone.y),
-    w: safeNum(zone.w),
-    h: safeNum(zone.h),
-    rotate: zoneRotate(zone),
-})
-
-const oppositeLocalCorner = (orig: { x: number; y: number; w: number; h: number }, handle: string) => ({
-    x: handle.includes('e') ? orig.x : orig.x + orig.w,
-    y: handle.includes('s') ? orig.y : orig.y + orig.h,
-})
-
-const applyZoneResize = (orig: { x: number; y: number; w: number; h: number }, handle: string, pt: { x: number; y: number }) => {
-    let x1 = orig.x
-    let y1 = orig.y
-    let x2 = orig.x + orig.w
-    let y2 = orig.y + orig.h
-    if (handle.includes('w')) x1 = pt.x
-    if (handle.includes('e')) x2 = pt.x
-    if (handle.includes('n')) y1 = pt.y
-    if (handle.includes('s')) y2 = pt.y
+const zoneOrig = (zone: any) => {
+    ensureZonePoints(zone)
     return {
-        x: Math.min(x1, x2),
-        y: Math.min(y1, y2),
-        w: Math.max(0.5, Math.abs(x2 - x1)),
-        h: Math.max(0.5, Math.abs(y2 - y1)),
+        x: safeNum(zone.x),
+        y: safeNum(zone.y),
+        w: safeNum(zone.w),
+        h: safeNum(zone.h),
+        rotate: zoneRotate(zone),
+        points: zonePoints(zone).map(p => ({ x: p.x, y: p.y })),
     }
 }
 
@@ -443,10 +438,11 @@ const startZoneMove = (e: MouseEvent, zone: any) => {
     }
 }
 
-const startZoneResize = (e: MouseEvent, zone: any, handle: string) => {
+const startZoneVertexDrag = (e: MouseEvent, zone: any, index: number) => {
     e.stopPropagation()
     e.preventDefault()
     ensureZoneInfo(zone)
+    ensureZonePoints(zone)
     selectedZone.value = zone
     selectedPc.value = null
     selectedLabel.value = null
@@ -454,8 +450,8 @@ const startZoneResize = (e: MouseEvent, zone: any, handle: string) => {
     const pt = getSVGPoint(e)
     zoneDrag.value = {
         zone,
-        kind: 'resize',
-        handle,
+        kind: 'vertex',
+        vertexIndex: index,
         startX: pt.x,
         startY: pt.y,
         orig: zoneOrig(zone),
@@ -466,11 +462,12 @@ const startZoneRotate = (e: MouseEvent, zone: any) => {
     e.stopPropagation()
     e.preventDefault()
     ensureZoneInfo(zone)
+    ensureZonePoints(zone)
     selectedZone.value = zone
     selectedPc.value = null
     selectedLabel.value = null
     selectedAddon.value = null
-    const pt = getSVGPoint(e)
+    const pt = getRawSVGPoint(e)
     const { cx, cy } = zoneCenter(zone)
     zoneDrag.value = {
         zone,
@@ -618,10 +615,12 @@ const zoneOptionalAddonBadges = (zone: any) =>
     zoneAddonBadges(zone).filter((a: any) => a.billing_mode === 'optional')
 
 const defaultOptionalAddonSpot = (zone: any, index: number) => {
+    ensureZonePoints(zone)
     const pad = 0.6
-    const x = safeNum(zone.x) + safeNum(zone.w) - 6 - pad
-    const y = safeNum(zone.y) + Math.max(pad, (safeNum(zone.h) - 4.5) / 2) + index * 5
-    return localToWorld(zone, x, y)
+    return {
+        x: safeNum(zone.x) + safeNum(zone.w) - 6 - pad,
+        y: safeNum(zone.y) + Math.max(pad, (safeNum(zone.h) - 4.5) / 2) + index * 5,
+    }
 }
 
 const zoneOptionalAddonSpot = (zone: any, badge: any, index: number) => {
@@ -669,8 +668,13 @@ const applyNudgeCoord = (value: number, delta: number) =>
 
 const nudgeSelectedMarker = (dx: number, dy: number) => {
     if (selectedZone.value && mode.value === 'zones') {
-        selectedZone.value.x = applyNudgeCoord(selectedZone.value.x, dx)
-        selectedZone.value.y = applyNudgeCoord(selectedZone.value.y, dy)
+        ensureZonePoints(selectedZone.value)
+        selectedZone.value.points = zonePoints(selectedZone.value).map(p => ({
+            x: applyNudgeCoord(p.x, dx),
+            y: applyNudgeCoord(p.y, dy),
+        }))
+        selectedZone.value.rotate = 0
+        syncZoneBounds(selectedZone.value)
         return true
     }
     if (selectedPc.value) {
@@ -783,6 +787,7 @@ const zoneAutoTitle = (zone: any) =>
 
 const ensureZoneInfo = (zone: any) => {
     zone.info = normalizeRoomInfo(zone.info)
+    ensureZonePoints(zone)
     return zone.info
 }
 
@@ -794,9 +799,8 @@ const zoneInfoEdge = (zone: any, index: number) => {
 const roomInfoMarkers = computed(() =>
     zones.value.map((z, i) => {
         const edge = zoneInfoEdge(z, i)
-        const local = infoMarkerCenter(z, edge)
-        const world = localToWorld(z, local.cx, local.cy)
-        return { key: `info-${i}`, zone: z, cx: world.x, cy: world.y, edge }
+        const { cx, cy } = zoneEdgeMidpoint(z, edge)
+        return { key: `info-${i}`, zone: z, cx, cy, edge }
     })
 )
 
@@ -848,8 +852,6 @@ const eraseAddonAtPoint = (x: number, y: number): boolean => {
     // Сначала пробуем снять доп с зоны (не удаляя саму комнату / стены).
     for (let zi = zones.value.length - 1; zi >= 0; zi--) {
         const z = zones.value[zi]
-        const local = worldToLocal(z, x, y)
-
         const optionals = zoneOptionalAddonBadges(z)
         for (let bi = optionals.length - 1; bi >= 0; bi--) {
             const spot = zoneOptionalAddonSpot(z, optionals[bi], bi)
@@ -870,10 +872,10 @@ const eraseAddonAtPoint = (x: number, y: number): boolean => {
             const badge = zoneBadgeMeta(z)
             if (
                 badge
-                && local.x >= badge.x - 0.3
-                && local.x <= badge.x + badge.w + 0.3
-                && local.y >= badge.y - 0.3
-                && local.y <= badge.y + badge.h + 0.3
+                && x >= badge.x - 0.3
+                && x <= badge.x + badge.w + 0.3
+                && y >= badge.y - 0.3
+                && y <= badge.y + badge.h + 0.3
             ) {
                 const alwaysIds = new Set(always.map((a: any) => a.id))
                 z.addon_ids = (z.addon_ids || []).filter((id: number) => !alwaysIds.has(id))
@@ -1040,28 +1042,28 @@ const handleMouseMove = (e: MouseEvent) => {
         }
     }
     if (zoneDrag.value) {
-        const { zone, kind, orig, startX, startY, handle, startAngle } = zoneDrag.value
+        const { zone, kind, orig, startX, startY, startAngle, vertexIndex } = zoneDrag.value
         if (kind === 'move') {
-            zone.x = orig.x + (pt.x - startX)
-            zone.y = orig.y + (pt.y - startY)
+            const dx = pt.x - startX
+            const dy = pt.y - startY
+            zone.points = orig.points.map(p => ({ x: p.x + dx, y: p.y + dy }))
+            zone.rotate = 0
+            syncZoneBounds(zone)
         } else if (kind === 'rotate') {
-            const { cx, cy } = zoneCenter(orig)
-            const ang = Math.atan2(pt.y - cy, pt.x - cx)
-            let next = orig.rotate + (ang - (startAngle || 0)) * 180 / Math.PI
-            if (e.shiftKey) next = Math.round(next / 15) * 15
-            zone.rotate = Math.round(next * 10) / 10
-        } else if (handle) {
-            const localPt = worldToLocal(orig, pt.x, pt.y)
-            const next = applyZoneResize(orig, handle, localPt)
-            const anchor = oppositeLocalCorner(orig, handle)
-            const anchorWorld = localToWorld(orig, anchor.x, anchor.y)
-            const nextAnchor = oppositeLocalCorner(next, handle)
-            const nextWorld = localToWorld({ ...next, rotate: orig.rotate }, nextAnchor.x, nextAnchor.y)
-            zone.x = next.x + (anchorWorld.x - nextWorld.x)
-            zone.y = next.y + (anchorWorld.y - nextWorld.y)
-            zone.w = next.w
-            zone.h = next.h
-            zone.rotate = orig.rotate
+            const raw = getRawSVGPoint(e)
+            const { cx, cy } = zoneCenter({ points: orig.points, x: orig.x, y: orig.y, w: orig.w, h: orig.h })
+            const ang = Math.atan2(raw.y - cy, raw.x - cx)
+            let deg = (ang - (startAngle || 0)) * 180 / Math.PI
+            if (e.shiftKey) deg = Math.round(deg / 15) * 15
+            zone.points = rotateZonePoints(orig.points, cx, cy, deg)
+            zone.rotate = 0
+            syncZoneBounds(zone)
+        } else if (kind === 'vertex' && vertexIndex != null) {
+            const next = orig.points.map(p => ({ ...p }))
+            next[vertexIndex] = { x: pt.x, y: pt.y }
+            zone.points = next
+            zone.rotate = 0
+            syncZoneBounds(zone)
         }
         return
     }
@@ -1121,6 +1123,7 @@ const handleMouseUp = () => {
         })
         selectedZone.value = zones.value[zones.value.length - 1]
         ensureZoneInfo(selectedZone.value)
+        ensureZonePoints(selectedZone.value)
     }
     if (dragTarget.value && (dragTarget.value.kind === 'tv' || dragTarget.value.kind === 'ps5')) {
         dragTarget.value.booth_id = boothIdForPoint(
@@ -1236,8 +1239,10 @@ const loadFromDB = async () => {
                         : {},
                     info: normalizeRoomInfo(z.info),
                     rotate: Number(z.rotate) || 0,
+                    points: Array.isArray(z.points) ? z.points : undefined,
                 }
-            }).filter(z => safeNum(z.w) >= 0.5 && safeNum(z.h) >= 0.5);
+            }).filter(z => safeNum(z.w) >= 0.5 && safeNum(z.h) >= 0.5)
+            zones.value.forEach(ensureZonePoints)
             labels.value = cleanArray(rawConfig.labels).filter(keepManualLabel);
             if (rawConfig.viewbox) viewbox.value = rawConfig.viewbox;
         }
@@ -1273,16 +1278,20 @@ const saveToDB = async () => {
                 walls: walls.value,
                 zoneRects: zones.value
                     .filter(z => safeNum(z.w) >= 0.5 && safeNum(z.h) >= 0.5)
-                    .map(z => ({
-                    x: z.x, y: z.y, w: z.w, h: z.h, c: z.c,
-                    rotate: zoneRotate(z),
+                    .map(z => {
+                    const synced = syncZoneBounds({ ...z, points: zonePoints(z) })
+                    return {
+                    x: synced.x, y: synced.y, w: synced.w, h: synced.h, c: z.c,
+                    rotate: 0,
+                    points: synced.points,
                     type: normalizeZoneType(z.type) || z.type,
                     addon_ids: Array.isArray(z.addon_ids) ? z.addon_ids : [],
                     addon_positions: (z.addon_positions && typeof z.addon_positions === 'object')
                         ? z.addon_positions
                         : {},
                     info: normalizeRoomInfo(z.info),
-                })),
+                    }
+                    }),
                 labels: labels.value.filter(keepManualLabel),
                 viewbox: viewbox.value,
             },
@@ -1381,7 +1390,7 @@ onUnmounted(() => {
                                  :style="{ backgroundColor: currentZoneColor, boxShadow: `0 0 10px ${currentZoneColor}66` }"
                                  :title="selectedTopologyZone ? `${selectedTopologyZone.name} (${selectedTopologyZone.slug})` : ''"></div>
                             <span class="text-[11px] text-white/40 hidden xl:inline">
-                                {{ selectedTopologyZone?.slug }} · линия — сдвиг · углы — размер
+                                {{ selectedTopologyZone?.slug }} · линия — сдвиг · угол — скос
                             </span>
                         </template>
                         <span v-else class="text-xs text-amber-400/90 font-semibold">
@@ -1521,29 +1530,28 @@ onUnmounted(() => {
                             <g v-for="(z, i) in zones" :key="'z'+i"
                                :class="isLayerInteractive('zone') ? '' : 'pointer-events-none'"
                                @mousedown.stop="isLayerInteractive('zone') && handleItemMouseDown($event, z, 'zone')">
-                                <g :transform="zoneSvgTransform(z)">
-                                <rect :x="safeNum(z.x)" :y="safeNum(z.y)" :width="safeNum(z.w)" :height="safeNum(z.h)"
+                                <polygon :points="zoneSvgPoints(z)"
                                       :fill="z.c || '#22c55e'" :fill-opacity="z.c === '#4d4d4d' ? 0.8 : 0.2"
                                       :stroke="selectedZone === z ? '#fff' : (mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId) ? '#fff' : (z.c || '#22c55e'))"
                                       :stroke-width="selectedZone === z || (mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId)) ? 0.35 : 0.15"
                                       :class="['transition-opacity', isLayerInteractive('zone') ? (selectedZone === z ? 'cursor-move' : 'hover:fill-opacity-50 cursor-pointer') : '']" />
-                                <rect v-if="mode === 'zones'"
-                                      :x="safeNum(z.x)" :y="safeNum(z.y)" :width="safeNum(z.w)" :height="safeNum(z.h)"
+                                <polygon v-if="mode === 'zones'"
+                                      :points="zoneSvgPoints(z)"
                                       fill="none" stroke="transparent" stroke-width="1.4"
                                       pointer-events="stroke" class="cursor-move" />
                                 <g v-if="mode === 'zones' && selectedZone === z">
-                                    <line :x1="safeNum(z.x) + safeNum(z.w) / 2" :y1="safeNum(z.y)"
+                                    <line :x1="zoneRotateHandle(z).x" :y1="zoneRotateHandle(z).fromY"
                                           :x2="zoneRotateHandle(z).x" :y2="zoneRotateHandle(z).y"
                                           stroke="#fff" stroke-width="0.12" class="pointer-events-none" />
                                     <circle :cx="zoneRotateHandle(z).x" :cy="zoneRotateHandle(z).y" r="0.55"
                                             fill="#06b6d4" stroke="#fff" stroke-width="0.12"
                                             class="cursor-grab"
                                             @mousedown.stop="startZoneRotate($event, z)" />
-                                    <rect v-for="h in zoneResizeHandles(z)" :key="'zh'+h.id"
+                                    <rect v-for="h in zoneVertexHandles(z)" :key="'zh'+h.id"
                                           :x="h.x - 0.45" :y="h.y - 0.45" width="0.9" height="0.9"
                                           fill="#fff" stroke="#06b6d4" stroke-width="0.12"
-                                          :style="{ cursor: h.cursor }"
-                                          @mousedown.stop="startZoneResize($event, z, h.id)" />
+                                          class="cursor-move"
+                                          @mousedown.stop="startZoneVertexDrag($event, z, h.id)" />
                                 </g>
                                 <g v-if="zoneBadgeMeta(z)" class="pointer-events-none">
                                     <rect
@@ -1584,7 +1592,6 @@ onUnmounted(() => {
                                         letter-spacing="0.04em"
                                         class="uppercase"
                                     >{{ zoneBadgeMeta(z).sub }}</text>
-                                </g>
                                 </g>
                                 <g v-for="(badge, bi) in zoneOptionalAddonBadges(z)" :key="'op'+i+'-'+badge.id"
                                    :class="mode === 'erase' ? 'pointer-events-none' : 'cursor-move pointer-events-auto'"
@@ -1741,11 +1748,6 @@ onUnmounted(() => {
                                 <input v-model.number="selectedZone.h" type="number" step="0.1" min="0.5"
                                        class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-mono" />
                             </div>
-                            <div class="col-span-2">
-                                <label class="text-[11px] text-white/50 block mb-1.5 font-semibold">Угол °</label>
-                                <input v-model.number="selectedZone.rotate" type="number" step="1"
-                                       class="w-full bg-black border border-white/10 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-cyan-500 font-mono" />
-                            </div>
                         </div>
 
                         <template v-if="isTvZone(selectedZone)">
@@ -1793,7 +1795,7 @@ onUnmounted(() => {
                                 class="text-[10px] font-black tracking-widest uppercase bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white py-2.5 rounded-xl transition-colors border border-red-500/20">
                             Удалить зону
                         </button>
-                        <p class="text-[9px] opacity-40 italic">Линия — сдвиг, углы — размер, кружок сверху — поворот (Shift — 15°). Сохраняется с картой.</p>
+                        <p class="text-[9px] opacity-40 italic">Линия — сдвиг. Угол комнаты тяни — получится скос, как трапеция. Кружок сверху — поворот. Shift — 0°/45°/90°.</p>
                     </div>
 
                     <div v-if="selectedPc" class="p-4 bg-cyan-500/5 border border-cyan-500/20 rounded-2xl animate-in zoom-in duration-200 flex flex-col gap-3">
