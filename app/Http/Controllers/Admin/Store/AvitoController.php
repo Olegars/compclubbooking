@@ -14,6 +14,8 @@ use App\Services\StoreAvito\StoreAvitoGenerateLauncher;
 use App\Services\StoreAvito\StoreAvitoMessengerService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\ValidationException;
@@ -30,6 +32,11 @@ class AvitoController extends StoreController
         $folder = $request->string('folder')->toString();
         if (! in_array($folder, StoreAvitoChat::FOLDERS, true)) {
             $folder = StoreAvitoChat::WORKFLOW_INBOX;
+        }
+
+        $messenger = app(StoreAvitoMessengerService::class);
+        if ($tab === 'chats' && $settings->hasMessenger()) {
+            $this->pullAvitoChats($messenger, false);
         }
 
         $adsQuery = StoreAvitoAd::query()->orderByDesc('id');
@@ -61,7 +68,6 @@ class AvitoController extends StoreController
                 ?? StoreAvitoChat::query()->with('acceptedBy:id,name')->where('chat_id', $chatId)->first()
             : $chats->first();
 
-        $messenger = app(StoreAvitoMessengerService::class);
         if ($activeChat && $tab === 'chats') {
             $messenger->ensureChatProfile($activeChat);
             $activeChat->refresh();
@@ -405,10 +411,48 @@ class AvitoController extends StoreController
     {
         abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
 
-        $url = URL::to('/api/store/avito/webhook');
+        $url = StoreAvitoMessengerService::incomingWebhookUrl();
         $messenger->registerWebhook($url);
+        $subs = collect($messenger->subscriptions())->pluck('url')->filter()->implode(', ');
 
-        return back()->with('success', 'Webhook Avito зарегистрирован: '.$url);
+        return back()->with('success', 'Webhook Avito зарегистрирован: '.$url.($subs !== '' ? ' (подписки: '.$subs.')' : ''));
+    }
+
+    public function syncChats(StoreAvitoMessengerService $messenger)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+
+        try {
+            $count = $this->pullAvitoChats($messenger, true);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Avito: '.$e->getMessage());
+        }
+
+        return back()->with('success', 'Подтянуто чатов из Avito: '.$count);
+    }
+
+    private function pullAvitoChats(StoreAvitoMessengerService $messenger, bool $force): int
+    {
+        if (! $force && ! Cache::add('avito_chats_sync', 1, 20)) {
+            return 0;
+        }
+        try {
+            try {
+                $messenger->ensureWebhookRegistered();
+            } catch (\Throwable $e) {
+                Log::warning('Avito ensure webhook: '.$e->getMessage());
+            }
+
+            return $messenger->syncChats(50);
+        } catch (\Throwable $e) {
+            Cache::forget('avito_chats_sync');
+            Log::warning('Avito chats sync: '.$e->getMessage());
+            if ($force) {
+                throw $e;
+            }
+
+            return 0;
+        }
     }
 
     /**
@@ -439,6 +483,7 @@ class AvitoController extends StoreController
             'auto_reply_text' => $settings->auto_reply_text,
             'ringtone_url' => $settings->ringtoneUrl(),
             'has_custom_ringtone' => filled($settings->ringtone_path),
+            'webhook_url' => StoreAvitoMessengerService::incomingWebhookUrl(),
             'last_generated_at' => $settings->last_generated_at?->toIso8601String(),
             'last_generate_result' => $settings->last_generate_result,
             'last_error' => $settings->last_error,

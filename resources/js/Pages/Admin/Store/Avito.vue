@@ -457,6 +457,7 @@ const sendBom = () => {
 }
 
 const connectWebhook = () => router.post('/admin/store/avito/webhook', {}, { preserveScroll: true })
+const syncChats = () => router.post('/admin/store/avito/chats/sync', {}, { preserveScroll: true })
 
 const ringtoneInput = ref<HTMLInputElement | null>(null)
 const uploadingRingtone = ref(false)
@@ -661,7 +662,7 @@ const initials = (name?: string | null) => {
             </div>
 
             <div v-if="tab === 'chats'" class="space-y-4">
-                <div class="flex flex-wrap gap-2">
+                <div class="flex flex-wrap gap-2 items-center">
                     <button v-for="f in folders" :key="f.id"
                             class="px-4 py-2 rounded-xl text-[10px] uppercase font-black relative"
                             :class="folder === f.id ? 'bg-amber-500 text-black' : 'border border-white/10 text-white/50'"
@@ -670,6 +671,7 @@ const initials = (name?: string | null) => {
                         <span v-if="chatCounts[f.id] > 0"
                               class="ml-2 text-[9px] opacity-70">{{ chatCounts[f.id] }}</span>
                     </button>
+                    <button v-if="canManage" type="button" class="ml-auto px-4 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400" @click="syncChats">Подтянуть из Avito</button>
                 </div>
                 <div class="grid lg:grid-cols-[320px_1fr] gap-4 min-h-[520px]">
                     <div class="border border-white/5 rounded-2xl overflow-hidden bg-[#080808]">
@@ -870,6 +872,8 @@ const initials = (name?: string | null) => {
                     <label class="text-[10px] uppercase tracking-widest text-white/40">Avito user id
                         <input v-model="settingsForm.avito_user_id" class="mt-2 w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" />
                     </label>
+                    <p class="text-[11px] text-white/35 leading-relaxed break-all">Входящий webhook: {{ settings.webhook_url }}</p>
+                    <button type="button" class="px-4 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400" @click="connectWebhook">Зарегистрировать webhook</button>
                     <label class="flex items-center gap-3 text-sm">
                         <input v-model="settingsForm.auto_reply_enabled" type="checkbox" class="accent-amber-500" />
                         Ночной автоответ
@@ -895,7 +899,6 @@ const initials = (name?: string | null) => {
                             <span class="text-[11px] text-white/35">{{ settings.has_custom_ringtone ? 'свой файл' : 'стандартный звук' }}</span>
                         </div>
                     </div>
-                    <button type="button" class="px-4 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400" @click="connectWebhook">Зарегистрировать webhook</button>
                 </div>
 
                 <div v-if="settings.last_error" class="text-red-400 text-sm">{{ settings.last_error }}</div>

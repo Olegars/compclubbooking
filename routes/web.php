@@ -483,6 +483,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
             Route::delete('/avito/configs/{storeAvitoConfig}', [StoreAvitoController::class, 'destroyConfig'])->name('admin.store.avito.configs.destroy');
             Route::post('/avito/webhook', [StoreAvitoController::class, 'connectWebhook'])->name('admin.store.avito.webhook.connect');
             Route::post('/avito/ads/{storeAvitoAd}', [StoreAvitoController::class, 'updateAd'])->name('admin.store.avito.ads.update');
+            Route::post('/avito/chats/sync', [StoreAvitoController::class, 'syncChats'])->name('admin.store.avito.chats.sync');
             Route::post('/avito/chats/send', [StoreAvitoController::class, 'sendMessage'])->name('admin.store.avito.chats.send');
             Route::post('/avito/chats/image', [StoreAvitoController::class, 'sendImage'])->name('admin.store.avito.chats.image');
             Route::post('/avito/chats/bom', [StoreAvitoController::class, 'sendBom'])->name('admin.store.avito.chats.bom');

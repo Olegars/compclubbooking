@@ -20,10 +20,42 @@ class StoreAvitoMessengerService
     /**
      * @param  array<string, mixed>  $payload
      */
+    public static function incomingWebhookUrl(): string
+    {
+        $root = rtrim((string) config('app.url'), '/');
+        if (str_starts_with($root, 'http://') && ! str_contains($root, 'localhost')) {
+            $root = 'https://'.substr($root, 7);
+        }
+
+        return $root.'/api/store/avito/webhook';
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>|null
+     */
+    public function webhookMessage(array $payload): ?array
+    {
+        foreach ([
+            data_get($payload, 'payload.value'),
+            data_get($payload, 'value'),
+            $payload,
+        ] as $value) {
+            if (is_array($value) && filled($value['chat_id'] ?? null)) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
     public function handleWebhook(array $payload): void
     {
-        $value = data_get($payload, 'payload.value', data_get($payload, 'value', $payload));
-        if (! is_array($value) || empty($value['chat_id'])) {
+        $value = $this->webhookMessage($payload);
+        if ($value === null) {
             return;
         }
 
@@ -47,7 +79,6 @@ class StoreAvitoMessengerService
                 'workflow' => StoreAvitoChat::WORKFLOW_INBOX,
                 'last_message_at' => now(),
             ]);
-            $this->hydrateChat($chat, $settings);
         } else {
             $updates = [
                 'unread' => $fromUs ? $chat->unread : true,
@@ -60,9 +91,6 @@ class StoreAvitoMessengerService
                 $updates['done_at'] = null;
             }
             $chat->forceFill($updates)->save();
-            if (! filled($chat->client_avatar) || ! filled($chat->client_name)) {
-                $this->hydrateChat($chat, $settings);
-            }
         }
 
         $text = (string) data_get($value, 'content.text', '');
@@ -81,6 +109,10 @@ class StoreAvitoMessengerService
             'read' => $fromUs,
             'avito_created_at' => isset($value['created']) ? Carbon::createFromTimestamp((int) $value['created']) : now(),
         ]);
+
+        if ($isNew || ! filled($chat->client_avatar) || ! filled($chat->client_name)) {
+            $this->hydrateChat($chat, $settings);
+        }
 
         if ($fromUs) {
             return;
@@ -368,8 +400,9 @@ class StoreAvitoMessengerService
         ]);
     }
 
-    public function registerWebhook(string $url): void
+    public function registerWebhook(?string $url = null): void
     {
+        $url = $url ?: self::incomingWebhookUrl();
         $settings = StoreAvitoSetting::current();
         $token = $this->accessToken($settings);
         $response = Http::timeout(20)
@@ -381,6 +414,98 @@ class StoreAvitoMessengerService
         if (! $response->successful()) {
             throw new \RuntimeException('Avito webhook: HTTP '.$response->status().' '.$response->body());
         }
+        Log::info('Avito webhook registered', ['url' => $url, 'body' => $response->json()]);
+    }
+
+    /**
+     * @return list<array{url: string, version: string}>
+     */
+    public function subscriptions(): array
+    {
+        $settings = StoreAvitoSetting::current();
+        if (! $settings->hasMessenger()) {
+            return [];
+        }
+        $token = $this->accessToken($settings);
+        $response = Http::timeout(20)
+            ->withToken($token)
+            ->acceptJson()
+            ->post('https://api.avito.ru/messenger/v1/subscriptions');
+        if (! $response->successful()) {
+            Log::warning('Avito subscriptions: HTTP '.$response->status().' '.$response->body());
+
+            return [];
+        }
+        $rows = $response->json('subscriptions');
+        if (! is_array($rows)) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            if (! is_array($row) || empty($row['url'])) {
+                continue;
+            }
+            $out[] = [
+                'url' => (string) $row['url'],
+                'version' => (string) ($row['version'] ?? ''),
+            ];
+        }
+
+        return $out;
+    }
+
+    public function ensureWebhookRegistered(): string
+    {
+        $want = self::incomingWebhookUrl();
+        foreach ($this->subscriptions() as $sub) {
+            if ($this->sameWebhookUrl($sub['url'], $want)) {
+                return $want;
+            }
+        }
+        $this->registerWebhook($want);
+
+        return $want;
+    }
+
+    public function syncChats(int $limit = 50): int
+    {
+        $settings = StoreAvitoSetting::current();
+        if (! $settings->hasMessenger()) {
+            return 0;
+        }
+        $token = $this->accessToken($settings);
+        $userId = (int) $settings->avito_user_id;
+        $response = Http::timeout(25)
+            ->withToken($token)
+            ->acceptJson()
+            ->get("https://api.avito.ru/messenger/v2/accounts/{$userId}/chats", [
+                'limit' => max(1, min(100, $limit)),
+                'offset' => 0,
+            ]);
+        if (! $response->successful()) {
+            throw new \RuntimeException('Avito chats: HTTP '.$response->status().' '.$response->body());
+        }
+        $rows = $response->json('chats');
+        if (! is_array($rows)) {
+            $rows = is_array($response->json()) && array_is_list($response->json()) ? $response->json() : [];
+        }
+        $count = 0;
+        foreach ($rows as $row) {
+            if (! is_array($row) || empty($row['id'])) {
+                continue;
+            }
+            $this->upsertChatFromAvito($row, $settings);
+            $count++;
+        }
+
+        return $count;
+    }
+
+    private function sameWebhookUrl(string $left, string $right): bool
+    {
+        $norm = static fn (string $url) => rtrim(strtolower($url), '/');
+
+        return $norm($left) === $norm($right);
     }
 
     public function accessToken(?StoreAvitoSetting $settings = null, bool $force = false): string
@@ -500,7 +625,7 @@ class StoreAvitoMessengerService
         return $hour >= $from || $hour < $to;
     }
 
-    private function hydrateChat(StoreAvitoChat $chat, StoreAvitoSetting $settings): void
+    public function hydrateChat(StoreAvitoChat $chat, StoreAvitoSetting $settings): void
     {
         if (! $settings->hasMessenger()) {
             return;
@@ -508,7 +633,7 @@ class StoreAvitoMessengerService
         try {
             $token = $this->accessToken($settings);
             $userId = (int) $settings->avito_user_id;
-            $response = Http::timeout(20)
+            $response = Http::timeout(15)
                 ->withToken($token)
                 ->acceptJson()
                 ->get("https://api.avito.ru/messenger/v2/accounts/{$userId}/chats/{$chat->chat_id}");
@@ -516,38 +641,105 @@ class StoreAvitoMessengerService
                 return;
             }
             $info = $response->json();
-            $users = data_get($info, 'users', []);
-            $client = [];
-            if (is_array($users)) {
-                foreach ($users as $user) {
-                    if (! is_array($user)) {
-                        continue;
-                    }
-                    if ((int) ($user['id'] ?? 0) !== $userId) {
-                        $client = $user;
-                        break;
-                    }
-                }
-                if ($client === [] && isset($users[0]) && is_array($users[0])) {
-                    $client = $users[0];
-                }
+            if (is_array($info)) {
+                $this->fillChatFromInfo($chat, $info, $userId);
             }
-            $title = (string) data_get($info, 'context.value.title', '');
-            $price = preg_replace('/[^\d]/', '', (string) data_get($info, 'context.value.price_string', '')) ?: null;
-            $chat->forceFill([
-                'client_name' => $client['name'] ?? $chat->client_name,
-                'client_id' => $client['id'] ?? $chat->client_id,
-                'client_link' => data_get($client, 'public_user_profile.url') ?: $chat->client_link,
-                'client_avatar' => $this->clientAvatar($client) ?: $chat->client_avatar,
-                'ad_url' => data_get($info, 'context.value.url') ?: $chat->ad_url,
-                'ad_id' => data_get($info, 'context.value.id') ?: $chat->ad_id,
-                'ad_title' => $title !== '' ? $title : $chat->ad_title,
-                'ad_price' => $price ? (int) $price : $chat->ad_price,
-                'config_id' => $chat->config_id ?: $this->extractConfigId($title),
-            ])->save();
         } catch (\Throwable $e) {
             Log::warning('Avito hydrate chat: '.$e->getMessage());
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $info
+     */
+    private function upsertChatFromAvito(array $info, StoreAvitoSetting $settings): StoreAvitoChat
+    {
+        $chatId = (string) $info['id'];
+        $last = is_array($info['last_message'] ?? null) ? $info['last_message'] : [];
+        $fromUs = ($last['direction'] ?? '') === 'out';
+        $lastAt = isset($last['created'])
+            ? Carbon::createFromTimestamp((int) $last['created'])
+            : (isset($info['updated']) ? Carbon::createFromTimestamp((int) $info['updated']) : now());
+        $lastId = isset($last['id']) ? (string) $last['id'] : null;
+        $incomingNew = ! $fromUs && $lastId && ! StoreAvitoMessage::query()->where('avito_message_id', $lastId)->exists();
+        $chat = StoreAvitoChat::query()->where('chat_id', $chatId)->first();
+        if (! $chat) {
+            $chat = StoreAvitoChat::query()->create([
+                'chat_id' => $chatId,
+                'avito_user_id' => $settings->avito_user_id,
+                'unread' => ! $fromUs,
+                'workflow' => StoreAvitoChat::WORKFLOW_INBOX,
+                'last_message_at' => $lastAt,
+            ]);
+        } else {
+            $updates = [];
+            if (! $chat->last_message_at || $lastAt->greaterThan($chat->last_message_at)) {
+                $updates['last_message_at'] = $lastAt;
+            }
+            if ($incomingNew) {
+                $updates['unread'] = true;
+                if ($chat->workflow === StoreAvitoChat::WORKFLOW_DONE) {
+                    $updates['workflow'] = $chat->accepted_by_id
+                        ? StoreAvitoChat::WORKFLOW_IN_PROGRESS
+                        : StoreAvitoChat::WORKFLOW_INBOX;
+                    $updates['done_at'] = null;
+                }
+            }
+            if ($updates !== []) {
+                $chat->forceFill($updates)->save();
+            }
+        }
+        $this->fillChatFromInfo($chat, $info, (int) $settings->avito_user_id);
+        if ($lastId && ! StoreAvitoMessage::query()->where('avito_message_id', $lastId)->exists()) {
+            StoreAvitoMessage::query()->create([
+                'chat_id' => $chatId,
+                'avito_message_id' => $lastId,
+                'author_id' => isset($last['author_id']) ? (int) $last['author_id'] : null,
+                'type' => (string) ($last['type'] ?? 'text'),
+                'content' => is_array($last['content'] ?? null) ? $last['content'] : [],
+                'from_us' => $fromUs,
+                'read' => $fromUs,
+                'avito_created_at' => $lastAt,
+            ]);
+        }
+
+        return $chat;
+    }
+
+    /**
+     * @param  array<string, mixed>  $info
+     */
+    private function fillChatFromInfo(StoreAvitoChat $chat, array $info, int $userId): void
+    {
+        $users = data_get($info, 'users', []);
+        $client = [];
+        if (is_array($users)) {
+            foreach ($users as $user) {
+                if (! is_array($user)) {
+                    continue;
+                }
+                if ((int) ($user['id'] ?? 0) !== $userId) {
+                    $client = $user;
+                    break;
+                }
+            }
+            if ($client === [] && isset($users[0]) && is_array($users[0])) {
+                $client = $users[0];
+            }
+        }
+        $title = (string) data_get($info, 'context.value.title', '');
+        $price = preg_replace('/[^\d]/', '', (string) data_get($info, 'context.value.price_string', '')) ?: null;
+        $chat->forceFill([
+            'client_name' => $client['name'] ?? $chat->client_name,
+            'client_id' => $client['id'] ?? $chat->client_id,
+            'client_link' => data_get($client, 'public_user_profile.url') ?: $chat->client_link,
+            'client_avatar' => $this->clientAvatar($client) ?: $chat->client_avatar,
+            'ad_url' => data_get($info, 'context.value.url') ?: $chat->ad_url,
+            'ad_id' => data_get($info, 'context.value.id') ?: $chat->ad_id,
+            'ad_title' => $title !== '' ? $title : $chat->ad_title,
+            'ad_price' => $price ? (int) $price : $chat->ad_price,
+            'config_id' => $chat->config_id ?: $this->extractConfigId($title),
+        ])->save();
     }
 
     /**

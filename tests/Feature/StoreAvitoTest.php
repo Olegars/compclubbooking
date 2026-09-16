@@ -538,6 +538,69 @@ class StoreAvitoTest extends TestCase
         $this->assertSame('https://img.avito.ru/thumb.jpg', $msg->imageUrl(true));
     }
 
+    public function test_sync_chats_pulls_from_avito_api(): void
+    {
+        Http::fake(function ($request) {
+            $url = $request->url();
+            if (str_contains($url, '/token')) {
+                return Http::response(['access_token' => 'tok', 'expires_in' => 86400]);
+            }
+            if (str_contains($url, '/subscriptions')) {
+                return Http::response(['subscriptions' => []]);
+            }
+            if (str_contains($url, '/webhook')) {
+                return Http::response(['ok' => true]);
+            }
+            if (str_contains($url, '/chats')) {
+                return Http::response([
+                    'chats' => [[
+                        'id' => 'u2i-live-1',
+                        'updated' => time(),
+                        'users' => [
+                            ['id' => 362599859, 'name' => 'Магазин'],
+                            ['id' => 99, 'name' => 'Покупатель'],
+                        ],
+                        'context' => ['value' => ['title' => 'Игровой ПК', 'url' => 'https://avito.ru/item/1']],
+                        'last_message' => [
+                            'id' => 'm-live-1',
+                            'author_id' => 99,
+                            'direction' => 'in',
+                            'type' => 'text',
+                            'content' => ['text' => 'Ещё продаёте?'],
+                            'created' => time(),
+                        ],
+                    ]],
+                ]);
+            }
+
+            return Http::response(['error' => $url], 404);
+        });
+
+        StoreAvitoSetting::current()->forceFill([
+            'client_id' => 'cid',
+            'client_secret' => 'secret',
+            'avito_user_id' => 362599859,
+        ])->save();
+
+        $owner = Admin::create([
+            'name' => 'Owner',
+            'email' => 'owner-sync-chats@avito.test',
+            'password' => 'password',
+            'role' => 'owner',
+            'club_id' => $this->club->id,
+        ]);
+
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/store/avito/chats/sync')
+            ->assertRedirect();
+
+        $chat = StoreAvitoChat::query()->where('chat_id', 'u2i-live-1')->first();
+        $this->assertNotNull($chat);
+        $this->assertSame('Покупатель', $chat->client_name);
+        $this->assertTrue(StoreAvitoMessage::query()->where('avito_message_id', 'm-live-1')->exists());
+    }
+
     public function test_opening_chat_hydrates_avatar_and_syncs_images(): void
     {
         StoreAvitoSetting::current()->forceFill([

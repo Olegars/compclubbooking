@@ -81,3 +81,9 @@ Schedule::command('store:generate-avito-ads --sync --force')
         return ($data['status'] ?? '') === 'running' && ! empty($data['queued']);
     })
     ->appendOutputTo(storage_path('logs/avito-ads.log'));
+Schedule::command('store:sync-avito-chats')
+    ->everyFiveMinutes()
+    ->timezone('Europe/Moscow')
+    ->withoutOverlapping(4)
+    ->when(fn () => \App\Models\StoreAvitoSetting::hasConfiguredApi())
+    ->appendOutputTo(storage_path('logs/avito-chats.log'));

@@ -10,8 +10,14 @@ class StoreAvitoWebhookController extends Controller
 {
     public function __invoke(Request $request, StoreAvitoMessengerService $messenger)
     {
+        $payload = $request->all();
+        Log::info('Avito webhook hit', [
+            'type' => data_get($payload, 'payload.type'),
+            'chat_id' => $messenger->webhookMessage($payload)['chat_id'] ?? null,
+            'empty' => $payload === [],
+        ]);
         try {
-            $messenger->handleWebhook($request->all());
+            $messenger->handleWebhook($payload);
         } catch (\Throwable $e) {
             Log::warning('Avito webhook: '.$e->getMessage());
         }
