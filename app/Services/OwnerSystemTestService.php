@@ -1294,6 +1294,8 @@ class OwnerSystemTestService
             }
         }
 
+        $testingDir = storage_path('framework/testing');
+
         return array_merge($inherited, [
             'APP_ENV' => 'testing',
             'DB_CONNECTION' => 'sqlite',
@@ -1318,6 +1320,11 @@ class OwnerSystemTestService
             'OPENAI_API_KEY' => '',
             'YANDEX_SPEECHKIT_API_KEY' => '',
             'AI_ASSISTANT_ENABLED' => 'false',
+            'APP_CONFIG_CACHE' => $testingDir.DIRECTORY_SEPARATOR.'no-config.php',
+            'APP_ROUTES_CACHE' => $testingDir.DIRECTORY_SEPARATOR.'no-routes.php',
+            'APP_EVENTS_CACHE' => $testingDir.DIRECTORY_SEPARATOR.'no-events.php',
+            'APP_PACKAGES_CACHE' => $testingDir.DIRECTORY_SEPARATOR.'no-packages.php',
+            'APP_SERVICES_CACHE' => $testingDir.DIRECTORY_SEPARATOR.'no-services.php',
         ]);
     }
 

@@ -159,6 +159,8 @@ class OwnerSystemTestServiceTest extends TestCase
         $this->assertSame('', $env['DB_URL']);
         $this->assertSame('', $env['YOOKASSA_SHOP_ID']);
         $this->assertSame('', $env['YOOKASSA_SECRET_KEY']);
+        $this->assertStringContainsString('no-config.php', $env['APP_CONFIG_CACHE']);
+        $this->assertStringNotContainsString('bootstrap'.DIRECTORY_SEPARATOR.'cache', $env['APP_CONFIG_CACHE']);
     }
 
     public function test_sql_time_instant_has_no_timestamptz_on_sqlite(): void

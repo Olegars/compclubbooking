@@ -10,6 +10,13 @@ use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
 {
+    public function createApplication()
+    {
+        TestingEnv::apply();
+
+        return parent::createApplication();
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

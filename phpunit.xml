@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit.xsd"
-         bootstrap="vendor/autoload.php"
+         bootstrap="tests/bootstrap.php"
          colors="true"
          cacheDirectory="storage/framework/phpunit"
          cacheResult="false"
@@ -22,6 +22,12 @@
     <php>
         <!-- force: иначе PHPUnit не перебивает DB_* из php-fpm и RefreshDatabase идёт в боевой Postgres -->
         <env name="APP_ENV" value="testing" force="true"/>
+        <!-- иначе config:cache на боевом сервере подсовывает pgsql вместо sqlite :memory: -->
+        <env name="APP_CONFIG_CACHE" value="storage/framework/testing/no-config.php" force="true"/>
+        <env name="APP_ROUTES_CACHE" value="storage/framework/testing/no-routes.php" force="true"/>
+        <env name="APP_EVENTS_CACHE" value="storage/framework/testing/no-events.php" force="true"/>
+        <env name="APP_PACKAGES_CACHE" value="storage/framework/testing/no-packages.php" force="true"/>
+        <env name="APP_SERVICES_CACHE" value="storage/framework/testing/no-services.php" force="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
