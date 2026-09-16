@@ -9,6 +9,7 @@ use App\Models\StoreBuiltPcComponent;
 use App\Models\StoreClient;
 use App\Models\StoreComponent;
 use App\Models\StoreOrder;
+use App\Models\StoreAssemblyClipJob;
 use App\Models\VideoSurveillanceEvent;
 use App\Models\VideoSurveillanceSetting;
 use App\Services\StoreAssemblyCaptureService;
@@ -184,7 +185,7 @@ class StorePcPassportTest extends TestCase
         $warranty = app(StoreWarrantyService::class)->ensureForBuiltPc($pc);
         $token = app(StoreWarrantyService::class)->ensurePublicToken($warranty);
 
-        $job = \App\Models\StoreAssemblyClipJob::query()->create([
+        $job = StoreAssemblyClipJob::query()->create([
             'club_id' => $this->club->id,
             'store_built_pc_id' => $pc->id,
             'status' => 'claimed',

@@ -720,7 +720,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Баланс и poll',
-                        'description' => 'Периодический опрос баланса. При опросе закрываются просроченные сессии; remaining считается согласованно с кабинетом (wall-clock / heal ends_at). В том же ответе — bounties, party_energy, ghost_coach, throne, lfg.',
+                        'description' => 'Периодический опрос баланса. При опросе закрываются просроченные сессии; remaining считается согласованно с кабинетом (wall-clock / heal ends_at). В том же ответе — bounties, party_energy, ghost_coach, throne, lfg, lootbox.',
                         'path' => null,
                         'audience' => 'Shell / Система',
                     ],
@@ -759,6 +759,12 @@ class SystemDocs
                         'description' => "GSI на шелле работает всю сессию. POST /api/shell/gsi + экономика/ульт. Шаблоны: «У вражеского Enigma на ПК-14 готов Black Hole» / «У них эко, жди раш с дробовиками» / AWP на линии. Если шаблон молчит — короткий LLM (DeepSeek, 4 с) по снимку GSI зала. Шёпот раз в ~28 с, галка в шелле (POST /api/shell/coach). F1 hold-to-talk дополнительно получает строку [GSI] в промпт (микрофон + live state). Пуш в наушники через SAPI/TTS.",
                         'path' => '/admin/ai-assistant',
                         'audience' => 'Shell',
+                    ],
+                    [
+                        'title' => 'Lucky Seat Lootbox (дроп за стрик)',
+                        'description' => "Интерактивный кейс прямо в шелле. Триггеры (один дроп, кулдаун 3 ч на игрока): серия побед по GSI — 2 match_win подряд или 5 round_win CS2 подряд (сброс на поражение); либо 3 часа активной сессии (actual_started_at, poll /balance и GSI heartbeat).\n\nШелл поднимает оверлей поверх игры (showShellKeepGame). Открытие: POST /api/shell/lootbox/{id}/open — сервер крутит награду: бонус 50/75/100 ₽ на bonus_balance (source=lucky_seat, не фискалится); напиток бара (заказ + кухонный слип, как охота); или одноразовый промокод RX-***** на 10% периферии в REACTOR Store (store_promo_codes, 30 дней). Если напитка нет на складе — фолбэк на бонус. Неоткрытый кейс на logout открывается сам.\n\nМагазин: поле промокода при создании /admin/store/orders, скидка с total, сверка телефона клиента с владельцем кода.\nКод: LuckySeatLootService. Тесты: LuckySeatLootTest.",
+                        'path' => '/admin/store/orders',
+                        'audience' => 'Shell / Игрок / Магазин',
                     ],
                     [
                         'title' => 'Игры на ПК',

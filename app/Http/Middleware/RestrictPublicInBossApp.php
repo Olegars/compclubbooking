@@ -20,6 +20,8 @@ class RestrictPublicInBossApp
             'admin/*',
             'store',
             'store/*',
+            'pc',
+            'pc/*',
             'boss-app.apk',
             'boss-app.json',
             'build/*',

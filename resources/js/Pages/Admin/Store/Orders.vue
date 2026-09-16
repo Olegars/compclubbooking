@@ -258,7 +258,12 @@ const filterStatus = computed({
                                 Ожидает check_build
                             </div>
                         </div>
-                        <div class="font-black text-amber-400 shrink-0 self-start">{{ money(o.total) }}</div>
+                        <div class="font-black text-amber-400 shrink-0 self-start text-right">
+                            {{ money(o.total) }}
+                            <div v-if="Number(o.discount_amount) > 0" class="text-[10px] text-emerald-400/80 font-black uppercase tracking-widest mt-1">
+                                Lucky Seat −{{ money(o.discount_amount) }}
+                            </div>
+                        </div>
                     </button>
 
                     <div v-show="isOpen(o.id)" class="px-5 pb-5 space-y-4 border-t border-white/5 pt-4">
