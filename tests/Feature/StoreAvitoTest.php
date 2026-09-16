@@ -703,6 +703,33 @@ class StoreAvitoTest extends TestCase
         $this->assertTrue($chat->unread);
     }
 
+    public function test_mark_all_unread_chats_as_read(): void
+    {
+        $manager = $this->makeAvitoManager('Ольга Прочтение', 'olga-readall@avito.test');
+        $one = $this->makeAvitoChat('u2i-read-all-1', ['unread' => true]);
+        $two = $this->makeAvitoChat('u2i-read-all-2', ['unread' => true]);
+        $already = $this->makeAvitoChat('u2i-read-all-3', ['unread' => false]);
+        StoreAvitoMessage::query()->create([
+            'chat_id' => $one->chat_id,
+            'type' => 'text',
+            'content' => ['text' => 'Не прочитано'],
+            'from_us' => false,
+            'read' => false,
+            'avito_created_at' => now(),
+        ]);
+
+        $this->actingAs($manager, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/store/avito/chats/read-all')
+            ->assertRedirect();
+
+        $this->assertFalse((bool) $one->fresh()->unread);
+        $this->assertFalse((bool) $two->fresh()->unread);
+        $this->assertFalse((bool) $already->fresh()->unread);
+        $this->assertTrue((bool) StoreAvitoMessage::query()->where('chat_id', $one->chat_id)->value('read'));
+        $this->assertSame(0, StoreAvitoChat::query()->where('unread', true)->count());
+    }
+
     public function test_dict_matcher_uses_avito_catalog_strings(): void
     {
         $rows = [

@@ -458,6 +458,7 @@ const sendBom = () => {
 
 const connectWebhook = () => router.post('/admin/store/avito/webhook', {}, { preserveScroll: true })
 const syncChats = () => router.post('/admin/store/avito/chats/sync', {}, { preserveScroll: true })
+const markAllRead = () => router.post('/admin/store/avito/chats/read-all', {}, { preserveScroll: true })
 
 const ringtoneInput = ref<HTMLInputElement | null>(null)
 const uploadingRingtone = ref(false)
@@ -671,7 +672,10 @@ const initials = (name?: string | null) => {
                         <span v-if="chatCounts[f.id] > 0"
                               class="ml-2 text-[9px] opacity-70">{{ chatCounts[f.id] }}</span>
                     </button>
-                    <button v-if="canManage" type="button" class="ml-auto px-4 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400" @click="syncChats">Подтянуть из Avito</button>
+                    <div class="ml-auto flex flex-wrap gap-2">
+                        <button v-if="canManage && unread > 0" type="button" class="px-4 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/60" @click="markAllRead">Отметить как прочитанное ({{ unread }})</button>
+                        <button v-if="canManage" type="button" class="px-4 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400" @click="syncChats">Подтянуть из Avito</button>
+                    </div>
                 </div>
                 <div class="grid lg:grid-cols-[320px_1fr] gap-4 h-[calc(100dvh-13rem)] min-h-[520px]">
                     <div class="border border-white/5 rounded-2xl overflow-y-auto bg-[#080808] min-h-0">

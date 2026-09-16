@@ -431,6 +431,28 @@ class AvitoController extends StoreController
         return back()->with('success', 'Подтянуто чатов из Avito: '.$count);
     }
 
+    public function markAllRead(StoreAvitoMessengerService $messenger)
+    {
+        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+
+        $chatIds = StoreAvitoChat::query()->where('unread', true)->pluck('chat_id')->all();
+        $count = count($chatIds);
+        if ($count === 0) {
+            return back()->with('success', 'Непрочитанных чатов нет.');
+        }
+
+        StoreAvitoChat::query()->whereIn('chat_id', $chatIds)->update(['unread' => false]);
+        StoreAvitoMessage::query()->whereIn('chat_id', $chatIds)->update(['read' => true]);
+
+        dispatch(function () use ($chatIds, $messenger) {
+            foreach ($chatIds as $chatId) {
+                $messenger->markRead((string) $chatId);
+            }
+        })->afterResponse();
+
+        return back()->with('success', 'Прочитано чатов: '.$count);
+    }
+
     private function pullAvitoChats(StoreAvitoMessengerService $messenger, bool $force): int
     {
         if (! $force && ! Cache::add('avito_chats_sync', 1, 20)) {
