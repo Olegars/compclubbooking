@@ -54,6 +54,18 @@ class ClubFeaturesTest extends TestCase
         $this->assertTrue($keys->contains('qr_login'));
         $this->assertTrue($keys->contains('clan_wars'));
         $this->assertTrue($keys->contains('rollback_markers'));
+        $this->assertTrue($keys->contains('rage_smash'));
+        $this->assertTrue($keys->contains('coach_whisper'));
+        $this->assertTrue($keys->contains('cloud_saves'));
+        $this->assertTrue($keys->contains('shell_store'));
+        $this->assertTrue($keys->contains('seat_transfer'));
+        $this->assertTrue($keys->contains('overlays'));
+        $this->assertTrue($keys->contains('hardware_health'));
+        $this->assertTrue($keys->contains('patch_cache'));
+        $this->assertTrue($keys->contains('link_flap'));
+        $this->assertTrue($keys->contains('promocodes'));
+        $this->assertTrue($keys->contains('game_requests'));
+        $this->assertTrue($keys->contains('review_bonuses'));
     }
 
     public function test_intern_cannot_open_features_page(): void
@@ -196,6 +208,74 @@ class ClubFeaturesTest extends TestCase
             ->assertJsonPath('features.lfg.enabled', false)
             ->assertJsonPath('features.lucky_seat.enabled', true)
             ->assertJsonPath('features.rollback_markers.enabled', true);
+    }
+
+    public function test_disabled_rage_smash_is_rejected(): void
+    {
+        app(ClubFeatureService::class)->save($this->club->id, 'rage_smash', false);
+        $pc = Computer::create([
+            'club_id' => $this->club->id,
+            'name' => 'PC-RAGE',
+            'status' => 'available',
+            'kind' => 'pc',
+        ]);
+
+        $this->postJson('/api/shell/incidents', [
+            'terminal_id' => $pc->id,
+            'type' => 'hardware_abuse',
+            'payload' => ['source' => 'imu', 'g' => 3.2],
+        ])
+            ->assertOk()
+            ->assertJsonPath('accepted', false)
+            ->assertJsonPath('reason', 'feature_off');
+    }
+
+    public function test_disabled_hardware_health_is_rejected(): void
+    {
+        app(ClubFeatureService::class)->save($this->club->id, 'hardware_health', false);
+        $pc = Computer::create([
+            'club_id' => $this->club->id,
+            'name' => 'PC-HW',
+            'status' => 'available',
+            'kind' => 'pc',
+        ]);
+
+        $this->postJson('/api/shell/incidents', [
+            'terminal_id' => $pc->id,
+            'type' => 'hardware_switch_fault',
+            'description' => 'bounce',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('accepted', false);
+    }
+
+    public function test_disabled_game_requests_rejected_from_shell(): void
+    {
+        app(ClubFeatureService::class)->save($this->club->id, 'game_requests', false);
+        [$pc, $booking] = $this->seat();
+
+        $this->postJson('/api/shell/game-requests', [
+            'terminal_id' => $pc->id,
+            'booking_id' => $booking->id,
+            'title' => 'Half-Life 3',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Заявки на игры выключены');
+    }
+
+    public function test_overlays_empty_when_feature_off(): void
+    {
+        app(ClubFeatureService::class)->save($this->club->id, 'overlays', false);
+        $pc = Computer::create([
+            'club_id' => $this->club->id,
+            'name' => 'PC-OV',
+            'status' => 'available',
+            'kind' => 'pc',
+        ]);
+
+        $this->getJson('/api/shell/overlays?terminal_id='.$pc->id)
+            ->assertOk()
+            ->assertJsonPath('features.overlays.enabled', false);
     }
 
     public function test_lfg_enqueue_rejected_when_off(): void

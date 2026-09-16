@@ -201,6 +201,7 @@ const deleteClip = (id: number) => {
 
 const clubFeatures = computed(() => (page.props.club_features as Record<string, boolean> | undefined) || {})
 const featureOn = (key: string) => clubFeatures.value[key] !== false
+const rewardSuffix = (type: string) => type === 'bonus_balance' ? 'фантиков' : '₽'
 
 const latestReview = computed(() => (page.props.latest_review as any) || null)
 const reviewMeta = computed(() => (page.props.review_meta as any) || {})
@@ -243,6 +244,7 @@ const hasLiveSession = computed(() =>
 
 const openSeatAction = async () => {
     if (hasLiveSession.value) {
+        if (!featureOn('seat_transfer')) return
         await openTransferModal()
         return
     }
@@ -724,7 +726,7 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <div v-if="clanWars.live || clanWars.board?.length || clanWars.mine?.length"
+                <div v-if="featureOn('clan_wars') && (clanWars.live || clanWars.board?.length || clanWars.mine?.length)"
                      class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-fuchsia-500/20 rounded-xl md:rounded-[1.125rem] p-4 sm:p-6 md:p-8 md:shadow-xl">
                     <span class="text-[10px] uppercase text-fuchsia-400 tracking-[0.35em] font-black italic block mb-4 sm:mb-6">Clan Wars</span>
                     <div v-if="clanWars.live" class="border border-fuchsia-500/30 bg-fuchsia-500/[0.06] rounded-xl p-4 mb-5">
