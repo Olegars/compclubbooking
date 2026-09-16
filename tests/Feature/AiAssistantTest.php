@@ -198,7 +198,7 @@ class AiAssistantTest extends TestCase
             'tts_voice' => 'alena',
         ]);
 
-        Http::fake(function ($request) {
+        $this->fakeHttp(function ($request) {
             if (str_contains($request->url(), 'tts.api.cloud.yandex.net')) {
                 return Http::response('ID3marina', 200, ['Content-Type' => 'audio/mpeg']);
             }
@@ -451,7 +451,7 @@ class AiAssistantTest extends TestCase
             'role' => 'owner',
         ]);
 
-        Http::fake(function ($request) {
+        $this->fakeHttp(function ($request) {
             if (str_contains($request->url(), 'chat/completions')) {
                 return Http::response([
                     'choices' => [['message' => ['content' => 'ок']]],
@@ -486,7 +486,7 @@ class AiAssistantTest extends TestCase
             'role' => 'owner',
         ]);
 
-        Http::fake(function ($request) {
+        $this->fakeHttp(function ($request) {
             if (str_contains($request->url(), 'chat/completions')) {
                 return Http::response([
                     'choices' => [[
@@ -522,7 +522,7 @@ class AiAssistantTest extends TestCase
             'role' => 'owner',
         ]);
 
-        Http::fake(function ($request) {
+        $this->fakeHttp(function ($request) {
             if (str_contains($request->url(), 'chat/completions')) {
                 return Http::response([
                     'choices' => [['message' => ['content' => 'Зайди через меню в лобби.']]],
@@ -564,7 +564,7 @@ class AiAssistantTest extends TestCase
             'role' => 'owner',
         ]);
 
-        Http::fake(function ($request) {
+        $this->fakeHttp(function ($request) {
             if (str_contains($request->url(), 'tts.api.cloud.yandex.net')) {
                 return Http::response('ID3tts-bytes', 200, [
                     'Content-Type' => 'audio/mpeg',
@@ -635,7 +635,7 @@ class AiAssistantTest extends TestCase
      */
     private function fakeVoiceStack(string $transcript = 'тест', string $reply = 'ок', string $mp3 = 'ID3'): void
     {
-        Http::fake(function ($request) use ($transcript, $reply, $mp3) {
+        $this->fakeHttp(function ($request) use ($transcript, $reply, $mp3) {
             $url = $request->url();
             if (str_contains($url, 'stt.api.cloud.yandex.net')) {
                 return Http::response(['result' => $transcript], 200);

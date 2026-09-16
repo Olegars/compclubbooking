@@ -3,7 +3,9 @@
 namespace Tests;
 
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
@@ -28,6 +30,17 @@ abstract class TestCase extends BaseTestCase
         }
 
         return UploadedFile::fake()->create($name, 12, 'image/jpeg');
+    }
+
+    /**
+     * Laravel 13 мержит Http::fake(), а не заменяет. Первый колбэк всегда выигрывает.
+     */
+    protected function fakeHttp(callable $callback): void
+    {
+        $factory = new HttpFactory(app('events'));
+        Http::swap($factory);
+        $this->app->instance(HttpFactory::class, $factory);
+        Http::fake($callback);
     }
 
     private function guardAgainstLiveDatabase(): void

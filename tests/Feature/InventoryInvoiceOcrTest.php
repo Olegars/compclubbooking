@@ -67,8 +67,12 @@ class InventoryInvoiceOcrTest extends TestCase
             'barcode' => '4601234567890',
         ]);
 
-        Http::fake([
-            'api.deepseek.com/chat/completions' => Http::response([
+        $this->fakeHttp(function ($request) {
+            if (! str_contains($request->url(), 'chat/completions')) {
+                return Http::response('unexpected '.$request->url(), 599);
+            }
+
+            return Http::response([
                 'choices' => [[
                     'message' => [
                         'content' => json_encode([
@@ -86,8 +90,8 @@ class InventoryInvoiceOcrTest extends TestCase
                         ], JSON_UNESCAPED_UNICODE),
                     ],
                 ]],
-            ]),
-        ]);
+            ]);
+        });
 
         $this->actingAs($this->admin, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
