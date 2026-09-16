@@ -25,6 +25,13 @@ class PromoCodeAdminController extends Controller
             'max_uses' => 'required|integer|min:1',
         ]);
 
+        $clubId = \App\Support\AdminLocation::id(auth('admin')->user());
+        if (! app(\App\Services\ClubFeatureService::class)->enabled($clubId, 'promocodes')) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'code' => 'Промокоды выключены в Конфигурация → Фичи',
+            ]);
+        }
+
         // Сохраняем в верхнем регистре для унификации
         $validated['code'] = strtoupper($validated['code']);
         PromoCode::create($validated);

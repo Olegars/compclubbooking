@@ -420,6 +420,12 @@ class ShellQrLoginService
         $balance = $user->syncBalanceToWallet();
         $formattedTime ??= $this->timing->formatRemainingHms($booking);
         $cloud = app(UserCloudSettingsService::class)->getPackWithMeta($user);
+        $loginComputer = $booking->computer_id
+            ? Computer::query()->find((int) $booking->computer_id)
+            : null;
+        if (! app(ClubFeatureService::class)->enabledForComputer($loginComputer, 'cloud_saves')) {
+            $cloud = ['payload' => null, 'updated_at' => null];
+        }
 
         $fanState = ['available' => false];
         try {

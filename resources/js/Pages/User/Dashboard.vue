@@ -199,7 +199,8 @@ const deleteClip = (id: number) => {
     router.delete(`/account/clips/${id}`, { preserveScroll: true })
 }
 
-const rewardSuffix = (type: string) => type === 'bonus_balance' ? 'фантиков' : '₽'
+const clubFeatures = computed(() => (page.props.club_features as Record<string, boolean> | undefined) || {})
+const featureOn = (key: string) => clubFeatures.value[key] !== false
 
 const latestReview = computed(() => (page.props.latest_review as any) || null)
 const reviewMeta = computed(() => (page.props.review_meta as any) || {})
@@ -521,13 +522,13 @@ onMounted(() => {
 
                     <div class="mt-5 sm:mt-10 grid grid-cols-3 gap-1.5 sm:gap-3 relative z-10">
                         <button @click="isTopUpInputOpen = true" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm tracking-wide hover:bg-[#22c55e]/10 transition-all uppercase italic leading-tight">Пополнить</button>
-                        <button @click="openSeatAction" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm tracking-wide hover:bg-[#22c55e]/10 transition-all uppercase italic leading-tight">
+                        <button v-if="!hasLiveSession || featureOn('seat_transfer')" @click="openSeatAction" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-[#22c55e]/40 text-[#22c55e] font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm tracking-wide hover:bg-[#22c55e]/10 transition-all uppercase italic leading-tight">
                             {{ hasLiveSession ? 'Пересесть' : 'Сесть за ПК' }}
                         </button>
                         <Link href="/booking" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-white/10 text-white font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm flex items-center justify-center tracking-wide hover:bg-white/10 transition-all uppercase italic leading-tight">Бронь</Link>
                         <Link href="/shop" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-white/10 text-white font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm flex items-center justify-center tracking-wide hover:bg-white/10 transition-all uppercase italic leading-tight">Маркет</Link>
-                        <button @click="openReviewModal" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-yellow-500/40 text-yellow-500 font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm tracking-wide hover:bg-yellow-500/10 transition-all uppercase italic leading-tight">Бонус</button>
-                        <button @click="openGameRequestModal" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-cyan-500/40 text-cyan-400 font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm tracking-wide hover:bg-cyan-500/10 transition-all uppercase italic leading-tight">Хочу игру</button>
+                        <button v-if="featureOn('review_bonuses')" @click="openReviewModal" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-yellow-500/40 text-yellow-500 font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm tracking-wide hover:bg-yellow-500/10 transition-all uppercase italic leading-tight">Бонус</button>
+                        <button v-if="featureOn('game_requests')" @click="openGameRequestModal" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-cyan-500/40 text-cyan-400 font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm tracking-wide hover:bg-cyan-500/10 transition-all uppercase italic leading-tight">Хочу игру</button>
                     </div>
                 </div>
 

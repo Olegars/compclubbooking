@@ -85,7 +85,7 @@ class NicLinkFlapService
                 array_merge(is_array($payload) ? $payload : [], [
                     'flap_count' => $count,
                     'shift_id' => $storedShift,
-                    'threshold' => self::THRESHOLD,
+                    'threshold' => $threshold,
                 ]),
             );
             $incidentId = $recorded['id'];

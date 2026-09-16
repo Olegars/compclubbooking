@@ -379,7 +379,7 @@ onUnmounted(() => {
                           :class="isActive('/admin/clan-wars') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>⚔</span> Clan Wars
                     </Link>
-                    <Link href="/admin/promocodes"
+                    <Link v-if="featureOn('promocodes')" href="/admin/promocodes"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/promocodes') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🎁</span> Маркетинг
@@ -389,12 +389,12 @@ onUnmounted(() => {
                           :class="isActive('/admin/achievements') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>⭐</span> Достижения и трофеи
                     </Link>
-                    <Link href="/admin/game-requests"
+                    <Link v-if="featureOn('game_requests')" href="/admin/game-requests"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/game-requests') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🎮</span> Заявки на игры
                     </Link>
-                    <Link href="/admin/bonuses"
+                    <Link v-if="featureOn('review_bonuses')" href="/admin/bonuses"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/bonuses') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>⭐</span> Бонусы за отзывы
@@ -506,7 +506,7 @@ onUnmounted(() => {
                           :class="isActive('/admin/map-builder') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🗺️</span> Редактор карты
                     </Link>
-                    <Link href="/admin/overlays"
+                    <Link v-if="featureOn('overlays')" href="/admin/overlays"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/overlays') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🖥️</span> Shell Оверлеи

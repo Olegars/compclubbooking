@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Booking;
+use App\Models\Computer;
 use Inertia\Inertia;
 use App\Models\GuestClip;
 use App\Models\Order;
@@ -384,6 +385,12 @@ class ProfileController extends Controller
             return response()->json(['message' => 'Нет активной сессии'], 404);
         }
 
+        try {
+            $this->assertSeatTransfer($booking);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
         $map = $transfers->mapForTransfer($booking);
 
         return response()->json([
@@ -414,6 +421,7 @@ class ProfileController extends Controller
         if (! $booking) {
             return response()->json(['message' => 'Нет активной сессии'], 404);
         }
+        $this->assertSeatTransfer($booking);
 
         try {
             $preview = $transfers->preview($booking, (int) $data['target_computer_id']);
@@ -440,6 +448,7 @@ class ProfileController extends Controller
         if (! $booking) {
             return response()->json(['message' => 'Нет активной сессии'], 404);
         }
+        $this->assertSeatTransfer($booking);
 
         try {
             $result = $transfers->transfer($booking, (int) $data['target_computer_id'], $user);
@@ -497,5 +506,15 @@ class ProfileController extends Controller
         $clips->destroy($clip);
 
         return back();
+    }
+
+    private function assertSeatTransfer(Booking $booking): void
+    {
+        $computer = Computer::query()->find((int) $booking->computer_id);
+        app(\App\Services\ClubFeatureService::class)->assertEnabled(
+            app(\App\Services\ClubFeatureService::class)->clubIdForComputer($computer),
+            'seat_transfer',
+            'Пересадка выключена'
+        );
     }
 }

@@ -12,9 +12,6 @@
                         <feMergeNode in="blur" /><feMergeNode in="SourceGraphic" />
                     </feMerge>
                 </filter>
-                <clipPath v-for="z in zoneVisuals" :id="z.clipId" :key="'clip-'+z.clipId">
-                    <polygon :points="z.points" />
-                </clipPath>
             </defs>
 
             <g v-if="safeConfig?.walls" class="walls-layer">
@@ -30,55 +27,55 @@
                 />
             </g>
 
-            <g v-if="zoneVisuals.length" class="zones-layer">
-                <g v-for="z in zoneVisuals" :key="'zr-'+z.clipId">
+            <g v-if="drawableZones.length" class="zones-layer">
+                <g v-for="(r, i) in drawableZones" :key="'zr-'+i">
                     <polygon
-                        :points="z.points"
-                        :fill="z.r.c || '#22c55e'"
-                        :fill-opacity="zoneFillOpacity(z.r)"
-                        :stroke="z.r.c || '#22c55e'"
-                        :stroke-opacity="isServiceZone(z.r) ? 0.1 : 1"
+                        :points="zoneSvgPoints(r)"
+                        :fill="r.c || '#22c55e'"
+                        :fill-opacity="zoneFillOpacity(r)"
+                        :stroke="r.c || '#22c55e'"
+                        :stroke-opacity="isServiceZone(r) ? 0.1 : 1"
                         stroke-width="0.15"
                     />
-                    <g v-if="z.badge" class="pointer-events-none" :clip-path="`url(#${z.clipId})`">
+                    <g v-if="zoneBadge(r)" class="pointer-events-none">
                         <rect
-                            :x="z.badge.x"
-                            :y="z.badge.y"
-                            :width="z.badge.w"
-                            :height="z.badge.h"
+                            :x="zoneBadge(r).x"
+                            :y="zoneBadge(r).y"
+                            :width="zoneBadge(r).w"
+                            :height="zoneBadge(r).h"
                             :rx="ZONE_BADGE_RX"
                             :ry="ZONE_BADGE_RX"
                             fill="rgba(0,0,0,0.72)"
-                            stroke="rgba(255,255,255,0.22)"
-                            stroke-width="0.06"
+                            stroke="rgba(255,255,255,0.28)"
+                            stroke-width="0.12"
                         />
                         <text
-                            :x="z.badge.cx"
-                            :y="z.badge.titleY"
+                            :x="zoneBadge(r).cx"
+                            :y="zoneBadge(r).titleY"
                             text-anchor="middle"
                             dominant-baseline="central"
                             fill="#ffffff"
                             fill-opacity="0.92"
-                            :font-size="z.badge.font"
+                            :font-size="ZONE_BADGE_FONT"
                             font-weight="700"
                             font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
-                            letter-spacing="0.01em"
+                            letter-spacing="0.04em"
                             class="uppercase"
-                        >{{ z.badge.title }}</text>
+                        >{{ zoneBadge(r).title }}</text>
                         <text
-                            v-if="z.badge.sub"
-                            :x="z.badge.cx"
-                            :y="z.badge.subY"
+                            v-if="zoneBadge(r).sub"
+                            :x="zoneBadge(r).cx"
+                            :y="zoneBadge(r).subY"
                             text-anchor="middle"
                             dominant-baseline="central"
                             fill="#ffffff"
                             fill-opacity="0.78"
-                            :font-size="z.badge.subFont"
+                            :font-size="ZONE_BADGE_SUB_FONT"
                             font-weight="700"
                             font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif"
-                            letter-spacing="0.01em"
+                            letter-spacing="0.04em"
                             class="uppercase"
-                        >{{ z.badge.sub }}</text>
+                        >{{ zoneBadge(r).sub }}</text>
                     </g>
                 </g>
             </g>
@@ -114,11 +111,14 @@
                     :class="isOccupied(pc.id) ? '' : 'group-hover:stroke-white'"
                 />
                 <text
-                    :x="Number(pc.x) + 3" :y="Number(pc.y) + 3.1"
-                    font-size="2"
-                    font-weight="900"
+                    :x="Number(pc.x) + PC_W / 2"
+                    :y="Number(pc.y) + PC_H / 2 + 0.08"
+                    :font-size="seatLabelFont(pc.name)"
+                    font-weight="800"
                     font-family="Arial, sans-serif"
                     text-anchor="middle"
+                    dominant-baseline="central"
+                    letter-spacing="-0.04em"
                     :fill="seatText(pc)"
                     class="pointer-events-none transition-colors duration-300"
                 >
@@ -236,7 +236,6 @@ const PC_W = 6
 const wallIsClosed = (d: unknown) => /z\s*$/i.test(String(d || '').trim())
 const PC_H = 4.5
 const FIT_PAD = 8
-const clipNs = `zclip-${Math.random().toString(36).slice(2, 9)}`
 
 const safeConfig = computed(() => {
     let data = props.mapConfig;
@@ -323,19 +322,19 @@ const zoneTitle = (r: any) => {
     return type ? type.replace(/[-_]/g, ' ').toUpperCase() : ''
 }
 
-const ZONE_BADGE_FONT_MAX = 1.02
-const ZONE_BADGE_FONT_MIN = 0.82
-const ZONE_BADGE_GAP = 1.35
-const ZONE_BADGE_PAD_X = 0.48
-const ZONE_BADGE_PAD_Y = 0.2
-const ZONE_BADGE_RX = 0.32
-const ZONE_BADGE_CHAR_W = 0.82
+const ZONE_BADGE_FONT = 1.3
+const ZONE_BADGE_SUB_FONT = 1.1
+const ZONE_BADGE_INSET = 0.85
+const ZONE_BADGE_PAD_X = 0.75
+const ZONE_BADGE_PAD_Y = 0.4
+const ZONE_BADGE_RX = 0.55
+const ZONE_BADGE_CHAR_W = 0.7
 
 const estimateBadgeTextWidth = (text: string, fontSize: number) => {
     const t = text.trim()
     if (!t) return 0
     const letters = t.length * fontSize * ZONE_BADGE_CHAR_W
-    const tracking = Math.max(0, t.length - 1) * fontSize * 0.01
+    const tracking = Math.max(0, t.length - 1) * fontSize * 0.04
     return letters + tracking
 }
 
@@ -346,38 +345,27 @@ const zoneBadge = (r: any) => {
         .map((a: any) => String(a?.name || '').trim().toUpperCase())
         .filter(Boolean)
     const sub = extras.length ? extras.join(' ') : ''
+    const titleW = estimateBadgeTextWidth(title, ZONE_BADGE_FONT)
+    const subW = sub ? estimateBadgeTextWidth(sub, ZONE_BADGE_SUB_FONT) : 0
+    const w = Math.max(titleW, subW) + ZONE_BADGE_PAD_X * 2
+    const lineGap = sub ? 0.35 : 0
+    const contentH = sub
+        ? ZONE_BADGE_FONT + lineGap + ZONE_BADGE_SUB_FONT
+        : ZONE_BADGE_FONT
+    const h = contentH + ZONE_BADGE_PAD_Y * 2
     const zw = Number(r.w) || 0
     const zh = Number(r.h) || 0
-    const gapX = Math.max(1.15, Math.min(ZONE_BADGE_GAP, zw * 0.16))
-    const gapY = Math.max(0.95, Math.min(ZONE_BADGE_GAP, zh * 0.14))
-    const innerW = Math.max(2.2, zw - gapX * 2)
-
-    const widthAt = (fs: number) =>
-        Math.max(estimateBadgeTextWidth(title, fs), sub ? estimateBadgeTextWidth(sub, fs * 0.86) : 0)
-        + ZONE_BADGE_PAD_X * 2
-
-    let font = ZONE_BADGE_FONT_MAX
-    const natural = widthAt(font)
-    if (natural > innerW) {
-        font = Math.max(ZONE_BADGE_FONT_MIN, font * innerW / natural)
-    }
-    const subFont = sub ? font * 0.86 : 0
-    const w = Math.min(widthAt(font), innerW)
-    const lineGap = sub ? 0.16 : 0
-    const h = (sub ? font + lineGap + subFont : font) + ZONE_BADGE_PAD_Y * 2
-    const zx = Number(r.x)
-    const zy = Number(r.y)
-    const x = Math.max(zx + gapX, zx + zw - gapX - w)
-    const y = zy + gapY
+    const insetX = Math.min(ZONE_BADGE_INSET, Math.max(0.35, zw * 0.08))
+    const insetY = Math.min(ZONE_BADGE_INSET, Math.max(0.35, zh * 0.1))
+    const x = Number(r.x) + zw - insetX - w
+    const y = Number(r.y) + insetY
     const titleY = sub
-        ? y + ZONE_BADGE_PAD_Y + font / 2
+        ? y + ZONE_BADGE_PAD_Y + ZONE_BADGE_FONT / 2
         : y + h / 2
-    const subY = y + ZONE_BADGE_PAD_Y + font + lineGap + subFont / 2
+    const subY = y + ZONE_BADGE_PAD_Y + ZONE_BADGE_FONT + lineGap + ZONE_BADGE_SUB_FONT / 2
     return {
         title,
         sub,
-        font,
-        subFont,
         x,
         y,
         w,
@@ -388,14 +376,11 @@ const zoneBadge = (r: any) => {
     }
 }
 
-const zoneVisuals = computed(() =>
-    drawableZones.value.map((r: any, i: number) => ({
-        r,
-        points: zoneSvgPoints(r),
-        badge: zoneBadge(r),
-        clipId: `${clipNs}-${i}`,
-    }))
-)
+const seatLabelFont = (name: unknown) => {
+    const n = Math.max(1, String(name ?? '').trim().length)
+    const inner = PC_W - 1.1
+    return Math.min(1.58, Math.max(1.28, inner / (n * 0.58)))
+}
 
 const zoneAddons = (r: any) =>
     Array.isArray(r?.addons) ? r.addons : []

@@ -19,7 +19,10 @@ class PromoCodeController extends Controller
         ]);
 
         $user = $request->user();
-        // Ищем код без учета регистра (чтобы summer2026 и SUMMER2026 работали одинаково)
+        if (! app(\App\Services\ClubFeatureService::class)->enabledForUser($user, 'promocodes')) {
+            return response()->json(['message' => 'Промокоды выключены'], 422);
+        }
+
         $promo = PromoCode::where('code', strtoupper($request->code))->first();
 
         // 2. Блок проверок (Guard clauses)

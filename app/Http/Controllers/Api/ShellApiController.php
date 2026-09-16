@@ -68,7 +68,13 @@ class ShellApiController extends Controller
         }
 
         $overlays = Overlay::where('is_active', true)
-            ->get()
+            ->get();
+        $features = app(\App\Services\ClubFeatureService::class);
+        $computer = $terminalId > 0 ? Computer::query()->find($terminalId) : null;
+        if (! $features->enabledForComputer($computer, 'overlays')) {
+            $overlays = $overlays->take(0);
+        }
+        $overlays = $overlays
             ->keyBy('block_position')
             ->map(function (Overlay $overlay) {
                 $content = $overlay->content;
@@ -90,11 +96,9 @@ class ShellApiController extends Controller
             });
 
         $data = $overlays->toArray();
-        $features = app(\App\Services\ClubFeatureService::class);
-        $computer = $terminalId > 0 ? Computer::query()->find($terminalId) : null;
         $clanWar = null;
         try {
-            if ($features->enabled($computer?->club_id ? (int) $computer->club_id : null, 'clan_wars')) {
+            if ($features->enabledForComputer($computer, 'clan_wars')) {
                 $wars = app(\App\Services\ClanWarService::class);
                 $clanWar = $wars->liveForTerminal($terminalId);
                 if ($clanWar) {
@@ -261,6 +265,10 @@ class ShellApiController extends Controller
 
             // Cloud Saves: pack for Shell to restore on this PC (may be null if never saved).
             $cloud = app(UserCloudSettingsService::class)->getPackWithMeta($user);
+            $loginComputer = Computer::query()->with('club')->find($terminalId);
+            if (! app(\App\Services\ClubFeatureService::class)->enabledForComputer($loginComputer, 'cloud_saves')) {
+                $cloud = ['payload' => null, 'updated_at' => null];
+            }
 
             // Fan desired refresh only — shell actuates NetMod/W5100 on LAN.
             try {
@@ -298,8 +306,6 @@ class ShellApiController extends Controller
 
             $primaryReceipt = collect($fiscalReceipts)
                 ->first(fn ($r) => filled($r['fiscal_receipt_url'] ?? null));
-
-            $loginComputer = Computer::query()->with('club')->find($terminalId);
 
             return response()->json([
                 'status' => 'success',
@@ -906,6 +912,16 @@ class ShellApiController extends Controller
             $payload = is_array($request->input('payload')) ? $request->input('payload') : [];
             $description = (string) $request->input('description', '');
             $severity = (string) $request->input('severity', 'medium');
+            $features = app(\App\Services\ClubFeatureService::class);
+
+            if ($type === \App\Services\ShellIncidentService::TYPE_HARDWARE_SWITCH
+                && ! $features->enabledForComputer($computer, 'hardware_health')) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Hardware Health выключен',
+                    'accepted' => false,
+                ], 422);
+            }
 
             if ($type === \App\Services\ShellIncidentService::TYPE_HARDWARE_ABUSE) {
                 $smash = app(\App\Services\RageSmashService::class)->ingest(
@@ -1749,9 +1765,12 @@ class ShellApiController extends Controller
     {
         $terminalId = (int) $request->input('terminal_id', 0);
         $snapshot = $this->shellOrderSnapshot($terminalId);
+        $computer = $terminalId > 0 ? Computer::query()->find($terminalId) : null;
+        $storeOn = app(\App\Services\ClubFeatureService::class)->enabledForComputer($computer, 'shell_store');
 
         return response()->json(array_merge($snapshot, [
-            'products' => Product::query()->orderBy('name')->get(),
+            'products' => $storeOn ? Product::query()->orderBy('name')->get() : [],
+            'store_enabled' => $storeOn,
         ]));
     }
 
@@ -2613,6 +2632,7 @@ class ShellApiController extends Controller
             if (! $booking) {
                 return response()->json(['message' => 'Нет активной сессии'], 404);
             }
+            $this->assertSeatTransfer($booking);
 
             return response()->json([
                 'status' => 'success',
@@ -2636,6 +2656,7 @@ class ShellApiController extends Controller
             if (! $booking) {
                 return response()->json(['message' => 'Нет активной сессии'], 404);
             }
+            $this->assertSeatTransfer($booking);
 
             $preview = $transfers->preview($booking, (int) $data['target_computer_id']);
 
@@ -2656,6 +2677,7 @@ class ShellApiController extends Controller
             if (! $booking) {
                 return response()->json(['message' => 'Нет активной сессии'], 404);
             }
+            $this->assertSeatTransfer($booking);
 
             $user = User::find($booking->user_id);
             if (! $user) {
@@ -2822,7 +2844,8 @@ class ShellApiController extends Controller
                 if ($booking->user_id && $request->filled('settings_pack')) {
                     try {
                         $user = User::find($booking->user_id);
-                        if ($user) {
+                        $pc = Computer::query()->find((int) $booking->computer_id);
+                        if ($user && app(\App\Services\ClubFeatureService::class)->enabledForComputer($pc, 'cloud_saves')) {
                             $service = app(UserCloudSettingsService::class);
                             if ($request->boolean('settings_merge')) {
                                 $service->mergePack($user, $request->input('settings_pack'));
@@ -3316,6 +3339,10 @@ class ShellApiController extends Controller
             }
 
             $cloud = app(UserCloudSettingsService::class)->getPackWithMeta($user);
+            $computer = Computer::query()->find((int) $request->terminal_id);
+            if (! app(\App\Services\ClubFeatureService::class)->enabledForComputer($computer, 'cloud_saves')) {
+                $cloud = ['payload' => null, 'updated_at' => null];
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -3360,6 +3387,14 @@ class ShellApiController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Активная сессия не найдена',
+                ], 200);
+            }
+
+            $computer = Computer::query()->find((int) $request->terminal_id);
+            if (! app(\App\Services\ClubFeatureService::class)->enabledForComputer($computer, 'cloud_saves')) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Cloud Saves выключены',
                 ], 200);
             }
 
@@ -3458,6 +3493,16 @@ class ShellApiController extends Controller
         }
 
         return User::find($booking->user_id);
+    }
+
+    private function assertSeatTransfer(Booking $booking): void
+    {
+        $computer = Computer::query()->find((int) $booking->computer_id);
+        app(\App\Services\ClubFeatureService::class)->assertEnabled(
+            app(\App\Services\ClubFeatureService::class)->clubIdForComputer($computer),
+            'seat_transfer',
+            'Пересадка выключена'
+        );
     }
 
     public function storeGameRequest(Request $request, GameRequestService $service)
