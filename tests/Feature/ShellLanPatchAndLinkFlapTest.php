@@ -17,7 +17,7 @@ class ShellLanPatchAndLinkFlapTest extends TestCase
 
     private Club $club;
 
-    private Computer $seed;
+    private Computer $seedPc;
 
     private Computer $peer;
 
@@ -33,7 +33,7 @@ class ShellLanPatchAndLinkFlapTest extends TestCase
         ]);
 
         $this->club = Club::create(['name' => 'Patch Club', 'slug' => 'patch-club', 'type' => 'club']);
-        $this->seed = Computer::create([
+        $this->seedPc = Computer::create([
             'club_id' => $this->club->id,
             'name' => 'ПК-01',
             'status' => 'available',
@@ -109,7 +109,7 @@ class ShellLanPatchAndLinkFlapTest extends TestCase
     public function test_seed_offers_patch_pull_when_peer_build_is_older(): void
     {
         $this->postJson('/api/shell/power/heartbeat', [
-            'hwid' => $this->seed->hwid,
+            'hwid' => $this->seedPc->hwid,
             'super_client' => true,
             'lan_ip' => '192.168.20.51',
             'patch_seed_port' => 8745,
@@ -121,9 +121,9 @@ class ShellLanPatchAndLinkFlapTest extends TestCase
             ->assertJsonPath('patch_seed.enabled', true)
             ->assertJsonPath('patch_seed.port', 8745);
 
-        $this->seed->refresh();
-        $this->assertSame('192.168.20.51', $this->seed->lan_ip);
-        $this->assertSame(8745, (int) $this->seed->patch_seed_port);
+        $this->seedPc->refresh();
+        $this->assertSame('192.168.20.51', $this->seedPc->lan_ip);
+        $this->assertSame(8745, (int) $this->seedPc->patch_seed_port);
 
         $response = $this->postJson('/api/shell/power/heartbeat', [
             'hwid' => $this->peer->hwid,

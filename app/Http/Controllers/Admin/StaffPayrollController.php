@@ -174,8 +174,58 @@ class StaffPayrollController extends Controller
 
     private function renderCabinet(Request $request, Admin $admin, string $page, bool $withStoreDesk)
     {
-        $payload = $this->payroll->snapshot($admin);
-        $payload['employment'] = $this->employment->payload($admin);
+        try {
+            $payload = $this->payroll->snapshot($admin);
+        } catch (\Throwable $e) {
+            report($e);
+            try {
+                $this->payroll->syncFor($admin);
+            } catch (\Throwable $syncError) {
+                report($syncError);
+            }
+            $payload = [
+                'pay_type' => $admin->pay_type,
+                'base_rate' => $admin->base_rate !== null ? (float) $admin->base_rate : null,
+                'accrued_total' => 0.0,
+                'fines_total' => 0.0,
+                'payouts_total' => 0.0,
+                'balance' => 0.0,
+                'available' => 0.0,
+                'shifts' => [],
+                'fines' => [],
+                'payouts' => [],
+                'monthly_accruals' => [],
+            ];
+        }
+        try {
+            $payload['employment'] = $this->employment->payload($admin);
+        } catch (\Throwable $e) {
+            report($e);
+            $payload['employment'] = [
+                'required' => false,
+                'status' => 'draft',
+                'rejection_reason' => null,
+                'appointment_at' => null,
+                'rules_title' => '',
+                'rules' => [],
+                'accepted_ids' => [],
+                'rules_complete' => false,
+                'fire_rules_title' => '',
+                'fire_rules' => [],
+                'accepted_fire_ids' => [],
+                'fire_rules_complete' => false,
+                'profile' => [
+                    'full_name' => $admin->name,
+                    'passport_series' => null,
+                    'passport_number' => null,
+                    'issued_by' => null,
+                    'issued_at' => null,
+                    'department_code' => null,
+                    'birth_date' => null,
+                    'has_scan' => false,
+                ],
+            ];
+        }
         try {
             $payload['calendar'] = $admin->needsEmployment()
                 ? [

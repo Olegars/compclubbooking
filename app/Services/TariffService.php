@@ -40,7 +40,7 @@ class TariffService
     public function hourlyRateRub(int $clubId, ?int $zoneId, ?CarbonImmutable $at = null): float
     {
         if (! $zoneId) {
-            return self::DEFAULT_HOURLY_RUB;
+            return $this->unzonedHourlyRub();
         }
 
         $at ??= CarbonImmutable::now(config('app.timezone'));
@@ -354,7 +354,7 @@ class TariffService
     ): array {
         if (! $zoneId) {
             $minutes = max(0, $start->diffInMinutes($end));
-            $rate = self::DEFAULT_HOURLY_RUB;
+            $rate = $this->unzonedHourlyRub();
 
             return [[
                 'from' => $start->toIso8601String(),
@@ -623,6 +623,24 @@ class TariffService
             ->orderBy('id')
             ->get()
             ->keyBy('id');
+    }
+
+    /**
+     * ПК без комнаты/зоны: почасовой пакет из тарифов, иначе 250 ₽.
+     */
+    private function unzonedHourlyRub(): float
+    {
+        $price = Tariff::query()
+            ->where('is_active', true)
+            ->where('threshold_hours', 1)
+            ->orderBy('id')
+            ->value('price_per_package');
+
+        if ($price !== null && (float) $price > 0) {
+            return (float) $price;
+        }
+
+        return self::DEFAULT_HOURLY_RUB;
     }
 
     /**

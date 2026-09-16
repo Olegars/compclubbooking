@@ -37,17 +37,33 @@ class StaffPayrollService
             return null;
         }
 
-        return StaffLedger::query()->firstOrCreate(
-            [
-                'admin_id' => $admin->id,
-                'shift_id' => $shift->id,
-                'type' => StaffLedger::TYPE_ACCRUAL,
-            ],
-            [
-                'amount' => $rate,
-                'reason' => 'Смена #'.$shift->id,
-            ]
-        );
+        try {
+            return StaffLedger::query()->firstOrCreate(
+                [
+                    'admin_id' => $admin->id,
+                    'shift_id' => $shift->id,
+                    'type' => StaffLedger::TYPE_ACCRUAL,
+                ],
+                [
+                    'amount' => $rate,
+                    'reason' => 'Смена #'.$shift->id,
+                ]
+            );
+        } catch (\Illuminate\Database\UniqueConstraintViolationException|\Illuminate\Database\QueryException $e) {
+            $existing = StaffLedger::query()
+                ->where('admin_id', $admin->id)
+                ->where('shift_id', $shift->id)
+                ->where('type', StaffLedger::TYPE_ACCRUAL)
+                ->first();
+            if ($existing) {
+                return $existing;
+            }
+            if ($e instanceof \Illuminate\Database\UniqueConstraintViolationException
+                || str_contains(strtolower($e->getMessage()), 'unique')) {
+                return null;
+            }
+            throw $e;
+        }
     }
 
     public function accrueClosedShiftInterns(Shift $shift): void
@@ -317,10 +333,18 @@ class StaffPayrollService
             ->where('admin_id', $admin->id)
             ->where('status', 'closed')
             ->whereNotNull('ended_at')
-            ->whereDoesntHave('ledgerAccrual')
             ->with('admin')
             ->get()
-            ->each(fn (Shift $shift) => $this->accrueClosedShift($shift));
+            ->each(function (Shift $shift) use ($admin) {
+                $exists = StaffLedger::query()
+                    ->where('admin_id', $admin->id)
+                    ->where('shift_id', $shift->id)
+                    ->where('type', StaffLedger::TYPE_ACCRUAL)
+                    ->exists();
+                if (! $exists) {
+                    $this->accrueClosedShift($shift);
+                }
+            });
     }
 
     private function accrueClosedInternShifts(Admin $admin): void
@@ -348,17 +372,24 @@ class StaffPayrollService
     {
         return Shift::query()
             ->where('admin_id', $admin->id)
-            ->with('ledgerAccrual')
             ->orderByDesc('started_at')
             ->orderByDesc('id')
             ->limit(100)
             ->get()
-            ->map(fn (Shift $shift) => $this->mapShiftRow(
-                $shift,
-                $shift->started_at,
-                $shift->ended_at,
-                $shift->ledgerAccrual ? (float) $shift->ledgerAccrual->amount : 0.0
-            ))
+            ->map(function (Shift $shift) use ($admin) {
+                $accrual = StaffLedger::query()
+                    ->where('admin_id', $admin->id)
+                    ->where('shift_id', $shift->id)
+                    ->where('type', StaffLedger::TYPE_ACCRUAL)
+                    ->first();
+
+                return $this->mapShiftRow(
+                    $shift,
+                    $shift->started_at,
+                    $shift->ended_at,
+                    $accrual ? (float) $accrual->amount : 0.0
+                );
+            })
             ->values()
             ->all();
     }
@@ -370,7 +401,7 @@ class StaffPayrollService
     {
         return ShiftIntern::query()
             ->where('admin_id', $admin->id)
-            ->with(['shift.ledgerAccrual'])
+            ->with(['shift'])
             ->orderByDesc('joined_at')
             ->limit(100)
             ->get()
@@ -403,15 +434,17 @@ class StaffPayrollService
     ): array {
         $status = $status ?? $shift?->status ?? 'closed';
         $isOpen = $status !== 'closed';
-        $endForDuration = $ended ?? ($isOpen ? now() : null);
-        $minutes = ($started && $endForDuration)
-            ? (int) $started->diffInMinutes($endForDuration)
+        $startedAt = $started instanceof \Carbon\CarbonInterface ? $started : null;
+        $endedAt = $ended instanceof \Carbon\CarbonInterface ? $ended : null;
+        $endForDuration = $endedAt ?? ($isOpen ? now() : null);
+        $minutes = ($startedAt && $endForDuration)
+            ? (int) $startedAt->diffInMinutes($endForDuration)
             : null;
 
         return [
             'id' => $shift?->id,
-            'started_at' => $started?->toIso8601String(),
-            'ended_at' => $ended?->toIso8601String(),
+            'started_at' => $startedAt?->toIso8601String(),
+            'ended_at' => $endedAt?->toIso8601String(),
             'status' => $status,
             'is_open' => $isOpen,
             'duration_minutes' => $minutes,

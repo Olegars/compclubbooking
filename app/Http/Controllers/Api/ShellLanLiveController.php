@@ -178,27 +178,50 @@ class ShellLanLiveController extends Controller
         $crowned = null;
         $event = $snap['event'];
         if (in_array($event, ['kill', 'death', 'round_win', 'round_loss', 'match_win', 'match_loss'], true)) {
-            $ingested = $this->bounties->ingest($computer, $user, $booking, $snap);
-            $settled = $ingested['settled'] ?? null;
-            $throne = $this->thrones->observe($computer, $user, $booking, $snap);
-            if ($throne && (int) $throne->user_id === (int) $user->id
-                && in_array($event, ['kill', 'match_win', 'round_win'], true)) {
-                $crowned = $this->thrones->payload($computer, $user);
+            try {
+                $ingested = $this->bounties->ingest($computer, $user, $booking, $snap);
+                $settled = $ingested['settled'] ?? null;
+            } catch (\Throwable $e) {
+                report($e);
+            }
+            try {
+                $throne = $this->thrones->observe($computer, $user, $booking, $snap);
+                if ($throne && (int) $throne->user_id === (int) $user->id
+                    && in_array($event, ['kill', 'match_win', 'round_win'], true)) {
+                    $crowned = $this->thrones->payload($computer, $user);
+                }
+            } catch (\Throwable $e) {
+                report($e);
             }
         }
 
-        $this->energy->maybeSiphon($booking, true);
+        try {
+            $this->energy->maybeSiphon($booking, true);
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         $whisper = null;
         if (in_array($event, ['heartbeat', 'coach', 'kill', 'death', 'bomb', 'round_win', 'round_loss', 'freezetime'], true)
             || ! empty($snap['in_match'])) {
-            $whisper = $this->coach->maybeWhisper($computer, $user, $snap);
+            try {
+                $whisper = $this->coach->maybeWhisper($computer, $user, $snap);
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
-        $booking = $booking->fresh();
+        $booking = $booking->fresh() ?? $booking;
+
+        try {
+            $payload = $this->livePayload($computer, $booking, $user->fresh() ?? $user);
+        } catch (\Throwable $e) {
+            report($e);
+            $payload = ['status' => 'success'];
+        }
 
         return response()->json(array_merge(
-            $this->livePayload($computer, $booking, $user->fresh()),
+            $payload,
             [
                 'status' => 'success',
                 'settled' => $settled,

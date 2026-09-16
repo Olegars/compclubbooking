@@ -135,13 +135,17 @@ class StoreAvitoSetting extends Model
 
     public static function sharedRingtoneUrl(): string
     {
-        if (! Schema::hasTable('store_avito_settings')) {
+        try {
+            if (! Schema::hasTable('store_avito_settings')) {
+                return self::DEFAULT_RINGTONE;
+            }
+
+            $row = self::query()->orderBy('id')->first();
+
+            return $row ? $row->ringtoneUrl() : self::DEFAULT_RINGTONE;
+        } catch (\Throwable) {
             return self::DEFAULT_RINGTONE;
         }
-
-        $row = self::query()->orderBy('id')->first();
-
-        return $row ? $row->ringtoneUrl() : self::DEFAULT_RINGTONE;
     }
 
     public static function configPhrase(string $configId): string

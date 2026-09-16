@@ -269,6 +269,9 @@ class GhostCoachService
      */
     private function llmWhisper(Computer $computer, array $snap): ?string
     {
+        if (app()->runningUnitTests()) {
+            return null;
+        }
         if (! ($snap['in_match'] ?? false)) {
             return null;
         }

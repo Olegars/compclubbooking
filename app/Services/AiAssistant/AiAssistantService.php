@@ -10,6 +10,7 @@ use App\Models\Game;
 use App\Models\User;
 use App\Services\LanLive\ShellGsiStore;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -121,8 +122,12 @@ class AiAssistantService
         return Booking::query()
             ->where('status', 'active')
             ->where(function ($query) use ($termId, $terminalId) {
-                $query->where('computer_id', $terminalId)
-                    ->orWhereJsonContains('pc_ids', $termId);
+                $query->where('computer_id', $terminalId);
+                if (DB::connection()->getDriverName() === 'pgsql') {
+                    $query->orWhereJsonContains('pc_ids', $termId);
+                } else {
+                    $query->orWhere('pc_ids', 'like', '%"'.$termId.'"%');
+                }
             })
             ->latest('id')
             ->first();

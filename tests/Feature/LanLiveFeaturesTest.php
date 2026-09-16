@@ -17,6 +17,7 @@ use App\Services\LanLive\PartyEnergyPoolService;
 use App\Services\LanLive\ShellGsiStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class LanLiveFeaturesTest extends TestCase
@@ -28,6 +29,7 @@ class LanLiveFeaturesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Cache::flush();
         $this->club = Club::create(['name' => 'LAN Club', 'slug' => 'lan-live-club']);
     }
 

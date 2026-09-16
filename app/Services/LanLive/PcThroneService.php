@@ -60,7 +60,7 @@ class PcThroneService
 
         return PcThrone::query()
             ->where('computer_id', $computer->id)
-            ->whereDate('recorded_on', now()->toDateString())
+            ->where('recorded_on', now()->toDateString())
             ->first();
     }
 
@@ -112,7 +112,7 @@ class PcThroneService
     {
         $deleted = PcThrone::query()
             ->where('computer_id', $computer->id)
-            ->whereDate('recorded_on', now()->toDateString())
+            ->where('recorded_on', now()->toDateString())
             ->delete();
 
         return $deleted > 0;
@@ -134,7 +134,7 @@ class PcThroneService
         }
         $kings = PcThrone::query()
             ->whereIn('computer_id', $ids)
-            ->whereDate('recorded_on', now()->toDateString())
+            ->where('recorded_on', now()->toDateString())
             ->get()
             ->keyBy('computer_id');
 
@@ -192,26 +192,30 @@ class PcThroneService
             $nick = trim((string) $user->name) ?: ('Игрок #'.$user->id);
         }
 
-        return PcThrone::query()->updateOrCreate(
-            [
-                'computer_id' => $computer->id,
-                'recorded_on' => $today,
-            ],
-            [
-                'club_id' => (int) ($computer->club_id ?? 0),
-                'user_id' => $user->id,
-                'booking_id' => $booking->id,
-                'nickname' => mb_substr($nick, 0, 48),
-                'avatar' => $user->avatar ?: 'avatar_1.png',
-                'game' => $stats['game'],
-                'metric' => $metric,
-                'kills' => $stats['kills'],
-                'deaths' => $stats['deaths'],
-                'wins' => $stats['wins'],
-                'losses' => $stats['losses'],
-                'kd' => $kd,
-            ]
-        );
+        try {
+            return PcThrone::query()->updateOrCreate(
+                [
+                    'computer_id' => $computer->id,
+                    'recorded_on' => $today,
+                ],
+                [
+                    'club_id' => (int) ($computer->club_id ?? 0),
+                    'user_id' => $user->id,
+                    'booking_id' => $booking->id,
+                    'nickname' => mb_substr($nick, 0, 48),
+                    'avatar' => $user->avatar ?: 'avatar_1.png',
+                    'game' => $stats['game'],
+                    'metric' => $metric,
+                    'kills' => $stats['kills'],
+                    'deaths' => $stats['deaths'],
+                    'wins' => $stats['wins'],
+                    'losses' => $stats['losses'],
+                    'kd' => $kd,
+                ]
+            );
+        } catch (\Throwable) {
+            return $this->forComputer($computer) ?? $existing;
+        }
     }
 
     /**

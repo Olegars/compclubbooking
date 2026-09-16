@@ -445,11 +445,15 @@ class AiAssistantTest extends TestCase
             'role' => 'owner',
         ]);
 
-        Http::fake([
-            '*chat/completions*' => Http::response([
-                'choices' => [['message' => ['content' => 'ок']]],
-            ], 200),
-        ]);
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'chat/completions')) {
+                return Http::response([
+                    'choices' => [['message' => ['content' => 'ок']]],
+                ], 200);
+            }
+
+            return Http::response('unexpected '.$request->url(), 599);
+        });
 
         $this->actingAs($admin, 'admin')
             ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class)
@@ -476,15 +480,19 @@ class AiAssistantTest extends TestCase
             'role' => 'owner',
         ]);
 
-        Http::fake([
-            '*chat/completions*' => Http::response([
-                'choices' => [[
-                    'message' => [
-                        'content' => '[{"sku":1,"color":"white","glass":"front_side","form":"atx"}]',
-                    ],
-                ]],
-            ], 200),
-        ]);
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'chat/completions')) {
+                return Http::response([
+                    'choices' => [[
+                        'message' => [
+                            'content' => '[{"sku":1,"color":"white","glass":"front_side","form":"atx"}]',
+                        ],
+                    ]],
+                ], 200);
+            }
+
+            return Http::response('unexpected '.$request->url(), 599);
+        });
 
         $this->actingAs($admin, 'admin')
             ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class)
@@ -508,11 +516,15 @@ class AiAssistantTest extends TestCase
             'role' => 'owner',
         ]);
 
-        Http::fake([
-            '*chat/completions*' => Http::response([
-                'choices' => [['message' => ['content' => 'Зайди через меню в лобби.']]],
-            ], 200),
-        ]);
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'chat/completions')) {
+                return Http::response([
+                    'choices' => [['message' => ['content' => 'Зайди через меню в лобби.']]],
+                ], 200);
+            }
+
+            return Http::response('unexpected '.$request->url(), 599);
+        });
 
         $this->actingAs($admin, 'admin')
             ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class)
@@ -594,13 +606,7 @@ class AiAssistantTest extends TestCase
             'tts_voice' => 'nova',
         ]);
 
-        Http::fake([
-            '*audio/transcriptions*' => Http::response(['text' => 'привет'], 200),
-            '*chat/completions*' => Http::response([
-                'choices' => [['message' => ['content' => 'хай']]],
-            ], 200),
-            '*audio/speech*' => Http::response('ID3oa', 200),
-        ]);
+        $this->fakeVoiceStack(transcript: 'привет', reply: 'хай', mp3: 'ID3oa');
 
         $this->post('/api/shell/ai-assistant', [
             'terminal_id' => $this->computer->id,
@@ -628,6 +634,12 @@ class AiAssistantTest extends TestCase
                 return Http::response(['result' => $transcript], 200);
             }
             if (str_contains($url, 'tts.api.cloud.yandex.net')) {
+                return Http::response($mp3, 200, ['Content-Type' => 'audio/mpeg']);
+            }
+            if (str_contains($url, 'audio/transcriptions')) {
+                return Http::response(['text' => $transcript], 200);
+            }
+            if (str_contains($url, 'audio/speech')) {
                 return Http::response($mp3, 200, ['Content-Type' => 'audio/mpeg']);
             }
             if (str_contains($url, 'chat/completions')) {

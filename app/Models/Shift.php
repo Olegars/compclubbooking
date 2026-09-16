@@ -52,8 +52,7 @@ class Shift extends Model
     public function ledgerAccrual(): HasOne
     {
         return $this->hasOne(StaffLedger::class, 'shift_id')
-            ->where('type', StaffLedger::TYPE_ACCRUAL)
-            ->whereColumn('staff_ledgers.admin_id', 'shifts.admin_id');
+            ->where('type', StaffLedger::TYPE_ACCRUAL);
     }
 
     public function internSlots(): HasMany

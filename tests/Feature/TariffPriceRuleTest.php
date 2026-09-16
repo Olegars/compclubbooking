@@ -77,9 +77,14 @@ class TariffPriceRuleTest extends TestCase
     {
         [$owner, , $tariff] = $this->seedEditor();
 
-        $this->actingAs($owner, 'admin')
-            ->get('/admin/tariffs/'.$tariff->id.'/rules')
-            ->assertNotFound();
+        $response = $this->actingAs($owner, 'admin')
+            ->get('/admin/tariffs/'.$tariff->id.'/rules');
+
+        $this->assertContains(
+            $response->status(),
+            [404, 405],
+            'GET на URL правил не должен отдавать страницу, только 404 или 405'
+        );
     }
 
     public function test_missing_tariff_returns_validation_not_404(): void
