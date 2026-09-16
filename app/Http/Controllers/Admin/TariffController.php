@@ -101,14 +101,14 @@ class TariffController extends Controller
             'threshold_hours' => 'required|integer|min:1',
         ]);
 
-        Tariff::create([
+        $tariff = Tariff::create([
             'name' => $data['name'],
             'threshold_hours' => (int) $data['threshold_hours'],
             'price_per_package' => 0,
             'is_active' => true,
         ]);
 
-        return back();
+        return $this->redirectToEditor($request, (int) $tariff->id);
     }
 
     public function update(Request $request, Tariff $tariff)
@@ -133,6 +133,11 @@ class TariffController extends Controller
 
     public function storeRule(Request $request, Tariff $tariff)
     {
+        return $this->persistNewRule($request, $tariff);
+    }
+
+    private function persistNewRule(Request $request, Tariff $tariff)
+    {
         $data = $this->validatedRule($request);
         $this->assertNoOverlap($tariff->id, $data);
 
@@ -146,7 +151,23 @@ class TariffController extends Controller
             'price' => $data['price'],
         ]);
 
-        return back();
+        return $this->redirectToEditor($request, (int) $tariff->id);
+    }
+
+    public function storePrice(Request $request)
+    {
+        $tariffId = $request->validate([
+            'tariff_id' => 'required|integer|exists:tariffs,id',
+        ])['tariff_id'];
+
+        $tariff = Tariff::query()->find((int) $tariffId);
+        if (! $tariff) {
+            throw ValidationException::withMessages([
+                'tariff_id' => 'Тариф не найден.',
+            ]);
+        }
+
+        return $this->persistNewRule($request, $tariff);
     }
 
     public function updateRule(Request $request, TariffPrice $tariffPrice)
@@ -163,14 +184,19 @@ class TariffController extends Controller
             'price' => $data['price'],
         ]);
 
-        return back();
+        return $this->redirectToEditor($request, (int) $tariffPrice->tariff_id);
     }
 
     public function destroyRule(TariffPrice $tariffPrice)
     {
+        $tariffId = (int) $tariffPrice->tariff_id;
+        $clubId = (int) $tariffPrice->club_id;
         $tariffPrice->delete();
 
-        return back();
+        return redirect()->route('admin.tariffs', [
+            'club' => $clubId,
+            'tariff' => $tariffId,
+        ]);
     }
 
     public function storeDayGroup(Request $request)
@@ -324,6 +350,19 @@ class TariffController extends Controller
         $addon->delete();
 
         return back();
+    }
+
+    private function redirectToEditor(Request $request, ?int $tariffId = null)
+    {
+        $params = [];
+        if ($request->filled('club_id')) {
+            $params['club'] = (int) $request->input('club_id');
+        }
+        if ($tariffId) {
+            $params['tariff'] = $tariffId;
+        }
+
+        return redirect()->route('admin.tariffs', $params);
     }
 
     /**

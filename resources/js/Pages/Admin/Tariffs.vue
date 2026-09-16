@@ -38,6 +38,7 @@ const tariffForm = useForm({ name: '', threshold_hours: 1 })
 
 const ruleForm = useForm({
     club_id: props.selectedClubId,
+    tariff_id: props.selectedTariffId,
     zone_id: props.zones?.[0]?.id ?? null,
     day_group_id: props.dayGroups?.[0]?.id ?? null,
     time_start: 0,
@@ -69,6 +70,10 @@ const addonForm = useForm({
 watch(() => props.selectedClubId, (id) => {
     ruleForm.club_id = id
     addonForm.club_id = id
+})
+
+watch(() => props.selectedTariffId, (id) => {
+    ruleForm.tariff_id = id
 })
 
 const selectedTariff = computed(() =>
@@ -107,6 +112,7 @@ const weekdayText = (weekdays) => {
 const openNewRule = () => {
     editingRuleId.value = null
     ruleForm.club_id = props.selectedClubId
+    ruleForm.tariff_id = props.selectedTariffId
     ruleForm.zone_id = props.zones?.[0]?.id ?? null
     ruleForm.day_group_id = props.dayGroups?.[0]?.id ?? null
     ruleForm.time_start = 0
@@ -119,6 +125,7 @@ const openNewRule = () => {
 const openEditRule = (rule) => {
     editingRuleId.value = rule.id
     ruleForm.club_id = props.selectedClubId
+    ruleForm.tariff_id = props.selectedTariffId
     ruleForm.zone_id = rule.zone_id
     ruleForm.day_group_id = rule.day_group_id
     ruleForm.time_start = rule.time_start
@@ -129,14 +136,17 @@ const openEditRule = (rule) => {
 }
 
 const submitRule = () => {
-    if (!props.selectedTariffId) return
+    const tariffId = Number(props.selectedTariffId || ruleForm.tariff_id)
+    if (!tariffId) return
+    ruleForm.tariff_id = tariffId
+    ruleForm.club_id = props.selectedClubId
     if (editingRuleId.value) {
         ruleForm.put(`/admin/tariff-prices/${editingRuleId.value}`, {
             preserveScroll: true,
             onSuccess: () => { showRuleModal.value = false },
         })
     } else {
-        ruleForm.post(`/admin/tariffs/${props.selectedTariffId}/rules`, {
+        ruleForm.post('/admin/tariff-prices', {
             preserveScroll: true,
             onSuccess: () => { showRuleModal.value = false },
         })
@@ -535,9 +545,9 @@ const timeEndInput = computed({
                     <label class="block text-[10px] uppercase text-white/40 font-black tracking-widest">Цена, ₽</label>
                     <input v-model="ruleForm.price" type="number" min="0" step="1" required class="no-spinners w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-[#22c55e] font-black outline-none focus:border-[#22c55e]" />
 
-                    <p v-if="ruleForm.errors.time_start || ruleForm.errors.time_end || ruleForm.errors.price"
+                    <p v-if="Object.values(ruleForm.errors).length"
                        class="text-red-400 text-[10px] uppercase">
-                        {{ ruleForm.errors.time_start || ruleForm.errors.time_end || ruleForm.errors.price }}
+                        {{ Object.values(ruleForm.errors)[0] }}
                     </p>
 
                     <div class="flex gap-3 pt-4">

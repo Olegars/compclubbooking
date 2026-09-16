@@ -522,11 +522,12 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
 
         Route::get('/tariffs', [TariffController::class, 'index'])->name('admin.tariffs');
         Route::post('/tariffs', [TariffController::class, 'store']);
-        Route::put('/tariffs/{tariff}', [TariffController::class, 'update']);
-        Route::delete('/tariffs/{tariff}', [TariffController::class, 'destroy']);
-        Route::post('/tariffs/{tariff}/rules', [TariffController::class, 'storeRule']);
-        Route::put('/tariff-prices/{tariffPrice}', [TariffController::class, 'updateRule']);
-        Route::delete('/tariff-prices/{tariffPrice}', [TariffController::class, 'destroyRule']);
+        Route::put('/tariffs/{tariff}', [TariffController::class, 'update'])->whereNumber('tariff');
+        Route::delete('/tariffs/{tariff}', [TariffController::class, 'destroy'])->whereNumber('tariff');
+        Route::post('/tariffs/{tariff}/rules', [TariffController::class, 'storeRule'])->whereNumber('tariff');
+        Route::post('/tariff-prices', [TariffController::class, 'storePrice'])->name('admin.tariff-prices.store');
+        Route::put('/tariff-prices/{tariffPrice}', [TariffController::class, 'updateRule'])->whereNumber('tariffPrice');
+        Route::delete('/tariff-prices/{tariffPrice}', [TariffController::class, 'destroyRule'])->whereNumber('tariffPrice');
         Route::post('/day-groups', [TariffController::class, 'storeDayGroup']);
         Route::put('/day-groups/{dayGroup}', [TariffController::class, 'updateDayGroup']);
         Route::delete('/day-groups/{dayGroup}', [TariffController::class, 'destroyDayGroup']);
