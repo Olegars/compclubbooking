@@ -161,6 +161,13 @@ class LightEventCatalog
                 'group' => 'Razer Chroma',
                 'allow_auto' => true,
             ],
+            [
+                'id' => 'arena.win',
+                'title' => 'Арена: победа в дуэли',
+                'hint' => 'Закрытие котла Skill Pot. Золотой строб ~3 с на месте победителя.',
+                'group' => 'Арена',
+                'allow_auto' => false,
+            ],
         ];
     }
 
@@ -278,6 +285,15 @@ class LightEventCatalog
         $events['chroma'] = array_merge($base, [
             'color' => self::COLOR_AUTO,
             'fade_sec' => 0.2,
+        ]);
+        $events['arena.win'] = array_merge($base, [
+            'color' => 'yellow',
+            'brightness' => 100,
+            'strobe' => true,
+            'strobe_on_ms' => 80,
+            'strobe_off_ms' => 80,
+            'duration_sec' => 3,
+            'fade_sec' => 0,
         ]);
 
         return $events;

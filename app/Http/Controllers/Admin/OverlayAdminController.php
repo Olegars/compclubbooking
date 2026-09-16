@@ -11,11 +11,17 @@ class OverlayAdminController extends Controller
 {
     public function index()
     {
-        return Inertia::render('Admin/OverlayManager');
+        Overlay::ensureDefaultSlots();
+
+        return Inertia::render('Admin/OverlayManager', [
+            'overlays' => Overlay::query()->orderBy('block_position')->orderBy('id')->get(),
+        ]);
     }
 
     public function getOverlays()
     {
+        Overlay::ensureDefaultSlots();
+
         return response()->json(
             Overlay::query()->orderBy('block_position')->orderBy('id')->get()
         );

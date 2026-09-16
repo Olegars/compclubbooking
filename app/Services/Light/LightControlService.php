@@ -54,6 +54,16 @@ class LightControlService
         });
     }
 
+    public function cueNamedEvent(?Computer $computer, string $eventId): void
+    {
+        if (! $computer || $eventId === '') {
+            return;
+        }
+        $this->queuePlayEvent($eventId);
+        $this->nextFadeMs = $this->events->fadeMs((int) ($computer->club_id ?? 0), $eventId);
+        $this->reconcileForComputer((int) $computer->id);
+    }
+
     /**
      * After PIN/QR login: fade from lobby white to this player's last color
      * (green on first visit).

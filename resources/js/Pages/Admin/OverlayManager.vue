@@ -6,6 +6,10 @@ import { useClubName } from '@/Composables/useClubName'
 
 const clubName = useClubName()
 
+const props = defineProps<{
+    overlays?: any[]
+}>()
+
 interface Layer {
     type: 'video' | 'text' | 'image';
     value: string;
@@ -32,6 +36,7 @@ interface OverlayBlock {
 
 const overlays = ref<OverlayBlock[]>([])
 const isProcessing = ref(false)
+const loadError = ref('')
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const currentUploadBlock = ref<OverlayBlock | null>(null)
@@ -98,12 +103,18 @@ const buildContentForSave = (block: OverlayBlock): OverlayContent => {
     return { layers }
 }
 
+const applyBlocks = (blocks: any[]) => {
+    overlays.value = (Array.isArray(blocks) ? blocks : []).map((block: any) => normalizeBlock(block))
+}
+
 const fetchOverlays = async () => {
     try {
         const response = await axios.get('/admin/api/overlays')
-        overlays.value = response.data.map((block: any) => normalizeBlock(block))
+        applyBlocks(response.data)
+        loadError.value = overlays.value.length ? '' : 'Слоты оверлеев не создались. Обновите страницу.'
     } catch (error) {
         console.error('Ошибка загрузки', error)
+        loadError.value = 'Не удалось загрузить оверлеи. Обновите страницу.'
     }
 }
 
@@ -163,6 +174,7 @@ const handleVideoUpload = async (event: Event) => {
     }
 }
 
+applyBlocks(props.overlays ?? [])
 onMounted(fetchOverlays)
 
 const formatPositionName = (pos: string) => {
@@ -193,6 +205,16 @@ const formatPositionName = (pos: string) => {
                     <p class="text-[10px] text-white/40 uppercase tracking-[0.3em] ml-6 italic">Video + Text Overlay · v3.1</p>
                 </div>
                 <div class="text-xs text-purple-500/50 font-black tracking-widest">{{ clubName }}</div>
+            </div>
+
+            <div v-if="loadError && overlays.length === 0"
+                 class="bg-[#0a0a0a] border border-red-500/20 rounded-[1rem] p-8 text-sm text-red-400/80">
+                {{ loadError }}
+            </div>
+
+            <div v-else-if="overlays.length === 0"
+                 class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 text-sm text-white/40 uppercase tracking-widest">
+                Слоты ещё не созданы — подождите секунду или обновите страницу.
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500">
