@@ -30,6 +30,10 @@ class ArenaDuel extends Model
 
     public const STATUS_FORFEIT = 'forfeit';
 
+    public const KIND_DUEL = 'duel';
+
+    public const KIND_BATTLE = 'battle';
+
     protected $fillable = [
         'uuid',
         'club_id',
@@ -42,11 +46,17 @@ class ArenaDuel extends Model
         'zone_group',
         'game',
         'mode',
+        'kind',
+        'min_players',
+        'max_players',
         'entry_fee',
         'total_pot',
         'rake_percent',
         'rake_amount',
         'winner_prize',
+        'raise_to',
+        'raise_by_user_id',
+        'raise_votes',
         'first_to',
         'status',
         'winner_user_id',
@@ -54,6 +64,7 @@ class ArenaDuel extends Model
         'server_connect_uri',
         'server_password',
         'expires_at',
+        'scheduled_at',
         'started_at',
         'paused_at',
         'completed_at',
@@ -67,9 +78,14 @@ class ArenaDuel extends Model
             'rake_percent' => 'float',
             'rake_amount' => 'float',
             'winner_prize' => 'float',
+            'raise_to' => 'float',
+            'raise_votes' => 'array',
+            'min_players' => 'integer',
+            'max_players' => 'integer',
             'first_to' => 'integer',
             'match_data_snapshot' => 'array',
             'expires_at' => 'datetime',
+            'scheduled_at' => 'datetime',
             'started_at' => 'datetime',
             'paused_at' => 'datetime',
             'completed_at' => 'datetime',

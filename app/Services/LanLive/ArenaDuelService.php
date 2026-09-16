@@ -64,21 +64,39 @@ class ArenaDuelService
     }
 
     /**
+     * @return list<array<string, mixed>>
+     */
+    public function kinds(): array
+    {
+        return [
+            [
+                'id' => ArenaDuel::KIND_DUEL,
+                'label' => 'Дуэль',
+                'hint' => 'Двое. Старт, когда принят вызов.',
+            ],
+            [
+                'id' => ArenaDuel::KIND_BATTLE,
+                'label' => 'Битва',
+                'hint' => 'Все желающие. Старт по набору или по времени.',
+            ],
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function liveFor(?Computer $computer, ?Booking $booking, ?User $user): array
     {
-        $clubId = $computer?->club_id ? (int) $computer->club_id : 0;
-        if ($clubId < 1 && $user) {
-            $clubId = (int) (app(ClubFeatureService::class)->clubIdForUser($user) ?? 0);
-        }
+        $clubId = $this->resolveClubId($computer, $user);
         $enabled = $clubId > 0 && app(ClubFeatureService::class)->enabled($clubId, 'arena_duels');
         if (! $enabled) {
             return $this->emptyPayload($clubId);
         }
 
         $this->expirePending($clubId);
+        $this->promoteReadyLobbies($clubId);
         if ($computer && $booking && $user) {
+            $this->bindSeat($computer, $booking, $user);
             $this->watchDisconnects($clubId, $computer, $user);
         }
 
@@ -114,34 +132,39 @@ class ArenaDuelService
 
         $incoming = null;
         $mine = null;
-        if ($computer && $user) {
+        if ($user) {
             foreach ($open as $duel) {
                 if ($this->isIncomingFor($duel, $computer, $user)) {
-                    $incoming = $this->payload($duel, $computer, $booking);
+                    $incoming = $this->payload($duel, $computer, $booking, $user);
                     break;
                 }
             }
             $mineRow = $this->activeForUser((int) $user->id, $clubId);
             if ($mineRow) {
-                $mine = $this->payload($mineRow, $computer, $booking);
+                $mine = $this->payload($mineRow, $computer, $booking, $user);
             }
         }
 
         $settings = $this->settings($clubId);
+        $board = $open->filter(fn (ArenaDuel $d) => $d->scope === ArenaDuel::SCOPE_HALL);
 
         return [
             'enabled' => true,
             'legal' => $this->legalBlock(),
             'modes' => $this->modes(),
+            'kinds' => $this->kinds(),
             'presets' => self::PRESETS,
             'min_entry_fee' => $settings['min_entry_fee'],
             'max_entry_fee' => $settings['max_entry_fee'],
             'rake_percent' => $settings['rake_percent'],
+            'min_battle_players' => $settings['min_battle_players'],
+            'max_battle_players' => $settings['max_battle_players'],
             'incoming' => $incoming,
             'mine' => $mine,
-            'open' => $open->map(fn (ArenaDuel $d) => $this->payload($d, $computer, $booking))->values()->all(),
-            'live' => $live->map(fn (ArenaDuel $d) => $this->payload($d, $computer, $booking))->values()->all(),
-            'recent' => $recent->map(fn (ArenaDuel $d) => $this->payload($d, $computer, $booking))->values()->all(),
+            'board' => $board->map(fn (ArenaDuel $d) => $this->payload($d, $computer, $booking, $user))->values()->all(),
+            'open' => $open->map(fn (ArenaDuel $d) => $this->payload($d, $computer, $booking, $user))->values()->all(),
+            'live' => $live->map(fn (ArenaDuel $d) => $this->payload($d, $computer, $booking, $user))->values()->all(),
+            'recent' => $recent->map(fn (ArenaDuel $d) => $this->payload($d, $computer, $booking, $user))->values()->all(),
             'targets' => $computer && $booking ? $this->targets($computer, $booking) : [],
             'highlight_computer_ids' => $this->highlightIds($open->concat($live)),
             'whisper' => $this->maybeIncomingWhisper($incoming, $computer),
@@ -161,7 +184,7 @@ class ArenaDuelService
             ->first();
         $computer = $booking ? Computer::query()->find((int) $booking->computer_id) : null;
         $pack = $this->liveFor($computer, $booking, $user);
-        $clubId = $computer?->club_id ? (int) $computer->club_id : (int) (app(ClubFeatureService::class)->clubIdForUser($user) ?? 0);
+        $clubId = $this->resolveClubId($computer, $user);
         if ($clubId > 0 && $pack['enabled']) {
             $club = Club::query()->find($clubId);
             if ($club) {
@@ -231,30 +254,41 @@ class ArenaDuelService
     /**
      * @param  array<string, mixed>  $input
      */
-    public function create(User $actor, Computer $from, Booking $booking, array $input): ArenaDuel
+    public function create(User $actor, ?Computer $from, ?Booking $booking, array $input): ArenaDuel
     {
-        $clubId = $from->club_id ? (int) $from->club_id : 0;
+        $clubId = $this->resolveClubId($from, $actor);
         app(ClubFeatureService::class)->assertEnabled($clubId ?: null, 'arena_duels', 'Арена выключена');
         $this->expirePending($clubId);
 
+        $kind = $this->normalizeKind((string) ($input['kind'] ?? ArenaDuel::KIND_DUEL));
         $parsed = $this->parseMode((string) ($input['game'] ?? 'cs2'), (string) ($input['mode'] ?? '1v1_aim'));
+        if ($kind === ArenaDuel::KIND_BATTLE) {
+            $parsed['team_size'] = 1;
+        }
         $settings = $this->settings($clubId);
         $fee = round((float) ($input['entry_fee'] ?? 0), 2);
         if ($fee + 0.009 < $settings['min_entry_fee'] || $fee > $settings['max_entry_fee']) {
             throw new RuntimeException('Взнос от '.$settings['min_entry_fee'].' до '.$settings['max_entry_fee'].' ₽');
         }
 
+        $caps = $this->playerCaps($kind, $parsed['team_size'], $settings, $input);
+        $scheduled = $this->parseSchedule($input['scheduled_at'] ?? null, $settings);
+        $advance = $from === null || $scheduled !== null;
+
         $scope = $this->normalizeScope((string) ($input['scope'] ?? 'hall'));
+        if ($from === null && $scope !== ArenaDuel::SCOPE_HALL && $scope !== ArenaDuel::SCOPE_COMPUTER) {
+            $scope = ArenaDuel::SCOPE_HALL;
+        }
         $targetComputer = null;
         $targetUserId = null;
         $zoneGroup = null;
         if ($scope === ArenaDuel::SCOPE_COMPUTER) {
             $targetId = (int) ($input['target_computer_id'] ?? 0);
-            if ($targetId < 1 || $targetId === (int) $from->id) {
+            if ($targetId < 1 || ($from && $targetId === (int) $from->id)) {
                 throw new RuntimeException('Выберите чужой ПК в клубе');
             }
             $targetComputer = Computer::query()->find($targetId);
-            if (! $targetComputer || (int) $targetComputer->club_id !== (int) $from->club_id) {
+            if (! $targetComputer || (int) $targetComputer->club_id !== $clubId) {
                 throw new RuntimeException('Соперник не в этом клубе');
             }
             $targetBooking = $this->activeOnComputer((int) $targetComputer->id);
@@ -265,6 +299,9 @@ class ArenaDuelService
             $this->assertCooldown((int) $actor->id, (int) $targetComputer->id, $settings['cooldown_seconds']);
             $this->assertRankGap($actor, User::query()->find($targetUserId), $parsed['game'], $settings['rank_delta']);
         } elseif ($scope === ArenaDuel::SCOPE_ZONE) {
+            if (! $from) {
+                throw new RuntimeException('Межзонная дуэль доступна только с ПК');
+            }
             $mine = ClanWarService::zoneGroup($from->space?->zone?->slug ?? $this->zoneSlug($from));
             if ($mine === null) {
                 throw new RuntimeException('Межзонная дуэль доступна из Bootcamp или Standard');
@@ -272,50 +309,51 @@ class ArenaDuelService
             $zoneGroup = $mine === 'bootcamp' ? 'standard' : 'bootcamp';
         }
 
-        $mates = $this->teamSeats($booking, $from, $parsed['team_size']);
+        $mates = $this->joinParty($actor, $from, $booking, $parsed['team_size']);
         foreach ($mates as $seat) {
             $this->assertNoActiveDuel((int) $seat['user']->id, $clubId);
         }
-        $ttl = $scope === ArenaDuel::SCOPE_COMPUTER
-            ? now()->addSeconds($settings['invite_seconds'])
-            : now()->addMinutes($settings['open_ttl_minutes']);
+        $ttl = $this->lobbyExpiresAt($scope, $scheduled, $advance, $settings);
 
         $duel = DB::transaction(function () use (
-            $actor, $from, $booking, $clubId, $parsed, $fee, $scope, $targetComputer, $targetUserId, $zoneGroup, $mates, $ttl, $settings
+            $actor, $from, $booking, $clubId, $parsed, $fee, $scope, $targetComputer, $targetUserId,
+            $zoneGroup, $mates, $ttl, $settings, $kind, $caps, $scheduled
         ) {
             foreach ($mates as $seat) {
                 $this->holdEntry($seat['user'], $fee, 'arena hold');
             }
             $password = strtoupper(Str::random(6));
             $connect = $this->connectUri($parsed['game'], $password);
-            $expected = $parsed['team_size'] * 2;
             $rakePct = $settings['rake_percent'];
-            $total = round($fee * $expected, 2);
-            $rake = round($total * $rakePct / 100, 2);
-            $prize = round($total - $rake, 2);
+            $heldNow = count($mates);
+            $pot = $this->potFor($fee, $heldNow, $rakePct);
 
             $duel = ArenaDuel::query()->create([
                 'uuid' => (string) Str::uuid(),
                 'club_id' => $clubId,
                 'creator_user_id' => $actor->id,
-                'creator_computer_id' => $from->id,
-                'creator_booking_id' => $booking->id,
+                'creator_computer_id' => $from?->id,
+                'creator_booking_id' => $booking?->id,
                 'target_computer_id' => $targetComputer?->id,
                 'target_user_id' => $targetUserId,
                 'scope' => $scope,
                 'zone_group' => $zoneGroup,
                 'game' => $parsed['game'],
                 'mode' => $parsed['mode'],
+                'kind' => $kind,
+                'min_players' => $caps['min'],
+                'max_players' => $caps['max'],
                 'entry_fee' => $fee,
-                'total_pot' => $total,
+                'total_pot' => $pot['total'],
                 'rake_percent' => $rakePct,
-                'rake_amount' => $rake,
-                'winner_prize' => $prize,
+                'rake_amount' => $pot['rake'],
+                'winner_prize' => $pot['prize'],
                 'first_to' => $parsed['game'] === 'dota' ? 1 : $settings['first_to_cs'],
                 'status' => ArenaDuel::STATUS_PENDING,
                 'server_connect_uri' => $connect,
                 'server_password' => $password,
                 'expires_at' => $ttl,
+                'scheduled_at' => $scheduled,
                 'match_data_snapshot' => ['legal' => $this->legalBlock()],
             ]);
 
@@ -323,10 +361,11 @@ class ArenaDuelService
                 ArenaDuelParticipant::query()->create([
                     'duel_id' => $duel->id,
                     'user_id' => $seat['user']->id,
-                    'computer_id' => $seat['computer']->id,
-                    'booking_id' => $seat['booking']->id,
+                    'computer_id' => $seat['computer']?->id,
+                    'booking_id' => $seat['booking']?->id,
                     'team_slot' => 1,
                     'escrow_status' => ArenaDuelParticipant::ESCROW_HELD,
+                    'held_amount' => $fee,
                     'joined_at' => now(),
                 ]);
                 Transaction::create([
@@ -335,7 +374,7 @@ class ArenaDuelService
                     'type' => 'purchase',
                     'source' => 'arena_duel',
                     'is_taxable' => false,
-                    'description' => 'Арена: взнос '.$this->modeLabel($parsed['game'], $parsed['mode']),
+                    'description' => 'Арена: взнос '.$this->kindLabel($kind).' '.$this->modeLabel($parsed['game'], $parsed['mode']),
                     'payload' => ['duel_id' => $duel->id, 'uuid' => $duel->uuid],
                 ]);
             }
@@ -350,9 +389,9 @@ class ArenaDuelService
         return $duel->fresh(['participants.user', 'participants.computer', 'creatorComputer']);
     }
 
-    public function accept(User $actor, Computer $from, Booking $booking, ArenaDuel $duel): ArenaDuel
+    public function accept(User $actor, ?Computer $from, ?Booking $booking, ArenaDuel $duel): ArenaDuel
     {
-        $clubId = $from->club_id ? (int) $from->club_id : 0;
+        $clubId = $this->resolveClubId($from, $actor);
         app(ClubFeatureService::class)->assertEnabled($clubId ?: null, 'arena_duels', 'Арена выключена');
         $this->expirePending($clubId);
 
@@ -367,6 +406,13 @@ class ArenaDuelService
             if ((int) $duel->creator_user_id === (int) $actor->id) {
                 throw new RuntimeException('Нельзя принять свой вызов');
             }
+            if (ArenaDuelParticipant::query()->where('duel_id', $duel->id)->where('user_id', $actor->id)->exists()) {
+                throw new RuntimeException('Вы уже в этом лобби');
+            }
+            $held = ArenaDuelParticipant::query()->where('duel_id', $duel->id)->count();
+            if ($held >= (int) $duel->max_players) {
+                throw new RuntimeException('Лобби уже набрано');
+            }
             $this->assertCanAccept($duel, $from, $actor);
             $settings = $this->settings((int) $duel->club_id);
             $this->assertRankGap(
@@ -376,19 +422,25 @@ class ArenaDuelService
                 $settings['rank_delta']
             );
             $mode = $this->parseMode($duel->game, $duel->mode);
-            $mates = $this->teamSeats($booking, $from, $mode['team_size']);
+            $teamSize = ($duel->kind === ArenaDuel::KIND_BATTLE) ? 1 : $mode['team_size'];
+            $mates = $this->joinParty($actor, $from, $booking, $teamSize);
+            if ($held + count($mates) > (int) $duel->max_players) {
+                throw new RuntimeException('Не хватает мест в лобби');
+            }
             foreach ($mates as $seat) {
                 $this->assertNoActiveDuel((int) $seat['user']->id, (int) $duel->club_id, (int) $duel->id);
             }
+            $nextSlot = $this->nextTeamSlot($duel, $teamSize);
             foreach ($mates as $seat) {
                 $this->holdEntry($seat['user'], (float) $duel->entry_fee, 'arena accept');
                 ArenaDuelParticipant::query()->create([
                     'duel_id' => $duel->id,
                     'user_id' => $seat['user']->id,
-                    'computer_id' => $seat['computer']->id,
-                    'booking_id' => $seat['booking']->id,
-                    'team_slot' => 2,
+                    'computer_id' => $seat['computer']?->id,
+                    'booking_id' => $seat['booking']?->id,
+                    'team_slot' => $nextSlot,
                     'escrow_status' => ArenaDuelParticipant::ESCROW_HELD,
+                    'held_amount' => (float) $duel->entry_fee,
                     'joined_at' => now(),
                 ]);
                 Transaction::create([
@@ -397,27 +449,22 @@ class ArenaDuelService
                     'type' => 'purchase',
                     'source' => 'arena_duel',
                     'is_taxable' => false,
-                    'description' => 'Арена: взнос '.$this->modeLabel($duel->game, $duel->mode),
+                    'description' => 'Арена: взнос '.$this->kindLabel((string) $duel->kind).' '.$this->modeLabel($duel->game, $duel->mode),
                     'payload' => ['duel_id' => $duel->id, 'uuid' => $duel->uuid],
                 ]);
+                if ($teamSize < 2) {
+                    $nextSlot++;
+                }
             }
 
-            $held = ArenaDuelParticipant::query()->where('duel_id', $duel->id)->count();
-            $total = round((float) $duel->entry_fee * $held, 2);
-            $rake = round($total * (float) $duel->rake_percent / 100, 2);
-            $duel->update([
-                'status' => ArenaDuel::STATUS_ACCEPTED,
-                'total_pot' => $total,
-                'rake_amount' => $rake,
-                'winner_prize' => round($total - $rake, 2),
-                'started_at' => now(),
-            ]);
+            $this->clearRaiseLocked($duel);
+            $this->syncLobbyLocked($duel);
 
             return $duel->fresh(['participants.user', 'participants.computer', 'creatorComputer']);
         });
     }
 
-    public function decline(User $actor, Computer $from, ArenaDuel $duel): ArenaDuel
+    public function decline(User $actor, ?Computer $from, ArenaDuel $duel): ArenaDuel
     {
         return DB::transaction(function () use ($actor, $from, $duel) {
             $duel = ArenaDuel::query()->lockForUpdate()->findOrFail($duel->id);
@@ -427,7 +474,7 @@ class ArenaDuelService
             if ($duel->scope !== ArenaDuel::SCOPE_COMPUTER) {
                 throw new RuntimeException('Открытый котёл нельзя отклонить — дождитесь истечения');
             }
-            $isTarget = (int) $duel->target_computer_id === (int) $from->id
+            $isTarget = ($from && (int) $duel->target_computer_id === (int) $from->id)
                 || (int) $duel->target_user_id === (int) $actor->id;
             if (! $isTarget) {
                 throw new RuntimeException('Этот вызов адресован не вам');
@@ -453,6 +500,78 @@ class ArenaDuelService
             $duel->update(['status' => ArenaDuel::STATUS_CANCELLED, 'completed_at' => now()]);
 
             return $duel->fresh();
+        });
+    }
+
+    public function start(User $actor, ArenaDuel $duel): ArenaDuel
+    {
+        return DB::transaction(function () use ($actor, $duel) {
+            $duel = ArenaDuel::query()->lockForUpdate()->findOrFail($duel->id);
+            if ((int) $duel->creator_user_id !== (int) $actor->id) {
+                throw new RuntimeException('Старт может дать только автор');
+            }
+            if ($duel->status !== ArenaDuel::STATUS_PENDING) {
+                throw new RuntimeException('Лобби уже закрыто');
+            }
+            $held = ArenaDuelParticipant::query()->where('duel_id', $duel->id)->count();
+            if ($held < (int) $duel->min_players) {
+                throw new RuntimeException('Нужно минимум '.$duel->min_players.' игроков');
+            }
+            $this->syncLobbyLocked($duel, true);
+
+            return $duel->fresh(['participants.user', 'participants.computer', 'creatorComputer']);
+        });
+    }
+
+    public function proposeRaise(User $actor, ArenaDuel $duel, float $newFee): ArenaDuel
+    {
+        return DB::transaction(function () use ($actor, $duel, $newFee) {
+            $duel = ArenaDuel::query()->lockForUpdate()->findOrFail($duel->id);
+            $this->assertCanRaise($duel, $actor);
+            $settings = $this->settings((int) $duel->club_id);
+            $newFee = round($newFee, 2);
+            if ($newFee <= (float) $duel->entry_fee + 0.009) {
+                throw new RuntimeException('Новая ставка должна быть выше текущей');
+            }
+            if ($newFee > $settings['max_entry_fee']) {
+                throw new RuntimeException('Максимум '.$settings['max_entry_fee'].' ₽');
+            }
+            $delta = round($newFee - (float) $duel->entry_fee, 2);
+            $locked = User::query()->lockForUpdate()->findOrFail($actor->id);
+            $locked->syncBalanceToWallet();
+            if ((float) $locked->availableBalance() + 0.009 < $delta) {
+                throw new RuntimeException('Недостаточно депозита на повышение ставки');
+            }
+
+            $votes = [(string) $actor->id => true];
+            $duel->update([
+                'raise_to' => $newFee,
+                'raise_by_user_id' => $actor->id,
+                'raise_votes' => $votes,
+            ]);
+
+            return $this->maybeApplyRaiseLocked($duel->fresh());
+        });
+    }
+
+    public function voteRaise(User $actor, ArenaDuel $duel, bool $agree): ArenaDuel
+    {
+        return DB::transaction(function () use ($actor, $duel, $agree) {
+            $duel = ArenaDuel::query()->lockForUpdate()->findOrFail($duel->id);
+            $this->assertCanRaise($duel, $actor);
+            if (! $duel->raise_to) {
+                throw new RuntimeException('Нет предложения повысить ставку');
+            }
+            if (! $agree) {
+                $this->clearRaiseLocked($duel);
+
+                return $duel->fresh(['participants.user', 'participants.computer', 'creatorComputer']);
+            }
+            $votes = is_array($duel->raise_votes) ? $duel->raise_votes : [];
+            $votes[(string) $actor->id] = true;
+            $duel->update(['raise_votes' => $votes]);
+
+            return $this->maybeApplyRaiseLocked($duel->fresh());
         });
     }
 
@@ -490,8 +609,10 @@ class ArenaDuelService
         $game = ($snap['game'] ?? '') === 'dota' ? 'dota' : 'cs2';
 
         $participant = ArenaDuelParticipant::query()
-            ->where('computer_id', $computer->id)
             ->where('user_id', $user->id)
+            ->where(function ($q) use ($computer) {
+                $q->where('computer_id', $computer->id)->orWhereNull('computer_id');
+            })
             ->whereHas('duel', function ($q) use ($clubId) {
                 $q->where('club_id', $clubId)
                     ->whereIn('status', [
@@ -504,6 +625,12 @@ class ArenaDuelService
             ->first();
         if (! $participant) {
             return null;
+        }
+        if (! $participant->computer_id) {
+            $participant->update([
+                'computer_id' => $computer->id,
+                'booking_id' => $booking->id,
+            ]);
         }
 
         $duel = $participant->duel;
@@ -586,8 +713,13 @@ class ArenaDuelService
                 if (! $row || $row->status !== ArenaDuel::STATUS_PENDING) {
                     return;
                 }
-                $this->refundHeld($row, 'Арена: вызов истёк');
-                $row->update(['status' => ArenaDuel::STATUS_EXPIRED, 'completed_at' => now()]);
+                $held = ArenaDuelParticipant::query()->where('duel_id', $row->id)->count();
+                if ($held >= (int) $row->min_players) {
+                    $this->syncLobbyLocked($row, true);
+                } else {
+                    $this->refundHeld($row, 'Арена: вызов истёк');
+                    $row->update(['status' => ArenaDuel::STATUS_EXPIRED, 'completed_at' => now()]);
+                }
                 $n++;
             });
         }
@@ -598,7 +730,7 @@ class ArenaDuelService
     /**
      * @return array<string, mixed>
      */
-    public function payload(ArenaDuel $duel, ?Computer $viewer = null, ?Booking $booking = null): array
+    public function payload(ArenaDuel $duel, ?Computer $viewer = null, ?Booking $booking = null, ?User $user = null): array
     {
         $duel->loadMissing(['participants.user', 'participants.computer', 'creator', 'creatorComputer', 'targetComputer', 'winner']);
         $seconds = 0;
@@ -606,35 +738,57 @@ class ArenaDuelService
             $seconds = max(0, $duel->expires_at->getTimestamp() - now()->getTimestamp());
         }
         $viewerId = $viewer ? (int) $viewer->id : 0;
-        $viewerUserId = $booking ? (int) $booking->user_id : 0;
+        $viewerUserId = $user ? (int) $user->id : ($booking ? (int) $booking->user_id : 0);
         $mySlot = null;
+        $joined = false;
         foreach ($duel->participants as $p) {
-            if ($viewerId > 0 && (int) $p->computer_id === $viewerId) {
+            if ($viewerUserId > 0 && (int) $p->user_id === $viewerUserId) {
                 $mySlot = (int) $p->team_slot;
+                $joined = true;
+            } elseif ($viewerId > 0 && (int) $p->computer_id === $viewerId) {
+                $mySlot = (int) $p->team_slot;
+                $joined = true;
             }
         }
-        $teams = [1 => [], 2 => []];
+        $teams = [];
+        $players = [];
         foreach ($duel->participants as $p) {
-            $teams[(int) $p->team_slot][] = [
+            $row = [
                 'user_id' => (int) $p->user_id,
                 'name' => (string) ($p->user?->name ?? 'Игрок'),
-                'computer_id' => (int) $p->computer_id,
+                'computer_id' => $p->computer_id ? (int) $p->computer_id : null,
                 'pc' => (string) ($p->computer?->name ?? ''),
                 'rounds_won' => (int) $p->rounds_won,
                 'escrow' => $p->escrow_status,
+                'held_amount' => (float) ($p->held_amount ?: $duel->entry_fee),
             ];
+            $teams[(int) $p->team_slot][] = $row;
+            $players[] = $row;
+        }
+        $held = count($players);
+        $votes = is_array($duel->raise_votes) ? $duel->raise_votes : [];
+        $myVote = $viewerUserId > 0 ? ($votes[(string) $viewerUserId] ?? null) : null;
+        $voteYes = 0;
+        foreach ($players as $row) {
+            if (! empty($votes[(string) $row['user_id']])) {
+                $voteYes++;
+            }
         }
 
         $connect = trim((string) ($duel->server_connect_uri ?: ''));
         if ($connect === '' && $duel->server_password) {
             $connect = 'password '.$duel->server_password;
         }
+        $full = $held >= (int) $duel->max_players;
+        $lobbyOpen = $duel->status === ArenaDuel::STATUS_PENDING && ! $full;
 
         return [
             'id' => (int) $duel->id,
             'uuid' => (string) $duel->uuid,
             'status' => $duel->status,
             'scope' => $duel->scope,
+            'kind' => (string) ($duel->kind ?: ArenaDuel::KIND_DUEL),
+            'kind_label' => $this->kindLabel((string) ($duel->kind ?: ArenaDuel::KIND_DUEL)),
             'game' => $duel->game,
             'mode' => $duel->mode,
             'mode_label' => $this->modeLabel($duel->game, $duel->mode),
@@ -644,7 +798,17 @@ class ArenaDuelService
             'rake_amount' => (float) $duel->rake_amount,
             'winner_prize' => (float) $duel->winner_prize,
             'first_to' => (int) $duel->first_to,
-            'creator_computer_id' => (int) $duel->creator_computer_id,
+            'min_players' => (int) ($duel->min_players ?: 2),
+            'max_players' => (int) ($duel->max_players ?: 2),
+            'players_count' => $held,
+            'players' => $players,
+            'scheduled_at' => optional($duel->scheduled_at)?->toIso8601String(),
+            'raise_to' => $duel->raise_to ? (float) $duel->raise_to : null,
+            'raise_by_user_id' => $duel->raise_by_user_id ? (int) $duel->raise_by_user_id : null,
+            'raise_votes' => $votes,
+            'raise_yes' => $voteYes,
+            'my_raise_vote' => $myVote === true,
+            'creator_computer_id' => $duel->creator_computer_id ? (int) $duel->creator_computer_id : null,
             'creator_pc' => (string) ($duel->creatorComputer?->name ?? ''),
             'creator_name' => (string) ($duel->creator?->name ?? ''),
             'target_computer_id' => $duel->target_computer_id ? (int) $duel->target_computer_id : null,
@@ -657,15 +821,25 @@ class ArenaDuelService
             'winner_user_id' => $duel->winner_user_id ? (int) $duel->winner_user_id : null,
             'winner_name' => $duel->winner?->name,
             'teams' => $teams,
-            'mine' => $mySlot !== null || ($viewerUserId > 0 && $viewerUserId === (int) $duel->creator_user_id),
-            'incoming' => $this->isIncomingFor($duel, $viewer, $booking?->user),
-            'can_accept' => $duel->status === ArenaDuel::STATUS_PENDING && $viewer && $viewerUserId
-                && $viewerUserId !== (int) $duel->creator_user_id,
+            'joined' => $joined,
+            'mine' => $joined || ($viewerUserId > 0 && $viewerUserId === (int) $duel->creator_user_id),
+            'incoming' => $this->isIncomingFor($duel, $viewer, $user ?? $booking?->user),
+            'can_accept' => $lobbyOpen && $viewerUserId > 0 && ! $joined
+                && $viewerUserId !== (int) $duel->creator_user_id
+                && ($duel->scope === ArenaDuel::SCOPE_HALL
+                    || $this->isIncomingFor($duel, $viewer, $user ?? $booking?->user)
+                    || $duel->scope === ArenaDuel::SCOPE_ZONE),
             'can_cancel' => $duel->status === ArenaDuel::STATUS_PENDING && $viewerUserId === (int) $duel->creator_user_id,
+            'can_start' => $duel->status === ArenaDuel::STATUS_PENDING
+                && $viewerUserId === (int) $duel->creator_user_id
+                && $held >= (int) ($duel->min_players ?: 2)
+                && $held < (int) ($duel->max_players ?: 2),
+            'can_raise' => $joined && in_array($duel->status, [ArenaDuel::STATUS_PENDING, ArenaDuel::STATUS_ACCEPTED], true),
+            'can_vote_raise' => $joined && $duel->raise_to && $myVote !== true
+                && in_array($duel->status, [ArenaDuel::STATUS_PENDING, ArenaDuel::STATUS_ACCEPTED], true),
             'can_decline' => $duel->status === ArenaDuel::STATUS_PENDING
                 && $duel->scope === ArenaDuel::SCOPE_COMPUTER
-                && $viewer
-                && ((int) $duel->target_computer_id === (int) $viewer->id || $viewerUserId === (int) $duel->target_user_id),
+                && $this->isIncomingFor($duel, $viewer, $user ?? $booking?->user),
             'connect' => $connect,
             'password' => $duel->server_password,
             'legal' => $this->legalBlock(),
@@ -700,6 +874,9 @@ class ArenaDuelService
             'rake_percent' => min(20, max(0, $f->int($clubId, 'arena_duels', 'rake_percent', 10))),
             'invite_seconds' => max(20, $f->int($clubId, 'arena_duels', 'invite_seconds', 60)),
             'open_ttl_minutes' => max(1, $f->int($clubId, 'arena_duels', 'open_ttl_minutes', 5)),
+            'advance_ttl_hours' => max(1, min(48, $f->int($clubId, 'arena_duels', 'advance_ttl_hours', 4))),
+            'min_battle_players' => max(3, min(8, $f->int($clubId, 'arena_duels', 'min_battle_players', 3))),
+            'max_battle_players' => max(3, min(16, $f->int($clubId, 'arena_duels', 'max_battle_players', 8))),
             'rank_delta' => max(0, $f->int($clubId, 'arena_duels', 'rank_delta', 3)),
             'disconnect_seconds' => max(30, $f->int($clubId, 'arena_duels', 'disconnect_seconds', 90)),
             'cooldown_seconds' => max(30, $f->int($clubId, 'arena_duels', 'cooldown_seconds', 120)),
@@ -716,9 +893,11 @@ class ArenaDuelService
             'enabled' => false,
             'legal' => $this->legalBlock(),
             'modes' => $this->modes(),
+            'kinds' => $this->kinds(),
             'presets' => self::PRESETS,
             'incoming' => null,
             'mine' => null,
+            'board' => [],
             'open' => [],
             'live' => [],
             'recent' => [],
@@ -791,17 +970,23 @@ class ArenaDuelService
 
     private function line(ArenaDuel $duel): string
     {
-        $pc = $duel->creatorComputer?->name ?: 'ПК';
+        $kind = $this->kindLabel((string) ($duel->kind ?: ArenaDuel::KIND_DUEL));
+        $pc = $duel->creatorComputer?->name ?: ($duel->creator?->name ?: 'Игрок');
         $name = $duel->winner?->name ?: $duel->creator?->name ?: 'Игрок';
         $pot = number_format((float) $duel->total_pot, 0, '.', ' ');
+        $when = $duel->scheduled_at ? $duel->scheduled_at->timezone(config('app.timezone'))->format('d.m H:i') : '';
         if (in_array($duel->status, [ArenaDuel::STATUS_COMPLETED, ArenaDuel::STATUS_FORFEIT], true)) {
-            return $name.' победил в дуэли на '.$pc.'! Банк: '.$pot.' ₽';
+            return $name.' победил в '.mb_strtolower($kind).' на '.$pc.'! Банк: '.$pot.' ₽';
         }
         if ($duel->status === ArenaDuel::STATUS_PENDING) {
-            return 'ВЫЗОВ НА ДУЭЛЬ: '.$pc.' ставит '.number_format((float) $duel->entry_fee, 0, '.', ' ').' ₽ ('.$this->modeLabel($duel->game, $duel->mode).')';
+            $tail = $when !== '' ? ' · '.$when : '';
+            $count = $duel->participants->count();
+            $cap = (int) ($duel->max_players ?: 2);
+
+            return $kind.': '.$pc.' · '.number_format((float) $duel->entry_fee, 0, '.', ' ').' ₽ · '.$this->modeLabel($duel->game, $duel->mode).' · '.$count.'/'.$cap.$tail;
         }
 
-        return 'Дуэль '.$this->modeLabel($duel->game, $duel->mode).' · банк '.$pot.' ₽';
+        return $kind.' '.$this->modeLabel($duel->game, $duel->mode).' · банк '.$pot.' ₽';
     }
 
     /**
@@ -912,7 +1097,8 @@ class ArenaDuelService
             ->lockForUpdate()
             ->get();
         foreach ($rows as $row) {
-            $this->creditUser((int) $row->user_id, (float) $duel->entry_fee, $description, [
+            $amount = (float) ($row->held_amount ?: $duel->entry_fee);
+            $this->creditUser((int) $row->user_id, $amount, $description, [
                 'duel_id' => $duel->id,
                 'uuid' => $duel->uuid,
             ], 'arena_duel_refund');
@@ -1192,14 +1378,15 @@ class ArenaDuelService
         }
     }
 
-    private function assertCanAccept(ArenaDuel $duel, Computer $from, User $actor): void
+    private function assertCanAccept(ArenaDuel $duel, ?Computer $from, User $actor): void
     {
-        if ((int) $duel->club_id !== (int) $from->club_id) {
+        $clubId = $this->resolveClubId($from, $actor);
+        if ((int) $duel->club_id !== $clubId) {
             throw new RuntimeException('Вызов из другого клуба');
         }
         if ($duel->scope === ArenaDuel::SCOPE_COMPUTER) {
-            $ok = (int) $duel->target_computer_id === (int) $from->id
-                || (int) $duel->target_user_id === (int) $actor->id;
+            $ok = (int) $duel->target_user_id === (int) $actor->id
+                || ($from && (int) $duel->target_computer_id === (int) $from->id);
             if (! $ok) {
                 throw new RuntimeException('Этот вызов адресован другому ПК');
             }
@@ -1207,6 +1394,9 @@ class ArenaDuelService
             return;
         }
         if ($duel->scope === ArenaDuel::SCOPE_ZONE) {
+            if (! $from) {
+                throw new RuntimeException('Межзонная дуэль — только с ПК');
+            }
             $group = ClanWarService::zoneGroup($this->zoneSlug($from));
             if ($group !== $duel->zone_group) {
                 throw new RuntimeException('Межзонная дуэль — только из зоны '.$duel->zone_group);
@@ -1281,7 +1471,7 @@ class ArenaDuelService
 
     private function isIncomingFor(ArenaDuel $duel, ?Computer $computer, ?User $user): bool
     {
-        if ($duel->status !== ArenaDuel::STATUS_PENDING || ! $computer) {
+        if ($duel->status !== ArenaDuel::STATUS_PENDING) {
             return false;
         }
         if ($user && (int) $duel->creator_user_id === (int) $user->id) {
@@ -1290,9 +1480,11 @@ class ArenaDuelService
         if ($duel->scope !== ArenaDuel::SCOPE_COMPUTER) {
             return false;
         }
+        if ($user && (int) $duel->target_user_id === (int) $user->id) {
+            return true;
+        }
 
-        return (int) $duel->target_computer_id === (int) $computer->id
-            || ($user && (int) $duel->target_user_id === (int) $user->id);
+        return $computer && (int) $duel->target_computer_id === (int) $computer->id;
     }
 
     private function zoneSlug(Computer $computer): ?string

@@ -22,6 +22,7 @@ class ArenaDuelParticipant extends Model
         'booking_id',
         'team_slot',
         'escrow_status',
+        'held_amount',
         'rounds_won',
         'last_gsi_at',
         'joined_at',
@@ -31,6 +32,7 @@ class ArenaDuelParticipant extends Model
     {
         return [
             'team_slot' => 'integer',
+            'held_amount' => 'float',
             'rounds_won' => 'integer',
             'last_gsi_at' => 'datetime',
             'joined_at' => 'datetime',
