@@ -7,11 +7,13 @@ return [
     'max_reply_chars' => (int) env('AI_ASSISTANT_MAX_REPLY_CHARS', 420),
     'rate_limit_per_minute' => (int) env('AI_ASSISTANT_RATE_LIMIT', 8),
     'http_timeout' => (float) env('AI_ASSISTANT_HTTP_TIMEOUT', 60),
+    'vision_timeout' => (float) env('AI_ASSISTANT_VISION_TIMEOUT', 90),
 
     'deepseek' => [
         'api_key' => env('DEEPSEEK_API_KEY'),
         'base_url' => rtrim((string) env('DEEPSEEK_BASE_URL', 'https://api.deepseek.com'), '/'),
         'model' => env('DEEPSEEK_MODEL', 'deepseek-v4-flash'),
+        'vision_model' => env('DEEPSEEK_VISION_MODEL', 'deepseek-flash'),
     ],
 
     // Речь по умолчанию: Yandex SpeechKit (из РФ стабильнее OpenAI)

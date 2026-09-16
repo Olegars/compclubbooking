@@ -216,6 +216,86 @@ class DeepSeekChat
     }
 
     /**
+     * JSON-ответ по тексту и/или картинке (накладные, OCR).
+     *
+     * @param  string|list<array<string, mixed>>  $user
+     * @return array<string, mixed>
+     */
+    public function completeJson(
+        string $system,
+        string|array $user,
+        ?int $clubId = null,
+        float $temperature = 0.1,
+        int $maxTokens = 4000,
+        ?float $timeout = null,
+        bool $vision = false,
+    ): array {
+        $settings = $this->settingsForOptionalClub($clubId);
+        $key = $settings->resolvedLlmApiKey();
+        if ($key === '') {
+            throw new RuntimeException('LLM API-ключ не задан (админка или .env).');
+        }
+
+        $base = $settings->resolvedLlmBaseUrl();
+        $model = $vision ? $this->resolvedVisionModel($settings) : $settings->resolvedLlmModel();
+        $timeout ??= $vision
+            ? (float) config('ai_assistant.vision_timeout', 90)
+            : (float) config('ai_assistant.http_timeout', 60);
+
+        $response = Http::timeout($timeout)
+            ->withToken($key)
+            ->acceptJson()
+            ->post($base.'/chat/completions', $this->chatPayload(
+                $model,
+                [
+                    ['role' => 'system', 'content' => $system],
+                    ['role' => 'user', 'content' => $user],
+                ],
+                temperature: $temperature,
+                maxTokens: $maxTokens,
+                jsonObject: true,
+            ));
+
+        if (! $response->successful()) {
+            $body = trim($response->body());
+            if (mb_strlen($body) > 400) {
+                $body = mb_substr($body, 0, 400).'…';
+            }
+
+            throw new RuntimeException('LLM failed: HTTP '.$response->status().' '.$body);
+        }
+
+        $text = $this->extractMessageText($response->json());
+        if ($text === '') {
+            throw new RuntimeException('LLM вернул пустой ответ.');
+        }
+
+        return $this->decodeJsonObject($text);
+    }
+
+    public function resolvedVisionModel(?AiAssistantSetting $settings = null): string
+    {
+        $settings ??= $this->settingsForOptionalClub(null);
+        if ($settings->resolvedLlmProvider() === 'openai') {
+            $model = trim($settings->resolvedLlmModel());
+
+            return $model !== '' ? $model : 'gpt-4o-mini';
+        }
+
+        $fromConfig = trim((string) config('ai_assistant.deepseek.vision_model', ''));
+        if ($fromConfig !== '') {
+            return $fromConfig;
+        }
+
+        $configured = strtolower($settings->resolvedLlmModel());
+        if (str_contains($configured, 'flash') || str_contains($configured, 'vision')) {
+            return 'deepseek-flash';
+        }
+
+        return 'deepseek-flash';
+    }
+
+    /**
      * Без клуба в БД не создаём ai_assistant_settings с club_id=0 (FK).
      */
     private function settingsForOptionalClub(?int $clubId): AiAssistantSetting
@@ -232,11 +312,16 @@ class DeepSeekChat
     }
 
     /**
-     * @param  list<array{role:string,content:string}>  $messages
+     * @param  list<array{role:string,content:mixed}>  $messages
      * @return array<string, mixed>
      */
-    private function chatPayload(string $model, array $messages, float $temperature, int $maxTokens): array
-    {
+    private function chatPayload(
+        string $model,
+        array $messages,
+        float $temperature,
+        int $maxTokens,
+        bool $jsonObject = false,
+    ): array {
         $payload = [
             'model' => $model,
             'temperature' => $temperature,
@@ -247,6 +332,10 @@ class DeepSeekChat
         // DeepSeek V4: thinking включён по умолчанию и съедает max_tokens → content пустой
         if ($this->isDeepSeekModel($model)) {
             $payload['thinking'] = ['type' => 'disabled'];
+        }
+
+        if ($jsonObject) {
+            $payload['response_format'] = ['type' => 'json_object'];
         }
 
         return $payload;
@@ -269,12 +358,49 @@ class DeepSeekChat
             return '';
         }
 
-        $content = trim((string) ($message['content'] ?? ''));
-        if ($content !== '') {
-            return $content;
+        $content = $message['content'] ?? '';
+        if (is_array($content)) {
+            $bits = [];
+            foreach ($content as $part) {
+                if (is_string($part)) {
+                    $bits[] = $part;
+                } elseif (is_array($part) && isset($part['text'])) {
+                    $bits[] = (string) $part['text'];
+                }
+            }
+            $content = implode('', $bits);
+        }
+
+        $text = trim((string) $content);
+        if ($text !== '') {
+            return $text;
         }
 
         // fallback если thinking всё же включён и ответ только в reasoning
         return trim((string) ($message['reasoning_content'] ?? ''));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function decodeJsonObject(string $text): array
+    {
+        $text = trim($text);
+        if (preg_match('/```(?:json)?\s*(\{.*\})\s*```/us', $text, $m)) {
+            $text = $m[1];
+        }
+
+        $start = strpos($text, '{');
+        $end = strrpos($text, '}');
+        if ($start !== false && $end !== false && $end > $start) {
+            $text = substr($text, $start, $end - $start + 1);
+        }
+
+        $decoded = json_decode($text, true);
+        if (! is_array($decoded)) {
+            throw new RuntimeException('LLM вернул не JSON.');
+        }
+
+        return $decoded;
     }
 }

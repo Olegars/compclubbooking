@@ -41,6 +41,37 @@ const stockError = ref('')
 const receiveProductId = ref<number | null>(null)
 const receiveUnitCost = ref<number | null>(null)
 const receiveSupplierId = ref<number | null>(null)
+const receiveInvoiceNumber = ref<string | null>(null)
+
+type InvoiceLine = {
+    name: string
+    qty: number
+    scanned_qty: number
+    unit_cost: number | null
+    barcode: string | null
+    amount: number | null
+    product_id: number | null
+    product_name: string | null
+    requires_marking: boolean
+    match: 'barcode' | 'name' | 'none'
+    note: string | null
+}
+
+type InvoiceDraft = {
+    invoice_number: string | null
+    invoice_date: string | null
+    supplier_name: string | null
+    supplier_inn: string | null
+    supplier_id: number | null
+    lines: InvoiceLine[]
+    unmatched: number
+    marked: number
+}
+
+const invoice = ref<InvoiceDraft | null>(null)
+const invoiceExtras = ref<{ product_id: number, name: string, qty: number }[]>([])
+const invoiceInput = ref<HTMLInputElement | null>(null)
+const invoiceBusy = ref(false)
 
 const isModalOpen = ref(false)
 const isWriteOffOpen = ref(false)
@@ -108,24 +139,85 @@ const applyProductStock = (productPayload: any) => {
     }
 }
 
+const digitsOnly = (value: string | number | null | undefined) => String(value ?? '').replace(/\D/g, '')
+const barcodesEqual = (a?: string | null, b?: string | null) => {
+    const left = digitsOnly(a)
+    const right = digitsOnly(b)
+    if (left.length < 8 || right.length < 8) return false
+    return left === right || left.replace(/^0+/, '') === right.replace(/^0+/, '')
+}
+
+const findInvoiceLine = (product: any, code: string): InvoiceLine | null => {
+    if (!invoice.value) return null
+    const id = Number(product?.id)
+    const barcode = digitsOnly(product?.barcode || code)
+    const under = invoice.value.lines.find(l => Number(l.product_id) === id && Number(l.scanned_qty) < Number(l.qty))
+    if (under) return under
+    const same = invoice.value.lines.find(l => Number(l.product_id) === id)
+    if (same) return same
+    if (barcode.length >= 8) {
+        return invoice.value.lines.find(l => barcodesEqual(l.barcode, barcode) && Number(l.scanned_qty) < Number(l.qty))
+            || invoice.value.lines.find(l => barcodesEqual(l.barcode, barcode))
+            || null
+    }
+    return null
+}
+
+const applyScanToInvoice = (product: any, code: string) => {
+    if (!invoice.value) return 'ok'
+    const line = findInvoiceLine(product, code)
+    if (!line) {
+        const id = Number(product?.id)
+        const extra = invoiceExtras.value.find(x => x.product_id === id)
+        if (extra) extra.qty += 1
+        else invoiceExtras.value.push({ product_id: id, name: product?.name || 'Товар', qty: 1 })
+        return 'extra'
+    }
+    if (!line.product_id) {
+        line.product_id = Number(product.id)
+        line.product_name = product.name || line.product_name
+        line.requires_marking = Boolean(product.requires_marking)
+        line.match = line.match === 'none' ? 'barcode' : line.match
+        line.note = product.requires_marking ? 'Сканируйте каждый КМ' : null
+    }
+    line.scanned_qty = Number(line.scanned_qty || 0) + 1
+    return Number(line.scanned_qty) > Number(line.qty) ? 'over' : 'ok'
+}
+
 const processReceiveScan = async (code: string) => {
     if (isModalOpen.value || isWriteOffOpen.value) return
 
     stockError.value = ''
     try {
+        const previewProduct = receiveProductId.value
+            ? products.value.find(p => Number(p.id) === Number(receiveProductId.value))
+            : products.value.find(p => barcodesEqual(p.barcode, code))
+        const invoiceLine = previewProduct ? findInvoiceLine(previewProduct, code) : null
+
         const payload: Record<string, any> = { code }
         if (receiveProductId.value) payload.product_id = receiveProductId.value
-        if (receiveUnitCost.value != null && receiveUnitCost.value >= 0) {
-            payload.unit_cost = receiveUnitCost.value
+        else if (invoiceLine?.product_id) payload.product_id = invoiceLine.product_id
+
+        const lineCost = invoiceLine?.unit_cost
+        const cost = lineCost != null && Number(lineCost) >= 0 ? Number(lineCost) : receiveUnitCost.value
+        if (cost != null && cost >= 0) payload.unit_cost = cost
+
+        const supplierId = invoice.value?.supplier_id || receiveSupplierId.value
+        if (supplierId) payload.supplier_id = supplierId
+        if (invoice.value?.invoice_number || receiveInvoiceNumber.value) {
+            payload.invoice_number = invoice.value?.invoice_number || receiveInvoiceNumber.value
         }
-        if (receiveSupplierId.value) payload.supplier_id = receiveSupplierId.value
+        if (invoice.value) payload.create_invoice = false
 
         const { data } = await axios.post('/admin/api/inventory/receive-scan', payload)
         applyProductStock(data.product)
+        const scanKind = applyScanToInvoice(data.product, code)
 
         lastScannedName.value = `${data.product?.name || 'Товар'} · ${data.mode === 'marking' ? 'КМ' : 'EAN'} +1`
         scannedId.value = Number(data.product?.id)
         document.getElementById(`product-${data.product?.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        if (scanKind === 'extra') stockError.value = 'Скан не из накладной'
+        else if (scanKind === 'over') stockError.value = 'Больше, чем в накладной'
 
         setTimeout(() => {
             scannedId.value = null
@@ -150,6 +242,115 @@ const setReceiveMode = (on: boolean) => {
     } else {
         disableReceiveMode()
         receiveProductId.value = null
+    }
+}
+
+const invoiceExpected = computed(() => (invoice.value?.lines || []).reduce((s, l) => s + Number(l.qty || 0), 0))
+const invoiceScanned = computed(() => (invoice.value?.lines || []).reduce((s, l) => s + Number(l.scanned_qty || 0), 0))
+const invoiceShort = computed(() => (invoice.value?.lines || []).filter(l => Number(l.scanned_qty) < Number(l.qty)).length)
+const invoiceOver = computed(() => (invoice.value?.lines || []).filter(l => Number(l.scanned_qty) > Number(l.qty)).length)
+const invoiceUnmapped = computed(() => (invoice.value?.lines || []).filter(l => !l.product_id).length)
+const invoiceExtraQty = computed(() => invoiceExtras.value.reduce((s, x) => s + x.qty, 0))
+const invoiceBalanced = computed(() => Boolean(
+    invoice.value
+    && invoice.value.lines.length
+    && invoiceUnmapped.value === 0
+    && invoiceShort.value === 0
+    && invoiceOver.value === 0
+    && invoiceExtraQty.value === 0
+))
+
+const lineStatus = (line: InvoiceLine) => {
+    const got = Number(line.scanned_qty || 0)
+    const need = Number(line.qty || 0)
+    if (!line.product_id) return 'wait'
+    if (got === need) return 'ok'
+    if (got > need) return 'over'
+    return 'short'
+}
+
+const triggerInvoiceInput = () => {
+    if (!receiveMode.value) setReceiveMode(true)
+    invoiceInput.value?.click()
+}
+
+const uploadInvoicePhoto = async (e: Event) => {
+    const target = e.target as HTMLInputElement
+    const file = target.files?.[0]
+    target.value = ''
+    if (!file) return
+    if (!receiveMode.value) setReceiveMode(true)
+    invoiceBusy.value = true
+    stockError.value = ''
+    try {
+        const formData = new FormData()
+        formData.append('photo', file)
+        const { data } = await axios.post('/admin/api/inventory/parse-invoice', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 120000,
+        })
+        invoice.value = {
+            ...data,
+            lines: (data.lines || []).map((l: InvoiceLine) => ({
+                ...l,
+                scanned_qty: Number(l.scanned_qty || 0),
+                qty: Number(l.qty || 0),
+            })),
+        }
+        invoiceExtras.value = []
+        if (data.supplier_id) receiveSupplierId.value = Number(data.supplier_id)
+        if (data.invoice_number) receiveInvoiceNumber.value = data.invoice_number
+        const priced = (data.lines || []).find((l: InvoiceLine) => l.unit_cost != null)
+        if (priced && receiveUnitCost.value == null) receiveUnitCost.value = Number(priced.unit_cost)
+    } catch (err: any) {
+        stockError.value = err?.response?.data?.message || 'Не удалось распознать накладную'
+        setTimeout(() => { stockError.value = '' }, 5000)
+    } finally {
+        invoiceBusy.value = false
+    }
+}
+
+const assignInvoiceProduct = (line: InvoiceLine, productId: number | null) => {
+    const id = productId ? Number(productId) : null
+    line.product_id = id
+    const product = products.value.find(p => Number(p.id) === id)
+    line.product_name = product?.name || null
+    line.requires_marking = Boolean(product?.requires_marking)
+    if (product?.barcode && !line.barcode) line.barcode = product.barcode
+    line.note = !product
+        ? 'Нет в каталоге — выберите позицию, затем сканируйте'
+        : (product.requires_marking ? 'Сканируйте каждый КМ' : null)
+}
+
+const dismissInvoice = () => {
+    invoice.value = null
+    invoiceExtras.value = []
+    receiveInvoiceNumber.value = null
+}
+
+const closeInvoice = async () => {
+    if (!invoice.value || !invoiceBalanced.value) {
+        stockError.value = 'Накладная и факт пока не совпадают'
+        setTimeout(() => { stockError.value = '' }, 4000)
+        return
+    }
+    invoiceBusy.value = true
+    try {
+        await axios.post('/admin/api/inventory/close-invoice', {
+            supplier_id: receiveSupplierId.value || invoice.value.supplier_id,
+            invoice_number: invoice.value.invoice_number,
+            invoice_date: invoice.value.invoice_date,
+            lines: invoice.value.lines,
+            extras: invoiceExtras.value,
+        })
+        lastScannedName.value = 'Накладная сошлась'
+        dismissInvoice()
+        setTimeout(() => { lastScannedName.value = '' }, 2500)
+    } catch (err: any) {
+        stockError.value = err?.response?.data?.message || 'Сверка не прошла'
+        setTimeout(() => { stockError.value = '' }, 5000)
+    } finally {
+        invoiceBusy.value = false
     }
 }
 
@@ -381,7 +582,12 @@ const receiveTargetName = computed(() => {
                         <div class="w-2 h-2 bg-cyan-500 rounded-full animate-pulse shadow-[0_0_10px_#06b6d4]"></div>
                         <p class="text-white/30 text-[10px] uppercase tracking-[0.4em] font-black italic">
                             <template v-if="receiveMode">
-                                {{ receiveTargetName ? `Приёмка → ${receiveTargetName}` : 'Режим приёмки · сканируйте КМ / EAN' }}
+                                <template v-if="invoice">
+                                    {{ invoiceBalanced ? 'Накладная и факт совпали' : `Накладная ${invoiceScanned}/${invoiceExpected} · сканируйте факт` }}
+                                </template>
+                                <template v-else>
+                                    {{ receiveTargetName ? `Приёмка → ${receiveTargetName}` : 'Режим приёмки · фото накладной или скан КМ / EAN' }}
+                                </template>
                             </template>
                             <template v-else>
                                 Скан списывает в заказ · для приёмки включите режим
@@ -407,6 +613,14 @@ const receiveTargetName = computed(() => {
                             <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
                         </select>
                     </template>
+                    <template v-if="receiveMode">
+                        <input ref="invoiceInput" type="file" accept="image/*" capture="environment" class="hidden" @change="uploadInvoicePhoto" />
+                        <button type="button" @click="triggerInvoiceInput" :disabled="invoiceBusy"
+                                class="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all cursor-pointer disabled:opacity-40"
+                                :class="invoice ? 'border-amber-500/50 text-amber-300' : 'border-white/10 text-white/50 hover:text-white'">
+                            {{ invoiceBusy ? 'Читаем фото…' : (invoice ? 'Другое фото' : 'Накладная') }}
+                        </button>
+                    </template>
                     <div class="flex gap-2 p-1.5 bg-white/5 rounded-2xl border border-white/5 backdrop-blur-md">
                         <button v-for="cat in categories" :key="cat" type="button" @click="activeCategory = cat"
                                 class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer"
@@ -429,6 +643,91 @@ const receiveTargetName = computed(() => {
                     <button v-if="canManageCatalog" type="button" @click="openModal()"
                             class="px-8 py-4 bg-cyan-500 hover:bg-cyan-400 text-black font-black uppercase rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.2)] transition-all italic text-xs cursor-pointer">
                         + Manual Add
+                    </button>
+                </div>
+            </div>
+
+            <div v-if="invoice" class="rounded-[1.25rem] border p-6 space-y-4"
+                 :class="invoiceBalanced ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                        <div class="text-[10px] uppercase tracking-[0.3em] font-black text-amber-400/80">Накладная · сверка</div>
+                        <div class="text-xl font-black uppercase italic mt-1">
+                            {{ invoice.invoice_number || 'Без номера' }}
+                            <span v-if="invoice.invoice_date" class="text-white/30 text-sm not-italic font-bold ml-2">{{ invoice.invoice_date }}</span>
+                        </div>
+                        <div class="text-white/40 text-[11px] mt-1">
+                            {{ invoice.supplier_name || (suppliers.find(s => s.id === invoice.supplier_id)?.name) || 'Поставщик не распознан' }}
+                            <span v-if="invoice.supplier_inn"> · ИНН {{ invoice.supplier_inn }}</span>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-2xl font-black italic"
+                             :class="invoiceBalanced ? 'text-emerald-400' : 'text-amber-300'">
+                            {{ invoiceScanned }}<span class="text-white/20"> / {{ invoiceExpected }}</span>
+                        </div>
+                        <div class="text-[10px] uppercase font-black tracking-widest mt-1"
+                             :class="invoiceBalanced ? 'text-emerald-400/80' : 'text-white/30'">
+                            {{ invoiceBalanced ? 'совпало' : `${invoiceShort ? 'не хватает '+invoiceShort+' поз. ' : ''}${invoiceOver ? 'лишних '+invoiceOver+' ' : ''}${invoiceExtraQty ? 'не из док. '+invoiceExtraQty : ''}`.trim() || 'сканируйте факт' }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="text-[10px] uppercase tracking-widest text-white/30">
+                            <tr>
+                                <th class="py-2 pr-3">Документ</th>
+                                <th class="py-2 pr-3">Каталог</th>
+                                <th class="py-2 pr-3 text-right">Накл.</th>
+                                <th class="py-2 pr-3 text-right">Факт</th>
+                                <th class="py-2 text-right">Закуп</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(line, idx) in invoice.lines" :key="idx"
+                                class="border-t border-white/5"
+                                :class="{
+                                    'text-emerald-300': lineStatus(line) === 'ok',
+                                    'text-amber-300': lineStatus(line) === 'short' || lineStatus(line) === 'wait',
+                                    'text-red-400': lineStatus(line) === 'over',
+                                }">
+                                <td class="py-3 pr-3">
+                                    <div class="font-black uppercase italic">{{ line.name }}</div>
+                                    <div v-if="line.barcode" class="text-[10px] text-white/30 font-mono mt-0.5">{{ line.barcode }}</div>
+                                    <div v-if="line.note" class="text-[10px] text-white/35 mt-0.5">{{ line.note }}</div>
+                                </td>
+                                <td class="py-3 pr-3">
+                                    <select :value="line.product_id ?? ''"
+                                            @change="assignInvoiceProduct(line, Number($event.target.value) || null)"
+                                            class="w-full max-w-[220px] bg-black border border-white/10 rounded-lg px-2 py-2 text-[11px] outline-none">
+                                        <option value="">Не сопоставлено</option>
+                                        <option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option>
+                                    </select>
+                                </td>
+                                <td class="py-3 pr-3 text-right font-black">{{ line.qty }}</td>
+                                <td class="py-3 pr-3 text-right font-black">{{ line.scanned_qty }}</td>
+                                <td class="py-3 text-right text-white/50">{{ line.unit_cost != null ? Number(line.unit_cost).toFixed(2) : '—' }}</td>
+                            </tr>
+                            <tr v-for="extra in invoiceExtras" :key="'x'+extra.product_id" class="border-t border-red-500/20 text-red-400">
+                                <td class="py-3 pr-3 font-black uppercase italic" colspan="2">Не в накладной · {{ extra.name }}</td>
+                                <td class="py-3 pr-3 text-right">0</td>
+                                <td class="py-3 pr-3 text-right font-black">{{ extra.qty }}</td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flex flex-wrap gap-3 justify-end">
+                    <button type="button" @click="dismissInvoice"
+                            class="px-5 py-3 border border-white/10 text-white/40 hover:text-white rounded-2xl text-[10px] font-black uppercase cursor-pointer">
+                        Сбросить черновик
+                    </button>
+                    <button type="button" @click="closeInvoice" :disabled="!invoiceBalanced || invoiceBusy"
+                            class="px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest cursor-pointer disabled:opacity-30"
+                            :class="invoiceBalanced ? 'bg-emerald-500 text-black' : 'bg-white/10 text-white/40'">
+                        {{ invoiceBalanced ? 'Сошлось · закрыть' : 'Ждём совпадения' }}
                     </button>
                 </div>
             </div>

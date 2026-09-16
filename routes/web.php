@@ -35,6 +35,7 @@ use App\Http\Controllers\Auth\LogoutController;
 
 // Контроллеры Админки
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Admin\InventoryInvoiceController;
 use App\Http\Controllers\Admin\MapController;
 use App\Http\Controllers\Admin\FanAdminController;
 use App\Http\Controllers\Admin\LightAdminController;
@@ -382,6 +383,8 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::prefix('api/inventory')->group(function () {
             Route::get('/products', [AdminController::class, 'listInventoryProducts']);
             Route::post('/receive-scan', [AdminController::class, 'receiveScan']);
+            Route::post('/parse-invoice', [InventoryInvoiceController::class, 'parse']);
+            Route::post('/close-invoice', [InventoryInvoiceController::class, 'close']);
             Route::post('/update-stock', [AdminController::class, 'updateStock']);
             Route::get('/find-barcode', [AdminController::class, 'findByBarcode']);
             Route::post('/write-off', [AdminController::class, 'writeOffUnit']);
