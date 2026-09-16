@@ -66,6 +66,7 @@ class ClubFeaturesTest extends TestCase
         $this->assertTrue($keys->contains('promocodes'));
         $this->assertTrue($keys->contains('game_requests'));
         $this->assertTrue($keys->contains('review_bonuses'));
+        $this->assertTrue($keys->contains('arena_duels'));
     }
 
     public function test_intern_cannot_open_features_page(): void

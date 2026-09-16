@@ -7,6 +7,7 @@ use App\Models\Booking;
 use App\Models\Computer;
 use App\Models\LanBounty;
 use App\Models\User;
+use App\Services\LanLive\ArenaDuelService;
 use App\Services\LanLive\GhostCoachService;
 use App\Services\LanLive\LanBountyService;
 use App\Services\LanLive\LanMatchmakingService;
@@ -29,6 +30,7 @@ class ShellLanLiveController extends Controller
         private readonly PcThroneService $thrones,
         private readonly LanMatchmakingService $lfg,
         private readonly LuckySeatLootService $loot,
+        private readonly ArenaDuelService $arena,
     ) {
     }
 
@@ -92,6 +94,103 @@ class ShellLanLiveController extends Controller
         return response()->json(array_merge(
             $this->livePayload($computer, $booking, $user->fresh()),
             ['status' => 'success', 'message' => 'Охота снята']
+        ));
+    }
+
+    public function arenaLive(Request $request): JsonResponse
+    {
+        $terminalId = (int) $request->input('terminal_id', $request->query('terminal_id', 0));
+        $found = $this->optionalSession($request);
+        if ($found) {
+            [$pc, $booking, $user] = $found;
+
+            return response()->json(array_merge(
+                ['status' => 'success'],
+                $this->livePayload($pc, $booking, $user)
+            ));
+        }
+        $computer = $terminalId > 0 ? Computer::query()->find($terminalId) : null;
+
+        return response()->json([
+            'status' => 'success',
+            'arena' => $this->arena->liveFor($computer, null, null),
+            'arena_duel' => $this->arena->tvOverlay($computer),
+        ]);
+    }
+
+    public function createArena(Request $request): JsonResponse
+    {
+        [$computer, $booking, $user] = $this->session($request);
+        $data = $request->validate([
+            'game' => 'nullable|in:cs2,dota,dota2',
+            'mode' => 'required|in:1v1_aim,2v2_wingman,1v1_mid',
+            'entry_fee' => 'required|numeric|min:1|max:20000',
+            'scope' => 'nullable|in:hall,computer,pc,zone,bootcamp',
+            'target_computer_id' => 'nullable|integer',
+            'terms' => 'nullable|boolean',
+        ]);
+        try {
+            $duel = $this->arena->create($user, $computer, $booking, $data);
+        } catch (RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(array_merge(
+            $this->livePayload($computer, $booking, $user->fresh()),
+            [
+                'status' => 'success',
+                'message' => 'Вызов брошен, взнос в эскроу',
+                'duel' => $this->arena->payload($duel, $computer, $booking),
+            ]
+        ));
+    }
+
+    public function acceptArena(Request $request, string $uuid): JsonResponse
+    {
+        [$computer, $booking, $user] = $this->session($request);
+        try {
+            $duel = $this->arena->accept($user, $computer, $booking, $this->arena->findByUuid($uuid));
+        } catch (RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(array_merge(
+            $this->livePayload($computer, $booking, $user->fresh()),
+            [
+                'status' => 'success',
+                'message' => 'Дуэль принята. Пароль лобби скопирован.',
+                'duel' => $this->arena->payload($duel, $computer, $booking),
+            ]
+        ));
+    }
+
+    public function declineArena(Request $request, string $uuid): JsonResponse
+    {
+        [$computer, $booking, $user] = $this->session($request);
+        try {
+            $this->arena->decline($user, $computer, $this->arena->findByUuid($uuid));
+        } catch (RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(array_merge(
+            $this->livePayload($computer, $booking, $user->fresh()),
+            ['status' => 'success', 'message' => 'Вызов отклонён']
+        ));
+    }
+
+    public function cancelArena(Request $request, string $uuid): JsonResponse
+    {
+        [$computer, $booking, $user] = $this->session($request);
+        try {
+            $this->arena->cancel($user, $this->arena->findByUuid($uuid));
+        } catch (RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(array_merge(
+            $this->livePayload($computer, $booking, $user->fresh()),
+            ['status' => 'success', 'message' => 'Вызов снят, взнос возвращён']
         ));
     }
 
@@ -193,6 +292,7 @@ class ShellLanLiveController extends Controller
         $settled = null;
         $crowned = null;
         $dropped = null;
+        $arenaSettled = null;
         $event = $snap['event'];
         if (in_array($event, ['kill', 'death', 'round_win', 'round_loss', 'match_win', 'match_loss'], true)) {
             try {
@@ -215,6 +315,12 @@ class ShellLanLiveController extends Controller
             } catch (\Throwable $e) {
                 report($e);
             }
+        }
+
+        try {
+            $arenaSettled = $this->arena->ingest($computer, $user, $booking, $snap);
+        } catch (\Throwable $e) {
+            report($e);
         }
 
         try {
@@ -253,6 +359,9 @@ class ShellLanLiveController extends Controller
         } catch (\Throwable $e) {
             report($e);
         }
+        if (($whisper === null || $whisper === '') && ! empty($payload['arena']['whisper'])) {
+            $whisper = $payload['arena']['whisper'];
+        }
 
         return response()->json(array_merge(
             $payload,
@@ -262,6 +371,7 @@ class ShellLanLiveController extends Controller
                 'whisper' => $whisper,
                 'throne_crowned' => $crowned && ($crowned['mine'] ?? false) ? $crowned : null,
                 'lootbox_dropped' => $dropped ? $this->loot->payload($dropped, false) : null,
+                'arena_settled' => $arenaSettled ?: null,
             ]
         ));
     }
@@ -371,6 +481,7 @@ class ShellLanLiveController extends Controller
             'lfg' => $this->lfg->payload($booking, $user),
             'lootbox' => $this->loot->pendingPayload($user, $booking),
             'clan_war' => $this->clanWarPayload($computer),
+            'arena' => $this->arena->liveFor($computer, $booking, $user),
             'in_match' => $this->gsi->inMatch((int) $computer->id),
             'time_remaining' => $timing->formatRemainingHms($booking),
             'balance' => $user->availableBalance(),
@@ -394,26 +505,22 @@ class ShellLanLiveController extends Controller
     }
 
     /**
-     * @return array{0: Computer, 1: Booking, 2: User}
+     * @return array{0: Computer, 1: Booking, 2: User}|null
      */
-    private function session(Request $request): array
+    private function optionalSession(Request $request): ?array
     {
-        $terminalId = (int) $request->input('terminal_id', 0);
-        $bookingId = (int) $request->input('booking_id', 0);
+        $terminalId = (int) $request->input('terminal_id', $request->query('terminal_id', 0));
         if ($terminalId < 1) {
-            abort(response()->json(['status' => 'error', 'message' => 'Нет terminal_id'], 422));
+            return null;
         }
         $computer = Computer::query()->find($terminalId);
         if (! $computer) {
-            abort(response()->json(['status' => 'error', 'message' => 'Терминал не найден'], 404));
+            return null;
         }
-
+        $bookingId = (int) $request->input('booking_id', $request->query('booking_id', 0));
         $booking = null;
         if ($bookingId > 0) {
-            $booking = Booking::query()
-                ->where('id', $bookingId)
-                ->where('status', 'active')
-                ->first();
+            $booking = Booking::query()->where('id', $bookingId)->where('status', 'active')->first();
         }
         if (! $booking) {
             $booking = Booking::query()
@@ -431,13 +538,30 @@ class ShellLanLiveController extends Controller
                 ->first();
         }
         if (! $booking) {
-            abort(response()->json(['status' => 'error', 'message' => 'Нужна активная сессия'], 403));
+            return null;
         }
         $user = User::query()->find($booking->user_id);
-        if (! $user) {
-            abort(response()->json(['status' => 'error', 'message' => 'Игрок не найден'], 404));
+
+        return $user ? [$computer, $booking, $user] : null;
+    }
+
+    /**
+     * @return array{0: Computer, 1: Booking, 2: User}
+     */
+    private function session(Request $request): array
+    {
+        $found = $this->optionalSession($request);
+        if (! $found) {
+            $terminalId = (int) $request->input('terminal_id', 0);
+            if ($terminalId < 1) {
+                abort(response()->json(['status' => 'error', 'message' => 'Нет terminal_id'], 422));
+            }
+            if (! Computer::query()->find($terminalId)) {
+                abort(response()->json(['status' => 'error', 'message' => 'Терминал не найден'], 404));
+            }
+            abort(response()->json(['status' => 'error', 'message' => 'Нужна активная сессия'], 403));
         }
 
-        return [$computer, $booking, $user];
+        return $found;
     }
 }

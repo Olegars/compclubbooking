@@ -346,6 +346,7 @@ class ProfileController extends Controller
             'clips_telegram' => $clipService->telegramConfigured(),
             'telegram' => $telegram->payload($user),
             'clan_wars' => $clanWars,
+            'arena' => $this->arenaCabinet($user),
             'server_time' => $now->toIso8601String(),
         ]);
     }
@@ -506,6 +507,126 @@ class ProfileController extends Controller
         $clips->destroy($clip);
 
         return back();
+    }
+
+    public function arenaLive()
+    {
+        return response()->json([
+            'status' => 'success',
+            'arena' => $this->arenaCabinet(Auth::user()),
+        ]);
+    }
+
+    public function createArena(\Illuminate\Http\Request $request)
+    {
+        [$computer, $booking, $user] = $this->arenaSession();
+        $data = $request->validate([
+            'game' => 'nullable|in:cs2,dota,dota2',
+            'mode' => 'required|in:1v1_aim,2v2_wingman,1v1_mid',
+            'entry_fee' => 'required|numeric|min:1|max:20000',
+            'scope' => 'nullable|in:hall,computer,pc,zone,bootcamp',
+            'target_computer_id' => 'nullable|integer',
+        ]);
+        try {
+            $duel = app(\App\Services\LanLive\ArenaDuelService::class)->create($user, $computer, $booking, $data);
+        } catch (\RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Вызов брошен, взнос в эскроу',
+            'arena' => $this->arenaCabinet($user->fresh()),
+            'duel' => app(\App\Services\LanLive\ArenaDuelService::class)->payload($duel, $computer, $booking),
+        ]);
+    }
+
+    public function acceptArena(string $uuid)
+    {
+        [$computer, $booking, $user] = $this->arenaSession();
+        $arena = app(\App\Services\LanLive\ArenaDuelService::class);
+        try {
+            $duel = $arena->accept($user, $computer, $booking, $arena->findByUuid($uuid));
+        } catch (\RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Дуэль принята',
+            'arena' => $this->arenaCabinet($user->fresh()),
+            'duel' => $arena->payload($duel, $computer, $booking),
+        ]);
+    }
+
+    public function declineArena(string $uuid)
+    {
+        [$computer, $booking, $user] = $this->arenaSession();
+        $arena = app(\App\Services\LanLive\ArenaDuelService::class);
+        try {
+            $arena->decline($user, $computer, $arena->findByUuid($uuid));
+        } catch (\RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Вызов отклонён',
+            'arena' => $this->arenaCabinet($user->fresh()),
+        ]);
+    }
+
+    public function cancelArena(string $uuid)
+    {
+        $user = Auth::user();
+        $arena = app(\App\Services\LanLive\ArenaDuelService::class);
+        try {
+            $arena->cancel($user, $arena->findByUuid($uuid));
+        } catch (\RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Вызов снят',
+            'arena' => $this->arenaCabinet($user->fresh()),
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function arenaCabinet($user): array
+    {
+        try {
+            return app(\App\Services\LanLive\ArenaDuelService::class)->cabinetFor($user);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return ['enabled' => false, 'incoming' => null, 'open' => [], 'live' => [], 'highlight_computer_ids' => []];
+        }
+    }
+
+    /**
+     * @return array{0: Computer, 1: Booking, 2: \App\Models\User}
+     */
+    private function arenaSession(): array
+    {
+        $user = Auth::user();
+        $booking = Booking::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->latest('id')
+            ->first();
+        if (! $booking) {
+            abort(response()->json(['status' => 'error', 'message' => 'Нужна активная сессия'], 403));
+        }
+        $computer = Computer::query()->find((int) $booking->computer_id);
+        if (! $computer) {
+            abort(response()->json(['status' => 'error', 'message' => 'ПК сессии не найден'], 404));
+        }
+
+        return [$computer, $booking, $user];
     }
 
     private function assertSeatTransfer(Booking $booking): void

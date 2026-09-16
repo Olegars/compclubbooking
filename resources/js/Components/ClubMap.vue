@@ -97,8 +97,18 @@
             </g>
 
             <g v-for="pc in computers" :key="'pc-'+pc.id"
-               :class="isOccupied(pc.id) ? 'cursor-not-allowed' : 'cursor-pointer group'"
+               :class="isOccupied(pc.id) && !isHighlighted(pc.id) ? 'cursor-not-allowed' : 'cursor-pointer group'"
                @click="handleClick(pc)">
+                <rect
+                    v-if="isHighlighted(pc.id)"
+                    :x="Number(pc.x) - 0.7" :y="Number(pc.y) - 0.7"
+                    width="7.4" height="5.9"
+                    rx="0.4"
+                    fill="rgba(251,146,60,0.35)"
+                    stroke="#fb923c"
+                    stroke-width="0.35"
+                    class="arena-aura"
+                />
                 <rect
                     :x="Number(pc.x)" :y="Number(pc.y)"
                     width="6" height="4.5"
@@ -215,6 +225,7 @@ const props = withDefaults(defineProps<{
     selectedIds?: string[],
     selectedAddonKeys?: string[],
     occupiedIds?: string[],
+    highlightIds?: (string|number)[],
     computers?: any[],
     mapConfig?: any,
     viewbox?: string
@@ -222,7 +233,8 @@ const props = withDefaults(defineProps<{
     computers: () => [],
     selectedIds: () => [],
     selectedAddonKeys: () => [],
-    occupiedIds: () => []
+    occupiedIds: () => [],
+    highlightIds: () => [],
 })
 
 const emit = defineEmits<{
@@ -552,6 +564,7 @@ const accentOf = (pc: any) => {
 
 const isSelected = (id: any) => props.selectedIds.includes(id.toString())
 const isOccupied = (id: any) => props.occupiedIds.includes(id.toString())
+const isHighlighted = (id: any) => (props.highlightIds || []).map(String).includes(id.toString())
 
 const seatFill = (pc: any) => {
     if (isOccupied(pc.id)) return '#1a1a1a'
@@ -610,4 +623,13 @@ const handleAddonClick = (m: AddonMarker) => {
 .map-wrapper {
     background-image: radial-gradient(circle at 50% 50%, rgba(34, 197, 94, 0.03) 0%, transparent 70%);
 }
+.arena-aura {
+    transform-origin: center;
+    animation: arena-pulse 1.4s ease-in-out infinite;
+}
+@keyframes arena-pulse {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 1; }
+}
+</style>
 </style>

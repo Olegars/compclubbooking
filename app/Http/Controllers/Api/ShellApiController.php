@@ -110,10 +110,23 @@ class ShellApiController extends Controller
             Log::warning('clan-war overlay: '.$e->getMessage());
         }
 
+        $arenaDuel = null;
+        try {
+            if ($features->enabledForComputer($computer, 'arena_duels')) {
+                $arenaDuel = app(\App\Services\LanLive\ArenaDuelService::class)->tvOverlay($computer);
+                if ($arenaDuel) {
+                    $data['arena_duel'] = $arenaDuel;
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('arena overlay: '.$e->getMessage());
+        }
+
         return response()->json([
             'status' => 'success',
             'data' => $data,
             'clan_war' => $clanWar,
+            'arena_duel' => $arenaDuel,
             'features' => $features->shellPayloadForComputer($computer),
         ]);
     }
@@ -3458,6 +3471,7 @@ class ShellApiController extends Controller
                 'throne' => $pack['throne'] ?? null,
                 'lfg' => $pack['lfg'] ?? null,
                 'clan_war' => $pack['clan_war'] ?? null,
+                'arena' => $pack['arena'] ?? null,
                 'lootbox' => $pack['lootbox'] ?? null,
                 'lootbox_dropped' => $dropped
                     ? app(\App\Services\LanLive\LuckySeatLootService::class)->payload($dropped, false)
