@@ -171,6 +171,11 @@ class ClubFeatureService
         }
     }
 
+    public function flush(): void
+    {
+        $this->cache = [];
+    }
+
     /**
      * @return array<string, array{enabled:bool, settings:array<string, mixed>}>
      */

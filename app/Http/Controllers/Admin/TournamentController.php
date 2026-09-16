@@ -63,6 +63,11 @@ class TournamentController extends Controller
 
         $admin = Auth::guard('admin')->user();
         $clubId = AdminLocation::id($admin);
+        if (! app(\App\Services\ClubFeatureService::class)->enabled($clubId, 'tournaments')) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'name' => 'Турниры выключены в Конфигурация → Фичи',
+            ]);
+        }
 
         $tournament = Tournament::query()->create([
             'club_id' => $clubId,

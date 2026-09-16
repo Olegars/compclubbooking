@@ -21,6 +21,9 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
         config(['inertia.testing.ensure_pages_exist' => false]);
+        if ($this->app->bound(\App\Services\ClubFeatureService::class)) {
+            $this->app->make(\App\Services\ClubFeatureService::class)->flush();
+        }
     }
 
     protected function setUpTraits()
