@@ -41,17 +41,6 @@ class ClubFeaturesTest extends TestCase
                 ->component('Admin/ClubFeatures')
                 ->has('features')
                 ->where('features.0.enabled', true)
-            );
-
-        $keys = collect(ClubFeatureCatalog::all())->pluck('key');
-        $this->assertTrue($keys->contains('lucky_seat'));
-        $this->assertTrue($keys->contains('qr_login'));
-        $this->assertTrue($keys->contains('clan_wars'));
-        $this->assertTrue($keys->contains('rollback_markers'));
-
-        $this->actingAs($this->supervisor(), 'admin')
-            ->get('/admin/config/features')
-            ->assertInertia(fn ($page) => $page
                 ->where('features', fn ($rows) => collect($rows)->contains(
                     fn ($row) => ($row['key'] ?? '') === 'rollback_markers'
                         && ($row['group'] ?? '') === 'stations'
@@ -59,6 +48,12 @@ class ClubFeaturesTest extends TestCase
                         && ($row['enabled'] ?? false) === true
                 ))
             );
+
+        $keys = collect(ClubFeatureCatalog::all())->pluck('key');
+        $this->assertTrue($keys->contains('lucky_seat'));
+        $this->assertTrue($keys->contains('qr_login'));
+        $this->assertTrue($keys->contains('clan_wars'));
+        $this->assertTrue($keys->contains('rollback_markers'));
     }
 
     public function test_intern_cannot_open_features_page(): void
