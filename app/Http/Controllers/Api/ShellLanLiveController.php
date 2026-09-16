@@ -361,12 +361,26 @@ class ShellLanLiveController extends Controller
             'throne' => $this->thrones->payload($computer, $user),
             'lfg' => $this->lfg->payload($booking, $user),
             'lootbox' => $this->loot->pendingPayload($user, $booking),
-            'clan_war' => app(\App\Services\ClanWarService::class)->livePayload($computer),
+            'clan_war' => $this->clanWarPayload($computer),
             'in_match' => $this->gsi->inMatch((int) $computer->id),
             'time_remaining' => $timing->formatRemainingHms($booking),
             'balance' => $user->availableBalance(),
             'deposit_balance' => $user->availableBalance(),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function clanWarPayload(Computer $computer): ?array
+    {
+        try {
+            return app(\App\Services\ClanWarService::class)->livePayload($computer);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return null;
+        }
     }
 
     /**

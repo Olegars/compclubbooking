@@ -320,6 +320,13 @@ class ProfileController extends Controller
             ->map(fn (GuestClip $c) => $clipService->serialize($c))
             ->values();
 
+        $clanWars = ['live' => null, 'mine' => [], 'board' => []];
+        try {
+            $clanWars = app(\App\Services\ClanWarService::class)->cabinetForUser($user);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         // 7. Рендер (Все ключи приведены к соответствию с Vue)
         return Inertia::render('User/Dashboard', [
             'user' => [
@@ -337,7 +344,7 @@ class ProfileController extends Controller
             'clips' => $clips,
             'clips_telegram' => $clipService->telegramConfigured(),
             'telegram' => $telegram->payload($user),
-            'clan_wars' => app(\App\Services\ClanWarService::class)->cabinetForUser($user),
+            'clan_wars' => $clanWars,
             'server_time' => $now->toIso8601String(),
         ]);
     }
