@@ -287,11 +287,7 @@ class InventoryInvoiceOcrService
      */
     public function encodeForVision(UploadedFile $photo): array
     {
-        $bytes = file_get_contents($photo->getRealPath() ?: $photo->getPathname());
-        if ($bytes === false || $bytes === '') {
-            throw new RuntimeException('Не удалось прочитать фото накладной.');
-        }
-
+        $bytes = $this->readUploadedBytes($photo);
         $mime = $this->detectMime($bytes, $photo);
         if (! in_array($mime, ['image/jpeg', 'image/png', 'image/gif', 'image/webp'], true)) {
             throw new RuntimeException('Нужен JPEG, PNG, WebP или GIF.');
@@ -303,6 +299,27 @@ class InventoryInvoiceOcrService
             'data_url' => 'data:'.$packed['mime'].';base64,'.base64_encode($packed['bytes']),
             'mime' => $packed['mime'],
         ];
+    }
+
+    private function readUploadedBytes(UploadedFile $photo): string
+    {
+        try {
+            $fromUpload = (string) $photo->getContent();
+            if ($fromUpload !== '') {
+                return $fromUpload;
+            }
+        } catch (\Throwable) {
+        }
+
+        $path = $photo->getRealPath() ?: $photo->getPathname();
+        if (is_string($path) && $path !== '' && is_readable($path)) {
+            $fromDisk = file_get_contents($path);
+            if ($fromDisk !== false && $fromDisk !== '') {
+                return $fromDisk;
+            }
+        }
+
+        throw new RuntimeException('Не удалось прочитать фото накладной.');
     }
 
     private function systemPrompt(): string
@@ -469,13 +486,41 @@ PROMPT;
 
     private function detectMime(string $bytes, UploadedFile $photo): string
     {
-        $finfo = new \finfo(FILEINFO_MIME_TYPE);
-        $mime = strtolower((string) $finfo->buffer($bytes));
+        if (str_starts_with($bytes, "\xff\xd8\xff")) {
+            return 'image/jpeg';
+        }
+        if (str_starts_with($bytes, "\x89PNG")) {
+            return 'image/png';
+        }
+        if (str_starts_with($bytes, 'GIF8')) {
+            return 'image/gif';
+        }
+        if (str_starts_with($bytes, 'RIFF') && substr($bytes, 8, 4) === 'WEBP') {
+            return 'image/webp';
+        }
+
+        $mime = '';
+        try {
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mime = strtolower((string) $finfo->buffer($bytes));
+        } catch (\Throwable) {
+        }
+        if ($mime === 'image/jpg') {
+            $mime = 'image/jpeg';
+        }
         if (str_starts_with($mime, 'image/')) {
             return $mime;
         }
 
-        return strtolower((string) ($photo->getMimeType() ?: 'application/octet-stream'));
+        $client = strtolower((string) ($photo->getMimeType() ?: ''));
+        if ($client === 'image/jpg') {
+            $client = 'image/jpeg';
+        }
+        if (str_starts_with($client, 'image/')) {
+            return $client;
+        }
+
+        return $mime !== '' ? $mime : 'application/octet-stream';
     }
 
     /**

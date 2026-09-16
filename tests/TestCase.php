@@ -25,11 +25,30 @@ abstract class TestCase extends BaseTestCase
 
     protected function fakeImageUpload(string $name = 'photo.jpg'): UploadedFile
     {
-        if (function_exists('imagecreatetruecolor')) {
-            return UploadedFile::fake()->image($name);
-        }
+        $ext = strtolower((string) pathinfo($name, PATHINFO_EXTENSION));
+        $bytes = $ext === 'png' ? $this->tinyPngBytes() : $this->tinyJpegBytes();
 
-        return UploadedFile::fake()->create($name, 12, 'image/jpeg');
+        return UploadedFile::fake()->createWithContent($name, $bytes);
+    }
+
+    protected function tinyJpegBytes(): string
+    {
+        $decoded = base64_decode(
+            '/9j/4AAQSkZJRgABAQAAAQABAAD/2wAAAAD/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAGf/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPwB//9k=',
+            true
+        );
+
+        return $decoded !== false && $decoded !== '' ? $decoded : "\xff\xd8\xff\xd9";
+    }
+
+    protected function tinyPngBytes(): string
+    {
+        $decoded = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            true
+        );
+
+        return $decoded !== false ? $decoded : '';
     }
 
     /**

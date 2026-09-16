@@ -94,9 +94,10 @@ class InventoryInvoiceOcrTest extends TestCase
         });
 
         $this->actingAs($this->admin, 'admin')
+            ->withHeaders(['Accept' => 'application/json'])
             ->withoutMiddleware(ValidateCsrfToken::class)
             ->post('/admin/api/inventory/parse-invoice', [
-                'photo' => $this->fakeImageUpload('waybill.jpg'),
+                'photo' => $this->fakeImageUpload('waybill.png'),
             ])
             ->assertOk()
             ->assertJsonPath('invoice_number', 'УПД-77')

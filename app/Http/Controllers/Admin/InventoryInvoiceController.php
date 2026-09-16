@@ -13,7 +13,7 @@ class InventoryInvoiceController extends Controller
     public function parse(Request $request, InventoryInvoiceOcrService $ocr)
     {
         $request->validate([
-            'photo' => 'required|file|mimes:jpeg,jpg,png,webp,gif|max:8192',
+            'photo' => ['required', 'file', 'max:8192'],
         ]);
 
         try {
@@ -22,6 +22,10 @@ class InventoryInvoiceController extends Controller
                 AdminLocation::id(),
             );
         } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            report($e);
+
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
