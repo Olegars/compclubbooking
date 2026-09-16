@@ -16,18 +16,27 @@ export const zoneRotate = (z: ZoneRect | null | undefined) => {
     return Number.isFinite(n) ? n : 0
 }
 
+const aabbCenter = (z: ZoneRect) => ({
+    cx: Number(z.x) + Number(z.w) / 2,
+    cy: Number(z.y) + Number(z.h) / 2,
+})
+
+const rawPoints = (z: ZoneRect | null | undefined): Pt[] => {
+    if (!z || !Array.isArray(z.points) || z.points.length < 3) return []
+    return z.points
+        .map(p => ({ x: Number(p?.x), y: Number(p?.y) }))
+        .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y))
+}
+
 export const zoneCenter = (z: ZoneRect) => {
-    const pts = zonePoints(z)
-    if (!pts.length) {
+    const pts = rawPoints(z)
+    if (pts.length >= 3) {
         return {
-            cx: Number(z.x) + Number(z.w) / 2,
-            cy: Number(z.y) + Number(z.h) / 2,
+            cx: pts.reduce((s, p) => s + p.x, 0) / pts.length,
+            cy: pts.reduce((s, p) => s + p.y, 0) / pts.length,
         }
     }
-    return {
-        cx: pts.reduce((s, p) => s + p.x, 0) / pts.length,
-        cy: pts.reduce((s, p) => s + p.y, 0) / pts.length,
-    }
+    return aabbCenter(z)
 }
 
 const rotatePoint = (cx: number, cy: number, x: number, y: number, deg: number) => {
@@ -42,12 +51,12 @@ const rotatePoint = (cx: number, cy: number, x: number, y: number, deg: number) 
 }
 
 export const worldToLocal = (z: ZoneRect, x: number, y: number) => {
-    const { cx, cy } = zoneCenter(z)
+    const { cx, cy } = aabbCenter(z)
     return rotatePoint(cx, cy, x, y, -zoneRotate(z))
 }
 
 export const localToWorld = (z: ZoneRect, x: number, y: number) => {
-    const { cx, cy } = zoneCenter(z)
+    const { cx, cy } = aabbCenter(z)
     return rotatePoint(cx, cy, x, y, zoneRotate(z))
 }
 
@@ -56,21 +65,20 @@ export const zoneWorldCorners = (z: ZoneRect): Pt[] => {
     const y = Number(z.y) || 0
     const w = Number(z.w) || 0
     const h = Number(z.h) || 0
+    const { cx, cy } = aabbCenter(z)
+    const r = zoneRotate(z)
     return [
-        localToWorld(z, x, y),
-        localToWorld(z, x + w, y),
-        localToWorld(z, x + w, y + h),
-        localToWorld(z, x, y + h),
+        rotatePoint(cx, cy, x, y, r),
+        rotatePoint(cx, cy, x + w, y, r),
+        rotatePoint(cx, cy, x + w, y + h, r),
+        rotatePoint(cx, cy, x, y + h, r),
     ]
 }
 
 export const zonePoints = (z: ZoneRect | null | undefined): Pt[] => {
     if (!z) return []
-    if (Array.isArray(z.points) && z.points.length >= 3) {
-        return z.points
-            .map(p => ({ x: Number(p?.x), y: Number(p?.y) }))
-            .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y))
-    }
+    const pts = rawPoints(z)
+    if (pts.length >= 3) return pts
     if (!Number.isFinite(Number(z.w)) || !Number.isFinite(Number(z.h))) return []
     return zoneWorldCorners(z)
 }
