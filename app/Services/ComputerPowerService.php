@@ -202,7 +202,16 @@ class ComputerPowerService
      *     games_inventory?: array<int, mixed>|null,
      *     diskless_ack_id?: int|string|null,
      *     diskless_result?: string|null,
-     *     diskless_message?: string|null
+     *     diskless_message?: string|null,
+     *     integrity_status?: string|null,
+     *     integrity_hash?: string|null,
+     *     integrity_message?: string|null,
+     *     integrity_drift?: array<int, mixed>|null,
+     *     gpu_power_limit_w?: int|string|null,
+     *     gpu_mode?: string|null,
+     *     resync_ack_id?: int|string|null,
+     *     resync_result?: string|null,
+     *     resync_message?: string|null
      * }  $extras
      * @return array{
      *     power_desired: string,
@@ -211,7 +220,8 @@ class ComputerPowerService
      *     session_active: bool,
      *     maintenance: bool,
      *     cache_ok: bool|null,
-     *     diskless: array{command_id: int, action: string, disk_mode: string}|null
+     *     diskless: array{command_id: int, action: string, disk_mode: string}|null,
+     *     resync: array{command_id: int, action: string}|null
      * }
      */
     public function heartbeat(Computer $computer, ?string $mac = null, array $extras = []): array
@@ -229,6 +239,18 @@ class ComputerPowerService
                 $ackId,
                 isset($extras['diskless_result']) ? (string) $extras['diskless_result'] : null,
                 isset($extras['diskless_message']) ? (string) $extras['diskless_message'] : null,
+            );
+            $computer->refresh();
+        }
+
+        $resync = app(ImageResyncService::class);
+        $resyncAckId = isset($extras['resync_ack_id']) ? (int) $extras['resync_ack_id'] : 0;
+        if ($resyncAckId > 0) {
+            $resync->ack(
+                $computer,
+                $resyncAckId,
+                isset($extras['resync_result']) ? (string) $extras['resync_result'] : null,
+                isset($extras['resync_message']) ? (string) $extras['resync_message'] : null,
             );
             $computer->refresh();
         }
@@ -266,8 +288,10 @@ class ComputerPowerService
 
         $sessionActive = $this->hasActiveSession($id);
         $pendingDiskless = $diskless->pendingFor($computer);
+        $pendingResync = $resync->pendingFor($computer);
         $action = 'none';
-        if (! $inMaintenance && ! $sessionActive && $pendingDiskless === null && ! $computer->super_client) {
+        if (! $inMaintenance && ! $sessionActive && $pendingDiskless === null
+            && $pendingResync === null && ! $computer->super_client) {
             $action = $this->actionForDesired($desired);
         }
 
@@ -279,6 +303,7 @@ class ComputerPowerService
             'maintenance' => $inMaintenance,
             'cache_ok' => $computer->cache_ok,
             'diskless' => $pendingDiskless,
+            'resync' => $pendingResync,
         ];
     }
 
@@ -346,7 +371,8 @@ class ComputerPowerService
 
         $desired = DB::table('computers')->where('id', $computerId)->value('power_desired');
         $computer = Computer::query()->find($computerId);
-        if ($computer && ($computer->isInMaintenance($now) || $computer->super_client || $computer->diskless_command)) {
+        if ($computer && ($computer->isInMaintenance($now) || $computer->super_client
+            || $computer->diskless_command || $computer->resync_command)) {
             return 'none';
         }
 
@@ -373,6 +399,9 @@ class ComputerPowerService
                        super_client, games_steam_count, games_epic_count, games_inventory_hash,
                        diskless_command, diskless_disk_mode, diskless_command_id,
                        diskless_result, diskless_message,
+                       integrity_status, integrity_hash, integrity_message,
+                       gpu_power_limit_w, gpu_mode,
+                       resync_command, resync_command_id, resync_result, resync_message,
                        CASE
                            WHEN last_seen_at IS NOT NULL
                                 AND last_seen_at >= NOW() - (? * INTERVAL '1 second')
@@ -638,6 +667,31 @@ class ComputerPowerService
                     $extras['games_inventory'],
                     fn ($row) => is_array($row) && (($row['p'] ?? '') === 'epic')
                 ));
+            }
+        }
+        if (! empty($extras['integrity_status'])) {
+            $st = strtolower((string) $extras['integrity_status']);
+            if (in_array($st, ['ok', 'drift', 'resyncing', 'unknown'], true)) {
+                $patch['integrity_status'] = $st;
+            }
+        }
+        if (! empty($extras['integrity_hash'])) {
+            $patch['integrity_hash'] = mb_substr((string) $extras['integrity_hash'], 0, 64);
+        }
+        if (array_key_exists('integrity_message', $extras) && $extras['integrity_message'] !== null) {
+            $msg = trim((string) $extras['integrity_message']);
+            $patch['integrity_message'] = $msg === '' ? null : mb_substr($msg, 0, 240);
+        }
+        if (array_key_exists('integrity_drift', $extras) && is_array($extras['integrity_drift'])) {
+            $patch['integrity_drift'] = array_slice(array_values($extras['integrity_drift']), 0, 40);
+        }
+        if (array_key_exists('gpu_power_limit_w', $extras) && $extras['gpu_power_limit_w'] !== null && $extras['gpu_power_limit_w'] !== '') {
+            $patch['gpu_power_limit_w'] = max(0, min(1000, (int) $extras['gpu_power_limit_w']));
+        }
+        if (! empty($extras['gpu_mode'])) {
+            $mode = strtolower((string) $extras['gpu_mode']);
+            if (in_array($mode, ['idle', 'session', 'unknown'], true)) {
+                $patch['gpu_mode'] = $mode;
             }
         }
 

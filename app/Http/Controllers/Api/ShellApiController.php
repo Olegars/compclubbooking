@@ -824,6 +824,61 @@ class ShellApiController extends Controller
     }
 
     /**
+     * Hardware / integrity incidents from the shell → /admin/incidents.
+     */
+    public function reportIncident(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'nullable|integer',
+            'computer_id' => 'nullable|integer',
+            'hwid' => 'nullable|string',
+            'type' => 'required|string|in:fan_bearing_wear,golden_image_drift',
+            'description' => 'nullable|string|max:1000',
+            'severity' => 'nullable|string|in:low,info,medium,warn,high,critical',
+            'payload' => 'nullable|array',
+        ]);
+
+        try {
+            $computer = null;
+            if ($request->filled('computer_id')) {
+                $computer = Computer::find((int) $request->computer_id);
+            }
+            if (! $computer && $request->filled('terminal_id')) {
+                $computer = Computer::find((int) $request->terminal_id);
+            }
+            $hwid = strtolower(trim((string) $request->input('hwid', '')));
+            if (! $computer && $hwid !== '') {
+                $computer = $this->findComputerByHwid($hwid);
+            }
+            if (! $computer) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Терминал не найден',
+                ], 404);
+            }
+
+            $recorded = app(\App\Services\ShellIncidentService::class)->record(
+                $computer,
+                (string) $request->input('type'),
+                (string) $request->input('description', ''),
+                (string) $request->input('severity', 'medium'),
+                is_array($request->input('payload')) ? $request->input('payload') : [],
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'incident_id' => $recorded['id'],
+                'created' => $recorded['created'],
+                'description' => $recorded['description'],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API reportIncident: '.$e->getMessage());
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Shell reports CPU temperature; backend stores thermal facts for the room.
      * Physical relay control is done by the shell on LAN (NetMod / W5100).
      */
@@ -2732,6 +2787,16 @@ class ShellApiController extends Controller
                 'diskless_ack_id' => 'nullable|integer|min:1',
                 'diskless_result' => 'nullable|string|max:32',
                 'diskless_message' => 'nullable|string|max:240',
+                'integrity_status' => 'nullable|string|in:ok,drift,resyncing,unknown',
+                'integrity_hash' => 'nullable|string|max:64',
+                'integrity_message' => 'nullable|string|max:240',
+                'integrity_drift' => 'nullable|array|max:40',
+                'integrity_drift.*' => 'nullable|string|max:260',
+                'gpu_power_limit_w' => 'nullable|integer|min:0|max:1000',
+                'gpu_mode' => 'nullable|string|in:idle,session,unknown',
+                'resync_ack_id' => 'nullable|integer|min:1',
+                'resync_result' => 'nullable|string|max:32',
+                'resync_message' => 'nullable|string|max:240',
             ]);
 
             $computer = null;
@@ -2780,6 +2845,15 @@ class ShellApiController extends Controller
                     'diskless_ack_id' => $request->input('diskless_ack_id'),
                     'diskless_result' => $request->input('diskless_result'),
                     'diskless_message' => $request->input('diskless_message'),
+                    'integrity_status' => $request->input('integrity_status'),
+                    'integrity_hash' => $request->input('integrity_hash'),
+                    'integrity_message' => $request->input('integrity_message'),
+                    'integrity_drift' => $request->input('integrity_drift'),
+                    'gpu_power_limit_w' => $request->input('gpu_power_limit_w'),
+                    'gpu_mode' => $request->input('gpu_mode'),
+                    'resync_ack_id' => $request->input('resync_ack_id'),
+                    'resync_result' => $request->input('resync_result'),
+                    'resync_message' => $request->input('resync_message'),
                 ]
             );
 

@@ -36,11 +36,30 @@ const filteredIncidents = computed(() => {
 // --- ЛОГИКА УДАЛЕНИЯ/АРХИВАЦИИ (ТОЛЬКО ДЛЯ СУПЕРВИЗОРА) ---
 const isProcessing = ref(false)
 const resolveTarget = ref<any>(null)
+const resyncBusy = ref(false)
 
 const resolveMessage = computed(() => {
     if (!resolveTarget.value) return ''
     return `«${resolveTarget.value.description}» — запись будет отмечена как отработанная и исчезнет из активного лога.`
 })
+
+const enqueueResync = async (incident: any) => {
+    if (!canResolve.value || resyncBusy.value || !incident?.computer_id) return
+    if (!confirm(`${incident.pc_name || 'ПК'}: тихий re-sync повреждённых файлов с эталона бездиска? Super Client не нужен.`)) {
+        return
+    }
+    resyncBusy.value = true
+    try {
+        const { data } = await axios.post('/admin/api/computers/resync', {
+            computer_id: incident.computer_id,
+        })
+        success(data?.message || 'Re-sync поставлен в очередь')
+    } catch (e: any) {
+        error(e?.response?.data?.message || 'Не удалось поставить re-sync')
+    } finally {
+        resyncBusy.value = false
+    }
+}
 
 const resolveIncident = async () => {
     if (!canResolve.value || !resolveTarget.value || isProcessing.value) return
@@ -151,13 +170,21 @@ const formatDate = (dateStr: string) => {
                             </td>
 
                             <td class="p-8 text-right">
-                                <button v-if="canResolve"
-                                        @click="resolveTarget = incident"
-                                        :disabled="isProcessing"
-                                        class="p-4 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white/30 hover:bg-red-600 hover:text-white hover:border-red-600 transition-all active:scale-95 disabled:opacity-30">
-                                    Отработано
-                                </button>
-                                <span v-else class="text-[9px] uppercase font-black tracking-widest text-white/20">Только просмотр</span>
+                                <div class="flex flex-col items-end gap-2">
+                                    <button v-if="canResolve && incident.can_resync"
+                                            @click="enqueueResync(incident)"
+                                            :disabled="resyncBusy"
+                                            class="p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-2xl text-[10px] font-black uppercase tracking-widest text-cyan-300 hover:bg-cyan-500 hover:text-black hover:border-cyan-500 transition-all active:scale-95 disabled:opacity-30">
+                                        Re-sync D:
+                                    </button>
+                                    <button v-if="canResolve"
+                                            @click="resolveTarget = incident"
+                                            :disabled="isProcessing"
+                                            class="p-4 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white/30 hover:bg-red-600 hover:text-white hover:border-red-600 transition-all active:scale-95 disabled:opacity-30">
+                                        Отработано
+                                    </button>
+                                    <span v-else class="text-[9px] uppercase font-black tracking-widest text-white/20">Только просмотр</span>
+                                </div>
                             </td>
                         </tr>
                         </tbody>

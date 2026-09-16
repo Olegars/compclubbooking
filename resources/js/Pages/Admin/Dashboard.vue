@@ -31,6 +31,7 @@ const forceOffBusy = ref<number | null>(null)
 const releasingPc = ref(false)
 const resettingThrone = ref(false)
 const disklessBusy = ref(false)
+const resyncBusy = ref(false)
 const scDiskMode = ref('image')
 
 const orphanFans = computed(() => fanOrphans.value.filter((f: any) => f.fan_orphan_on))
@@ -153,6 +154,13 @@ const refreshStatuses = async () => {
                 diskless_disk_mode: updated.diskless_disk_mode,
                 diskless_result: updated.diskless_result,
                 diskless_message: updated.diskless_message,
+                integrity_status: updated.integrity_status,
+                integrity_message: updated.integrity_message,
+                gpu_power_limit_w: updated.gpu_power_limit_w,
+                gpu_mode: updated.gpu_mode,
+                resync_command: updated.resync_command,
+                resync_result: updated.resync_result,
+                resync_message: updated.resync_message,
             }
         })
 
@@ -273,6 +281,28 @@ const enqueueDiskless = async (action: string) => {
         error(e?.response?.data?.message || 'Не удалось поставить команду')
     } finally {
         disklessBusy.value = false
+    }
+}
+
+const enqueueResync = async () => {
+    const pc = selectedPc.value
+    if (!pc || resyncBusy.value) return
+    if (!confirm(`${pc.name}: тихий re-sync повреждённых файлов с эталона бездиска? Super Client не включается.`)) {
+        return
+    }
+    resyncBusy.value = true
+    try {
+        const { data } = await axios.post('/admin/api/computers/resync', {
+            computer_id: pc.id,
+        })
+        success(data?.message || 'Re-sync поставлен в очередь')
+        await refreshStatuses()
+        const updated = localComputers.value.find((p: any) => Number(p.id) === Number(pc.id))
+        if (updated) selectedPc.value = updated
+    } catch (e: any) {
+        error(e?.response?.data?.message || 'Не удалось поставить re-sync')
+    } finally {
+        resyncBusy.value = false
     }
 }
 
@@ -523,6 +553,19 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                                 <span v-if="selectedPc.ssd_health"> · {{ selectedPc.ssd_health }}</span>
                                 <span v-if="selectedPc.games_steam_count != null"> · steam {{ selectedPc.games_steam_count }}</span>
                                 <span v-if="selectedPc.games_epic_count"> · epic {{ selectedPc.games_epic_count }}</span>
+                                <span v-if="selectedPc.gpu_mode === 'idle'" class="text-emerald-400"> · eco {{ selectedPc.gpu_power_limit_w || 45 }}Вт</span>
+                                <span v-if="selectedPc.integrity_status === 'drift'" class="text-amber-400"> · drift D:</span>
+                                <span v-if="selectedPc.integrity_status === 'resyncing'" class="text-cyan-400"> · re-sync…</span>
+                            </div>
+                            <div v-if="selectedPc.integrity_message"
+                                 class="text-[10px] text-amber-300/80 mt-2 font-mono">
+                                {{ selectedPc.integrity_message }}
+                            </div>
+                            <div v-if="selectedPc.resync_command || selectedPc.resync_result || selectedPc.resync_message"
+                                 class="text-[10px] text-cyan-300/80 mt-2 font-mono">
+                                {{ selectedPc.resync_command ? ('resync: ' + selectedPc.resync_command) : '' }}
+                                {{ selectedPc.resync_result ? (' · ' + selectedPc.resync_result) : '' }}
+                                {{ selectedPc.resync_message ? (' · ' + selectedPc.resync_message) : '' }}
                             </div>
                             <div v-if="selectedPc.diskless_command || selectedPc.diskless_result || selectedPc.diskless_message"
                                  class="text-[10px] text-violet-300/80 mt-2 font-mono">
@@ -551,6 +594,13 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                                 :disabled="disklessBusy"
                                 class="shrink-0 px-5 py-3 bg-white/10 hover:bg-white/20 disabled:opacity-40 text-white font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
                                 Выкл + save
+                            </button>
+                            <button
+                                type="button"
+                                @click="enqueueResync"
+                                :disabled="resyncBusy"
+                                class="shrink-0 px-5 py-3 bg-cyan-500/20 hover:bg-cyan-400 disabled:opacity-40 text-cyan-200 hover:text-black font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
+                                Re-sync D:
                             </button>
                         </div>
                         <div v-if="isOwner" class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-white/5">

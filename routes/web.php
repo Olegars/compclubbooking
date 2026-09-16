@@ -400,6 +400,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
             Route::post('/computers/throne-reset', [AdminController::class, 'resetThrone'])
                 ->middleware('role:owner');
             Route::post('/computers/diskless', [AdminController::class, 'enqueueDisklessCommand']);
+            Route::post('/computers/resync', [AdminController::class, 'enqueueImageResync']);
             Route::get('/check-orders', [AdminController::class, 'checkNewOrders']);
             Route::get('/sos-alerts', [AdminController::class, 'sosAlerts']);
             Route::post('/sos-alerts/{id}/ack', [AdminController::class, 'ackSosAlert']);
@@ -759,6 +760,7 @@ Route::prefix('api/shell')->group(function () {
 
     // --- SOS вызов администратора с причиной ---
     Route::post('/sos', [ShellApiController::class, 'reportSos']);
+    Route::post('/incidents', [ShellApiController::class, 'reportIncident']);
 
     // --- Вентиляция комнаты (Space): Shell только события ---
     Route::post('/thermal', [ShellApiController::class, 'reportThermal']);

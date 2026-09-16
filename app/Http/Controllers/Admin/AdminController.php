@@ -1018,6 +1018,32 @@ class AdminController extends Controller
         ]);
     }
 
+    /**
+     * Тихий re-sync файлов D: с эталона бездиска — без Super Client.
+     */
+    public function enqueueImageResync(Request $request, \App\Services\ImageResyncService $resync)
+    {
+        $data = $request->validate([
+            'computer_id' => 'required|integer|exists:computers,id',
+        ]);
+
+        $admin = Auth::guard('admin')->user();
+        $computer = Computer::query()->findOrFail((int) $data['computer_id']);
+        $clubId = AdminLocation::id($admin);
+        if ($clubId && $computer->club_id && (int) $computer->club_id !== (int) $clubId) {
+            abort(403, 'Этот ПК в другой локации.');
+        }
+
+        $queued = $resync->enqueue($computer);
+
+        return response()->json([
+            'status' => 'success',
+            'command_id' => $queued['command_id'],
+            'action' => $queued['action'],
+            'message' => 'Тихий re-sync поставлен в очередь — шелл заберёт на следующем heartbeat.',
+        ]);
+    }
+
     public function checkNewOrders()
     {
         // Считаем только те, что еще не приняты (статус pending)
@@ -1121,6 +1147,12 @@ class AdminController extends Controller
             ->get()
             ->map(function ($row) {
                 $createdAt = $row->created_at ? Carbon::parse($row->created_at) : now();
+                $computerId = isset($row->computer_id) ? (int) $row->computer_id : 0;
+                $pcName = null;
+                if ($computerId > 0) {
+                    $name = DB::table('computers')->where('id', $computerId)->value('name');
+                    $pcName = $this->pcName(is_string($name) ? $name : null, $computerId);
+                }
 
                 return [
                     'id' => 'inc-'.$row->id,
@@ -1130,7 +1162,9 @@ class AdminController extends Controller
                     'severity' => $this->normalizeSeverity($row->severity),
                     'description' => $row->description,
                     'order_id' => $row->order_id,
-                    'pc_name' => null,
+                    'computer_id' => $computerId > 0 ? $computerId : null,
+                    'pc_name' => $pcName,
+                    'can_resync' => $row->type === 'golden_image_drift' && $computerId > 0,
                     'created_at' => $createdAt->toIso8601String(),
                     'sort_ts' => $createdAt->getTimestamp(),
                     'resolved' => false,
@@ -1382,6 +1416,8 @@ class AdminController extends Controller
             'inventory_discrepancy' => 'Расхождение склада',
             'low_stock' => 'Низкий остаток',
             'manual_balance_edit' => 'Ручная правка баланса',
+            'fan_bearing_wear' => 'Износ подшипника вентилятора',
+            'golden_image_drift' => 'Повреждение игрового диска',
             default => 'Нарушение протокола',
         };
     }

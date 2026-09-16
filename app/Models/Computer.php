@@ -20,6 +20,10 @@ class Computer extends Model
         'games_inventory_hash', 'games_inventory',
         'diskless_command', 'diskless_disk_mode', 'diskless_command_id',
         'diskless_command_at', 'diskless_result', 'diskless_message',
+        'integrity_status', 'integrity_hash', 'integrity_message', 'integrity_drift',
+        'gpu_power_limit_w', 'gpu_mode',
+        'resync_command', 'resync_command_id', 'resync_command_at',
+        'resync_result', 'resync_message',
     ];
 
     protected $casts = [
@@ -41,6 +45,10 @@ class Computer extends Model
         'games_inventory' => 'array',
         'diskless_command_id' => 'integer',
         'diskless_command_at' => 'immutable_datetime',
+        'integrity_drift' => 'array',
+        'gpu_power_limit_w' => 'integer',
+        'resync_command_id' => 'integer',
+        'resync_command_at' => 'immutable_datetime',
     ];
 
     public const KIND_PC = 'pc';

@@ -244,7 +244,7 @@ class OwnerSystemTestService
                 'group' => 'shell',
                 'group_title' => 'Зал и Shell',
                 'title' => 'Здоровье станций',
-                'description' => 'Линк NIC, SMART SSD, мёртвый кэш среди онлайн-ПК.',
+                'description' => 'Линк NIC, SMART SSD, мёртвый кэш, drift игрового диска среди онлайн-ПК.',
             ],
             'wol_relay' => [
                 'group' => 'shell',
@@ -604,21 +604,26 @@ class OwnerSystemTestService
             ->where('club_id', $club->id)
             ->whereNotNull('last_seen_at')
             ->where('last_seen_at', '>=', $cutoff)
-            ->get(['id', 'name', 'cache_ok', 'nic_link_mbps', 'ssd_health', 'ssd_wear_pct']);
+            ->get(['id', 'name', 'cache_ok', 'nic_link_mbps', 'ssd_health', 'ssd_wear_pct', 'integrity_status']);
         if ($online->isEmpty()) {
             return $this->skip('Нет онлайн-станций — нечего проверять.');
         }
         $slow = $online->filter(fn ($pc) => $pc->nic_link_mbps !== null && (int) $pc->nic_link_mbps > 0 && (int) $pc->nic_link_mbps <= 100);
         $deadCache = $online->filter(fn ($pc) => $pc->cache_ok === false);
         $badSsd = $online->filter(fn ($pc) => in_array((string) $pc->ssd_health, ['warning', 'unhealthy'], true));
+        $drift = $online->filter(fn ($pc) => in_array((string) $pc->integrity_status, ['drift', 'resyncing'], true));
         $details = [
             'онлайн: '.$online->count(),
             'линк ≤100 Мбит: '.$slow->pluck('name')->implode(', ') ?: 'нет',
             'кэш мёртв: '.$deadCache->pluck('name')->implode(', ') ?: 'нет',
             'SMART warning/unhealthy: '.$badSsd->pluck('name')->implode(', ') ?: 'нет',
+            'drift игрового диска: '.$drift->pluck('name')->implode(', ') ?: 'нет',
         ];
         if ($deadCache->isNotEmpty() || $badSsd->isNotEmpty()) {
             return $this->fail('Есть станции с мёртвым кэшем или плохим SSD.', $details);
+        }
+        if ($drift->isNotEmpty()) {
+            return $this->warn('Есть ПК с повреждёнными файлами игрового диска.', $details);
         }
         if ($slow->isNotEmpty()) {
             return $this->warn('Есть ПК с линком ≤100 Мбит.', $details);
