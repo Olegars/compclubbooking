@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Computer;
 use App\Models\Space;
 use App\Models\Zone;
 use App\Support\RoomInfoEdge;
@@ -39,6 +40,7 @@ class MapPresentationService
         'PS5',
         'PS',
         'WC',
+        'SERVICE',
     ];
 
     /**
@@ -62,6 +64,10 @@ class MapPresentationService
             ->with(['addons' => fn ($q) => $q->where('is_active', true)->orderBy('sort')])
             ->where('club_id', $clubId)
             ->get();
+
+        $computers = Computer::query()
+            ->where('club_id', $clubId)
+            ->get(['id', 'space_id', 'x', 'y']);
 
         $drawable = [];
         foreach ($rects as $rect) {
@@ -116,15 +122,17 @@ class MapPresentationService
             $infoEdge = RoomInfoEdge::resolve($rect, $others, $info['info_edge'] ?? null);
 
             $kind = $slug === 'tv' ? 'tv' : 'pc';
+            $hasSeat = $this->rectHasSeat($rect, $space, $computers);
 
             $decorated[] = array_merge($rect, [
                 'c' => filled($zone?->color) ? (string) $zone->color : (string) ($rect['c'] ?? '#22c55e'),
-                'label' => $label,
-                'addons' => $addons,
+                'label' => $hasSeat ? $label : 'SERVICE',
+                'addons' => $hasSeat ? $addons : [],
                 'info' => $info,
                 'info_edge' => $infoEdge,
                 'info_kind' => $kind,
                 'space_id' => $space?->id,
+                'service' => ! $hasSeat,
             ]);
         }
 
@@ -160,6 +168,45 @@ class MapPresentationService
         }
 
         return $config;
+    }
+
+    /**
+     * Комната без ПК / ТВ / PS5 — служебная («service»).
+     *
+     * @param  array<string, mixed>  $rect
+     * @param  Collection<int, Computer>  $computers
+     */
+    private function rectHasSeat(array $rect, ?Space $space, Collection $computers): bool
+    {
+        if ($computers->isEmpty()) {
+            return false;
+        }
+
+        if ($space) {
+            $spaceId = (int) $space->id;
+            if ($computers->contains(fn (Computer $c) => (int) $c->space_id === $spaceId)) {
+                return true;
+            }
+
+            return $computers->contains(
+                fn (Computer $c) => $space->containsPoint((float) $c->x, (float) $c->y)
+            );
+        }
+
+        $x = (float) ($rect['x'] ?? 0);
+        $y = (float) ($rect['y'] ?? 0);
+        $w = (float) ($rect['w'] ?? 0);
+        $h = (float) ($rect['h'] ?? 0);
+        if ($w <= 0 || $h <= 0) {
+            return false;
+        }
+
+        return $computers->contains(function (Computer $c) use ($x, $y, $w, $h) {
+            $cx = (float) $c->x;
+            $cy = (float) $c->y;
+
+            return $cx >= $x && $cx <= $x + $w && $cy >= $y && $cy <= $y + $h;
+        });
     }
 
     /**

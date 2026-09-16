@@ -84,6 +84,7 @@ class BookingSeatTransferService
                 'x' => (float) $pc->x,
                 'y' => (float) $pc->y,
                 'kind' => $pc->kind,
+                'space_id' => $pc->space_id ? (int) $pc->space_id : null,
             ])
             ->values()
             ->all();

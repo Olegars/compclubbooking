@@ -32,8 +32,9 @@
                     <polygon
                         :points="zoneSvgPoints(r)"
                         :fill="r.c || '#22c55e'"
-                        :fill-opacity="r.c === '#4d4d4d' ? 1 : 0.25"
+                        :fill-opacity="zoneFillOpacity(r)"
                         :stroke="r.c || '#22c55e'"
+                        :stroke-opacity="isServiceZone(r) ? 0.2 : 1"
                         stroke-width="0.15"
                     />
                     <g v-if="zoneBadge(r)" class="pointer-events-none">
@@ -253,14 +254,15 @@ const drawableZones = computed(() =>
 
 const roomInfoMarkers = computed(() => {
     const zones = drawableZones.value
-    return zones.map((r: any, i: number) => {
+    return zones.flatMap((r: any, i: number) => {
+        if (isServiceZone(r)) return []
         const others = zones.filter((_: any, j: number) => j !== i)
         const override = r.info_edge || r.info?.info_edge || null
         const edge = resolveInfoEdge(r, others, override)
         const { cx, cy } = zoneEdgeMidpoint(r, edge)
         const title = zoneTitle(r) || 'Комната'
         const kind: 'pc' | 'tv' = (r.info_kind === 'tv' || isTvZone(r)) ? 'tv' : 'pc'
-        return {
+        return [{
             key: `${i}-${edge}`,
             cx,
             cy,
@@ -270,7 +272,7 @@ const roomInfoMarkers = computed(() => {
                 kind,
                 info: (r.info && typeof r.info === 'object') ? r.info : {},
             } satisfies RoomInfoShowPayload,
-        }
+        }]
     })
 })
 
@@ -278,7 +280,7 @@ const HIDDEN_MANUAL_LABELS = new Set([
     'STANDART', 'STANDARD', 'СТАНДАРТ',
     'VIP', 'SOLO', 'SINGL', 'DUO', 'TRIO', 'KVATRO',
     'BOOTCAMP', 'BOOTCAMP PRO', 'BOOTCAMP-PRO', 'BOOTKAMP', 'BOTKAMP', 'BOTKAMP-PROFI', 'BOOTKAMP-PROFI', 'BOOTCAMP-PROFI',
-    'TV', 'PS5', 'PS', 'WC', 'ТЕКСТ', 'TEXT',
+    'TV', 'PS5', 'PS', 'WC', 'SERVICE', 'ТЕКСТ', 'TEXT',
 ])
 
 const isPlaceholderLabel = (content: unknown) => {
@@ -286,7 +288,31 @@ const isPlaceholderLabel = (content: unknown) => {
     return text === '' || HIDDEN_MANUAL_LABELS.has(text)
 }
 
+const zoneHasBoundSeat = (r: any) => {
+    const pcs = props.computers || []
+    const spaceId = Number(r?.space_id)
+    if (spaceId > 0 && pcs.some((pc: any) => Number(pc.space_id) === spaceId)) {
+        return true
+    }
+    return pcs.some((pc: any) =>
+        pointInZoneRect(Number(pc.x), Number(pc.y), r)
+        || pointInZoneRect(Number(pc.x) + PC_W / 2, Number(pc.y) + PC_H / 2, r)
+    )
+}
+
+const isServiceZone = (r: any) => {
+    if (zoneHasBoundSeat(r)) return false
+    if (r?.service === false) return false
+    return true
+}
+
+const zoneFillOpacity = (r: any) => {
+    if (isServiceZone(r)) return 0.2
+    return r.c === '#4d4d4d' ? 1 : 0.25
+}
+
 const zoneTitle = (r: any) => {
+    if (isServiceZone(r)) return 'SERVICE'
     const label = String(r?.label || '').trim()
     if (label) return label.replace(/[-_]/g, ' ').toUpperCase()
     const type = String(r?.type || '').trim()
@@ -312,7 +338,7 @@ const estimateBadgeTextWidth = (text: string, fontSize: number) => {
 const zoneBadge = (r: any) => {
     const title = zoneTitle(r)
     if (!title) return null
-    const extras = alwaysAddons(r)
+    const extras = isServiceZone(r) ? [] : alwaysAddons(r)
         .map((a: any) => String(a?.name || '').trim().toUpperCase())
         .filter(Boolean)
     const sub = extras.length ? extras.join(' ') : ''
@@ -418,6 +444,7 @@ const optionalAddonMarkers = computed<AddonMarker[]>(() => {
     const markers: AddonMarker[] = []
 
     drawableZones.value.forEach((zone: any, zi: number) => {
+        if (isServiceZone(zone)) return
         const seats = seatsInZone(zone)
         const used: Array<{ x: number; y: number }> = []
         optionalAddons(zone).forEach((addon: any, ai: number) => {

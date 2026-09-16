@@ -74,6 +74,7 @@ class HomeController extends Controller
                     'x' => (float) $c->x,
                     'y' => (float) $c->y,
                     'kind' => (string) ($c->kind ?: Computer::KIND_PC),
+                    'space_id' => $c->space_id ? (int) $c->space_id : null,
                 ])->values()->all(),
                 'occupied_ids' => array_map('strval', $occupancy['occupied_seat_ids']),
             ],

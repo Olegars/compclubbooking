@@ -153,7 +153,7 @@ const OBSOLATE_LABELS = new Set([
     'STANDART', 'STANDARD', 'СТАНДАРТ',
     'VIP', 'SOLO', 'SINGL', 'DUO', 'TRIO', 'KVATRO',
     'BOOTCAMP', 'BOOTCAMP PRO', 'BOOTCAMP-PRO', 'BOOTKAMP', 'BOTKAMP', 'BOTKAMP-PROFI', 'BOOTKAMP-PROFI', 'BOOTCAMP-PROFI',
-    'TV', 'PS5', 'PS', 'WC', 'ТЕКСТ', 'TEXT',
+    'TV', 'PS5', 'PS', 'WC', 'SERVICE', 'ТЕКСТ', 'TEXT',
 ])
 
 const normalizeLabelText = (content: unknown) =>
@@ -783,7 +783,18 @@ const colorForZoneType = (type: unknown) => {
 }
 
 const zoneAutoTitle = (zone: any) =>
-    normalizeZoneType(zone.type).replace(/[-_]/g, ' ').toUpperCase()
+    zoneIsService(zone) ? 'SERVICE' : normalizeZoneType(zone.type).replace(/[-_]/g, ' ').toUpperCase()
+
+const PC_W = 6
+const PC_H = 4.5
+
+const zoneHasSeat = (zone: any) =>
+    computers.value.some(pc =>
+        pointInZone(zone, safeNum(pc.x), safeNum(pc.y))
+        || pointInZone(zone, safeNum(pc.x) + PC_W / 2, safeNum(pc.y) + PC_H / 2)
+    )
+
+const zoneIsService = (zone: any) => !zoneHasSeat(zone)
 
 const ensureZoneInfo = (zone: any) => {
     zone.info = normalizeRoomInfo(zone.info)
@@ -823,7 +834,7 @@ const estimateBadgeTextWidth = (text: string, fontSize: number) => {
 const zoneBadgeMeta = (zone: any) => {
     const title = zoneAutoTitle(zone)
     if (!title) return null
-    const extras = zoneAlwaysAddonBadges(zone)
+    const extras = zoneIsService(zone) ? [] : zoneAlwaysAddonBadges(zone)
         .map((a: any) => String(a?.name || '').trim().toUpperCase())
         .filter(Boolean)
     const sub = extras.length ? extras.join(' ') : ''
@@ -1531,8 +1542,9 @@ onUnmounted(() => {
                                :class="isLayerInteractive('zone') ? '' : 'pointer-events-none'"
                                @mousedown.stop="isLayerInteractive('zone') && handleItemMouseDown($event, z, 'zone')">
                                 <polygon :points="zoneSvgPoints(z)"
-                                      :fill="z.c || '#22c55e'" :fill-opacity="z.c === '#4d4d4d' ? 0.8 : 0.2"
+                                      :fill="z.c || '#22c55e'" :fill-opacity="zoneIsService(z) ? 0.2 : (z.c === '#4d4d4d' ? 0.8 : 0.2)"
                                       :stroke="selectedZone === z ? '#fff' : (mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId) ? '#fff' : (z.c || '#22c55e'))"
+                                      :stroke-opacity="zoneIsService(z) && selectedZone !== z ? 0.2 : 1"
                                       :stroke-width="selectedZone === z || (mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId)) ? 0.35 : 0.15"
                                       :class="['transition-opacity', isLayerInteractive('zone') ? (selectedZone === z ? 'cursor-move' : 'hover:fill-opacity-50 cursor-pointer') : '']" />
                                 <polygon v-if="mode === 'zones'"
