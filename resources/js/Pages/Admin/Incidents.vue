@@ -37,6 +37,7 @@ const filteredIncidents = computed(() => {
 const isProcessing = ref(false)
 const resolveTarget = ref<any>(null)
 const resyncBusy = ref(false)
+const rollbackBusy = ref(false)
 
 const resolveMessage = computed(() => {
     if (!resolveTarget.value) return ''
@@ -58,6 +59,24 @@ const enqueueResync = async (incident: any) => {
         error(e?.response?.data?.message || 'Не удалось поставить re-sync')
     } finally {
         resyncBusy.value = false
+    }
+}
+
+const enqueueRollback = async (incident: any) => {
+    if (!canResolve.value || rollbackBusy.value || !incident?.computer_id) return
+    if (!confirm(`${incident.pc_name || 'ПК'}: откатить манифесты Steam/Epic и конфиги на проверенную ревизию?`)) {
+        return
+    }
+    rollbackBusy.value = true
+    try {
+        const { data } = await axios.post('/admin/api/computers/rollback', {
+            computer_id: incident.computer_id,
+        })
+        success(data?.message || 'Откат поставлен в очередь')
+    } catch (e: any) {
+        error(e?.response?.data?.message || e?.response?.data?.errors?.feature?.[0] || 'Не удалось поставить откат')
+    } finally {
+        rollbackBusy.value = false
     }
 }
 

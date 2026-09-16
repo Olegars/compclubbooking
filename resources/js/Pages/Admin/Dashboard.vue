@@ -98,6 +98,7 @@ const powerLabelClass = (pc: any) => {
     if (pc.super_client || pc.diskless_command) return 'text-violet-300'
     if (pc.patch_seed_role === 'fallback') return 'text-sky-300'
     if (pc.status === 'maintenance' || pc.maintenance) return 'text-orange-400'
+    if (rollbackOn.value && isRecentCrash(pc)) return 'text-red-300'
     if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'text-fuchsia-300'
     if (Number(pc.ssd_temp_c) >= 80 && (pc.power_state === 'on' || pc.status === 'busy'))
@@ -684,6 +685,12 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                                 {{ selectedPc.resync_command ? ('resync: ' + selectedPc.resync_command) : '' }}
                                 {{ selectedPc.resync_result ? (' · ' + selectedPc.resync_result) : '' }}
                                 {{ selectedPc.resync_message ? (' · ' + selectedPc.resync_message) : '' }}
+                            </div>
+                            <div v-if="selectedPc.diskless_command || selectedPc.diskless_result || selectedPc.diskless_message"
+                                 class="text-[10px] text-violet-300/80 mt-2 font-mono">
+                                {{ selectedPc.diskless_command ? ('очередь: ' + selectedPc.diskless_command) : '' }}
+                                {{ selectedPc.diskless_result ? (' · ' + selectedPc.diskless_result) : '' }}
+                                {{ selectedPc.diskless_message ? (' · ' + selectedPc.diskless_message) : '' }}
                             </div>
                             <div v-if="rollbackOn && (selectedPc.rollback_command || selectedPc.rollback_result || selectedPc.rollback_message)"
                                  class="text-[10px] text-rose-300/80 mt-2 font-mono">

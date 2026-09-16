@@ -1542,9 +1542,9 @@ onUnmounted(() => {
                                :class="isLayerInteractive('zone') ? '' : 'pointer-events-none'"
                                @mousedown.stop="isLayerInteractive('zone') && handleItemMouseDown($event, z, 'zone')">
                                 <polygon :points="zoneSvgPoints(z)"
-                                      :fill="z.c || '#22c55e'" :fill-opacity="zoneIsService(z) ? 0.5 : (z.c === '#4d4d4d' ? 0.8 : 0.2)"
+                                      :fill="z.c || '#22c55e'" :fill-opacity="zoneIsService(z) ? 0.1 : (z.c === '#4d4d4d' ? 0.8 : 0.2)"
                                       :stroke="selectedZone === z ? '#fff' : (mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId) ? '#fff' : (z.c || '#22c55e'))"
-                                      :stroke-opacity="zoneIsService(z) && selectedZone !== z ? 0.5 : 1"
+                                      :stroke-opacity="zoneIsService(z) && selectedZone !== z ? 0.1 : 1"
                                       :stroke-width="selectedZone === z || (mode === 'addons' && currentAddonId && zoneHasAddon(z, currentAddonId)) ? 0.35 : 0.15"
                                       :class="['transition-opacity', isLayerInteractive('zone') ? (selectedZone === z ? 'cursor-move' : 'hover:fill-opacity-50 cursor-pointer') : '']" />
                                 <polygon v-if="mode === 'zones'"

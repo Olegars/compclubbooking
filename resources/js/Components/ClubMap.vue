@@ -34,7 +34,7 @@
                         :fill="r.c || '#22c55e'"
                         :fill-opacity="zoneFillOpacity(r)"
                         :stroke="r.c || '#22c55e'"
-                        :stroke-opacity="isServiceZone(r) ? 0.5 : 1"
+                        :stroke-opacity="isServiceZone(r) ? 0.1 : 1"
                         stroke-width="0.15"
                     />
                     <g v-if="zoneBadge(r)" class="pointer-events-none">
@@ -307,7 +307,7 @@ const isServiceZone = (r: any) => {
 }
 
 const zoneFillOpacity = (r: any) => {
-    if (isServiceZone(r)) return 0.5
+    if (isServiceZone(r)) return 0.1
     return r.c === '#4d4d4d' ? 1 : 0.25
 }
 
