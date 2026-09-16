@@ -2,6 +2,7 @@
 
 namespace App\Services\LanLive;
 
+use App\Models\Booking;
 use App\Models\Computer;
 use App\Models\User;
 use App\Services\AiAssistant\DeepSeekChat;
@@ -15,6 +16,7 @@ class GhostCoachService
     public function __construct(
         private readonly ShellGsiStore $gsi,
         private readonly DeepSeekChat $llm,
+        private readonly PartyEcoDropSynchronizer $partyEco,
     ) {
     }
 
@@ -37,11 +39,8 @@ class GhostCoachService
     /**
      * @param  array<string, mixed>  $snap
      */
-    public function maybeWhisper(Computer $computer, User $user, array $snap): ?string
+    public function maybeWhisper(Computer $computer, User $user, array $snap, ?Booking $booking = null): ?string
     {
-        if (app()->runningUnitTests()) {
-            return null;
-        }
         if (! $this->enabled($user)) {
             return null;
         }
@@ -49,12 +48,19 @@ class GhostCoachService
             return null;
         }
 
+        $partyText = $booking ? $this->partyEco->maybeAnnounce($computer, $booking, $snap) : null;
+        if ($partyText !== null && $partyText !== '') {
+            Cache::put('coach:cd:'.$computer->id, 1, self::COOLDOWN_SECONDS);
+
+            return $partyText;
+        }
+
         $key = 'coach:cd:'.$computer->id;
         if (Cache::has($key)) {
             return null;
         }
 
-        $text = $this->compose($computer, $snap);
+        $text = $this->compose($computer, $snap, $booking);
         if ($text === null || $text === '') {
             $text = $this->llmWhisper($computer, $snap);
         }
@@ -70,7 +76,7 @@ class GhostCoachService
     /**
      * @param  array<string, mixed>  $snap
      */
-    public function compose(Computer $computer, array $snap): ?string
+    public function compose(Computer $computer, array $snap, ?Booking $booking = null): ?string
     {
         $game = ($snap['game'] ?? '') === 'dota' ? 'dota' : 'cs2';
         $event = strtolower((string) ($snap['event'] ?? ''));
@@ -79,7 +85,18 @@ class GhostCoachService
         $enemies = $this->enemies($snap, $others);
 
         if ($game === 'cs2') {
-            return $this->cs2Line($snap, $event, $enemies);
+            if ($booking && $this->partyEco->isActiveParty($booking)) {
+                $party = $this->partyEco->compose($computer, $booking, $snap);
+                if ($party !== null && $party !== '') {
+                    return $party;
+                }
+            }
+
+            $skipOwnEco = $booking !== null
+                && $this->partyEco->isActiveParty($booking)
+                && $this->partyEco->isCs2Freeze($snap);
+
+            return $this->cs2Line($snap, $event, $enemies, $skipOwnEco);
         }
 
         return $this->dotaLine($snap, $event, $enemies);
@@ -127,7 +144,7 @@ class GhostCoachService
      * @param  array<string, mixed>  $snap
      * @param  list<array<string, mixed>>  $enemies
      */
-    private function cs2Line(array $snap, string $event, array $enemies): ?string
+    private function cs2Line(array $snap, string $event, array $enemies, bool $skipOwnEco = false): ?string
     {
         $money = isset($snap['money']) ? (int) $snap['money'] : null;
         $phase = strtolower((string) ($snap['phase'] ?? ''));
@@ -152,11 +169,11 @@ class GhostCoachService
             return 'Вы мертвы. Не тильтуйте бай — посмотрите демо и подскажите тиммейту.';
         }
 
-        if ($phase === 'freezetime' && $money !== null && $money < 2000) {
+        if (! $skipOwnEco && $phase === 'freezetime' && $money !== null && $money < 2000) {
             return sprintf('У вас эко, %d$. Не форсите — сейв или пистолеты.', $money);
         }
 
-        if ($phase === 'freezetime' && $money !== null && $money >= 5000) {
+        if (! $skipOwnEco && $phase === 'freezetime' && $money !== null && $money >= 5000) {
             foreach ($enemies as $e) {
                 $em = isset($e['money']) ? (int) $e['money'] : null;
                 if ($em !== null && $em >= 4000) {

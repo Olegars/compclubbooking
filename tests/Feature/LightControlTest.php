@@ -294,6 +294,14 @@ class LightControlTest extends TestCase
         $this->assertSame(80, $state['events']['pc_on']['brightness']);
         $this->assertArrayHasKey('cs2.bomb', $state['events']);
         $this->assertTrue($state['events']['cs2.bomb']['strobe']);
+        $this->assertSame('cold_white', $state['events']['cs2.ambient.winter']['color']);
+        $this->assertSame(85, $state['events']['cs2.ambient.winter']['brightness']);
+        $this->assertEquals(0.0, $state['events']['cs2.ambient.winter']['duration_sec']);
+        $this->assertSame('orange', $state['events']['cs2.ambient.inferno']['color']);
+        $this->assertSame('white', $state['events']['cs2.flash']['color']);
+        $this->assertSame(100, $state['events']['cs2.flash']['brightness']);
+        $this->assertEquals(0.8, $state['events']['cs2.flash']['duration_sec']);
+        $this->assertEquals(0.0, $state['events']['cs2.flash']['fade_sec']);
         $this->assertSame('presets', $state['events_from']);
     }
 
@@ -445,6 +453,47 @@ class LightControlTest extends TestCase
         $this->assertTrue($row->events['pc_off']['strobe']);
         $this->assertSame(30, $row->events['pc_off']['strobe_on_ms']);
         $this->assertSame('cycle', $row->events['pc_off']['effect']);
+    }
+
+    public function test_cs2_ambient_events_survive_admin_save(): void
+    {
+        $admin = \App\Models\Admin::create([
+            'name' => 'Ambient Supervisor',
+            'email' => 'light-ambient@test.local',
+            'password' => 'password',
+            'role' => 'supervisor',
+            'club_id' => $this->club->id,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class)
+            ->post('/admin/lights/events', [
+                'club_id' => $this->club->id,
+                'events' => [
+                    'cs2.flash' => [
+                        'color' => 'white',
+                        'brightness' => 100,
+                        'duration_sec' => 0.8,
+                        'fade_sec' => 0,
+                    ],
+                    'cs2.ambient.winter' => [
+                        'color' => 'cold_white',
+                        'brightness' => 70,
+                    ],
+                    'cs2.ambient.inferno' => [
+                        'color' => '#ff8a3c',
+                        'brightness' => 90,
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $state = $this->lights->stateForComputer($this->pcA->id);
+        $this->assertSame('cold_white', $state['events']['cs2.ambient.winter']['color']);
+        $this->assertSame(70, $state['events']['cs2.ambient.winter']['brightness']);
+        $this->assertSame('#ff8a3c', $state['events']['cs2.ambient.inferno']['color']);
+        $this->assertEquals(0.8, $state['events']['cs2.flash']['duration_sec']);
+        $this->assertSame('admin', $state['events_from']);
     }
 
     private function makeActiveBooking(User $user): Booking

@@ -883,12 +883,37 @@ class ShellApiController extends Controller
                 ], 404);
             }
 
+            $type = (string) $request->input('type');
+            $payload = is_array($request->input('payload')) ? $request->input('payload') : [];
+            $description = (string) $request->input('description', '');
+            $severity = (string) $request->input('severity', 'medium');
+
+            if ($type === \App\Services\ShellIncidentService::TYPE_HARDWARE_ABUSE) {
+                $smash = app(\App\Services\RageSmashService::class)->ingest(
+                    $computer,
+                    $severity,
+                    $description,
+                    $payload,
+                );
+
+                return response()->json([
+                    'status' => 'success',
+                    'accepted' => $smash['accepted'],
+                    'reason' => $smash['reason'],
+                    'incident_id' => $smash['incident_id'],
+                    'created' => $smash['created'],
+                    'description' => $smash['description'],
+                    'video_marked' => $smash['video_marked'],
+                    'calm_down' => $smash['calm_down'],
+                ]);
+            }
+
             $recorded = app(\App\Services\ShellIncidentService::class)->record(
                 $computer,
-                (string) $request->input('type'),
-                (string) $request->input('description', ''),
-                (string) $request->input('severity', 'medium'),
-                is_array($request->input('payload')) ? $request->input('payload') : [],
+                $type,
+                $description,
+                $severity,
+                $payload,
             );
 
             return response()->json([

@@ -170,10 +170,12 @@ const colorDot = (color: string) => {
         green: '#22c55e',
         yellow: '#eab308',
         purple: '#a855f7',
+        orange: '#ff8a3c',
+        cold_white: '#c8dcff',
         rainbow: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)',
         auto: 'transparent',
     }
-    return map[color] || '#64748b'
+    return map[color] || (color.startsWith('#') ? color : '#64748b')
 }
 
 const colorLabel = (color: string) => {
@@ -184,6 +186,8 @@ const colorLabel = (color: string) => {
         green: 'зелёный',
         yellow: 'жёлтый',
         purple: 'фиолетовый',
+        orange: 'оранжевый',
+        cold_white: 'холодный белый',
         rainbow: 'радуга',
         auto: 'авто',
     }

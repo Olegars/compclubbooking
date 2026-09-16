@@ -6,7 +6,8 @@ use Illuminate\Support\Facades\Cache;
 
 /**
  * Live GSI snapshots from club PCs (TTL ~30s). Used by bounty matching,
- * party energy (in-match lock) and Ghost Coach (enemy economy / ultimates on LAN).
+ * party energy (in-match lock), Ghost Coach (enemy economy / ultimates on LAN)
+ * and Coach Whisper eco/drop sync for BookingGroup stacks.
  */
 class ShellGsiStore
 {

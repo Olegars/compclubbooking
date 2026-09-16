@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Инциденты с шелла: износ подшипника SpaceFan, drift игрового диска, патч-корд,
- * неисправный свитч/микрик мыши или клавиатуры.
+ * неисправный свитч/микрик мыши или клавиатуры, удар по столу (Rage-Smash).
  * Пишет в общую таблицу incidents — лента /admin/incidents.
  */
 class ShellIncidentService
@@ -21,11 +21,14 @@ class ShellIncidentService
 
     public const TYPE_HARDWARE_SWITCH = 'hardware_switch_fault';
 
+    public const TYPE_HARDWARE_ABUSE = 'hardware_abuse';
+
     public const TYPES = [
         self::TYPE_FAN_BEARING,
         self::TYPE_GOLDEN_IMAGE,
         self::TYPE_NIC_LINK_FLAP,
         self::TYPE_HARDWARE_SWITCH,
+        self::TYPE_HARDWARE_ABUSE,
     ];
 
     /**
@@ -120,6 +123,7 @@ class ShellIncidentService
             self::TYPE_GOLDEN_IMAGE => "На {$pc} повреждены файлы игрового диска — нужен тихий re-sync",
             self::TYPE_NIC_LINK_FLAP => "Заменить патч-корд на {$pc}",
             self::TYPE_HARDWARE_SWITCH => "Проверить свитч/микрик на {$pc}",
+            self::TYPE_HARDWARE_ABUSE => "Удар по столу на {$pc}",
             default => "Инцидент на {$pc}",
         };
     }

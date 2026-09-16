@@ -71,6 +71,19 @@ class SystemDocsTest extends TestCase
             );
     }
 
+    public function test_pdf_includes_ambient_dmx_mirroring(): void
+    {
+        $admin = $this->makeAdmin('supervisor');
+
+        $this->actingAs($admin, 'admin')
+            ->get('/admin/docs/pdf?q=AABB')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SystemDocsPrint')
+                ->where('sections.0.items.0.title', 'Game-Sense Ambient DMX Mirroring')
+            );
+    }
+
     private function makeAdmin(string $role): Admin
     {
         return Admin::query()->create([

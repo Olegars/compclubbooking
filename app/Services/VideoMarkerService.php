@@ -32,6 +32,8 @@ class VideoMarkerService
             return false;
         }
 
+        RageSmashService::ensureTriggerEvent($s, $triggerKey);
+
         $events = VideoSurveillanceEvent::query()
             ->where('club_id', $s->club_id)
             ->where('is_enabled', true)
@@ -39,8 +41,26 @@ class VideoMarkerService
             ->orderBy('sort')
             ->get();
 
+        $overrides = [];
+        if (isset($payload['duration_sec'])) {
+            $overrides['duration_sec'] = (int) $payload['duration_sec'];
+        }
+        if (array_key_exists('pre_sec', $payload)) {
+            $overrides['pre_sec'] = (int) $payload['pre_sec'];
+        }
+
         if ($events->isEmpty()) {
-            return false;
+            $channel = $payload['channel'] ?? $s->default_channel;
+
+            return $this->dispatchMarker($s, array_merge([
+                'event' => str_replace('.', '_', $triggerKey),
+                'title' => $payload['title'] ?? $triggerKey,
+                'channel' => $channel,
+                'at' => $payload['at'] ?? now(),
+                'meta' => array_merge($payload['meta'] ?? [], [
+                    'trigger' => $triggerKey,
+                ]),
+            ], $overrides));
         }
 
         $any = false;
@@ -48,7 +68,7 @@ class VideoMarkerService
             $title = $payload['title']
                 ?? ($event->marker_title ?: $event->name);
 
-            if ($this->dispatchMarker($s, [
+            if ($this->dispatchMarker($s, array_merge([
                 'event' => $event->code,
                 'title' => $title,
                 'channel' => $payload['channel'] ?? $event->channel ?? $s->default_channel,
@@ -57,7 +77,7 @@ class VideoMarkerService
                     'trigger' => $triggerKey,
                     'event_id' => $event->id,
                 ]),
-            ])) {
+            ], $overrides))) {
                 $any = true;
             }
         }
@@ -90,8 +110,12 @@ class VideoMarkerService
             $at = now()->parse($at);
         }
 
-        $duration = max(1, (int) $s->marker_duration_sec);
-        $pre = max(0, (int) $s->marker_pre_sec);
+        $duration = isset($payload['duration_sec'])
+            ? max(1, (int) $payload['duration_sec'])
+            : max(1, (int) $s->marker_duration_sec);
+        $pre = array_key_exists('pre_sec', $payload)
+            ? max(0, (int) $payload['pre_sec'])
+            : max(0, (int) $s->marker_pre_sec);
         $start = $at->copy()->subSeconds($pre);
 
         $body = [

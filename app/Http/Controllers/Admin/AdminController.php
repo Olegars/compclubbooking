@@ -1420,6 +1420,7 @@ class AdminController extends Controller
             'golden_image_drift' => 'Повреждение игрового диска',
             'nic_link_flap' => 'Деградация патч-корда',
             'hardware_switch_fault' => 'Неисправность свитча/микрика',
+            'hardware_abuse' => 'Удар по столу / Rage-Smash',
             default => 'Нарушение протокола',
         };
     }

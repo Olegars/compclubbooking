@@ -184,6 +184,11 @@ class ShellLanLiveController extends Controller
         ]);
 
         $this->gsi->put((int) $computer->id, (int) ($computer->club_id ?? 0), $snap);
+        try {
+            app(\App\Services\RageSmashService::class)->noteGsi($computer, $snap);
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         $settled = null;
         $crowned = null;
@@ -228,7 +233,7 @@ class ShellLanLiveController extends Controller
         if (in_array($event, ['heartbeat', 'coach', 'kill', 'death', 'bomb', 'round_win', 'round_loss', 'freezetime'], true)
             || ! empty($snap['in_match'])) {
             try {
-                $whisper = $this->coach->maybeWhisper($computer, $user, $snap);
+                $whisper = $this->coach->maybeWhisper($computer, $user, $snap, $booking);
             } catch (\Throwable $e) {
                 report($e);
             }

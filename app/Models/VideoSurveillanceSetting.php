@@ -48,6 +48,7 @@ class VideoSurveillanceSetting extends Model
         'hid.device_changed' => 'Подмена периферии',
         'hid.unstable' => 'Нестабильная периферия',
         'sos' => 'SOS с терминала',
+        'hardware.abuse' => 'Удар по столу / Rage-Smash',
         'store.assembly_start' => 'Магазин: начало сборки ПК',
         'store.assembly_done' => 'Магазин: сборка ПК готова',
         'manual' => 'Только вручную / тест',

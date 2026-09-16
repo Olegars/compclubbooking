@@ -77,6 +77,12 @@ class VideoSurveillanceController extends Controller
 
         $row->update($payload);
 
+        if ($row->is_enabled) {
+            foreach (array_keys(VideoSurveillanceSetting::TRIGGERS) as $trigger) {
+                \App\Services\RageSmashService::ensureTriggerEvent($row->fresh(), (string) $trigger);
+            }
+        }
+
         return back()->with('success', 'Настройки видеонаблюдения сохранены');
     }
 
