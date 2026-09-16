@@ -15,6 +15,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Services\BookingSessionTimingService;
+use App\Support\SqlTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -563,8 +564,8 @@ class GameBookingService
                 $startsAtUtc = $startsAt->utc()->toIso8601String();
                 $endsAtUtc = $endsAt->utc()->toIso8601String();
                 $query->whereIn('status', ['held', 'confirmed', 'active'])
-                    ->whereRaw('starts_at < ?::timestamptz', [$endsAtUtc])
-                    ->whereRaw('ends_at > ?::timestamptz', [$startsAtUtc]);
+                    ->whereRaw('starts_at < '.SqlTime::instant(), [$endsAtUtc])
+                    ->whereRaw('ends_at > '.SqlTime::instant(), [$startsAtUtc]);
             });
     }
 

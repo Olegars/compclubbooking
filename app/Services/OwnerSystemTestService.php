@@ -102,9 +102,12 @@ class OwnerSystemTestService
             'status' => $outcome['status'],
             'message' => $outcome['message'],
             'details' => $outcome['details'],
-            'duration_ms' => isset($outcome['duration_ms']) && (int) $outcome['duration_ms'] > 0
-                ? (int) $outcome['duration_ms']
-                : (int) round((microtime(true) - $started) * 1000),
+            'duration_ms' => max(
+                1,
+                isset($outcome['duration_ms']) && (int) $outcome['duration_ms'] > 0
+                    ? (int) $outcome['duration_ms']
+                    : (int) round((microtime(true) - $started) * 1000)
+            ),
         ];
     }
 

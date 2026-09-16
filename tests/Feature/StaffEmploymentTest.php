@@ -8,7 +8,6 @@ use App\Support\StaffEmploymentRules;
 use App\Support\StaffFireSafetyRules;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -275,7 +274,7 @@ class StaffEmploymentTest extends TestCase
             ->withoutMiddleware(ValidateCsrfToken::class)
             ->from('/admin/salary')
             ->post('/admin/salary/employment/hire', $this->hirePayload([
-                'passport_scan' => UploadedFile::fake()->image('passport2.jpg'),
+                'passport_scan' => $this->fakeImageUpload('passport2.jpg'),
             ]))
             ->assertRedirect('/admin/salary');
 
@@ -379,7 +378,7 @@ class StaffEmploymentTest extends TestCase
 
         $this->from('/admin/salary')
             ->post('/admin/salary/employment/hire', $this->hirePayload([
-                'passport_scan' => UploadedFile::fake()->image('passport.jpg'),
+                'passport_scan' => $this->fakeImageUpload('passport.jpg'),
             ]))
             ->assertRedirect('/admin/salary');
     }

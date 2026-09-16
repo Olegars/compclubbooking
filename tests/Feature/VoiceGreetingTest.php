@@ -272,9 +272,9 @@ class VoiceGreetingTest extends TestCase
             'ai_assistant.openai.api_key' => '',
         ]);
         AiAssistantSetting::forClub($this->club->id)->update([
-            'llm_api_key' => null,
-            'yandex_api_key' => null,
-            'openai_api_key' => null,
+            'llm_api_key' => '',
+            'yandex_api_key' => '',
+            'openai_api_key' => '',
         ]);
 
         Booking::create([

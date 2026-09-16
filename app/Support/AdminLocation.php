@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Admin;
 use App\Models\Club;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Session;
 
 class AdminLocation
@@ -12,6 +13,9 @@ class AdminLocation
     {
         $admin = $admin ?: auth('admin')->user();
         if (! $admin) {
+            return null;
+        }
+        if (! Schema::hasTable('clubs')) {
             return null;
         }
 

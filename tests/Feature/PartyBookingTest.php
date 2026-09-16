@@ -8,8 +8,10 @@ use App\Models\Club;
 use App\Models\Computer;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\Space;
 use App\Models\User;
 use App\Models\Wallet;
+use App\Models\Zone;
 use App\Services\PartyBookingService;
 use App\Support\OrderChannel;
 use Carbon\CarbonImmutable;
@@ -23,6 +25,26 @@ class PartyBookingTest extends TestCase
     public function test_suggests_consecutive_seats_in_one_zone(): void
     {
         $club = Club::create(['name' => 'Party Club', 'slug' => 'party-club']);
+        $zoneA = Zone::create(['name' => 'Standard', 'slug' => 'party-standard']);
+        $zoneB = Zone::create(['name' => 'VIP', 'slug' => 'party-vip']);
+        $spaceA = Space::create([
+            'club_id' => $club->id,
+            'zone_id' => $zoneA->id,
+            'name' => 'Row-A',
+            'x' => 0,
+            'y' => 0,
+            'w' => 40,
+            'h' => 10,
+        ]);
+        $spaceB = Space::create([
+            'club_id' => $club->id,
+            'zone_id' => $zoneB->id,
+            'name' => 'Row-B',
+            'x' => 0,
+            'y' => 20,
+            'w' => 40,
+            'h' => 10,
+        ]);
         $pcs = [];
         foreach ([1, 2, 3, 5, 6] as $n) {
             $pcs[$n] = Computer::create([
@@ -31,7 +53,7 @@ class PartyBookingTest extends TestCase
                 'status' => 'available',
                 'kind' => 'pc',
                 'type' => 'standard',
-                'space_id' => 1,
+                'space_id' => $spaceA->id,
             ]);
         }
         Computer::create([
@@ -40,7 +62,7 @@ class PartyBookingTest extends TestCase
             'status' => 'available',
             'kind' => 'pc',
             'type' => 'vip',
-            'space_id' => 2,
+            'space_id' => $spaceB->id,
         ]);
 
         $service = app(PartyBookingService::class);

@@ -159,6 +159,12 @@ class OwnerSystemTestServiceTest extends TestCase
         $this->assertSame('', $env['DB_URL']);
     }
 
+    public function test_sql_time_instant_has_no_timestamptz_on_sqlite(): void
+    {
+        $this->assertSame('?', \App\Support\SqlTime::instant());
+        $this->assertStringNotContainsString('timestamptz', \App\Support\SqlTime::instant());
+    }
+
     public function test_phpunit_pid_zero_is_not_alive(): void
     {
         $this->assertFalse(app(OwnerSystemTestService::class)->phpunitPidIsAlive(0));

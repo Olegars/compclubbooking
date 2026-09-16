@@ -61,7 +61,7 @@ class OrderDeliveryTarget
             ->where(function ($query) use ($nowIso, $today, $nowH) {
                 $query->where(function ($modern) use ($nowIso) {
                     $modern->whereNotNull('ends_at')
-                        ->whereRaw('ends_at > ?::timestamptz', [$nowIso]);
+                        ->whereRaw('ends_at > '.SqlTime::instant(), [$nowIso]);
                 })->orWhere(function ($legacy) use ($today, $nowH) {
                     $legacy->whereNull('ends_at')
                         ->where('date', $today)

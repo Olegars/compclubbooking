@@ -4,23 +4,33 @@ namespace App\Support;
 
 use App\Models\Admin;
 use App\Models\Club;
+use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 class ClubBrand
 {
     public static function name(?Admin $admin = null): string
     {
-        $admin = $admin ?: auth('admin')->user();
+        try {
+            $admin = $admin ?: auth('admin')->user();
 
-        if ($admin) {
-            $fromLocation = AdminLocation::resolve($admin)?->name;
-            if (filled($fromLocation)) {
-                return trim((string) $fromLocation);
+            if ($admin) {
+                $fromLocation = AdminLocation::resolve($admin)?->name;
+                if (filled($fromLocation)) {
+                    return trim((string) $fromLocation);
+                }
             }
-        }
 
-        $fromDb = Club::query()->orderBy('id')->value('name');
-        if (filled($fromDb)) {
-            return trim((string) $fromDb);
+            if (! Schema::hasTable('clubs')) {
+                return 'Клуб';
+            }
+
+            $fromDb = Club::query()->orderBy('id')->value('name');
+            if (filled($fromDb)) {
+                return trim((string) $fromDb);
+            }
+        } catch (Throwable) {
+            return 'Клуб';
         }
 
         return 'Клуб';

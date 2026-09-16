@@ -7,6 +7,7 @@ use App\Models\BookingGroup;
 use App\Models\GameAccount;
 use App\Models\GameAccountReservation;
 use App\Services\Fan\FanControlService;
+use App\Support\SqlTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -449,7 +450,7 @@ class BookingSessionTimingService
             ->where(function ($query) use ($nowIso, $today, $nowH) {
                 $query->where(function ($modern) use ($nowIso) {
                     $modern->whereNotNull('ends_at')
-                        ->whereRaw('ends_at <= ?::timestamptz', [$nowIso]);
+                        ->whereRaw('ends_at <= '.SqlTime::instant(), [$nowIso]);
                 })->orWhere(function ($legacy) use ($today, $nowH) {
                     $legacy->whereNull('ends_at')
                         ->where('date', '<=', $today)

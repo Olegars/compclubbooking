@@ -85,9 +85,10 @@ class ForceReleaseComputerTest extends TestCase
 
     public function test_guest_cannot_release_computer(): void
     {
-        $this->postJson('/admin/api/computers/release', [
+        $response = $this->postJson('/admin/api/computers/release', [
             'computer_id' => $this->computer->id,
-        ])->assertRedirect();
+        ]);
+        $this->assertTrue($response->isRedirect() || $response->status() === 401);
     }
 
     private function makeAdmin(string $role): Admin

@@ -8,7 +8,6 @@ use App\Models\StaffEmploymentProfile;
 use App\Support\StaffEmploymentRules;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -146,7 +145,7 @@ class StoreStaffAuthTest extends TestCase
                 'issued_at' => '2020-01-15',
                 'department_code' => '770-001',
                 'birth_date' => '1998-05-20',
-                'passport_scan' => UploadedFile::fake()->image('passport.jpg'),
+                'passport_scan' => $this->fakeImageUpload('passport.jpg'),
             ])
             ->assertRedirect('/store/hire');
 
