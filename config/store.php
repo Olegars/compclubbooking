@@ -25,6 +25,16 @@ return [
     'repair_days' => (int) env('STORE_REPAIR_DAYS', 45),
 
     /*
+    | Канал NVR над столом сборщика (1 = track 101). Пусто — default_channel видеонаблюдения.
+    */
+    'assembly_nvr_channel' => env('STORE_ASSEMBLY_NVR_CHANNEL', ''),
+
+    /*
+    | Максимум минут ролика сборки, который агент выгружает с NVR на паспорт.
+    */
+    'assembly_clip_max_minutes' => (int) env('STORE_ASSEMBLY_CLIP_MAX_MINUTES', 20),
+
+    /*
     |--------------------------------------------------------------------------
     | API поставщика (QuickFox)
     |--------------------------------------------------------------------------

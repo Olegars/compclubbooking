@@ -25,7 +25,9 @@ use App\Http\Controllers\Api\ShellIsolateRelayController;
 use App\Http\Controllers\Api\WifiGrantRelayController;
 use App\Http\Controllers\Api\KitchenPrintRelayController;
 use App\Http\Controllers\Api\VideoMarkerRelayController;
+use App\Http\Controllers\Api\StoreAssemblyClipRelayController;
 use App\Http\Controllers\WifiAccessController;
+use App\Http\Controllers\StorePcPassportController;
 
 // Контроллеры Авторизации
 use App\Http\Controllers\Auth\SmsAuthController;
@@ -52,6 +54,7 @@ use App\Http\Controllers\Admin\ZoneController;
 use App\Http\Controllers\Admin\LicenseController;
 use App\Http\Controllers\Admin\QuickAppController;
 use App\Http\Controllers\Admin\TournamentController;
+use App\Http\Controllers\Admin\ClanWarController;
 use App\Http\Controllers\Admin\PromoCodeAdminController;
 use App\Http\Controllers\Admin\AchievementAdminController;
 use App\Http\Controllers\Admin\OverlayAdminController;
@@ -208,6 +211,12 @@ Route::middleware('guest')->group(function () {
 Route::post('/logout', [LogoutController::class, 'logout'])->name('logout');
 
 Route::get('/clips/{token}', [ProfileController::class, 'showSharedClip'])->name('clips.show');
+Route::get('/pc/{token}', [StorePcPassportController::class, 'show'])
+    ->where('token', '[A-Za-z0-9]{24,40}')
+    ->name('store.pc.passport');
+Route::get('/pc/{token}/video', [StorePcPassportController::class, 'video'])
+    ->where('token', '[A-Za-z0-9]{24,40}')
+    ->name('store.pc.passport.video');
 
 /*
 |--------------------------------------------------------------------------
@@ -430,6 +439,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
             Route::post('/built-pcs', [StoreBuiltPcController::class, 'store'])->name('admin.store.built-pcs.store');
             Route::put('/built-pcs/{storeBuiltPc}', [StoreBuiltPcController::class, 'update'])->name('admin.store.built-pcs.update');
             Route::delete('/built-pcs/{storeBuiltPc}', [StoreBuiltPcController::class, 'destroy'])->name('admin.store.built-pcs.destroy');
+            Route::post('/built-pcs/{storeBuiltPc}/assembly-clip', [StoreBuiltPcController::class, 'uploadAssemblyClip'])->name('admin.store.built-pcs.assembly-clip');
             Route::get('/built-pcs/{storeBuiltPc}/print-barcode', [StoreWarrantyController::class, 'printBuiltPcBarcode'])->name('admin.store.built-pcs.print-barcode');
             Route::post('/built-pcs/{storeBuiltPc}/print-barcode-pos', [StoreWarrantyController::class, 'printBuiltPcBarcodePos'])->name('admin.store.built-pcs.print-barcode-pos');
             Route::get('/built-pcs/{storeBuiltPc}/print-talon', [StoreWarrantyController::class, 'printBuiltPcTalon'])->name('admin.store.built-pcs.print-talon');
@@ -603,6 +613,10 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::patch('/tournaments/{tournament}/matches/{match}', [TournamentController::class, 'reportMatch']);
         Route::post('/tournaments/{tournament}/payout', [TournamentController::class, 'payout']);
 
+        Route::get('/clan-wars', [ClanWarController::class, 'index'])->name('admin.clan-wars.index');
+        Route::post('/clan-wars', [ClanWarController::class, 'store']);
+        Route::patch('/clan-wars/{clanWar}/status', [ClanWarController::class, 'updateStatus']);
+
         // Промокоды
         Route::get('/promocodes', [PromoCodeAdminController::class, 'index'])->name('admin.promocodes.index');
         Route::post('/promocodes', [PromoCodeAdminController::class, 'store']);
@@ -715,6 +729,9 @@ Route::prefix('api/kitchen')->group(function () {
 Route::prefix('api/video')->group(function () {
     Route::get('/marker-targets', [VideoMarkerRelayController::class, 'targets']);
     Route::post('/marker-applied', [VideoMarkerRelayController::class, 'applied']);
+    Route::get('/assembly-clip-targets', [StoreAssemblyClipRelayController::class, 'targets']);
+    Route::post('/assembly-clips', [StoreAssemblyClipRelayController::class, 'upload']);
+    Route::post('/assembly-clip-applied', [StoreAssemblyClipRelayController::class, 'applied']);
 });
 
 /*
@@ -731,6 +748,7 @@ Route::prefix('api/shell')->group(function () {
     Route::post('/ui-state', [ShellApiController::class, 'reportUiState']);
 
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
+    Route::get('/clan-wars/live', [ShellApiController::class, 'liveClanWar']);
     Route::post('/login', [ShellApiController::class, 'login']);
     Route::post('/qr/challenge', [ShellApiController::class, 'qrChallenge']);
     Route::get('/qr/status', [ShellApiController::class, 'qrStatus']);
@@ -808,6 +826,7 @@ Route::prefix('api/shell')->group(function () {
     Route::post('/party/energy/contribute', [ShellLanLiveController::class, 'contribute']);
     Route::post('/coach', [ShellLanLiveController::class, 'setCoach']);
     Route::post('/gsi', [ShellLanLiveController::class, 'gsi']);
+    Route::post('/lootbox/{id}/open', [ShellLanLiveController::class, 'openLootbox']);
     Route::post('/lfg', [ShellLanLiveController::class, 'enqueueLfg']);
     Route::post('/lfg/cancel', [ShellLanLiveController::class, 'cancelLfg']);
     Route::post('/lfg/sit', [ShellLanLiveController::class, 'sitLfg']);

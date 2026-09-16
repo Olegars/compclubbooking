@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Route;
 // потому что Laravel сам автоматически подставит 'api/' ко всем маршрутам в этом файле!
 Route::prefix('shell')->group(function () {
     Route::get('/overlays', [ShellApiController::class, 'getActiveOverlays']);
+    Route::get('/clan-wars/live', [ShellApiController::class, 'liveClanWar']);
     Route::post('/login', [ShellApiController::class, 'login']);
     Route::post('/qr/challenge', [ShellApiController::class, 'qrChallenge']);
     Route::get('/qr/status', [ShellApiController::class, 'qrStatus']);

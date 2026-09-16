@@ -171,6 +171,8 @@ const filterStatus = computed({
                         <div v-if="w.claim_notes" class="text-xs text-white/40 mt-2">{{ w.claim_notes }}</div>
                     </div>
                     <div class="flex flex-wrap gap-2" @click.stop>
+                        <a v-if="w.passport_url" :href="w.passport_url" target="_blank"
+                           class="px-3 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400">Паспорт</a>
                         <a v-if="w.serial" :href="`/admin/store/warranty/${w.id}/print-barcode`" target="_blank"
                            class="px-3 py-2 rounded-xl border border-white/10 text-[10px] uppercase font-black text-white/50">QR</a>
                         <button v-if="w.serial" type="button" @click="printBarcodePos(w.id)"

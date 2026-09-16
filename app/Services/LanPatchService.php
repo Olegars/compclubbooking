@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Booking;
 use App\Models\Computer;
 use App\Support\SqlTime;
 use Carbon\CarbonImmutable;
@@ -9,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * LAN P2P-кэшер патчей: seed (Super Client / живой сид с портом)
+ * LAN P2P-кэшер патчей: seed (Super Client / временный сид на D:)
  * раздаёт свежие Steam/Epic buildId, peer-станции тянут по VLAN.
  */
 class LanPatchService
@@ -17,6 +18,26 @@ class LanPatchService
     public function ttlMinutes(): int
     {
         return 45;
+    }
+
+    public function nightStartHour(): int
+    {
+        return max(0, min(23, (int) config('club.patch_cache.night_start', 1)));
+    }
+
+    public function nightEndHour(): int
+    {
+        return max(0, min(23, (int) config('club.patch_cache.night_end', 6)));
+    }
+
+    public function ingestEnabled(): bool
+    {
+        return filter_var(config('club.patch_cache.ingest', true), FILTER_VALIDATE_BOOLEAN);
+    }
+
+    public function hysteresis(): float
+    {
+        return max(0.0, (float) config('club.patch_cache.fallback_hysteresis', 80));
     }
 
     /**
@@ -29,8 +50,9 @@ class LanPatchService
      *     patch_pull_message?: string|null
      * }  $extras
      * @return array{
-     *     patch_seed: array{enabled: bool, port: int}|null,
-     *     patch_pull: array{command_id: int, apps: list<array<string, mixed>>}|null
+     *     patch_seed: array{enabled: bool, port: int, role: string},
+     *     patch_pull: array{command_id: int, apps: list<array<string, mixed>>}|null,
+     *     patch_ingest: array{enabled: bool}|null
      * }
      */
     public function processHeartbeat(Computer $computer, array $extras = []): array
@@ -46,6 +68,9 @@ class LanPatchService
             $computer->refresh();
         }
 
+        $this->electFallbackSeed($computer);
+        $computer->refresh();
+
         $seed = $this->seedPolicyFor($computer);
         $pull = $this->pendingPullFor($computer);
 
@@ -58,13 +83,14 @@ class LanPatchService
         return [
             'patch_seed' => $seed,
             'patch_pull' => $pull,
+            'patch_ingest' => $this->ingestPolicyFor($computer),
         ];
     }
 
     /**
-     * @return array{enabled: bool, port: int}|null
+     * @return array{enabled: bool, port: int, role: string}
      */
-    public function seedPolicyFor(Computer $computer): ?array
+    public function seedPolicyFor(Computer $computer): array
     {
         $port = (int) ($computer->patch_seed_port ?: 8745);
         if ($port <= 0) {
@@ -72,15 +98,109 @@ class LanPatchService
         }
 
         if ($computer->super_client) {
-            return ['enabled' => true, 'port' => $port];
+            return ['enabled' => true, 'port' => $port, 'role' => 'super'];
         }
 
-        // Уже слушает — держим сид, пока нет гостя (сессия на уровне power_action).
-        if ((int) ($computer->patch_seed_port ?? 0) > 0 && ! empty($computer->lan_ip)) {
-            return ['enabled' => true, 'port' => (int) $computer->patch_seed_port];
+        if ($this->hasBusySession((int) $computer->id)) {
+            return ['enabled' => false, 'port' => $port, 'role' => 'none'];
         }
 
-        return null;
+        if ((string) ($computer->patch_seed_role ?? '') === 'fallback'
+            && ! $this->clubHasOnlineSuperClient($computer->club_id)) {
+            return ['enabled' => true, 'port' => $port, 'role' => 'fallback'];
+        }
+
+        return ['enabled' => false, 'port' => $port, 'role' => 'none'];
+    }
+
+    /**
+     * @return array{enabled: bool}|null
+     */
+    public function ingestPolicyFor(Computer $computer): ?array
+    {
+        if (! $this->ingestEnabled()) {
+            return ['enabled' => false];
+        }
+        if (! $this->inNightWindow()) {
+            return ['enabled' => false];
+        }
+        if ($this->hasBusySession((int) $computer->id)) {
+            return ['enabled' => false];
+        }
+
+        $policy = $this->seedPolicyFor($computer);
+        if (! ($policy['enabled'] ?? false)) {
+            return ['enabled' => false];
+        }
+
+        return ['enabled' => true];
+    }
+
+    public function inNightWindow(?CarbonImmutable $now = null): bool
+    {
+        $now = $now ?? CarbonImmutable::now();
+        $hour = (int) $now->timezone(config('app.timezone'))->hour;
+        $start = $this->nightStartHour();
+        $end = $this->nightEndHour();
+        if ($start === $end) {
+            return true;
+        }
+        if ($start < $end) {
+            return $hour >= $start && $hour < $end;
+        }
+
+        return $hour >= $start || $hour < $end;
+    }
+
+    public function shouldKeepPower(Computer $computer, ?CarbonImmutable $now = null): bool
+    {
+        if (! $this->inNightWindow($now)) {
+            return false;
+        }
+        if ($computer->super_client) {
+            return true;
+        }
+        if ((string) ($computer->patch_seed_role ?? '') !== 'fallback') {
+            return false;
+        }
+
+        return ! $this->clubHasOnlineSuperClient($computer->club_id);
+    }
+
+    /**
+     * WOL/desired=on ночью для выбранного fallback-сида, если Super Client выключен.
+     *
+     * @param  list<int>  $ids
+     * @return list<int>
+     */
+    public function computersNeedingNightPower(array $ids, ?CarbonImmutable $now = null): array
+    {
+        if ($ids === [] || ! $this->inNightWindow($now)) {
+            return [];
+        }
+
+        $rows = DB::table('computers')
+            ->whereIn('id', $ids)
+            ->get(['id', 'club_id', 'super_client', 'patch_seed_role']);
+
+        $keep = [];
+        $clubOnlineSc = [];
+        foreach ($rows as $row) {
+            $clubId = $row->club_id !== null ? (int) $row->club_id : 0;
+            if (! array_key_exists($clubId, $clubOnlineSc)) {
+                $clubOnlineSc[$clubId] = $this->clubHasOnlineSuperClient($clubId > 0 ? $clubId : null);
+            }
+            if (filter_var($row->super_client ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                $keep[(int) $row->id] = true;
+
+                continue;
+            }
+            if ((string) ($row->patch_seed_role ?? '') === 'fallback' && ! $clubOnlineSc[$clubId]) {
+                $keep[(int) $row->id] = true;
+            }
+        }
+
+        return array_values(array_keys($keep));
     }
 
     /**
@@ -265,6 +385,158 @@ class LanPatchService
             return $seed;
         }
 
+        $fallback = (clone $q)->where('patch_seed_role', 'fallback')->orderBy('id')->first();
+        if ($fallback) {
+            return $fallback;
+        }
+
         return $q->orderByDesc('super_client')->orderBy('id')->first();
+    }
+
+    private function electFallbackSeed(Computer $computer): void
+    {
+        $clubId = $computer->club_id ? (int) $computer->club_id : null;
+        $q = Computer::query()->where('kind', Computer::KIND_PC);
+        if ($clubId) {
+            $q->where('club_id', $clubId);
+        }
+
+        $pcs = $q->get();
+        $seenCutoff = CarbonImmutable::now()->subDays(3);
+
+        $ranked = [];
+        foreach ($pcs as $pc) {
+            if (! $pc->cache_ok) {
+                continue;
+            }
+            if (strtolower((string) ($pc->ssd_health ?? '')) === 'unhealthy') {
+                continue;
+            }
+            $seen = $pc->last_seen_at;
+            if (! $seen || $seen->lessThan($seenCutoff)) {
+                continue;
+            }
+            $ranked[] = [
+                'id' => (int) $pc->id,
+                'score' => $this->seedScore($pc),
+                'role' => (string) ($pc->patch_seed_role ?? ''),
+                'super' => (bool) ($pc->super_client ?? false),
+            ];
+        }
+
+        if ($ranked === []) {
+            $this->persistFallbackWinner($clubId, null);
+
+            return;
+        }
+
+        $standby = array_values(array_filter($ranked, fn (array $row) => ! $row['super']));
+        $pool = $standby !== [] ? $standby : $ranked;
+
+        usort($pool, function (array $a, array $b) {
+            if ($a['score'] === $b['score']) {
+                return $a['id'] <=> $b['id'];
+            }
+
+            return $b['score'] <=> $a['score'];
+        });
+
+        $best = $pool[0];
+        $current = null;
+        foreach ($pool as $row) {
+            if ($row['role'] === 'fallback') {
+                $current = $row;
+                break;
+            }
+        }
+
+        $winnerId = (int) $best['id'];
+        if ($current && ((float) $current['score'] + $this->hysteresis()) >= (float) $best['score']) {
+            $winnerId = (int) $current['id'];
+        }
+
+        $this->persistFallbackWinner($clubId, $winnerId);
+    }
+
+    private function persistFallbackWinner(?int $clubId, ?int $winnerId): void
+    {
+        $q = DB::table('computers')->where('kind', Computer::KIND_PC);
+        if ($clubId) {
+            $q->where('club_id', $clubId);
+        }
+
+        $rows = (clone $q)->get(['id', 'patch_seed_role', 'super_client', 'patch_seed_port']);
+        foreach ($rows as $row) {
+            $id = (int) $row->id;
+            $wantRole = $winnerId !== null && $id === $winnerId ? 'fallback' : null;
+            $haveRole = (string) ($row->patch_seed_role ?? '') === 'fallback' ? 'fallback' : null;
+            $patch = [];
+            if ($wantRole !== $haveRole) {
+                $patch['patch_seed_role'] = $wantRole;
+            }
+            if ($wantRole === null
+                && ! filter_var($row->super_client ?? false, FILTER_VALIDATE_BOOLEAN)
+                && (int) ($row->patch_seed_port ?? 0) > 0
+                && $haveRole === 'fallback') {
+                $patch['patch_seed_port'] = null;
+            }
+            if ($patch !== []) {
+                $patch['updated_at'] = SqlTime::now();
+                DB::table('computers')->where('id', $id)->update($patch);
+            }
+        }
+    }
+
+    private function seedScore(Computer $pc): float
+    {
+        $media = strtolower((string) ($pc->cache_media ?? 'unknown'));
+        $mediaScore = match ($media) {
+            'scm' => 4500.0,
+            'nvme' => 4000.0,
+            'ssd' => 2500.0,
+            'hdd' => 0.0,
+            default => 800.0,
+        };
+
+        $letter = strtoupper(substr((string) ($pc->volume_letter ?? ''), 0, 1));
+        $root = strtoupper((string) ($pc->data_root ?? ''));
+        $volumeScore = 0.0;
+        if ($letter === 'D' || str_starts_with($root, 'D:')) {
+            $volumeScore = 500.0;
+        } elseif ($letter !== '') {
+            $volumeScore = 50.0;
+        }
+
+        $health = strtolower((string) ($pc->ssd_health ?? ''));
+        $healthPenalty = $health === 'warning' ? 150.0 : 0.0;
+
+        return $mediaScore + $volumeScore + (float) ($pc->cache_free_gb ?? 0) - $healthPenalty;
+    }
+
+    public function clubHasOnlineSuperClient(?int $clubId): bool
+    {
+        $q = Computer::query()
+            ->where('super_client', true)
+            ->whereNotNull('last_seen_at')
+            ->where('last_seen_at', '>=', now()->subSeconds(
+                max(30, (int) config('club.power.heartbeat_stale_seconds', 180))
+            ));
+        if ($clubId) {
+            $q->where('club_id', $clubId);
+        }
+
+        return $q->exists();
+    }
+
+    private function hasBusySession(int $computerId): bool
+    {
+        if ($computerId <= 0) {
+            return false;
+        }
+
+        return Booking::query()
+            ->where('computer_id', $computerId)
+            ->where('status', 'active')
+            ->exists();
     }
 }

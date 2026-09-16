@@ -167,7 +167,7 @@ const cancelBooking = async (b: any) => {
 
 const fetchDashboardData = () => {
     router.reload({
-        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'clips', 'clips_telegram', 'telegram', 'server_time'],
+        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'clips', 'clips_telegram', 'telegram', 'clan_wars', 'server_time'],
         preserveScroll: true
     })
 }
@@ -178,6 +178,7 @@ const achievements = computed(() => {
 const clips = computed(() => (page.props.clips as any[]) || [])
 const clipsTelegram = computed(() => !!(page.props as any).clips_telegram)
 const telegramLink = computed(() => (page.props as any).telegram || {})
+const clanWars = computed(() => (page.props as any).clan_wars || { live: null, mine: [], board: [] })
 
 const copyClipLink = async (url: string) => {
     try {
@@ -718,6 +719,39 @@ onMounted(() => {
                                 <button v-if="clipsTelegram" type="button" class="text-cyan-400" @click="shareClipTelegram(c.id)">В канал</button>
                                 <button type="button" class="text-red-400 ml-auto" @click="deleteClip(c.id)">Удалить</button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="clanWars.live || clanWars.board?.length || clanWars.mine?.length"
+                     class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-fuchsia-500/20 rounded-xl md:rounded-[1.125rem] p-4 sm:p-6 md:p-8 md:shadow-xl">
+                    <span class="text-[10px] uppercase text-fuchsia-400 tracking-[0.35em] font-black italic block mb-4 sm:mb-6">Clan Wars</span>
+                    <div v-if="clanWars.live" class="border border-fuchsia-500/30 bg-fuchsia-500/[0.06] rounded-xl p-4 mb-5">
+                        <div class="text-[9px] uppercase tracking-widest text-fuchsia-300 mb-2">Сейчас в эфире · {{ clanWars.live.game }}</div>
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="text-center min-w-0">
+                                <div class="text-[10px] text-white/40 uppercase truncate">{{ clanWars.live.side_a.label }}</div>
+                                <div class="text-3xl font-black font-mono text-fuchsia-300">{{ clanWars.live.side_a.score }}</div>
+                            </div>
+                            <div class="text-white/25 font-black">:</div>
+                            <div class="text-center min-w-0">
+                                <div class="text-[10px] text-white/40 uppercase truncate">{{ clanWars.live.side_b.label }}</div>
+                                <div class="text-3xl font-black font-mono text-emerald-400">{{ clanWars.live.side_b.score }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="clanWars.mine?.length" class="mb-5 space-y-2">
+                        <div class="text-[9px] uppercase text-white/30 tracking-widest">Ваш рейтинг</div>
+                        <div v-for="row in clanWars.mine" :key="row.clan + row.kind" class="flex justify-between text-sm border border-white/5 rounded-xl px-3 py-2 bg-black/40">
+                            <span class="uppercase italic font-black truncate">{{ row.clan }}</span>
+                            <span class="font-mono text-fuchsia-300">{{ row.rating }}</span>
+                        </div>
+                    </div>
+                    <div v-if="clanWars.board?.length" class="space-y-2">
+                        <div class="text-[9px] uppercase text-white/30 tracking-widest">Таблица кланов</div>
+                        <div v-for="(row, i) in clanWars.board" :key="row.id" class="flex justify-between text-[12px] text-white/70">
+                            <span><span class="text-white/30 mr-2">{{ i + 1 }}</span>{{ row.name }}</span>
+                            <span class="font-mono">{{ row.rating }}</span>
                         </div>
                     </div>
                 </div>

@@ -38,6 +38,7 @@ return [
         'gift',
         'fantiki',
         'admin_bonus',
+        'lucky_seat',
     ],
 
     /*

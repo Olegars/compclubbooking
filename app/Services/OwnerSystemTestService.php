@@ -245,7 +245,7 @@ class OwnerSystemTestService
                 'group' => 'shell',
                 'group_title' => 'Зал и Shell',
                 'title' => 'Здоровье станций',
-                'description' => 'Линк NIC, flap патч-корда, SMART SSD, мёртвый кэш, drift игрового диска среди онлайн-ПК.',
+                'description' => 'Линк NIC, flap патч-корда, SMART SSD, мёртвый кэш, drift игрового диска, открытый тикет свитча/микрика среди онлайн-ПК.',
             ],
             'wol_relay' => [
                 'group' => 'shell',
@@ -614,6 +614,14 @@ class OwnerSystemTestService
         $deadCache = $online->filter(fn ($pc) => $pc->cache_ok === false);
         $badSsd = $online->filter(fn ($pc) => in_array((string) $pc->ssd_health, ['warning', 'unhealthy'], true));
         $drift = $online->filter(fn ($pc) => in_array((string) $pc->integrity_status, ['drift', 'resyncing'], true));
+        $switchFaultIds = DB::table('incidents')
+            ->where('type', ShellIncidentService::TYPE_HARDWARE_SWITCH)
+            ->whereNull('resolved_at')
+            ->whereIn('computer_id', $online->pluck('id'))
+            ->pluck('computer_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $switchFault = $online->filter(fn ($pc) => in_array((int) $pc->id, $switchFaultIds, true));
         $details = [
             'онлайн: '.$online->count(),
             'линк ≤100 Мбит: '.$slow->pluck('name')->implode(', ') ?: 'нет',
@@ -621,6 +629,7 @@ class OwnerSystemTestService
             'кэш мёртв: '.$deadCache->pluck('name')->implode(', ') ?: 'нет',
             'SMART warning/unhealthy: '.$badSsd->pluck('name')->implode(', ') ?: 'нет',
             'drift игрового диска: '.$drift->pluck('name')->implode(', ') ?: 'нет',
+            'свитч/микрик: '.$switchFault->pluck('name')->implode(', ') ?: 'нет',
         ];
         if ($deadCache->isNotEmpty() || $badSsd->isNotEmpty()) {
             return $this->fail('Есть станции с мёртвым кэшем или плохим SSD.', $details);
@@ -630,6 +639,9 @@ class OwnerSystemTestService
         }
         if ($drift->isNotEmpty()) {
             return $this->warn('Есть ПК с повреждёнными файлами игрового диска.', $details);
+        }
+        if ($switchFault->isNotEmpty()) {
+            return $this->warn('Есть ПК с тикетом «Проверить свитч/микрик».', $details);
         }
         if ($slow->isNotEmpty()) {
             return $this->warn('Есть ПК с линком ≤100 Мбит.', $details);

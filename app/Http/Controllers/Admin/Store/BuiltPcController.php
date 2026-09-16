@@ -7,6 +7,7 @@ use App\Models\StoreBuiltPc;
 use App\Models\StoreBuiltPcComponent;
 use App\Models\StoreClient;
 use App\Models\StoreComponent;
+use App\Services\StoreAssemblyCaptureService;
 use App\Services\StoreWarrantyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,7 @@ class BuiltPcController extends StoreController
                 'acceptor:id,name',
                 'issuer:id,name',
                 'componentLinks',
-                'warranty:id,store_built_pc_id,serial,status,ends_at',
+                'warranty:id,store_built_pc_id,serial,status,ends_at,public_token',
             ])
             ->latest();
 
@@ -45,7 +46,12 @@ class BuiltPcController extends StoreController
             ->get(['id', 'name', 'role']);
 
         return Inertia::render('Admin/Store/BuiltPcs', [
-            'pcs' => $query->limit(150)->get(),
+            'pcs' => $query->limit(150)->get()->map(function (StoreBuiltPc $pc) {
+                $pc->setAttribute('passport_url', $pc->warranty?->passportUrl());
+                $pc->setAttribute('has_assembly_clip', $pc->hasAssemblyClip());
+
+                return $pc;
+            }),
             'clients' => StoreClient::query()->where('club_id', $clubId)->orderBy('name')->get(['id', 'name', 'phone']),
             'components' => StoreComponent::query()
                 ->where('club_id', $clubId)
@@ -62,7 +68,7 @@ class BuiltPcController extends StoreController
         ]);
     }
 
-    public function store(Request $request, StoreWarrantyService $warranties)
+    public function store(Request $request, StoreWarrantyService $warranties, StoreAssemblyCaptureService $assembly)
     {
         abort_unless(
             $this->admin()->canManageStoreCatalog()
@@ -74,7 +80,7 @@ class BuiltPcController extends StoreController
         $data = $this->validated($request);
         $clubId = $this->locationId();
 
-        DB::transaction(function () use ($data, $clubId, $warranties) {
+        DB::transaction(function () use ($data, $clubId, $warranties, $assembly) {
             $serial = isset($data['serial_number']) && $data['serial_number'] !== ''
                 ? $data['serial_number']
                 : null;
@@ -96,13 +102,18 @@ class BuiltPcController extends StoreController
             ]);
 
             $this->syncComponents($pc, $data['component_ids'] ?? []);
-            $warranties->ensureForBuiltPc($pc->fresh());
+            $pc = $pc->fresh();
+            $warranties->ensureForBuiltPc($pc);
+            $assembly->onAssemblyStarted($pc);
+            if (in_array($pc->status, ['ready', 'sold'], true)) {
+                $assembly->onAssemblyFinished($pc);
+            }
         });
 
         return back()->with('success', 'Сборка ПК создана, гарантия и серийный номер назначены.');
     }
 
-    public function update(Request $request, StoreBuiltPc $storeBuiltPc, StoreWarrantyService $warranties)
+    public function update(Request $request, StoreBuiltPc $storeBuiltPc, StoreWarrantyService $warranties, StoreAssemblyCaptureService $assembly)
     {
         abort_unless($storeBuiltPc->club_id === $this->locationId(), 404);
         abort_unless(
@@ -116,7 +127,7 @@ class BuiltPcController extends StoreController
 
         $data = $this->validated($request, updating: true);
 
-        DB::transaction(function () use ($storeBuiltPc, $data, $warranties) {
+        DB::transaction(function () use ($storeBuiltPc, $data, $warranties, $assembly) {
             if (($data['status'] ?? null) === 'sold' && empty($data['sold_at']) && ! $storeBuiltPc->sold_at) {
                 $data['sold_at'] = now();
             }
@@ -132,9 +143,33 @@ class BuiltPcController extends StoreController
             }
 
             $warranties->ensureForBuiltPc($storeBuiltPc->fresh());
+            $fresh = $storeBuiltPc->fresh();
+            $assembly->onAssemblyStarted($fresh);
+            if (in_array($fresh->status, ['ready', 'sold'], true)) {
+                $assembly->onAssemblyFinished($fresh);
+            }
         });
 
         return back()->with('success', 'Сборка обновлена.');
+    }
+
+    public function uploadAssemblyClip(Request $request, StoreBuiltPc $storeBuiltPc, StoreAssemblyCaptureService $assembly)
+    {
+        abort_unless($storeBuiltPc->club_id === $this->locationId(), 404);
+        abort_unless(
+            $this->admin()->canManageStoreCatalog()
+            || $this->admin()->role === 'assembler'
+            || $this->admin()->role === 'owner',
+            403
+        );
+
+        $request->validate([
+            'clip' => 'required|file|mimetypes:video/mp4,application/octet-stream|max:98304',
+        ]);
+
+        $assembly->storeClip($storeBuiltPc, $request->file('clip'));
+
+        return back()->with('success', 'Видео сборки записано в паспорт ПК.');
     }
 
     public function destroy(StoreBuiltPc $storeBuiltPc)

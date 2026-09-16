@@ -10,7 +10,10 @@ use Illuminate\Support\Facades\DB;
 
 class StoreOrderBuiltPcService
 {
-    public function __construct(private StoreWarrantyService $warranties) {}
+    public function __construct(
+        private StoreWarrantyService $warranties,
+        private StoreAssemblyCaptureService $assembly,
+    ) {}
 
     /**
      * Создать / обновить карточку «Готовый ПК» из заказа.
@@ -66,6 +69,19 @@ class StoreOrderBuiltPcService
 
             $this->syncLinksFromOrder($pc, $order);
             $this->warranties->ensureForBuiltPc($pc->fresh(['componentLinks', 'client']));
+            $pc = $pc->fresh([
+                'componentLinks',
+                'components',
+                'client',
+                'warranty',
+            ]);
+
+            if (in_array($order->status, ['assembling', 'ready', 'issued'], true)) {
+                $this->assembly->onAssemblyStarted($pc);
+            }
+            if (in_array($order->status, ['ready', 'issued'], true) || $pc->verified_ok) {
+                $this->assembly->onAssemblyFinished($pc);
+            }
 
             return $pc->fresh([
                 'componentLinks',

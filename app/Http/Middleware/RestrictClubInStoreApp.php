@@ -27,6 +27,8 @@ class RestrictClubInStoreApp
             'admin/api/*',
             'admin/docs',
             'admin/docs/*',
+            'pc',
+            'pc/*',
             'store-app.apk',
             'store-app.json',
             'build/*',

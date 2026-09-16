@@ -31,7 +31,7 @@ onMounted(() => {
             <img class="qr" :src="qrImageUrl" :alt="qrPayload" width="240" height="240" />
             <div class="sn">S/N {{ warranty.serial || '—' }}</div>
             <div v-if="endsAtLabel" class="ends">Гарантия до {{ endsAtLabel }}</div>
-            <div class="hint">Выберите POS / термопринтер в диалоге печати</div>
+            <div class="hint">Камера телефона откроет паспорт ПК</div>
         </div>
     </div>
 </template>

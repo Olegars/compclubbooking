@@ -168,6 +168,22 @@ const seedSosEvent = () => {
     newEvent.trigger_key = 'sos'
     newEvent.marker_title = 'SOS'
 }
+
+const seedAssemblyStart = () => {
+    newEvent.name = 'Начало сборки ПК'
+    newEvent.code = 'store_assembly_start'
+    newEvent.description = 'Метка на камере стола сборщика, когда заказ уходит в сборку'
+    newEvent.trigger_key = 'store.assembly_start'
+    newEvent.marker_title = 'Сборка ПК'
+}
+
+const seedAssemblyDone = () => {
+    newEvent.name = 'Сборка ПК готова'
+    newEvent.code = 'store_assembly_done'
+    newEvent.description = 'Конец записи на столе сборщика; агент выгружает ролик в паспорт'
+    newEvent.trigger_key = 'store.assembly_done'
+    newEvent.marker_title = 'ПК готов'
+}
 </script>
 
 <template>
@@ -302,6 +318,14 @@ const seedSosEvent = () => {
                         <button type="button" @click="seedSosEvent"
                                 class="text-[10px] font-black uppercase tracking-widest text-cyan-400/80 hover:text-cyan-300 cursor-pointer">
                             + Шаблон: SOS
+                        </button>
+                        <button type="button" @click="seedAssemblyStart"
+                                class="text-[10px] font-black uppercase tracking-widest text-amber-400/80 hover:text-amber-300 cursor-pointer">
+                            + Шаблон: сборка ПК
+                        </button>
+                        <button type="button" @click="seedAssemblyDone"
+                                class="text-[10px] font-black uppercase tracking-widest text-amber-400/80 hover:text-amber-300 cursor-pointer">
+                            + Шаблон: ПК готов
                         </button>
                     </div>
                 </div>

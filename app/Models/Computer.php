@@ -11,10 +11,10 @@ class Computer extends Model
     protected $fillable = [
         'club_id', 'name', 'x', 'y', 'type', 'seat_class_id', 'space_id',
         'kind', 'booth_id', 'status', 'hwid',
-        'mac_address', 'lan_ip', 'patch_seed_port', 'power_desired', 'power_state',
+        'mac_address', 'lan_ip', 'patch_seed_port', 'patch_seed_role', 'power_desired', 'power_state',
         'power_state_updated_at', 'last_seen_at', 'wol_sent_at',
         'maintenance', 'maintenance_until',
-        'cache_ok', 'cache_free_gb', 'data_root', 'volume_letter', 'ssd_temp_c',
+        'cache_ok', 'cache_free_gb', 'data_root', 'volume_letter', 'cache_media', 'ssd_temp_c',
         'nic_link_mbps', 'nic_flap_count', 'nic_flap_shift_id', 'nic_flap_last_at',
         'ssd_wear_pct', 'ssd_read_errors', 'ssd_write_errors', 'ssd_health',
         'super_client', 'games_steam_count', 'games_epic_count',
@@ -27,6 +27,7 @@ class Computer extends Model
         'resync_result', 'resync_message',
         'patch_pull_command_id', 'patch_pull_command_at', 'patch_pull_payload',
         'patch_pull_result', 'patch_pull_message',
+        'patch_ingest_at', 'patch_ingest_result', 'patch_ingest_message',
     ];
 
     protected $casts = [
@@ -43,6 +44,7 @@ class Computer extends Model
         'nic_flap_shift_id' => 'integer',
         'nic_flap_last_at' => 'immutable_datetime',
         'patch_seed_port' => 'integer',
+        'patch_ingest_at' => 'immutable_datetime',
         'ssd_wear_pct' => 'integer',
         'ssd_read_errors' => 'integer',
         'ssd_write_errors' => 'integer',

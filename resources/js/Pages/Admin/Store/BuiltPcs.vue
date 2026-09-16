@@ -63,6 +63,19 @@ const printBarcodePos = (id: number) => {
     router.post(`/admin/store/built-pcs/${id}/print-barcode-pos`, {}, { preserveScroll: true })
 }
 
+const uploadClip = (id: number, ev: Event) => {
+    const input = ev.target as HTMLInputElement
+    const file = input.files?.[0]
+    if (!file) return
+    const data = new FormData()
+    data.append('clip', file)
+    router.post(`/admin/store/built-pcs/${id}/assembly-clip`, data, {
+        forceFormData: true,
+        preserveScroll: true,
+        onFinish: () => { input.value = '' },
+    })
+}
+
 const toggleComponent = (id: number) => {
     const idx = form.component_ids.indexOf(id)
     if (idx >= 0) form.component_ids.splice(idx, 1)
@@ -155,12 +168,18 @@ const buildLabel = (pc: any) => {
                         <span>Выдал: {{ pc.issuer?.name || '—' }}</span>
                     </div>
                     <div class="flex flex-wrap gap-2 pt-1">
+                        <a v-if="pc.passport_url" :href="pc.passport_url" target="_blank"
+                           class="px-3 py-2 rounded-xl border border-amber-500/40 text-[10px] uppercase font-black text-amber-400">Паспорт</a>
                         <a :href="`/admin/store/built-pcs/${pc.id}/print-barcode`" target="_blank"
                            class="px-3 py-2 rounded-xl border border-white/15 text-[10px] uppercase font-black text-white/60">QR</a>
                         <button type="button" @click="printBarcodePos(pc.id)"
                                 class="px-3 py-2 rounded-xl border border-amber-500/40 text-[10px] uppercase font-black text-amber-400">QR POS</button>
                         <a :href="`/admin/store/built-pcs/${pc.id}/print-talon`" target="_blank"
                            class="px-3 py-2 rounded-xl border border-white/15 text-[10px] uppercase font-black text-white/60">Талон</a>
+                        <label v-if="canAssemble" class="px-3 py-2 rounded-xl border border-white/15 text-[10px] uppercase font-black text-white/60 cursor-pointer">
+                            {{ pc.has_assembly_clip ? 'Видео ✓' : 'Видео' }}
+                            <input type="file" accept="video/mp4" class="hidden" @change="uploadClip(pc.id, $event)" />
+                        </label>
                         <button v-if="canDeletePc(pc)" @click="remove(pc.id)" class="px-3 py-2 rounded-xl border border-red-500/30 text-[10px] uppercase font-black text-red-400">Del</button>
                     </div>
                 </div>

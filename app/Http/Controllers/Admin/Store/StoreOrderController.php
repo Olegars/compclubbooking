@@ -10,6 +10,7 @@ use App\Models\StoreOrderItem;
 use App\Models\StoreProduct;
 use App\Models\StoreStockMovement;
 use App\Services\StoreOrderBuiltPcService;
+use App\Services\StorePromoCodeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -81,7 +82,7 @@ class StoreOrderController extends StoreController
         ]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request, StorePromoCodeService $promos)
     {
         abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
 
@@ -92,6 +93,7 @@ class StoreOrderController extends StoreController
             'items' => 'required|array|min:1',
             'items.*.store_component_id' => 'required|integer',
             'items.*.qty' => 'nullable|integer|min:1',
+            'promo_code' => 'nullable|string|max:24',
         ]);
 
         $clubId = $this->locationId();
@@ -104,7 +106,7 @@ class StoreOrderController extends StoreController
         $ids = collect($data['items'])->pluck('store_component_id')->map(fn ($id) => (int) $id);
         abort_if($ids->count() !== $ids->unique()->count(), 422, 'Одна комплектующая указана дважды.');
 
-        DB::transaction(function () use ($data, $clubId) {
+        DB::transaction(function () use ($data, $clubId, $promos) {
             $total = 0;
             $lines = [];
 
@@ -147,6 +149,18 @@ class StoreOrderController extends StoreController
                 ]);
 
                 $component->update(['status' => 'sold']);
+            }
+
+            $code = strtoupper(trim((string) ($data['promo_code'] ?? '')));
+            if ($code !== '') {
+                $client = ! empty($data['store_client_id'])
+                    ? StoreClient::query()->find((int) $data['store_client_id'])
+                    : null;
+                try {
+                    $promos->applyToOrder($order, $code, $client);
+                } catch (\RuntimeException $e) {
+                    abort(422, $e->getMessage());
+                }
             }
         });
 

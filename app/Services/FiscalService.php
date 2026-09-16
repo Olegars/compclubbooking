@@ -98,7 +98,7 @@ class FiscalService
 
         if ($type === 'deposit' && $amount > 0) {
             $skip = array_map('strtolower', config('fiscal.skip_advance_sources', [
-                'bonus', 'promo', 'achievement', 'referral', 'gift', 'fantiki', 'admin_bonus',
+                'bonus', 'promo', 'achievement', 'referral', 'gift', 'fantiki', 'admin_bonus', 'lucky_seat',
             ]));
             if (in_array($source, $skip, true)) {
                 return null;

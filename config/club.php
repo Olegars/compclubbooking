@@ -78,6 +78,20 @@ return [
         'wol_relay_token' => (string) env('CLUB_WOL_RELAY_TOKEN', ''),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | LAN P2P fallback-сид (когда Super Client выключен)
+    |--------------------------------------------------------------------------
+    | Ночью booking держит выбранный ПК с самым быстрым D: и наибольшим
+    | свободным объёмом, шелл качает патчи в фоне и раздаёт по VLAN.
+    */
+    'patch_cache' => [
+        'night_start' => (int) env('CLUB_PATCH_NIGHT_START', 1),
+        'night_end' => (int) env('CLUB_PATCH_NIGHT_END', 6),
+        'ingest' => filter_var(env('CLUB_PATCH_INGEST', true), FILTER_VALIDATE_BOOLEAN),
+        'fallback_hysteresis' => (float) env('CLUB_PATCH_FALLBACK_HYSTERESIS', 80),
+    ],
+
     'seo' => [
         'title' => env('CLUB_SEO_TITLE', 'Sector 0451 — киберспортивный клуб'),
         'description' => env(

@@ -167,6 +167,86 @@ class ShellStationWatchdogTest extends TestCase
             ->assertStatus(422);
     }
 
+    public function test_shell_posts_hardware_switch_incident_to_admin_feed(): void
+    {
+        $this->postJson('/api/shell/incidents', [
+            'terminal_id' => $this->computer->id,
+            'type' => 'hardware_switch_fault',
+            'severity' => 'high',
+            'payload' => [
+                'kind' => 'mouse',
+                'reason' => 'bounce',
+                'button' => 'left',
+                'hits' => 12,
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('created', true)
+            ->assertJsonPath('description', 'Проверить свитч/микрик на ПК-04');
+
+        $row = DB::table('incidents')->first();
+        $this->assertNotNull($row);
+        $this->assertSame('hardware_switch_fault', $row->type);
+        $this->assertSame($this->computer->id, (int) $row->computer_id);
+        $this->assertSame('high', $row->severity);
+        $this->assertStringContainsString('свитч/микрик', $row->description);
+
+        $this->actingAs($this->admin, 'admin')
+            ->get('/admin/incidents')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/Incidents')
+                ->has('incidents', 1)
+                ->where('incidents.0.type', 'hardware_switch_fault')
+                ->where('incidents.0.type_label', 'Неисправность свитча/микрика')
+                ->where('incidents.0.pc_name', 'ПК-04')
+                ->where('incidents.0.description', 'Проверить свитч/микрик на ПК-04')
+            );
+    }
+
+    public function test_hardware_switch_incident_is_deduped_while_open(): void
+    {
+        $this->postJson('/api/shell/incidents', [
+            'hwid' => $this->computer->hwid,
+            'type' => 'hardware_switch_fault',
+        ])->assertOk()->assertJsonPath('created', true);
+
+        $this->postJson('/api/shell/incidents', [
+            'hwid' => $this->computer->hwid,
+            'type' => 'hardware_switch_fault',
+            'description' => 'Проверить свитч/микрик на ПК-04',
+            'payload' => ['kind' => 'keyboard', 'reason' => 'stuck_key', 'scan_code' => 18],
+        ])->assertOk()->assertJsonPath('created', false);
+
+        $this->assertSame(1, DB::table('incidents')->count());
+    }
+
+    public function test_station_health_warns_on_open_hardware_switch_ticket(): void
+    {
+        Computer::query()->where('id', $this->computer->id)->update([
+            'last_seen_at' => now(),
+            'power_state' => 'on',
+            'cache_ok' => true,
+            'nic_link_mbps' => 1000,
+            'ssd_health' => 'healthy',
+            'integrity_status' => 'ok',
+        ]);
+
+        DB::table('incidents')->insert([
+            'type' => 'hardware_switch_fault',
+            'description' => 'Проверить свитч/микрик на ПК-04',
+            'severity' => 'high',
+            'computer_id' => $this->computer->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $result = app(OwnerSystemTestService::class)->run('station_health', $this->club);
+        $this->assertSame('warn', $result['status']);
+        $this->assertStringContainsString('свитч/микрик', $result['message']);
+    }
+
     public function test_station_health_warns_on_golden_image_drift(): void
     {
         Computer::query()->where('id', $this->computer->id)->update([

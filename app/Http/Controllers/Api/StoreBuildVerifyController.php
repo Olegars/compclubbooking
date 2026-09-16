@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\StoreBuiltPc;
 use App\Models\StoreOrder;
+use App\Services\StoreAssemblyCaptureService;
 use App\Services\StoreBuildVerifyService;
 use App\Services\StoreOrderBuiltPcService;
 use Illuminate\Http\Request;
@@ -14,7 +15,8 @@ class StoreBuildVerifyController extends Controller
     public function __invoke(
         Request $request,
         StoreBuildVerifyService $verify,
-        StoreOrderBuiltPcService $orderBuiltPcs
+        StoreOrderBuiltPcService $orderBuiltPcs,
+        StoreAssemblyCaptureService $assembly
     ) {
         $tokenError = $this->assertToken($request);
         if ($tokenError !== null) {
@@ -93,6 +95,12 @@ class StoreBuildVerifyController extends Controller
                 'verified_at' => now(),
                 'verified_ok' => $ok,
             ]);
+        }
+
+        if ($ok) {
+            $assembly->onAssemblyFinished($pc->fresh());
+        } else {
+            $assembly->onAssemblyStarted($pc->fresh());
         }
 
         $bits = [];

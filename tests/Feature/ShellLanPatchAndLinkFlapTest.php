@@ -7,6 +7,8 @@ use App\Models\Club;
 use App\Models\Computer;
 use App\Models\Shift;
 use App\Services\OwnerSystemTestService;
+use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -55,6 +57,13 @@ class ShellLanPatchAndLinkFlapTest extends TestCase
             'pay_type' => 'shift',
             'club_id' => $this->club->id,
         ]);
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        CarbonImmutable::setTestNow();
+        parent::tearDown();
     }
 
     public function test_two_link_flaps_in_shift_create_patch_cord_incident(): void
@@ -158,6 +167,147 @@ class ShellLanPatchAndLinkFlapTest extends TestCase
         $this->peer->refresh();
         $this->assertNull($this->peer->patch_pull_command_id);
         $this->assertSame('ok', $this->peer->patch_pull_result);
+    }
+
+    public function test_fallback_seed_elects_fastest_d_drive_when_super_client_is_off(): void
+    {
+        $now = CarbonImmutable::parse('2026-09-16 02:10:00', config('app.timezone'));
+        Carbon::setTestNow($now);
+        CarbonImmutable::setTestNow($now);
+
+        $slow = Computer::create([
+            'club_id' => $this->club->id,
+            'name' => 'ПК-03',
+            'status' => 'available',
+            'kind' => 'pc',
+            'hwid' => 'slow-hwid-0003',
+        ]);
+
+        $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $this->peer->hwid,
+            'lan_ip' => '192.168.20.52',
+            'cache_ok' => true,
+            'cache_free_gb' => 40,
+            'volume_letter' => 'D',
+            'cache_media' => 'ssd',
+            'ssd_health' => 'healthy',
+        ])->assertOk();
+
+        $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $slow->hwid,
+            'lan_ip' => '192.168.20.53',
+            'cache_ok' => true,
+            'cache_free_gb' => 200,
+            'volume_letter' => 'D',
+            'cache_media' => 'hdd',
+            'ssd_health' => 'healthy',
+        ])->assertOk();
+
+        $response = $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $this->seedPc->hwid,
+            'lan_ip' => '192.168.20.51',
+            'cache_ok' => true,
+            'cache_free_gb' => 120,
+            'volume_letter' => 'D',
+            'cache_media' => 'nvme',
+            'ssd_health' => 'healthy',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('patch_seed.enabled', true)
+            ->assertJsonPath('patch_seed.role', 'fallback')
+            ->assertJsonPath('patch_ingest.enabled', true)
+            ->assertJsonPath('power_desired', 'on')
+            ->assertJsonPath('power_action', 'none');
+
+        $this->seedPc->refresh();
+        $this->peer->refresh();
+        $slow->refresh();
+        $this->assertSame('fallback', $this->seedPc->patch_seed_role);
+        $this->assertSame('nvme', $this->seedPc->cache_media);
+        $this->assertNotSame('fallback', $this->peer->patch_seed_role);
+        $this->assertNotSame('fallback', $slow->patch_seed_role);
+    }
+
+    public function test_super_client_beats_fallback_seed_and_skips_night_ingest_on_peer(): void
+    {
+        $now = CarbonImmutable::parse('2026-09-16 02:10:00', config('app.timezone'));
+        Carbon::setTestNow($now);
+        CarbonImmutable::setTestNow($now);
+
+        $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $this->peer->hwid,
+            'lan_ip' => '192.168.20.52',
+            'cache_ok' => true,
+            'cache_free_gb' => 400,
+            'volume_letter' => 'D',
+            'cache_media' => 'nvme',
+            'ssd_health' => 'healthy',
+        ])->assertOk()
+            ->assertJsonPath('patch_seed.role', 'fallback');
+
+        $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $this->seedPc->hwid,
+            'super_client' => true,
+            'lan_ip' => '192.168.20.51',
+            'patch_seed_port' => 8745,
+            'cache_ok' => true,
+            'cache_free_gb' => 20,
+            'volume_letter' => 'D',
+            'cache_media' => 'ssd',
+        ])->assertOk()
+            ->assertJsonPath('patch_seed.enabled', true)
+            ->assertJsonPath('patch_seed.role', 'super');
+
+        $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $this->peer->hwid,
+            'lan_ip' => '192.168.20.52',
+            'cache_ok' => true,
+            'cache_free_gb' => 400,
+            'volume_letter' => 'D',
+            'cache_media' => 'nvme',
+            'ssd_health' => 'healthy',
+        ])->assertOk()
+            ->assertJsonPath('patch_seed.enabled', false)
+            ->assertJsonPath('patch_ingest.enabled', false);
+
+        $this->peer->refresh();
+        $this->assertSame('fallback', $this->peer->patch_seed_role);
+    }
+
+    public function test_fallback_hysteresis_keeps_current_seed(): void
+    {
+        $now = CarbonImmutable::parse('2026-09-16 15:00:00', config('app.timezone'));
+        Carbon::setTestNow($now);
+        CarbonImmutable::setTestNow($now);
+
+        $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $this->seedPc->hwid,
+            'lan_ip' => '192.168.20.51',
+            'cache_ok' => true,
+            'cache_free_gb' => 100,
+            'volume_letter' => 'D',
+            'cache_media' => 'nvme',
+            'ssd_health' => 'healthy',
+        ])->assertOk()
+            ->assertJsonPath('patch_seed.role', 'fallback')
+            ->assertJsonPath('patch_ingest.enabled', false)
+            ->assertJsonPath('power_action', 'shutdown');
+
+        $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $this->peer->hwid,
+            'lan_ip' => '192.168.20.52',
+            'cache_ok' => true,
+            'cache_free_gb' => 130,
+            'volume_letter' => 'D',
+            'cache_media' => 'nvme',
+            'ssd_health' => 'healthy',
+        ])->assertOk();
+
+        $this->seedPc->refresh();
+        $this->peer->refresh();
+        $this->assertSame('fallback', $this->seedPc->patch_seed_role);
+        $this->assertNotSame('fallback', $this->peer->patch_seed_role);
     }
 
     public function test_station_health_warns_on_nic_flap_threshold(): void

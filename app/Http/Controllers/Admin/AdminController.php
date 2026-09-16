@@ -1419,6 +1419,7 @@ class AdminController extends Controller
             'fan_bearing_wear' => 'Износ подшипника вентилятора',
             'golden_image_drift' => 'Повреждение игрового диска',
             'nic_link_flap' => 'Деградация патч-корда',
+            'hardware_switch_fault' => 'Неисправность свитча/микрика',
             default => 'Нарушение протокола',
         };
     }

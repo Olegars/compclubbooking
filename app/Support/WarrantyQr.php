@@ -3,24 +3,37 @@
 namespace App\Support;
 
 use App\Models\StoreWarranty;
+use App\Services\StoreWarrantyService;
 use DateTimeInterface;
 
 /**
- * Payload for warranty stickers: serial + warranty end date.
+ * Payload for warranty stickers: public passport URL (phone cameras open it).
  */
 final class WarrantyQr
 {
     public static function payload(StoreWarranty $warranty): string
     {
-        return self::fromSerialAndEnds(
-            (string) $warranty->serial,
-            $warranty->ends_at
-        );
+        $url = $warranty->passportUrl();
+        if ($url) {
+            return $url;
+        }
+
+        $token = app(StoreWarrantyService::class)->ensurePublicToken($warranty);
+
+        return url('/pc/'.$token);
     }
 
     public static function fromSerialAndEnds(string $serial, DateTimeInterface|string|null $endsAt): string
     {
         $serial = trim($serial);
+        $warranty = $serial !== ''
+            ? StoreWarranty::query()->where('serial', $serial)->latest('id')->first()
+            : null;
+
+        if ($warranty) {
+            return self::payload($warranty);
+        }
+
         $ends = '—';
         if ($endsAt instanceof DateTimeInterface) {
             $ends = $endsAt->format('d.m.Y');

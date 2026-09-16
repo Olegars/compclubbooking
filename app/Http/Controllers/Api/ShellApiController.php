@@ -43,6 +43,7 @@ use App\Services\TournamentService;
 use App\Services\UserCloudSettingsService;
 use App\Services\VideoMarkerService;
 use App\Services\ShellQrLoginService;
+use Illuminate\Http\JsonResponse;
 use App\Services\WakeOnLan;
 use App\Services\WrongSeatLoginService;
 use Illuminate\Http\Request;
@@ -88,9 +89,34 @@ class ShellApiController extends Controller
                 return $overlay;
             });
 
+        $data = $overlays->toArray();
+        $clanWar = null;
+        try {
+            $wars = app(\App\Services\ClanWarService::class);
+            $clanWar = $wars->liveForTerminal($terminalId);
+            if ($clanWar) {
+                $data['clan_war'] = $clanWar;
+                $data = $wars->paintOverlayBlocks($data, $clanWar);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('clan-war overlay: '.$e->getMessage());
+        }
+
         return response()->json([
             'status' => 'success',
-            'data' => $overlays
+            'data' => $data,
+            'clan_war' => $clanWar,
+        ]);
+    }
+
+    public function liveClanWar(Request $request): JsonResponse
+    {
+        $terminalId = (int) $request->query('terminal_id', 0);
+        $war = app(\App\Services\ClanWarService::class)->liveForTerminal($terminalId);
+
+        return response()->json([
+            'status' => 'success',
+            'clan_war' => $war,
         ]);
     }
 
@@ -832,7 +858,7 @@ class ShellApiController extends Controller
             'terminal_id' => 'nullable|integer',
             'computer_id' => 'nullable|integer',
             'hwid' => 'nullable|string',
-            'type' => 'required|string|in:fan_bearing_wear,golden_image_drift,nic_link_flap',
+            'type' => 'required|string|in:'.implode(',', \App\Services\ShellIncidentService::TYPES),
             'description' => 'nullable|string|max:1000',
             'severity' => 'nullable|string|in:low,info,medium,warn,high,critical',
             'payload' => 'nullable|array',
@@ -2635,6 +2661,9 @@ class ShellApiController extends Controller
                         $lfgUser = User::query()->find($booking->user_id);
                         if ($lfgUser) {
                             app(\App\Services\LanLive\LanMatchmakingService::class)->cancel($lfgUser, $booking);
+                            $pc = Computer::query()->find((int) $booking->computer_id);
+                            app(\App\Services\LanLive\LuckySeatLootService::class)
+                                ->settlePendingOnLogout($lfgUser, $booking, $pc);
                         }
                     }
                 } catch (\Throwable $e) {
@@ -2775,6 +2804,7 @@ class ShellApiController extends Controller
                 'cache_free_gb' => 'nullable|numeric',
                 'data_root' => 'nullable|string|max:260',
                 'volume_letter' => 'nullable|string|max:8',
+                'cache_media' => 'nullable|string|in:nvme,ssd,hdd,scm,unknown',
                 'ssd_temp_c' => 'nullable|numeric|min:0|max:150',
                 'nic_link_mbps' => 'nullable|integer|min:0|max:100000',
                 'ssd_wear_pct' => 'nullable|numeric|min:0|max:100',
@@ -2810,6 +2840,9 @@ class ShellApiController extends Controller
                 'patch_pull_ack_id' => 'nullable|integer|min:1',
                 'patch_pull_result' => 'nullable|string|max:32',
                 'patch_pull_message' => 'nullable|string|max:240',
+                'patch_ingest_active' => 'nullable|boolean',
+                'patch_ingest_result' => 'nullable|string|max:32',
+                'patch_ingest_message' => 'nullable|string|max:240',
             ]);
 
             $computer = null;
@@ -2844,6 +2877,7 @@ class ShellApiController extends Controller
                     'cache_free_gb' => $request->input('cache_free_gb'),
                     'data_root' => $request->input('data_root'),
                     'volume_letter' => $request->input('volume_letter'),
+                    'cache_media' => $request->input('cache_media'),
                     'ssd_temp_c' => $request->input('ssd_temp_c'),
                     'nic_link_mbps' => $request->input('nic_link_mbps'),
                     'ssd_wear_pct' => $request->input('ssd_wear_pct'),
@@ -2874,6 +2908,10 @@ class ShellApiController extends Controller
                     'patch_pull_ack_id' => $request->input('patch_pull_ack_id'),
                     'patch_pull_result' => $request->input('patch_pull_result'),
                     'patch_pull_message' => $request->input('patch_pull_message'),
+                    'patch_ingest_active' => $request->has('patch_ingest_active')
+                        ? $request->boolean('patch_ingest_active') : null,
+                    'patch_ingest_result' => $request->input('patch_ingest_result'),
+                    'patch_ingest_message' => $request->input('patch_ingest_message'),
                 ]
             );
 
@@ -3200,6 +3238,12 @@ class ShellApiController extends Controller
                 return [];
             }
             $ctrl = app(\App\Http\Controllers\Api\ShellLanLiveController::class);
+            $dropped = null;
+            try {
+                $dropped = app(\App\Services\LanLive\LuckySeatLootService::class)
+                    ->maybePlaytime($computer, $user, $booking);
+            } catch (\Throwable) {
+            }
             $pack = $ctrl->livePayload($computer, $booking, $user);
 
             return [
@@ -3210,6 +3254,11 @@ class ShellApiController extends Controller
                 'ghost_coach' => $pack['ghost_coach'] ?? true,
                 'throne' => $pack['throne'] ?? null,
                 'lfg' => $pack['lfg'] ?? null,
+                'clan_war' => $pack['clan_war'] ?? null,
+                'lootbox' => $pack['lootbox'] ?? null,
+                'lootbox_dropped' => $dropped
+                    ? app(\App\Services\LanLive\LuckySeatLootService::class)->payload($dropped, false)
+                    : null,
             ];
         } catch (\Throwable $e) {
             Log::warning('lan-live extras: '.$e->getMessage());

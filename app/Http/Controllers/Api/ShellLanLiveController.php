@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\LanLive\GhostCoachService;
 use App\Services\LanLive\LanBountyService;
 use App\Services\LanLive\LanMatchmakingService;
+use App\Services\LanLive\LuckySeatLootService;
 use App\Services\LanLive\PartyEnergyPoolService;
 use App\Services\LanLive\PcThroneService;
 use App\Services\LanLive\ShellGsiStore;
@@ -27,14 +28,24 @@ class ShellLanLiveController extends Controller
         private readonly ShellGsiStore $gsi,
         private readonly PcThroneService $thrones,
         private readonly LanMatchmakingService $lfg,
+        private readonly LuckySeatLootService $loot,
     ) {
     }
 
     public function snapshot(Request $request): JsonResponse
     {
         [$computer, $booking, $user] = $this->session($request);
+        $dropped = null;
+        try {
+            $dropped = $this->loot->maybePlaytime($computer, $user, $booking);
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
-        return response()->json($this->livePayload($computer, $booking, $user));
+        return response()->json(array_merge(
+            $this->livePayload($computer, $booking, $user),
+            ['lootbox_dropped' => $dropped ? $this->loot->payload($dropped, false) : null]
+        ));
     }
 
     public function createBounty(Request $request): JsonResponse
@@ -176,6 +187,7 @@ class ShellLanLiveController extends Controller
 
         $settled = null;
         $crowned = null;
+        $dropped = null;
         $event = $snap['event'];
         if (in_array($event, ['kill', 'death', 'round_win', 'round_loss', 'match_win', 'match_loss'], true)) {
             try {
@@ -193,10 +205,21 @@ class ShellLanLiveController extends Controller
             } catch (\Throwable $e) {
                 report($e);
             }
+            try {
+                app(\App\Services\ClanWarService::class)->ingest($computer, $user, $snap);
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
         try {
             $this->energy->maybeSiphon($booking, true);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        try {
+            $dropped = $this->loot->observe($computer, $user, $booking, $snap);
         } catch (\Throwable $e) {
             report($e);
         }
@@ -233,6 +256,29 @@ class ShellLanLiveController extends Controller
                 'settled' => $settled,
                 'whisper' => $whisper,
                 'throne_crowned' => $crowned && ($crowned['mine'] ?? false) ? $crowned : null,
+                'lootbox_dropped' => $dropped ? $this->loot->payload($dropped, false) : null,
+            ]
+        ));
+    }
+
+    public function openLootbox(Request $request, int $id): JsonResponse
+    {
+        [$computer, $booking, $user] = $this->session($request);
+
+        try {
+            $opened = $this->loot->open($user, $booking, $computer, $id);
+        } catch (RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        $user = $user->fresh() ?? $user;
+
+        return response()->json(array_merge(
+            $this->livePayload($computer, $booking, $user),
+            [
+                'status' => 'success',
+                'lootbox' => $opened,
+                'message' => (string) ($opened['reward']['label'] ?? 'Кейс открыт'),
             ]
         ));
     }
@@ -314,6 +360,8 @@ class ShellLanLiveController extends Controller
             'ghost_coach' => $this->coach->enabled($user),
             'throne' => $this->thrones->payload($computer, $user),
             'lfg' => $this->lfg->payload($booking, $user),
+            'lootbox' => $this->loot->pendingPayload($user, $booking),
+            'clan_war' => app(\App\Services\ClanWarService::class)->livePayload($computer),
             'in_match' => $this->gsi->inMatch((int) $computer->id),
             'time_remaining' => $timing->formatRemainingHms($booking),
             'balance' => $user->availableBalance(),

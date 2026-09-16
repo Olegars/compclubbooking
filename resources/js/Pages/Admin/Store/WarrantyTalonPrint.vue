@@ -118,6 +118,7 @@ onMounted(() => {
                     <div class="qr-meta">
                         <div>S/N {{ warranty.serial || '—' }}</div>
                         <div>Гарантия до {{ fmt(warranty.ends_at) }}</div>
+                        <div class="qr-url">Паспорт ПК — сканируйте QR камерой</div>
                     </div>
                 </div>
                 <div class="signs">
@@ -201,6 +202,7 @@ th { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: #5
 .qr-wrap { display: flex; align-items: center; gap: 12px; }
 .qr { width: 100px; height: 100px; image-rendering: pixelated; }
 .qr-meta { font-size: 11px; font-weight: 700; line-height: 1.4; }
+.qr-url { font-weight: 600; color: #555; margin-top: 4px; }
 .signs { display: flex; gap: 28px; flex: 1; justify-content: flex-end; }
 .sign { width: 160px; font-size: 11px; color: #555; text-align: center; }
 .sign .line { height: 1px; background: #111; margin-bottom: 8px; margin-top: 36px; }

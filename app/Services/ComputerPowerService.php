@@ -79,6 +79,14 @@ class ComputerPowerService
         }
 
         $needOn = $this->computersNeedingPower($ids, $now);
+        try {
+            $needOn = array_values(array_unique(array_merge(
+                $needOn,
+                app(LanPatchService::class)->computersNeedingNightPower($ids, $now)
+            )));
+        } catch (\Throwable $e) {
+            Log::warning('LAN patch night power failed', ['error' => $e->getMessage()]);
+        }
         $aliveIds = array_flip($this->aliveComputerIds($ids));
         $changed = 0;
 
@@ -190,6 +198,7 @@ class ComputerPowerService
      *     cache_free_gb?: float|int|string|null,
      *     data_root?: string|null,
      *     volume_letter?: string|null,
+     *     cache_media?: string|null,
      *     ssd_temp_c?: float|int|string|null,
      *     nic_link_mbps?: int|string|null,
      *     ssd_wear_pct?: int|string|null,
@@ -219,7 +228,10 @@ class ComputerPowerService
      *     nic_flap_payload?: array<string, mixed>|null,
      *     patch_pull_ack_id?: int|string|null,
      *     patch_pull_result?: string|null,
-     *     patch_pull_message?: string|null
+     *     patch_pull_message?: string|null,
+     *     patch_ingest_active?: bool|null,
+     *     patch_ingest_result?: string|null,
+     *     patch_ingest_message?: string|null
      * }  $extras
      * @return array{
      *     power_desired: string,
@@ -230,8 +242,9 @@ class ComputerPowerService
      *     cache_ok: bool|null,
      *     diskless: array{command_id: int, action: string, disk_mode: string}|null,
      *     resync: array{command_id: int, action: string}|null,
-     *     patch_seed: array{enabled: bool, port: int}|null,
+     *     patch_seed: array{enabled: bool, port: int, role: string}|null,
      *     patch_pull: array{command_id: int, apps: list<array<string, mixed>>}|null,
+     *     patch_ingest: array{enabled: bool}|null,
      *     nic_flap_acked: int|null
      * }
      */
@@ -300,10 +313,13 @@ class ComputerPowerService
 
         $patchSeed = null;
         $patchPull = null;
+        $patchIngest = null;
+        $lanPatch = app(LanPatchService::class);
         try {
-            $patch = app(LanPatchService::class)->processHeartbeat($computer, $extras);
+            $patch = $lanPatch->processHeartbeat($computer, $extras);
             $patchSeed = $patch['patch_seed'];
             $patchPull = $patch['patch_pull'];
+            $patchIngest = $patch['patch_ingest'] ?? null;
             $computer->refresh();
         } catch (\Throwable $e) {
             Log::warning('LAN patch process failed', [
@@ -314,10 +330,17 @@ class ComputerPowerService
 
         $now = CarbonImmutable::now();
         $inMaintenance = $computer->isInMaintenance($now) || (bool) $computer->super_client;
+        $ingestActive = filter_var($extras['patch_ingest_active'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $keepPatchPower = false;
+        try {
+            $keepPatchPower = $lanPatch->shouldKeepPower($computer, $now) || $ingestActive;
+        } catch (\Throwable $e) {
+            $keepPatchPower = $ingestActive;
+        }
 
         $desired = self::DESIRED_OFF;
         try {
-            if ($inMaintenance) {
+            if ($inMaintenance || $keepPatchPower) {
                 $desired = self::DESIRED_ON;
             } else {
                 $needOn = $this->computersNeedingPower([$id], $now);
@@ -338,7 +361,7 @@ class ComputerPowerService
         $action = 'none';
         if (! $inMaintenance && ! $sessionActive && $pendingDiskless === null
             && $pendingResync === null && ! $computer->super_client
-            && $patchPull === null) {
+            && $patchPull === null && ! $keepPatchPower) {
             $action = $this->actionForDesired($desired);
         }
 
@@ -353,6 +376,7 @@ class ComputerPowerService
             'resync' => $pendingResync,
             'patch_seed' => $patchSeed,
             'patch_pull' => $patchPull,
+            'patch_ingest' => $patchIngest,
             'nic_flap_acked' => $flapAcked,
         ];
     }
@@ -422,9 +446,15 @@ class ComputerPowerService
 
         $desired = DB::table('computers')->where('id', $computerId)->value('power_desired');
         $computer = Computer::query()->find($computerId);
+        $keepPatch = false;
+        try {
+            $keepPatch = $computer && app(LanPatchService::class)->shouldKeepPower($computer, $now);
+        } catch (\Throwable $e) {
+            $keepPatch = false;
+        }
         if ($computer && ($computer->isInMaintenance($now) || $computer->super_client
             || $computer->diskless_command || $computer->resync_command
-            || $computer->patch_pull_command_id)) {
+            || $computer->patch_pull_command_id || $keepPatch)) {
             return 'none';
         }
 
@@ -447,7 +477,7 @@ class ComputerPowerService
         $instant = SqlTime::instant();
 
         $sql = "SELECT id, name, status, power_desired, last_seen_at, space_id, club_id,
-                       cache_ok, cache_free_gb, data_root, volume_letter, ssd_temp_c, maintenance,
+                       cache_ok, cache_free_gb, data_root, volume_letter, cache_media, ssd_temp_c, maintenance,
                        nic_link_mbps, nic_flap_count, ssd_wear_pct, ssd_read_errors, ssd_write_errors, ssd_health,
                        super_client, games_steam_count, games_epic_count, games_inventory_hash,
                        diskless_command, diskless_disk_mode, diskless_command_id,
@@ -455,7 +485,9 @@ class ComputerPowerService
                        integrity_status, integrity_hash, integrity_message,
                        gpu_power_limit_w, gpu_mode,
                        resync_command, resync_command_id, resync_result, resync_message,
-                       lan_ip, patch_seed_port, patch_pull_command_id, patch_pull_result, patch_pull_message,
+                       lan_ip, patch_seed_port, patch_seed_role,
+                       patch_pull_command_id, patch_pull_result, patch_pull_message,
+                       patch_ingest_result, patch_ingest_message,
                        CASE
                            WHEN last_seen_at IS NOT NULL
                                 AND last_seen_at >= {$instant}
@@ -671,6 +703,12 @@ class ComputerPowerService
         if (! empty($extras['volume_letter'])) {
             $patch['volume_letter'] = mb_substr((string) $extras['volume_letter'], 0, 8);
         }
+        if (! empty($extras['cache_media'])) {
+            $media = strtolower((string) $extras['cache_media']);
+            if (in_array($media, ['nvme', 'ssd', 'hdd', 'scm', 'unknown'], true)) {
+                $patch['cache_media'] = $media;
+            }
+        }
         if (array_key_exists('ssd_temp_c', $extras) && $extras['ssd_temp_c'] !== null && $extras['ssd_temp_c'] !== '') {
             $patch['ssd_temp_c'] = round((float) $extras['ssd_temp_c'], 1);
         }
@@ -748,6 +786,15 @@ class ComputerPowerService
             if (in_array($mode, ['idle', 'session', 'unknown'], true)) {
                 $patch['gpu_mode'] = $mode;
             }
+        }
+        if (array_key_exists('patch_ingest_result', $extras) && $extras['patch_ingest_result'] !== null
+            && $extras['patch_ingest_result'] !== '') {
+            $patch['patch_ingest_result'] = mb_substr((string) $extras['patch_ingest_result'], 0, 32);
+            $patch['patch_ingest_at'] = SqlTime::now();
+        }
+        if (array_key_exists('patch_ingest_message', $extras) && $extras['patch_ingest_message'] !== null) {
+            $msg = trim((string) $extras['patch_ingest_message']);
+            $patch['patch_ingest_message'] = $msg === '' ? null : mb_substr($msg, 0, 240);
         }
 
         if (array_key_exists('maintenance', $extras) && $extras['maintenance'] !== null) {

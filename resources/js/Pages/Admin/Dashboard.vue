@@ -63,6 +63,7 @@ const isWornSsd = (pc: any) => {
 
 const powerTileClass = (pc: any) => {
     if (pc.super_client) return 'bg-violet-500/15 border-violet-500/40'
+    if (pc.patch_seed_role === 'fallback') return 'bg-sky-500/15 border-sky-500/40'
     if (pc.diskless_command) return 'bg-violet-500/10 border-violet-500/30'
     if (pc.status === 'maintenance' || pc.maintenance) return 'bg-orange-500/15 border-orange-500/40'
     if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
@@ -82,6 +83,7 @@ const powerTileClass = (pc: any) => {
 
 const powerLabelClass = (pc: any) => {
     if (pc.super_client || pc.diskless_command) return 'text-violet-300'
+    if (pc.patch_seed_role === 'fallback') return 'text-sky-300'
     if (pc.status === 'maintenance' || pc.maintenance) return 'text-orange-400'
     if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'text-fuchsia-300'
@@ -102,6 +104,7 @@ const powerLabelClass = (pc: any) => {
 
 const powerLabel = (pc: any) => {
     if (pc.super_client) return 'super client'
+    if (pc.patch_seed_role === 'fallback') return 'mirror d:'
     if (pc.diskless_command) return 'очередь sc'
     if (pc.status === 'maintenance' || pc.maintenance) return 'сервис'
     if (pc.cache_ok === false && (pc.power_state === 'on' || pc.status === 'busy'))
@@ -173,9 +176,13 @@ const refreshStatuses = async () => {
                 resync_message: updated.resync_message,
                 lan_ip: updated.lan_ip,
                 patch_seed_port: updated.patch_seed_port,
+                patch_seed_role: updated.patch_seed_role,
+                cache_media: updated.cache_media,
                 patch_pull_command_id: updated.patch_pull_command_id,
                 patch_pull_result: updated.patch_pull_result,
                 patch_pull_message: updated.patch_pull_message,
+                patch_ingest_result: updated.patch_ingest_result,
+                patch_ingest_message: updated.patch_ingest_message,
             }
         })
 
@@ -569,7 +576,10 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                                 <span v-if="selectedPc.ssd_health"> · {{ selectedPc.ssd_health }}</span>
                                 <span v-if="selectedPc.games_steam_count != null"> · steam {{ selectedPc.games_steam_count }}</span>
                                 <span v-if="selectedPc.games_epic_count"> · epic {{ selectedPc.games_epic_count }}</span>
-                                <span v-if="selectedPc.patch_seed_port" class="text-violet-300"> · seed :{{ selectedPc.patch_seed_port }}</span>
+                                <span v-if="selectedPc.patch_seed_port" class="text-violet-300">
+                                    · {{ selectedPc.patch_seed_role === 'fallback' ? 'mirror' : 'seed' }} :{{ selectedPc.patch_seed_port }}
+                                </span>
+                                <span v-if="selectedPc.cache_media" class="text-white/40"> · {{ selectedPc.cache_media }}</span>
                                 <span v-if="selectedPc.gpu_mode === 'idle'" class="text-emerald-400"> · eco {{ selectedPc.gpu_power_limit_w || 45 }}Вт</span>
                                 <span v-if="selectedPc.integrity_status === 'drift'" class="text-amber-400"> · drift D:</span>
                                 <span v-if="selectedPc.integrity_status === 'resyncing'" class="text-cyan-400"> · re-sync…</span>
@@ -583,6 +593,11 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                                 {{ selectedPc.patch_pull_command_id ? ('lan-pull #' + selectedPc.patch_pull_command_id) : '' }}
                                 {{ selectedPc.patch_pull_result ? (' · ' + selectedPc.patch_pull_result) : '' }}
                                 {{ selectedPc.patch_pull_message ? (' · ' + selectedPc.patch_pull_message) : '' }}
+                            </div>
+                            <div v-if="selectedPc.patch_ingest_result || selectedPc.patch_ingest_message"
+                                 class="text-[10px] text-sky-300/80 mt-2 font-mono">
+                                night-ingest {{ selectedPc.patch_ingest_result || '' }}
+                                {{ selectedPc.patch_ingest_message ? (' · ' + selectedPc.patch_ingest_message) : '' }}
                             </div>
                             <div v-if="selectedPc.resync_command || selectedPc.resync_result || selectedPc.resync_message"
                                  class="text-[10px] text-cyan-300/80 mt-2 font-mono">

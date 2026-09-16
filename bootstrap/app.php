@@ -71,6 +71,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/fans/shared-applied',
             'api/kitchen/print-applied',
             'api/video/marker-applied',
+            'api/video/assembly-clips',
+            'api/video/assembly-clip-applied',
             'api/store/build-verify',
             'api/store/avito/webhook',
             'api/telegram/webhook',

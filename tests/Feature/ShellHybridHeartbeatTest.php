@@ -148,6 +148,10 @@ class ShellHybridHeartbeatTest extends TestCase
 
     public function test_leaving_maintenance_allows_idle_shutdown(): void
     {
+        $now = CarbonImmutable::parse('2026-09-16 15:00:00', config('app.timezone'));
+        Carbon::setTestNow($now);
+        CarbonImmutable::setTestNow($now);
+
         $this->computer->update([
             'status' => 'maintenance',
             'maintenance' => true,

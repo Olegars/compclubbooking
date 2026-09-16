@@ -26,6 +26,8 @@ class StoreBuiltPc extends Model
         'club_id', 'store_order_id', 'store_client_id', 'assembled_by', 'accepted_by', 'issued_by',
         'title', 'build_spec', 'serial_number', 'sale_price', 'sale_tax_mode',
         'sold_at', 'status', 'notes', 'verified_at', 'verified_ok', 'verified_hostname',
+        'assembly_started_at', 'assembly_finished_at', 'nvr_channel',
+        'assembly_clip_path', 'assembly_clip_bytes', 'assembly_clip_uploaded_at',
     ];
 
     protected $casts = [
@@ -34,6 +36,10 @@ class StoreBuiltPc extends Model
         'sold_at' => 'datetime',
         'verified_at' => 'datetime',
         'verified_ok' => 'boolean',
+        'assembly_started_at' => 'datetime',
+        'assembly_finished_at' => 'datetime',
+        'assembly_clip_uploaded_at' => 'datetime',
+        'assembly_clip_bytes' => 'integer',
     ];
 
     public function club(): BelongsTo
@@ -81,5 +87,10 @@ class StoreBuiltPc extends Model
         return $this->belongsToMany(StoreComponent::class, 'store_built_pc_components')
             ->withPivot(['type', 'name'])
             ->withTimestamps();
+    }
+
+    public function hasAssemblyClip(): bool
+    {
+        return filled($this->assembly_clip_path);
     }
 }

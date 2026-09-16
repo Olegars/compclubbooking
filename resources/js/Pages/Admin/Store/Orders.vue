@@ -75,6 +75,7 @@ const form = useForm({
     store_client_id: null as number | null,
     assignee_id: null as number | null,
     notes: '',
+    promo_code: '',
     items: [{ type: null, store_component_id: null, qty: 1 }] as OrderLine[],
 })
 
@@ -135,6 +136,7 @@ const openCreate = () => {
     form.store_client_id = null
     form.assignee_id = null
     form.notes = ''
+    form.promo_code = ''
     form.items = [emptyLine()]
     showForm.value = true
 }
@@ -170,6 +172,7 @@ const save = () => {
         store_client_id: form.store_client_id,
         assignee_id: form.assignee_id,
         notes: form.notes,
+        promo_code: form.promo_code || null,
         items,
     }
 
@@ -364,6 +367,9 @@ const filterStatus = computed({
                 <p v-if="!poolComponents.length" class="text-xs text-red-400/80">Нет доступных комплектующих.</p>
                 <button type="button" class="text-[10px] uppercase font-black text-amber-400" @click="addLine">+ позиция</button>
 
+                <input v-if="!editingId" v-model="form.promo_code" type="text" maxlength="24"
+                       placeholder="Промокод Lucky Seat (10% на периферию)"
+                       class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm uppercase tracking-widest" />
                 <textarea v-model="form.notes" placeholder="Заметки" class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm" rows="2" />
                 <p v-if="editingId" class="text-[10px] text-white/30">
                     При изменении состава отметка check_build сбрасывается.

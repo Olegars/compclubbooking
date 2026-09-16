@@ -337,6 +337,7 @@ class ProfileController extends Controller
             'clips' => $clips,
             'clips_telegram' => $clipService->telegramConfigured(),
             'telegram' => $telegram->payload($user),
+            'clan_wars' => app(\App\Services\ClanWarService::class)->cabinetForUser($user),
             'server_time' => $now->toIso8601String(),
         ]);
     }
