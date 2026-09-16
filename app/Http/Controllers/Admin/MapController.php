@@ -288,6 +288,7 @@ class MapController extends Controller
                 'y' => (float) ($rect['y'] ?? 0),
                 'w' => (float) ($rect['w'] ?? 0),
                 'h' => (float) ($rect['h'] ?? 0),
+                'rotate' => (float) ($rect['rotate'] ?? 0),
                 'surcharge_per_hour' => 0,
                 'cpu' => $info['cpu'],
                 'gpu' => $info['gpu'],

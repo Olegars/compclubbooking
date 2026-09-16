@@ -23,6 +23,7 @@ class Space extends Model
         'y',
         'w',
         'h',
+        'rotate',
         'surcharge_per_hour',
         'cpu',
         'gpu',
@@ -38,6 +39,7 @@ class Space extends Model
         'y' => 'float',
         'w' => 'float',
         'h' => 'float',
+        'rotate' => 'float',
         'surcharge_per_hour' => 'decimal:2',
         'sort' => 'integer',
     ];
@@ -163,9 +165,22 @@ class Space extends Model
             return false;
         }
 
-        return $x >= $this->x
-            && $x <= $this->x + $this->w
-            && $y >= $this->y
-            && $y <= $this->y + $this->h;
+        $px = $x;
+        $py = $y;
+        $rotate = (float) ($this->rotate ?? 0);
+        if (abs($rotate) > 0.001) {
+            $cx = $this->x + $this->w / 2;
+            $cy = $this->y + $this->h / 2;
+            $a = deg2rad(-$rotate);
+            $dx = $x - $cx;
+            $dy = $y - $cy;
+            $px = $cx + $dx * cos($a) - $dy * sin($a);
+            $py = $cy + $dx * sin($a) + $dy * cos($a);
+        }
+
+        return $px >= $this->x
+            && $px <= $this->x + $this->w
+            && $py >= $this->y
+            && $py <= $this->y + $this->h;
     }
 }

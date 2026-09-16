@@ -28,7 +28,7 @@
             </g>
 
             <g v-if="drawableZones.length" class="zones-layer">
-                <g v-for="(r, i) in drawableZones" :key="'zr-'+i">
+                <g v-for="(r, i) in drawableZones" :key="'zr-'+i" :transform="zoneSvgTransform(r)">
                     <rect
                         :x="Number(r.x)" :y="Number(r.y)" :width="Number(r.w)" :height="Number(r.h)"
                         :fill="r.c || '#22c55e'"
@@ -194,6 +194,12 @@ import {
     resolveInfoEdge,
     type RoomInfoFields,
 } from '@/utils/roomInfoEdge'
+import {
+    localToWorld,
+    pointInZone,
+    zoneSvgTransform,
+    zoneWorldCorners,
+} from '@/utils/zoneGeom'
 
 export type RoomInfoShowPayload = {
     title: string
@@ -252,13 +258,14 @@ const roomInfoMarkers = computed(() => {
         const others = zones.filter((_: any, j: number) => j !== i)
         const override = r.info_edge || r.info?.info_edge || null
         const edge = resolveInfoEdge(r, others, override)
-        const { cx, cy } = infoMarkerCenter(r, edge)
+        const local = infoMarkerCenter(r, edge)
+        const world = localToWorld(r, local.cx, local.cy)
         const title = zoneTitle(r) || 'Комната'
         const kind: 'pc' | 'tv' = (r.info_kind === 'tv' || isTvZone(r)) ? 'tv' : 'pc'
         return {
             key: `${i}-${edge}`,
-            cx,
-            cy,
+            cx: world.x,
+            cy: world.y,
             payload: {
                 title,
                 color: String(r.c || '#22c55e'),
@@ -351,17 +358,12 @@ const alwaysAddons = (r: any) =>
 const optionalAddons = (r: any) =>
     zoneAddons(r).filter((a: any) => a?.billing_mode === 'optional')
 
-const pointInZone = (x: number, y: number, zone: any) => {
-    const zx = Number(zone.x)
-    const zy = Number(zone.y)
-    const zw = Number(zone.w)
-    const zh = Number(zone.h)
-    return x >= zx && x <= zx + zw && y >= zy && y <= zy + zh
-}
+const pointInZoneRect = (x: number, y: number, zone: any) =>
+    pointInZone(zone, x, y)
 
 const seatsInZone = (zone: any) =>
     (props.computers || []).filter((pc: any) =>
-        pointInZone(Number(pc.x) + PC_W / 2, Number(pc.y) + PC_H / 2, zone)
+        pointInZoneRect(Number(pc.x) + PC_W / 2, Number(pc.y) + PC_H / 2, zone)
     )
 
 const rectsOverlap = (ax: number, ay: number, aw: number, ah: number, bx: number, by: number, bw: number, bh: number) =>
@@ -391,15 +393,13 @@ const findFreeSpot = (zone: any, seats: any[], used: Array<{ x: number; y: numbe
     for (const c of candidates) {
         if (c.x < zx + 0.2 || c.y < zy + 0.2) continue
         if (c.x + PC_W > zx + zw - 0.2 || c.y + PC_H > zy + zh - 0.2) continue
-        const hits = blocked.some(b => rectsOverlap(c.x, c.y, PC_W, PC_H, b.x, b.y, b.w, b.h))
-        if (!hits) return c
+        const world = localToWorld(zone, c.x, c.y)
+        const hits = blocked.some(b => rectsOverlap(world.x, world.y, PC_W, PC_H, b.x, b.y, b.w, b.h))
+        if (!hits) return world
     }
 
     // Fallback — правый край, даже если тесно
-    return {
-        x: zx + Math.max(pad, zw - PC_W - pad),
-        y: zy + Math.max(pad, (zh - PC_H) / 2),
-    }
+    return localToWorld(zone, zx + Math.max(pad, zw - PC_W - pad), zy + Math.max(pad, (zh - PC_H) / 2))
 }
 
 type AddonMarker = {
@@ -484,7 +484,7 @@ const contentBounds = computed(() => {
     }
 
     for (const z of drawableZones.value) {
-        include(Number(z.x), Number(z.y), Number(z.w), Number(z.h))
+        for (const c of zoneWorldCorners(z)) include(c.x, c.y)
     }
 
     for (const pc of props.computers || []) {

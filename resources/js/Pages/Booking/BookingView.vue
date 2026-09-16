@@ -15,6 +15,7 @@ import TariffsModal from '@/Components/TariffsModal.vue'
 import AgeWarningModal from '@/Components/AgeWarningModal.vue'
 import GamesBookingModal from '@/Components/GamesBookingModal.vue'
 import Shop from '@/Pages/User/Shop.vue'
+import { pointInZone } from '@/utils/zoneGeom'
 
 const props = withDefaults(defineProps<{
     clubData: {
@@ -700,7 +701,7 @@ const getComputerData = (id: string | number) => {
     const pcX = Number(pc.x); const pcY = Number(pc.y);
     const rects = cleanMapConfig.value.zoneRects || [];
     for (const z of rects) {
-        if (pcX >= z.x && pcX <= z.x + z.w && pcY >= z.y && pcY <= z.y + z.h) {
+        if (pointInZone(z, pcX, pcY)) {
             if (z.type) zoneName = String(z.type).toUpperCase()
             else if (z.c === '#fbbf24') zoneName = 'VIP';
             else if (z.c === '#ef4444') zoneName = 'BOOTCAMP';
