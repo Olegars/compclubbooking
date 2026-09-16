@@ -76,6 +76,11 @@ class ReviewBonusService
 
     public function submitClaim(int $userId, string $text): ReviewClaim
     {
+        $user = \App\Models\User::query()->find($userId);
+        if ($user && ! app(ClubFeatureService::class)->enabledForUser($user, 'review_bonuses')) {
+            throw new \RuntimeException('Бонусы за отзывы выключены');
+        }
+
         $text = trim($text);
         $normalized = ReviewClaim::normalizeText($text);
         $minLen = $this->minTextLength();

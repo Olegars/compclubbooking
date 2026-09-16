@@ -50,6 +50,12 @@ class PartyEcoDropSynchronizer
      */
     public function maybeAnnounce(Computer $computer, Booking $booking, array $snap): ?string
     {
+        $features = app(\App\Services\ClubFeatureService::class);
+        $clubId = $features->clubIdForComputer($computer);
+        if (! $features->enabled($clubId, 'coach_whisper')) {
+            return null;
+        }
+
         $groupId = (int) ($booking->booking_group_id ?? 0);
         if ($groupId < 1 || ! $this->isCs2Freeze($snap)) {
             return null;
@@ -96,17 +102,20 @@ class PartyEcoDropSynchronizer
         foreach ($wallets as $row) {
             $sum += $row['money'];
         }
-        if ($sum < count($wallets) * self::ECO_BANK_PER_PLAYER) {
+        $features = app(\App\Services\ClubFeatureService::class);
+        $clubId = $features->clubIdForComputer($computer);
+        $ecoPer = max(500, $features->int($clubId, 'coach_whisper', 'eco_per_player', self::ECO_BANK_PER_PLAYER));
+        if ($sum < count($wallets) * $ecoPer) {
             return self::ECO_LINE;
         }
 
-        return $this->dropLine($wallets);
+        return $this->dropLine($wallets, $clubId);
     }
 
     /**
      * @param  list<array{computer_id:int,pc_name:string,money:int,has_awp:bool}>  $wallets
      */
-    private function dropLine(array $wallets): ?string
+    private function dropLine(array $wallets, ?int $clubId = null): ?string
     {
         usort($wallets, function (array $a, array $b) {
             if ($a['money'] !== $b['money']) {
@@ -117,7 +126,16 @@ class PartyEcoDropSynchronizer
         });
 
         $donor = $wallets[0];
-        if ($donor['money'] < self::DROP_DONOR_MIN) {
+        $donorMin = max(
+            self::AWP_COST,
+            app(\App\Services\ClubFeatureService::class)->int(
+                $clubId,
+                'coach_whisper',
+                'drop_donor_min',
+                self::DROP_DONOR_MIN
+            )
+        );
+        if ($donor['money'] < $donorMin) {
             return null;
         }
 

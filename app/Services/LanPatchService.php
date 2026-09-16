@@ -68,6 +68,16 @@ class LanPatchService
             $computer->refresh();
         }
 
+        if (! $this->featureOn($computer)) {
+            $port = (int) ($computer->patch_seed_port ?: 8745);
+
+            return [
+                'patch_seed' => ['enabled' => false, 'port' => $port > 0 ? $port : 8745, 'role' => 'none'],
+                'patch_pull' => null,
+                'patch_ingest' => ['enabled' => false],
+            ];
+        }
+
         $this->electFallbackSeed($computer);
         $computer->refresh();
 
@@ -154,6 +164,9 @@ class LanPatchService
 
     public function shouldKeepPower(Computer $computer, ?CarbonImmutable $now = null): bool
     {
+        if (! $this->featureOn($computer)) {
+            return false;
+        }
         if (! $this->inNightWindow($now)) {
             return false;
         }
@@ -187,6 +200,9 @@ class LanPatchService
         $clubOnlineSc = [];
         foreach ($rows as $row) {
             $clubId = $row->club_id !== null ? (int) $row->club_id : 0;
+            if (! app(ClubFeatureService::class)->enabled($clubId > 0 ? $clubId : null, 'patch_cache')) {
+                continue;
+            }
             if (! array_key_exists($clubId, $clubOnlineSc)) {
                 $clubOnlineSc[$clubId] = $this->clubHasOnlineSuperClient($clubId > 0 ? $clubId : null);
             }
@@ -538,5 +554,10 @@ class LanPatchService
             ->where('computer_id', $computerId)
             ->where('status', 'active')
             ->exists();
+    }
+
+    private function featureOn(Computer $computer): bool
+    {
+        return app(ClubFeatureService::class)->enabledForComputer($computer, 'patch_cache');
     }
 }

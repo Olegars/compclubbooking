@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\Booking;
 use App\Models\ClubFeature;
 use App\Models\Computer;
+use App\Models\User;
 use App\Support\ClubFeatureCatalog;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
@@ -107,7 +109,34 @@ class ClubFeatureService
 
     public function shellPayloadForComputer(?Computer $computer): array
     {
-        return $this->shellPayload($computer?->club_id ? (int) $computer->club_id : null);
+        return $this->shellPayload($this->clubIdForComputer($computer));
+    }
+
+    public function clubIdForComputer(?Computer $computer): ?int
+    {
+        return $computer && $computer->club_id ? (int) $computer->club_id : null;
+    }
+
+    public function clubIdForUser(?User $user): ?int
+    {
+        if (! $user) {
+            return null;
+        }
+        $clubId = Computer::query()
+            ->whereIn('id', Booking::query()->where('user_id', $user->id)->select('computer_id'))
+            ->value('club_id');
+
+        return $clubId ? (int) $clubId : null;
+    }
+
+    public function enabledForComputer(?Computer $computer, string $key): bool
+    {
+        return $this->enabled($this->clubIdForComputer($computer), $key);
+    }
+
+    public function enabledForUser(?User $user, string $key): bool
+    {
+        return $this->enabled($this->clubIdForUser($user), $key);
     }
 
     /**

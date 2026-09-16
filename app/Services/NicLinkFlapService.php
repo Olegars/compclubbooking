@@ -23,6 +23,14 @@ class NicLinkFlapService
     public function ingest(Computer $computer, int $events, ?array $payload = null): array
     {
         $events = max(0, $events);
+        $features = app(ClubFeatureService::class);
+        if (! $features->enabledForComputer($computer, 'link_flap')) {
+            return [
+                'acked' => $events,
+                'incident_id' => null,
+                'count' => (int) ($computer->nic_flap_count ?? 0),
+            ];
+        }
         if ($events === 0) {
             return [
                 'acked' => 0,
@@ -60,7 +68,13 @@ class NicLinkFlapService
         $computer->nic_flap_shift_id = $storedShift;
 
         $incidentId = null;
-        if ($count >= self::THRESHOLD) {
+        $threshold = max(1, $features->int(
+            $features->clubIdForComputer($computer),
+            'link_flap',
+            'threshold',
+            self::THRESHOLD
+        ));
+        if ($count >= $threshold) {
             $pc = $computer->name ?: ('ПК-'.$computer->id);
             $desc = "Заменить патч-корд на {$pc}";
             $recorded = app(ShellIncidentService::class)->record(

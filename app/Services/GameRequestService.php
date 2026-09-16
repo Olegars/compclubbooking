@@ -10,6 +10,12 @@ class GameRequestService
 {
     public function create(User $user, string $title, ?string $comment, string $source): GameRequest
     {
+        if (! app(ClubFeatureService::class)->enabledForUser($user, 'game_requests')) {
+            throw ValidationException::withMessages([
+                'title' => 'Заявки на игры выключены',
+            ]);
+        }
+
         $title = trim($title);
         if ($title === '') {
             throw ValidationException::withMessages([

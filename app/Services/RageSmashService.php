@@ -63,6 +63,20 @@ class RageSmashService
      */
     public function ingest(Computer $computer, string $severity, string $description, array $payload): array
     {
+        $features = app(ClubFeatureService::class);
+        $clubId = $features->clubIdForComputer($computer);
+        if (! $features->enabled($clubId, 'rage_smash')) {
+            return [
+                'accepted' => false,
+                'reason' => 'feature_off',
+                'incident_id' => null,
+                'created' => false,
+                'description' => $description,
+                'video_marked' => false,
+                'calm_down' => $this->calmDownPayload($computer, false),
+            ];
+        }
+
         $source = strtolower(trim((string) ($payload['source'] ?? '')));
         if (! in_array($source, ['imu', 'keymash', 'mouse_shock'], true)) {
             $source = 'keymash';
@@ -94,7 +108,9 @@ class RageSmashService
 
         $marked = false;
         try {
-            $marked = $this->placeSmashMarker($computer, $payload, $source);
+            if ($features->bool($clubId, 'rage_smash', 'nvr_mark', true)) {
+                $marked = $this->placeSmashMarker($computer, $payload, $source);
+            }
         } catch (Throwable $e) {
             Log::warning('RageSmash video marker failed: '.$e->getMessage(), [
                 'computer_id' => $computer->id,
@@ -158,13 +174,21 @@ class RageSmashService
      */
     public function calmDownPayload(Computer $computer, bool $triggered): array
     {
+        $features = app(ClubFeatureService::class);
+        $offerDrinks = $features->bool(
+            $features->clubIdForComputer($computer),
+            'rage_smash',
+            'offer_drinks',
+            true
+        );
+
         return [
             'title' => 'Всё в порядке',
             'message' => $triggered
                 ? 'Похоже, партия идёт тяжело. Стол тут ни при чём — сделайте паузу, можем принести напиток.'
                 : 'Сделайте паузу, если нужно — в баре есть напитки.',
             'pc_name' => (string) $computer->name,
-            'drinks' => $this->drinkOffers(),
+            'drinks' => $offerDrinks ? $this->drinkOffers() : [],
         ];
     }
 
