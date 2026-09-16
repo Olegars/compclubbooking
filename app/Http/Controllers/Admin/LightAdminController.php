@@ -70,7 +70,7 @@ class LightAdminController extends Controller
             'computers' => $computers,
             'tab' => $request->string('tab')->toString() === 'interactive' ? 'interactive' : 'nodes',
             'interactiveEvents' => $catalog->adminPayload($clubId ?: null),
-            'colorOptions' => array_merge(SpaceLight::COLORS, [SpaceLight::EFFECT_RAINBOW]),
+            'colorOptions' => array_merge(LightEventCatalog::EVENT_COLORS, [SpaceLight::EFFECT_RAINBOW]),
             'defaults' => [
                 'port' => (int) config('light.artnet_port', 6454),
                 'brightness' => (int) config('light.default_brightness', 80),

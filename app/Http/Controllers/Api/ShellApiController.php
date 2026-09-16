@@ -2661,13 +2661,23 @@ class ShellApiController extends Controller
                         $lfgUser = User::query()->find($booking->user_id);
                         if ($lfgUser) {
                             app(\App\Services\LanLive\LanMatchmakingService::class)->cancel($lfgUser, $booking);
-                            $pc = Computer::query()->find((int) $booking->computer_id);
-                            app(\App\Services\LanLive\LuckySeatLootService::class)
-                                ->settlePendingOnLogout($lfgUser, $booking, $pc);
                         }
                     }
                 } catch (\Throwable $e) {
                     Log::warning('LFG cancel on logout: '.$e->getMessage());
+                }
+
+                try {
+                    if ($booking->user_id) {
+                        $lootUser = User::query()->find($booking->user_id);
+                        $pc = Computer::query()->find((int) $booking->computer_id);
+                        if ($lootUser) {
+                            app(\App\Services\LanLive\LuckySeatLootService::class)
+                                ->settlePendingOnLogout($lootUser, $booking, $pc);
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Lucky Seat settle on logout: '.$e->getMessage());
                 }
 
                 // Persist cloud pack BEFORE closing the session (user_id still known).

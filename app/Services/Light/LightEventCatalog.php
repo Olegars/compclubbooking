@@ -19,6 +19,9 @@ class LightEventCatalog
 
     public const EFFECT_CYCLE = 'cycle';
 
+    /** Named colors for overlays (room picker stays on SpaceLight::COLORS). */
+    public const EVENT_COLORS = ['white', 'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'cold_white'];
+
     /**
      * @return list<array{id:string,title:string,hint:string,group:string,allow_auto:bool}>
      */
@@ -78,6 +81,27 @@ class LightEventCatalog
                 'id' => 'cs2.death',
                 'title' => 'CS2: смерть',
                 'hint' => 'Пока игрок мёртв в раунде.',
+                'group' => 'CS2',
+                'allow_auto' => false,
+            ],
+            [
+                'id' => 'cs2.ambient.winter',
+                'title' => 'CS2: зима (Nuke / Ancient снаружи)',
+                'hint' => 'Холодный белый, пока на Nuke или снаружи Ancient. Длительность 0 = держать.',
+                'group' => 'CS2',
+                'allow_auto' => false,
+            ],
+            [
+                'id' => 'cs2.ambient.inferno',
+                'title' => 'CS2: инферно / огонь',
+                'hint' => 'Мягкий оранжевый на Inferno или при горении (molotov). Длительность 0 = держать.',
+                'group' => 'CS2',
+                'allow_auto' => false,
+            ],
+            [
+                'id' => 'cs2.flash',
+                'title' => 'CS2: светошумовая (blind)',
+                'hint' => 'GSI player.state.flashed. Дефолт: 100% белый 0.8 с.',
                 'group' => 'CS2',
                 'allow_auto' => false,
             ],
@@ -211,6 +235,22 @@ class LightEventCatalog
             'color' => 'white',
             'brightness' => 12,
             'fade_sec' => 0.2,
+        ]);
+        $events['cs2.ambient.winter'] = array_merge($base, [
+            'color' => 'cold_white',
+            'brightness' => 85,
+            'fade_sec' => 0.8,
+        ]);
+        $events['cs2.ambient.inferno'] = array_merge($base, [
+            'color' => 'orange',
+            'brightness' => 80,
+            'fade_sec' => 0.5,
+        ]);
+        $events['cs2.flash'] = array_merge($base, [
+            'color' => 'white',
+            'brightness' => 100,
+            'duration_sec' => 0.8,
+            'fade_sec' => 0,
         ]);
         $events['dota.win'] = array_merge($base, [
             'color' => 'blue',
@@ -449,6 +489,13 @@ class LightEventCatalog
         }
         if ($c === self::EFFECT_RAINBOW || $effect === self::EFFECT_RAINBOW) {
             return self::EFFECT_RAINBOW;
+        }
+
+        if (preg_match('/^#[0-9a-f]{6}$/', $c) === 1) {
+            return $c;
+        }
+        if (in_array($c, self::EVENT_COLORS, true)) {
+            return $c;
         }
 
         return in_array($c, SpaceLight::COLORS, true) ? $c : 'white';
