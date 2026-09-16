@@ -156,6 +156,8 @@ class ShellStationWatchdogTest extends TestCase
 
     public function test_offline_pc_cannot_queue_resync(): void
     {
+        $this->assertNull($this->computer->fresh()->last_seen_at);
+
         $this->actingAs($this->admin, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
             ->postJson('/admin/api/computers/resync', [
