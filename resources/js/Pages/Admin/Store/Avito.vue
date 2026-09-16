@@ -673,8 +673,8 @@ const initials = (name?: string | null) => {
                     </button>
                     <button v-if="canManage" type="button" class="ml-auto px-4 py-2 rounded-xl border border-amber-500/30 text-[10px] uppercase font-black text-amber-400" @click="syncChats">Подтянуть из Avito</button>
                 </div>
-                <div class="grid lg:grid-cols-[320px_1fr] gap-4 min-h-[520px]">
-                    <div class="border border-white/5 rounded-2xl overflow-hidden bg-[#080808]">
+                <div class="grid lg:grid-cols-[320px_1fr] gap-4 h-[calc(100dvh-13rem)] min-h-[520px]">
+                    <div class="border border-white/5 rounded-2xl overflow-y-auto bg-[#080808] min-h-0">
                         <div v-for="c in chats" :key="c.id"
                              class="px-4 py-3 border-b border-white/5 cursor-pointer"
                              :class="active_chat?.chat_id === c.chat_id ? 'bg-amber-500/10' : 'hover:bg-white/[0.03]'"
@@ -702,8 +702,8 @@ const initials = (name?: string | null) => {
                         </div>
                         <div v-if="!chats.length" class="p-6 text-white/30 text-sm">{{ q ? 'Нет чатов с таким ID' : folderEmpty[folder] }}</div>
                     </div>
-                    <div class="border border-white/5 rounded-2xl bg-[#080808] flex flex-col min-h-[520px]">
-                        <div v-if="active_chat" class="px-5 py-4 border-b border-white/5 space-y-3">
+                    <div class="border border-white/5 rounded-2xl bg-[#080808] flex flex-col min-h-0 overflow-hidden">
+                        <div v-if="active_chat" class="px-5 py-4 border-b border-white/5 space-y-3 shrink-0">
                             <div class="flex justify-between gap-3">
                                 <div class="flex gap-3 min-w-0">
                                     <img v-if="active_chat.client_avatar" :src="active_chat.client_avatar" alt=""
@@ -742,7 +742,7 @@ const initials = (name?: string | null) => {
                                         @click="returnInbox(active_chat)">В общее</button>
                             </div>
                         </div>
-                        <div class="flex-1 overflow-y-auto p-5 space-y-3">
+                        <div class="flex-1 min-h-0 overflow-y-auto p-5 space-y-3">
                             <div v-for="m in messages" :key="m.id"
                                  class="max-w-[80%] rounded-2xl px-4 py-3 text-sm space-y-2"
                                  :class="m.from_us ? 'ml-auto bg-amber-500/15 text-amber-50' : 'bg-white/5'">
@@ -776,7 +776,7 @@ const initials = (name?: string | null) => {
                                 <div v-if="messageText(m)" class="whitespace-pre-wrap">{{ messageText(m) }}</div>
                             </div>
                         </div>
-                        <form v-if="canManage && active_chat" class="p-4 border-t border-white/5 space-y-2" @submit.prevent="sendReply" @dragover.prevent @drop.prevent="onPhotoDrop">
+                        <form v-if="canManage && active_chat" class="p-4 border-t border-white/5 space-y-2 shrink-0 bg-[#080808]" @submit.prevent="sendReply" @dragover.prevent @drop.prevent="onPhotoDrop">
                             <div v-if="photoFile" class="flex items-center gap-3 text-[11px] text-amber-400">
                                 <img v-if="photoPreview" :src="photoPreview" alt="" class="w-12 h-12 rounded-lg object-cover" />
                                 <span class="truncate">{{ photoFile.name }}</span>
