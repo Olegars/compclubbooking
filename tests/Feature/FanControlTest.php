@@ -331,7 +331,9 @@ class FanControlTest extends TestCase
     {
         $bootcamp = Zone::query()->where('slug', 'bootcamp')->first();
         if ($bootcamp) {
+            $this->space->update(['zone_id' => $bootcamp->id]);
             $this->zone = $bootcamp;
+            $this->space->refresh();
         } else {
             $this->zone->update(['slug' => 'bootcamp']);
         }

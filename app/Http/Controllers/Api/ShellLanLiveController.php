@@ -15,6 +15,7 @@ use App\Services\LanLive\PcThroneService;
 use App\Services\LanLive\ShellGsiStore;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class ShellLanLiveController extends Controller
@@ -317,8 +318,13 @@ class ShellLanLiveController extends Controller
             $booking = Booking::query()
                 ->where('status', 'active')
                 ->where(function ($q) use ($terminalId) {
-                    $q->where('computer_id', $terminalId)
-                        ->orWhereJsonContains('pc_ids', (string) $terminalId);
+                    $q->where('computer_id', $terminalId);
+                    $term = (string) $terminalId;
+                    if (DB::connection()->getDriverName() === 'pgsql') {
+                        $q->orWhereJsonContains('pc_ids', $term);
+                    } else {
+                        $q->orWhere('pc_ids', 'like', '%"'.$term.'"%');
+                    }
                 })
                 ->latest('id')
                 ->first();

@@ -17,7 +17,10 @@ class SqlTime
     }
 
     /**
-     * Текущий момент в SQL. sqlite не знает NOW().
+     * Текущий момент в SQL.
+     * sqlite не знает NOW(); datetime('now') — UTC, а Eloquent читает datetime
+     * в таймзоне приложения → last_seen_at кажется старше на несколько часов.
+     * Берём Carbon::now() (уважает setTestNow и app timezone).
      */
     public static function now(): Expression
     {
@@ -26,7 +29,11 @@ class SqlTime
 
     public static function nowSql(): string
     {
-        return self::isSqlite() ? "datetime('now')" : 'NOW()';
+        if (self::isSqlite()) {
+            return "'".CarbonImmutable::now()->format('Y-m-d H:i:s')."'";
+        }
+
+        return 'NOW()';
     }
 
     /**

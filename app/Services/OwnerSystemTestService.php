@@ -17,6 +17,7 @@ use App\Models\SharedFan;
 use App\Models\SpaceFan;
 use App\Models\SpaceLight;
 use App\Models\Tariff;
+use App\Models\TariffPrice;
 use App\Models\VideoSurveillanceSetting;
 use App\Models\Zone;
 use App\Support\AdminLocation;
@@ -718,8 +719,9 @@ class OwnerSystemTestService
     {
         $zones = Zone::query()->count();
         $tariffs = Tariff::query()->count();
-        $details = ["зоны: {$zones}", "тарифы: {$tariffs}"];
-        if ($zones === 0 || $tariffs === 0) {
+        $prices = Schema::hasTable('tariff_prices') ? TariffPrice::query()->count() : 0;
+        $details = ["зоны: {$zones}", "тарифы: {$tariffs}", "ставки: {$prices}"];
+        if ($zones === 0 || ($tariffs === 0 && $prices === 0)) {
             return $this->fail('Нет зон или тарифов — бронь не собрать.', $details);
         }
 

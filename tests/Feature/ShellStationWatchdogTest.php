@@ -44,6 +44,7 @@ class ShellStationWatchdogTest extends TestCase
             'password' => 'password',
             'role' => 'owner',
             'pay_type' => 'shift',
+            'club_id' => $this->club->id,
         ]);
     }
 

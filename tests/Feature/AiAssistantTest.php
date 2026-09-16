@@ -52,6 +52,14 @@ class AiAssistantTest extends TestCase
             'slug' => 'ai-club',
         ]);
 
+        AiAssistantSetting::forClub($this->club->id)->forceFill([
+            'is_enabled' => true,
+            'llm_api_key' => 'sk-deepseek-test',
+            'yandex_api_key' => 'yandex-key-test',
+            'openai_api_key' => 'sk-openai-test',
+            'yandex_folder_id' => 'folder-test',
+        ])->save();
+
         $this->computer = Computer::create([
             'club_id' => $this->club->id,
             'name' => 'PC-AI',
@@ -438,7 +446,7 @@ class AiAssistantTest extends TestCase
         ]);
 
         Http::fake([
-            'api.deepseek.com/chat/completions' => Http::response([
+            '*chat/completions*' => Http::response([
                 'choices' => [['message' => ['content' => 'ок']]],
             ], 200),
         ]);
@@ -469,7 +477,7 @@ class AiAssistantTest extends TestCase
         ]);
 
         Http::fake([
-            'api.deepseek.com/chat/completions' => Http::response([
+            '*chat/completions*' => Http::response([
                 'choices' => [[
                     'message' => [
                         'content' => '[{"sku":1,"color":"white","glass":"front_side","form":"atx"}]',
@@ -501,7 +509,7 @@ class AiAssistantTest extends TestCase
         ]);
 
         Http::fake([
-            'api.deepseek.com/chat/completions' => Http::response([
+            '*chat/completions*' => Http::response([
                 'choices' => [['message' => ['content' => 'Зайди через меню в лобби.']]],
             ], 200),
         ]);
@@ -587,11 +595,11 @@ class AiAssistantTest extends TestCase
         ]);
 
         Http::fake([
-            'api.openai.com/v1/audio/transcriptions' => Http::response(['text' => 'привет'], 200),
-            'api.deepseek.com/chat/completions' => Http::response([
+            '*audio/transcriptions*' => Http::response(['text' => 'привет'], 200),
+            '*chat/completions*' => Http::response([
                 'choices' => [['message' => ['content' => 'хай']]],
             ], 200),
-            'api.openai.com/v1/audio/speech' => Http::response('ID3oa', 200),
+            '*audio/speech*' => Http::response('ID3oa', 200),
         ]);
 
         $this->post('/api/shell/ai-assistant', [

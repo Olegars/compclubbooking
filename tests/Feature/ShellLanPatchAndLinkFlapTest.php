@@ -32,7 +32,7 @@ class ShellLanPatchAndLinkFlapTest extends TestCase
             'club.power.heartbeat_stale_seconds' => 180,
         ]);
 
-        $this->club = Club::create(['name' => 'Patch Club', 'slug' => 'patch-club']);
+        $this->club = Club::create(['name' => 'Patch Club', 'slug' => 'patch-club', 'type' => 'club']);
         $this->seed = Computer::create([
             'club_id' => $this->club->id,
             'name' => 'ПК-01',
@@ -53,6 +53,7 @@ class ShellLanPatchAndLinkFlapTest extends TestCase
             'password' => 'password',
             'role' => 'owner',
             'pay_type' => 'shift',
+            'club_id' => $this->club->id,
         ]);
     }
 

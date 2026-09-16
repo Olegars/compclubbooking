@@ -376,7 +376,8 @@ class ComputerPowerService
     }
 
     /**
-     * Пометить ПК онлайн. Пишет через SQL NOW() — без сюрпризов таймзоны PHP.
+     * Пометить ПК онлайн. На sqlite — Carbon now() в TZ приложения
+     * (datetime('now') UTC Eloquent читает как локальное время).
      */
     public function markOnline(int $computerId, ?string $mac = null): void
     {

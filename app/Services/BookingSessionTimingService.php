@@ -264,7 +264,8 @@ class BookingSessionTimingService
             if ($following) {
                 if ($now->gte($scheduledEnd)) {
                     $this->markNoShow($booking, $now);
-                    throw new RuntimeException('Время брони уже закончилось.');
+
+                    return ['expired' => true, 'booking' => $booking];
                 }
 
                 return $this->activateOnSchedule($booking, $now, $scheduledEnd);
@@ -278,11 +279,16 @@ class BookingSessionTimingService
 
             if ($remainingSeconds <= 0) {
                 $this->markNoShow($booking, $now);
-                throw new RuntimeException('Время брони уже закончилось.');
+
+                return ['expired' => true, 'booking' => $booking];
             }
 
             return $this->activateWithRemaining($booking, $now, $remainingSeconds);
         }, 3);
+
+        if (! empty($result['expired'])) {
+            throw new RuntimeException('Время брони уже закончилось.');
+        }
 
         $receipts = [];
         try {

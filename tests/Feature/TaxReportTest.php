@@ -36,7 +36,7 @@ class TaxReportTest extends TestCase
                 ->component('Admin/Taxes')
                 ->where('year', 2026)
                 ->where('profile.has_employees', true)
-                ->where('profile.usn_rate_percent', 6.0)
+                ->where('profile.usn_rate_percent', fn ($v) => abs((float) $v - 6.0) < 0.001)
                 ->where('premiums.fixed', 57390.0)
                 ->where('vat.exempt', true)
                 ->has('calendar.months')

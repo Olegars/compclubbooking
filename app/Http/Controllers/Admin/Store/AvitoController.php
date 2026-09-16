@@ -607,7 +607,10 @@ class AvitoController extends StoreController
                     if ($like === 'ilike') {
                         $m->whereRaw('content::text ilike ?', [$needle]);
                     } else {
-                        $m->whereRaw('CAST(content AS TEXT) LIKE ?', [$needle]);
+                        $m->where(function ($json) use ($needle) {
+                            $json->whereRaw("json_extract(content, '$.text') LIKE ?", [$needle])
+                                ->orWhereRaw('CAST(content AS TEXT) LIKE ?', [$needle]);
+                        });
                     }
                 });
         });

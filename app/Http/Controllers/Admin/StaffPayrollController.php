@@ -176,16 +176,28 @@ class StaffPayrollController extends Controller
     {
         $payload = $this->payroll->snapshot($admin);
         $payload['employment'] = $this->employment->payload($admin);
-        $payload['calendar'] = $admin->needsEmployment()
-            ? [
+        try {
+            $payload['calendar'] = $admin->needsEmployment()
+                ? [
+                    'month' => now()->format('Y-m'),
+                    'cancel_before_hours' => ShiftSlotService::CANCEL_BEFORE_HOURS,
+                    'shift_hours' => 12,
+                    'starts_hour' => 10,
+                    'days' => [],
+                    'my_bookings' => [],
+                ]
+                : $this->slots->calendar($admin, $request->string('month')->toString() ?: null);
+        } catch (\Throwable $e) {
+            report($e);
+            $payload['calendar'] = [
                 'month' => now()->format('Y-m'),
                 'cancel_before_hours' => ShiftSlotService::CANCEL_BEFORE_HOURS,
                 'shift_hours' => 12,
                 'starts_hour' => 10,
                 'days' => [],
                 'my_bookings' => [],
-            ]
-            : $this->slots->calendar($admin, $request->string('month')->toString() ?: null);
+            ];
+        }
         if ($withStoreDesk) {
             $payload['store_desk'] = $this->storeDesk->desk($admin);
             abort_if(! $payload['store_desk'], 403);

@@ -255,6 +255,10 @@ class ShiftSlotService
                     );
                 } catch (\Illuminate\Database\UniqueConstraintViolationException) {
                     continue;
+                } catch (\Illuminate\Database\QueryException $e) {
+                    if (! str_contains(strtolower($e->getMessage()), 'unique')) {
+                        throw $e;
+                    }
                 }
             }
         }

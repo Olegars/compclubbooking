@@ -47,6 +47,7 @@ class DisklessCommandTest extends TestCase
             'password' => 'password',
             'role' => 'supervisor',
             'pay_type' => 'shift',
+            'club_id' => $this->club->id,
         ]);
     }
 

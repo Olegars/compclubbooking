@@ -165,7 +165,8 @@ class OwnerSystemTestServiceTest extends TestCase
     {
         $this->assertSame('?', \App\Support\SqlTime::instant());
         $this->assertStringNotContainsString('timestamptz', \App\Support\SqlTime::instant());
-        $this->assertSame("datetime('now')", \App\Support\SqlTime::nowSql());
+        $this->assertDoesNotMatchRegularExpression('/datetime\\(\'now\'\\)/', \App\Support\SqlTime::nowSql());
+        $this->assertMatchesRegularExpression("/^'\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}'$/", \App\Support\SqlTime::nowSql());
     }
 
     public function test_phpunit_pid_zero_is_not_alive(): void

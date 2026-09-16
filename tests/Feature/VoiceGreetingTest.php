@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AiAssistantSetting;
 use App\Models\Booking;
 use App\Models\Club;
 use App\Models\Computer;
@@ -48,6 +49,14 @@ class VoiceGreetingTest extends TestCase
             'name' => 'Sector Test',
             'slug' => 'greet-club',
         ]);
+
+        AiAssistantSetting::forClub($this->club->id)->forceFill([
+            'is_enabled' => true,
+            'llm_api_key' => 'sk-deepseek-test',
+            'yandex_api_key' => 'yandex-key-test',
+            'openai_api_key' => 'sk-openai-test',
+            'yandex_folder_id' => 'folder-test',
+        ])->save();
 
         $this->computer = Computer::create([
             'club_id' => $this->club->id,
@@ -271,7 +280,8 @@ class VoiceGreetingTest extends TestCase
             'ai_assistant.yandex.api_key' => '',
             'ai_assistant.openai.api_key' => '',
         ]);
-        AiAssistantSetting::forClub($this->club->id)->update([
+        AiAssistantSetting::forClub($this->club->id);
+        AiAssistantSetting::query()->where('club_id', $this->club->id)->update([
             'llm_api_key' => null,
             'yandex_api_key' => null,
             'openai_api_key' => null,

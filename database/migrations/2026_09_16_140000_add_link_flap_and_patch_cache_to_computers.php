@@ -25,13 +25,13 @@ return new class extends Migration
                 $table->unsignedBigInteger('nic_flap_shift_id')->nullable()->after('nic_flap_count');
             }
             if (! Schema::hasColumn('computers', 'nic_flap_last_at')) {
-                $table->timestampTz('nic_flap_last_at')->nullable()->after('nic_flap_shift_id');
+                $table->timestamp('nic_flap_last_at')->nullable()->after('nic_flap_shift_id');
             }
             if (! Schema::hasColumn('computers', 'patch_pull_command_id')) {
                 $table->unsignedBigInteger('patch_pull_command_id')->nullable()->after('resync_message');
             }
             if (! Schema::hasColumn('computers', 'patch_pull_command_at')) {
-                $table->timestampTz('patch_pull_command_at')->nullable()->after('patch_pull_command_id');
+                $table->timestamp('patch_pull_command_at')->nullable()->after('patch_pull_command_id');
             }
             if (! Schema::hasColumn('computers', 'patch_pull_payload')) {
                 $table->json('patch_pull_payload')->nullable()->after('patch_pull_command_at');

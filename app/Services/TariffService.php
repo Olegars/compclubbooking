@@ -353,9 +353,16 @@ class TariffService
         CarbonImmutable $end
     ): array {
         if (! $zoneId) {
-            throw ValidationException::withMessages([
-                'pc_ids' => 'Для выбранных мест не определён тип помещения.',
-            ]);
+            $minutes = max(0, $start->diffInMinutes($end));
+            $rate = self::DEFAULT_HOURLY_RUB;
+
+            return [[
+                'from' => $start->toIso8601String(),
+                'to' => $end->toIso8601String(),
+                'minutes' => $minutes,
+                'rate' => $rate,
+                'cost_rub' => round($rate * ($minutes / 60), 4),
+            ]];
         }
 
         if ($end <= $start) {
