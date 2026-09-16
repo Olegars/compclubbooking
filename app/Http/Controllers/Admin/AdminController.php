@@ -1418,6 +1418,7 @@ class AdminController extends Controller
             'manual_balance_edit' => 'Ручная правка баланса',
             'fan_bearing_wear' => 'Износ подшипника вентилятора',
             'golden_image_drift' => 'Повреждение игрового диска',
+            'nic_link_flap' => 'Деградация патч-корда',
             default => 'Нарушение протокола',
         };
     }

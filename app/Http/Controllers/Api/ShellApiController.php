@@ -832,7 +832,7 @@ class ShellApiController extends Controller
             'terminal_id' => 'nullable|integer',
             'computer_id' => 'nullable|integer',
             'hwid' => 'nullable|string',
-            'type' => 'required|string|in:fan_bearing_wear,golden_image_drift',
+            'type' => 'required|string|in:fan_bearing_wear,golden_image_drift,nic_link_flap',
             'description' => 'nullable|string|max:1000',
             'severity' => 'nullable|string|in:low,info,medium,warn,high,critical',
             'payload' => 'nullable|array',
@@ -2797,6 +2797,13 @@ class ShellApiController extends Controller
                 'resync_ack_id' => 'nullable|integer|min:1',
                 'resync_result' => 'nullable|string|max:32',
                 'resync_message' => 'nullable|string|max:240',
+                'lan_ip' => 'nullable|ip',
+                'patch_seed_port' => 'nullable|integer|min:0|max:65535',
+                'nic_flap_events' => 'nullable|integer|min:0|max:50',
+                'nic_flap_payload' => 'nullable|array',
+                'patch_pull_ack_id' => 'nullable|integer|min:1',
+                'patch_pull_result' => 'nullable|string|max:32',
+                'patch_pull_message' => 'nullable|string|max:240',
             ]);
 
             $computer = null;
@@ -2854,6 +2861,13 @@ class ShellApiController extends Controller
                     'resync_ack_id' => $request->input('resync_ack_id'),
                     'resync_result' => $request->input('resync_result'),
                     'resync_message' => $request->input('resync_message'),
+                    'lan_ip' => $request->input('lan_ip'),
+                    'patch_seed_port' => $request->input('patch_seed_port'),
+                    'nic_flap_events' => $request->input('nic_flap_events'),
+                    'nic_flap_payload' => $request->input('nic_flap_payload'),
+                    'patch_pull_ack_id' => $request->input('patch_pull_ack_id'),
+                    'patch_pull_result' => $request->input('patch_pull_result'),
+                    'patch_pull_message' => $request->input('patch_pull_message'),
                 ]
             );
 

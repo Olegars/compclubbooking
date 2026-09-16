@@ -48,6 +48,12 @@ const isSlowNic = (pc: any) => {
         && (pc.power_state === 'on' || pc.status === 'busy' || pc.super_client)
 }
 
+const isFlappyNic = (pc: any) => {
+    const flaps = Number(pc.nic_flap_count)
+    return Number.isFinite(flaps) && flaps >= 2
+        && (pc.power_state === 'on' || pc.status === 'busy' || pc.super_client)
+}
+
 const isWornSsd = (pc: any) => {
     const wear = Number(pc.ssd_wear_pct)
     const health = String(pc.ssd_health || '')
@@ -63,6 +69,7 @@ const powerTileClass = (pc: any) => {
         return 'bg-fuchsia-500/15 border-fuchsia-500/40'
     if (Number(pc.ssd_temp_c) >= 80 && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'bg-red-500/15 border-red-500/40'
+    if (isFlappyNic(pc)) return 'bg-yellow-500/25 border-yellow-400/60'
     if (isSlowNic(pc)) return 'bg-yellow-500/20 border-yellow-500/50'
     if (isWornSsd(pc)) return 'bg-rose-500/15 border-rose-500/40'
     if (pc.status === 'busy') return 'bg-cyan-500/10 border-cyan-500/40'
@@ -80,6 +87,7 @@ const powerLabelClass = (pc: any) => {
         return 'text-fuchsia-300'
     if (Number(pc.ssd_temp_c) >= 80 && (pc.power_state === 'on' || pc.status === 'busy'))
         return 'text-red-300'
+    if (isFlappyNic(pc)) return 'text-yellow-200'
     if (isSlowNic(pc)) return 'text-yellow-300'
     if (isWornSsd(pc)) return 'text-rose-300'
     if (Number(pc.ssd_temp_c) >= 70 && (pc.power_state === 'on' || pc.status === 'busy'))
@@ -100,6 +108,7 @@ const powerLabel = (pc: any) => {
         return 'кэш'
     if (Number(pc.ssd_temp_c) >= 80 && (pc.power_state === 'on' || pc.status === 'busy'))
         return `ssd ${Math.round(Number(pc.ssd_temp_c))}°`
+    if (isFlappyNic(pc)) return `flap ${pc.nic_flap_count}`
     if (isSlowNic(pc)) return `${pc.nic_link_mbps}m`
     if (isWornSsd(pc)) return `wear ${Math.round(Number(pc.ssd_wear_pct))}%`
     if (pc.status === 'busy') return 'сессия'
@@ -143,6 +152,7 @@ const refreshStatuses = async () => {
                 maintenance: updated.maintenance,
                 ssd_temp_c: updated.ssd_temp_c,
                 nic_link_mbps: updated.nic_link_mbps,
+                nic_flap_count: updated.nic_flap_count,
                 ssd_wear_pct: updated.ssd_wear_pct,
                 ssd_read_errors: updated.ssd_read_errors,
                 ssd_write_errors: updated.ssd_write_errors,
@@ -161,6 +171,11 @@ const refreshStatuses = async () => {
                 resync_command: updated.resync_command,
                 resync_result: updated.resync_result,
                 resync_message: updated.resync_message,
+                lan_ip: updated.lan_ip,
+                patch_seed_port: updated.patch_seed_port,
+                patch_pull_command_id: updated.patch_pull_command_id,
+                patch_pull_result: updated.patch_pull_result,
+                patch_pull_message: updated.patch_pull_message,
             }
         })
 
@@ -549,10 +564,12 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                             <div class="text-[9px] text-white/30 uppercase font-black tracking-widest mt-1">
                                 {{ powerLabel(selectedPc) }}
                                 <span v-if="selectedPc.nic_link_mbps"> · {{ selectedPc.nic_link_mbps }} Мбит</span>
+                                <span v-if="selectedPc.nic_flap_count >= 2" class="text-yellow-300"> · flap {{ selectedPc.nic_flap_count }}</span>
                                 <span v-if="selectedPc.ssd_wear_pct != null"> · wear {{ selectedPc.ssd_wear_pct }}%</span>
                                 <span v-if="selectedPc.ssd_health"> · {{ selectedPc.ssd_health }}</span>
                                 <span v-if="selectedPc.games_steam_count != null"> · steam {{ selectedPc.games_steam_count }}</span>
                                 <span v-if="selectedPc.games_epic_count"> · epic {{ selectedPc.games_epic_count }}</span>
+                                <span v-if="selectedPc.patch_seed_port" class="text-violet-300"> · seed :{{ selectedPc.patch_seed_port }}</span>
                                 <span v-if="selectedPc.gpu_mode === 'idle'" class="text-emerald-400"> · eco {{ selectedPc.gpu_power_limit_w || 45 }}Вт</span>
                                 <span v-if="selectedPc.integrity_status === 'drift'" class="text-amber-400"> · drift D:</span>
                                 <span v-if="selectedPc.integrity_status === 'resyncing'" class="text-cyan-400"> · re-sync…</span>
@@ -560,6 +577,12 @@ const formatMoney = (val: number | string) => Number(val).toLocaleString('ru-RU'
                             <div v-if="selectedPc.integrity_message"
                                  class="text-[10px] text-amber-300/80 mt-2 font-mono">
                                 {{ selectedPc.integrity_message }}
+                            </div>
+                            <div v-if="selectedPc.patch_pull_command_id || selectedPc.patch_pull_result || selectedPc.patch_pull_message"
+                                 class="text-[10px] text-sky-300/80 mt-2 font-mono">
+                                {{ selectedPc.patch_pull_command_id ? ('lan-pull #' + selectedPc.patch_pull_command_id) : '' }}
+                                {{ selectedPc.patch_pull_result ? (' · ' + selectedPc.patch_pull_result) : '' }}
+                                {{ selectedPc.patch_pull_message ? (' · ' + selectedPc.patch_pull_message) : '' }}
                             </div>
                             <div v-if="selectedPc.resync_command || selectedPc.resync_result || selectedPc.resync_message"
                                  class="text-[10px] text-cyan-300/80 mt-2 font-mono">

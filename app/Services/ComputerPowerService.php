@@ -212,7 +212,14 @@ class ComputerPowerService
      *     gpu_mode?: string|null,
      *     resync_ack_id?: int|string|null,
      *     resync_result?: string|null,
-     *     resync_message?: string|null
+     *     resync_message?: string|null,
+     *     lan_ip?: string|null,
+     *     patch_seed_port?: int|string|null,
+     *     nic_flap_events?: int|string|null,
+     *     nic_flap_payload?: array<string, mixed>|null,
+     *     patch_pull_ack_id?: int|string|null,
+     *     patch_pull_result?: string|null,
+     *     patch_pull_message?: string|null
      * }  $extras
      * @return array{
      *     power_desired: string,
@@ -222,7 +229,10 @@ class ComputerPowerService
      *     maintenance: bool,
      *     cache_ok: bool|null,
      *     diskless: array{command_id: int, action: string, disk_mode: string}|null,
-     *     resync: array{command_id: int, action: string}|null
+     *     resync: array{command_id: int, action: string}|null,
+     *     patch_seed: array{enabled: bool, port: int}|null,
+     *     patch_pull: array{command_id: int, apps: list<array<string, mixed>>}|null,
+     *     nic_flap_acked: int|null
      * }
      */
     public function heartbeat(Computer $computer, ?string $mac = null, array $extras = []): array
@@ -267,6 +277,41 @@ class ComputerPowerService
             }
         }
 
+        $flapAcked = null;
+        $flapEvents = isset($extras['nic_flap_events']) ? (int) $extras['nic_flap_events'] : 0;
+        if ($flapEvents > 0) {
+            try {
+                $flap = app(NicLinkFlapService::class)->ingest(
+                    $computer,
+                    $flapEvents,
+                    isset($extras['nic_flap_payload']) && is_array($extras['nic_flap_payload'])
+                        ? $extras['nic_flap_payload']
+                        : null,
+                );
+                $flapAcked = $flap['acked'];
+                $computer->refresh();
+            } catch (\Throwable $e) {
+                Log::warning('NIC flap ingest failed', [
+                    'computer_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $patchSeed = null;
+        $patchPull = null;
+        try {
+            $patch = app(LanPatchService::class)->processHeartbeat($computer, $extras);
+            $patchSeed = $patch['patch_seed'];
+            $patchPull = $patch['patch_pull'];
+            $computer->refresh();
+        } catch (\Throwable $e) {
+            Log::warning('LAN patch process failed', [
+                'computer_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         $now = CarbonImmutable::now();
         $inMaintenance = $computer->isInMaintenance($now) || (bool) $computer->super_client;
 
@@ -292,7 +337,8 @@ class ComputerPowerService
         $pendingResync = $resync->pendingFor($computer);
         $action = 'none';
         if (! $inMaintenance && ! $sessionActive && $pendingDiskless === null
-            && $pendingResync === null && ! $computer->super_client) {
+            && $pendingResync === null && ! $computer->super_client
+            && $patchPull === null) {
             $action = $this->actionForDesired($desired);
         }
 
@@ -305,6 +351,9 @@ class ComputerPowerService
             'cache_ok' => $computer->cache_ok,
             'diskless' => $pendingDiskless,
             'resync' => $pendingResync,
+            'patch_seed' => $patchSeed,
+            'patch_pull' => $patchPull,
+            'nic_flap_acked' => $flapAcked,
         ];
     }
 
@@ -373,7 +422,8 @@ class ComputerPowerService
         $desired = DB::table('computers')->where('id', $computerId)->value('power_desired');
         $computer = Computer::query()->find($computerId);
         if ($computer && ($computer->isInMaintenance($now) || $computer->super_client
-            || $computer->diskless_command || $computer->resync_command)) {
+            || $computer->diskless_command || $computer->resync_command
+            || $computer->patch_pull_command_id)) {
             return 'none';
         }
 
@@ -397,13 +447,14 @@ class ComputerPowerService
 
         $sql = "SELECT id, name, status, power_desired, last_seen_at, space_id, club_id,
                        cache_ok, cache_free_gb, data_root, volume_letter, ssd_temp_c, maintenance,
-                       nic_link_mbps, ssd_wear_pct, ssd_read_errors, ssd_write_errors, ssd_health,
+                       nic_link_mbps, nic_flap_count, ssd_wear_pct, ssd_read_errors, ssd_write_errors, ssd_health,
                        super_client, games_steam_count, games_epic_count, games_inventory_hash,
                        diskless_command, diskless_disk_mode, diskless_command_id,
                        diskless_result, diskless_message,
                        integrity_status, integrity_hash, integrity_message,
                        gpu_power_limit_w, gpu_mode,
                        resync_command, resync_command_id, resync_result, resync_message,
+                       lan_ip, patch_seed_port, patch_pull_command_id, patch_pull_result, patch_pull_message,
                        CASE
                            WHEN last_seen_at IS NOT NULL
                                 AND last_seen_at >= {$instant}

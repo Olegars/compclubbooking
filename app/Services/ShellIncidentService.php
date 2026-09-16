@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Инциденты с шелла: износ подшипника SpaceFan, drift игрового диска.
+ * Инциденты с шелла: износ подшипника SpaceFan, drift игрового диска, патч-корд.
  * Пишет в общую таблицу incidents — лента /admin/incidents.
  */
 class ShellIncidentService
@@ -16,9 +16,12 @@ class ShellIncidentService
 
     public const TYPE_GOLDEN_IMAGE = 'golden_image_drift';
 
+    public const TYPE_NIC_LINK_FLAP = 'nic_link_flap';
+
     public const TYPES = [
         self::TYPE_FAN_BEARING,
         self::TYPE_GOLDEN_IMAGE,
+        self::TYPE_NIC_LINK_FLAP,
     ];
 
     /**
@@ -111,6 +114,7 @@ class ShellIncidentService
         return match ($type) {
             self::TYPE_FAN_BEARING => "Подшипник SpaceFan на {$pc} изношен, требуется смазка",
             self::TYPE_GOLDEN_IMAGE => "На {$pc} повреждены файлы игрового диска — нужен тихий re-sync",
+            self::TYPE_NIC_LINK_FLAP => "Заменить патч-корд на {$pc}",
             default => "Инцидент на {$pc}",
         };
     }

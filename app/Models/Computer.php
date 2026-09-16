@@ -11,11 +11,12 @@ class Computer extends Model
     protected $fillable = [
         'club_id', 'name', 'x', 'y', 'type', 'seat_class_id', 'space_id',
         'kind', 'booth_id', 'status', 'hwid',
-        'mac_address', 'power_desired', 'power_state',
+        'mac_address', 'lan_ip', 'patch_seed_port', 'power_desired', 'power_state',
         'power_state_updated_at', 'last_seen_at', 'wol_sent_at',
         'maintenance', 'maintenance_until',
         'cache_ok', 'cache_free_gb', 'data_root', 'volume_letter', 'ssd_temp_c',
-        'nic_link_mbps', 'ssd_wear_pct', 'ssd_read_errors', 'ssd_write_errors', 'ssd_health',
+        'nic_link_mbps', 'nic_flap_count', 'nic_flap_shift_id', 'nic_flap_last_at',
+        'ssd_wear_pct', 'ssd_read_errors', 'ssd_write_errors', 'ssd_health',
         'super_client', 'games_steam_count', 'games_epic_count',
         'games_inventory_hash', 'games_inventory',
         'diskless_command', 'diskless_disk_mode', 'diskless_command_id',
@@ -24,6 +25,8 @@ class Computer extends Model
         'gpu_power_limit_w', 'gpu_mode',
         'resync_command', 'resync_command_id', 'resync_command_at',
         'resync_result', 'resync_message',
+        'patch_pull_command_id', 'patch_pull_command_at', 'patch_pull_payload',
+        'patch_pull_result', 'patch_pull_message',
     ];
 
     protected $casts = [
@@ -36,6 +39,10 @@ class Computer extends Model
         'cache_free_gb' => 'float',
         'ssd_temp_c' => 'float',
         'nic_link_mbps' => 'integer',
+        'nic_flap_count' => 'integer',
+        'nic_flap_shift_id' => 'integer',
+        'nic_flap_last_at' => 'immutable_datetime',
+        'patch_seed_port' => 'integer',
         'ssd_wear_pct' => 'integer',
         'ssd_read_errors' => 'integer',
         'ssd_write_errors' => 'integer',
@@ -49,6 +56,9 @@ class Computer extends Model
         'gpu_power_limit_w' => 'integer',
         'resync_command_id' => 'integer',
         'resync_command_at' => 'immutable_datetime',
+        'patch_pull_command_id' => 'integer',
+        'patch_pull_command_at' => 'immutable_datetime',
+        'patch_pull_payload' => 'array',
     ];
 
     public const KIND_PC = 'pc';
