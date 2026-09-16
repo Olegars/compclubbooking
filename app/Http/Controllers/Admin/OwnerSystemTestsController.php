@@ -86,14 +86,12 @@ class OwnerSystemTestsController extends Controller
         $summary = ['pass' => 0, 'fail' => 0, 'warn' => 0, 'skip' => 0, 'pending' => 0, 'ran' => 0];
         foreach ($rows as $row) {
             $status = $row['status'] ?? null;
-            if (! is_string($status) || $status === '' || $status === 'running') {
+            if (! in_array($status, ['pass', 'fail', 'warn', 'skip'], true)) {
                 $summary['pending']++;
                 continue;
             }
+            $summary[$status]++;
             $summary['ran']++;
-            if (isset($summary[$status])) {
-                $summary[$status]++;
-            }
         }
 
         return Inertia::render('Admin/SystemTestsPrint', [

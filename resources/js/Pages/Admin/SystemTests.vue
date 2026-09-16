@@ -7,6 +7,8 @@ import { useClubName } from '@/Composables/useClubName'
 
 type TestKind = 'live' | 'phpunit'
 type TestStatus = 'pass' | 'fail' | 'warn' | 'skip' | 'running'
+type Outcome = 'pass' | 'fail' | 'warn' | 'skip'
+type StatusFilter = 'all' | 'ran' | Outcome
 
 type CatalogItem = {
     id: string
@@ -39,6 +41,7 @@ const runCursor = ref(0)
 const runTotal = ref(0)
 const results = reactive<Record<string, RunResult>>({})
 const error = ref<string | null>(null)
+const statusFilter = ref<StatusFilter>('all')
 
 const groups = computed(() => {
     const map = new Map<string, { id: string, title: string, items: CatalogItem[] }>()
@@ -57,16 +60,59 @@ const phpunitFileIds = computed(() => props.tests
     .map(t => t.id))
 const allIds = computed(() => [...liveIds.value, ...phpunitFileIds.value])
 
+const outcomeOf = (status?: TestStatus): Outcome | null => {
+    if (status === 'pass' || status === 'fail' || status === 'warn' || status === 'skip') {
+        return status
+    }
+    return null
+}
+
 const summary = computed(() => {
     const counts = { pass: 0, fail: 0, warn: 0, skip: 0, ran: 0 }
     for (const id of Object.keys(results)) {
-        const status = results[id]?.status
-        if (!status || status === 'running') continue
+        const outcome = outcomeOf(results[id]?.status)
+        if (!outcome) continue
+        counts[outcome]++
         counts.ran++
-        counts[status]++
     }
     return counts
 })
+
+const visibleGroups = computed(() => {
+    const filter = statusFilter.value
+    return groups.value
+        .map((group) => ({
+            ...group,
+            items: group.items.filter((item) => {
+                const outcome = outcomeOf(results[item.id]?.status)
+                if (filter === 'all') return true
+                if (filter === 'ran') return outcome !== null
+                return outcome === filter
+            }),
+        }))
+        .filter((group) => group.items.length > 0)
+})
+
+const filterHint = computed(() => {
+    if (statusFilter.value === 'all') return ''
+    if (statusFilter.value === 'ran') return 'Показаны только прогнанные'
+    if (statusFilter.value === 'pass') return 'Показаны только OK'
+    if (statusFilter.value === 'warn') return 'Показаны только «Внимание»'
+    if (statusFilter.value === 'fail') return 'Показаны только сбои'
+    return 'Показаны только пропуски'
+})
+
+const toggleFilter = (next: StatusFilter) => {
+    statusFilter.value = statusFilter.value === next ? 'all' : next
+}
+
+const tileClass = (id: StatusFilter, active: string, idle: string) => {
+    const on = statusFilter.value === id
+    return [
+        'text-left rounded-2xl px-5 py-4 border transition-colors cursor-pointer disabled:cursor-default',
+        on ? active : idle,
+    ]
+}
 
 const busy = computed(() => runningId.value !== null || runningAll.value || pdfBusy.value)
 
@@ -246,28 +292,65 @@ const exportPdf = () => {
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div class="bg-[#0a0a0a] border border-white/5 rounded-2xl px-5 py-4">
+            <div class="space-y-2">
+                <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+                <button type="button"
+                        class="bg-[#0a0a0a] px-5 py-4"
+                        :class="tileClass('ran', 'border-white/40 bg-white/10', 'border-white/5 hover:border-white/20')"
+                        :aria-pressed="statusFilter === 'ran'"
+                        @click="toggleFilter('ran')">
                     <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Прогнано</div>
                     <div class="text-white text-2xl font-black mt-1">{{ summary.ran }}</div>
-                </div>
-                <div class="bg-[#0a0a0a] border border-emerald-500/20 rounded-2xl px-5 py-4">
+                    <div class="text-[10px] text-white/25 mt-1 font-bold">OK + внимание + сбой + пропуск</div>
+                </button>
+                <button type="button"
+                        class="bg-[#0a0a0a] px-5 py-4"
+                        :class="tileClass('pass', 'border-emerald-400/70 bg-emerald-500/20', 'border-emerald-500/20 hover:border-emerald-400/50')"
+                        :aria-pressed="statusFilter === 'pass'"
+                        @click="toggleFilter('pass')">
                     <div class="text-[10px] text-emerald-500/70 uppercase font-black tracking-widest">OK</div>
                     <div class="text-emerald-300 text-2xl font-black mt-1">{{ summary.pass }}</div>
-                </div>
-                <div class="bg-[#0a0a0a] border border-amber-500/20 rounded-2xl px-5 py-4">
+                </button>
+                <button type="button"
+                        class="bg-[#0a0a0a] px-5 py-4"
+                        :class="tileClass('warn', 'border-amber-400/70 bg-amber-500/20', 'border-amber-500/20 hover:border-amber-400/50')"
+                        :aria-pressed="statusFilter === 'warn'"
+                        @click="toggleFilter('warn')">
                     <div class="text-[10px] text-amber-500/70 uppercase font-black tracking-widest">Внимание</div>
                     <div class="text-amber-300 text-2xl font-black mt-1">{{ summary.warn }}</div>
-                </div>
-                <div class="bg-[#0a0a0a] border border-red-500/20 rounded-2xl px-5 py-4">
+                </button>
+                <button type="button"
+                        class="bg-[#0a0a0a] px-5 py-4"
+                        :class="tileClass('fail', 'border-red-400/70 bg-red-500/20', 'border-red-500/20 hover:border-red-400/50')"
+                        :aria-pressed="statusFilter === 'fail'"
+                        @click="toggleFilter('fail')">
                     <div class="text-[10px] text-red-500/70 uppercase font-black tracking-widest">Сбой</div>
                     <div class="text-red-300 text-2xl font-black mt-1">{{ summary.fail }}</div>
+                </button>
+                <button type="button"
+                        class="bg-[#0a0a0a] px-5 py-4"
+                        :class="tileClass('skip', 'border-white/30 bg-white/10', 'border-white/10 hover:border-white/25')"
+                        :aria-pressed="statusFilter === 'skip'"
+                        @click="toggleFilter('skip')">
+                    <div class="text-[10px] text-white/40 uppercase font-black tracking-widest">Пропуск</div>
+                    <div class="text-white/70 text-2xl font-black mt-1">{{ summary.skip }}</div>
+                </button>
                 </div>
+                <p v-if="filterHint" class="text-white/40 text-xs font-bold">
+                    {{ filterHint }}
+                    <button type="button" class="ml-2 text-yellow-300 uppercase tracking-widest text-[10px] font-black" @click="statusFilter = 'all'">
+                        Сбросить
+                    </button>
+                </p>
             </div>
 
             <p v-if="error" class="text-red-300 text-xs font-bold">{{ error }}</p>
 
-            <section v-for="group in groups" :key="group.id" class="space-y-4">
+            <p v-if="statusFilter !== 'all' && visibleGroups.length === 0" class="text-white/40 text-xs font-bold">
+                Нет тестов с этим статусом.
+            </p>
+
+            <section v-for="group in visibleGroups" :key="group.id" class="space-y-4">
                 <div class="flex items-center justify-between gap-4">
                     <h2 class="text-sm font-black uppercase italic tracking-widest text-white">{{ group.title }}</h2>
                     <button type="button"

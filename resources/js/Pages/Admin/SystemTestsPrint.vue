@@ -88,7 +88,7 @@ const locationLine = computed(() => {
                 <div class="head-right">
                     <div class="serial-label">Тесты системы</div>
                     <div class="serial">{{ printedAt }}</div>
-                    <div class="meta-small">Прогнано {{ summary.ran }} · не запускалось {{ summary.pending }}</div>
+                    <div class="meta-small">Прогнано {{ summary.ran }} = {{ summary.pass }} OK + {{ summary.warn }} внимание + {{ summary.fail }} сбой + {{ summary.skip }} пропуск · не запускалось {{ summary.pending }}</div>
                 </div>
             </header>
 
