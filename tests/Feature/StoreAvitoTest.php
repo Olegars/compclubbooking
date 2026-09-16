@@ -703,6 +703,42 @@ class StoreAvitoTest extends TestCase
         $this->assertTrue($chat->unread);
     }
 
+    public function test_chats_search_by_name_ad_and_message(): void
+    {
+        $manager = $this->makeAvitoManager('Поиск', 'search-chats@avito.test');
+        $this->makeAvitoChat('u2i-denis', [
+            'client_name' => 'Денис',
+            'ad_title' => 'Установка межкомнатных дверей',
+            'workflow' => 'in_progress',
+        ]);
+        $alex = $this->makeAvitoChat('u2i-alex', ['client_name' => 'Алексей']);
+        StoreAvitoMessage::query()->create([
+            'chat_id' => $alex->chat_id,
+            'type' => 'text',
+            'content' => ['text' => 'Нужен игровой ПК'],
+            'from_us' => false,
+            'read' => false,
+            'avito_created_at' => now(),
+        ]);
+        $this->makeAvitoChat('u2i-other', ['client_name' => 'Николай']);
+
+        $this->actingAs($manager, 'admin')
+            ->get('/admin/store/avito?tab=chats&folder=inbox&q=Денис')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('chats', 1)
+                ->where('chats.0.client_name', 'Денис')
+                ->where('filters.q', 'Денис')
+            );
+
+        $this->get('/admin/store/avito?tab=chats&q=игровой')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('chats', 1)
+                ->where('chats.0.client_name', 'Алексей')
+            );
+    }
+
     public function test_mark_all_unread_chats_as_read(): void
     {
         $manager = $this->makeAvitoManager('Ольга Прочтение', 'olga-readall@avito.test');

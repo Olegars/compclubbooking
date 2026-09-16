@@ -110,14 +110,10 @@ const folder = computed({
     set: (v: Folder) => router.get('/admin/store/avito', avitoQuery({ tab: 'chats', folder: v, chat: null }), { preserveState: true, replace: true }),
 })
 
-const q = computed({
-    get: () => props.filters?.q || '',
-    set: (v: string) => {
-        const params = avitoQuery({})
-        delete params.q
-        if (v.trim()) params.q = v.trim()
-        router.get('/admin/store/avito', params, { preserveState: true, replace: true })
-    },
+const qDraft = ref(String(props.filters?.q || ''))
+watch(() => props.filters?.q, (v) => {
+    const next = v || ''
+    if (next !== qDraft.value) qDraft.value = next
 })
 
 const chatCounts = computed(() => props.chat_counts || { inbox: 0, in_progress: 0, done: 0, favorite: 0 })
@@ -132,10 +128,23 @@ const avitoQuery = (extra: { tab?: string, folder?: Folder, chat?: string | null
     }
     const chat = 'chat' in extra ? extra.chat : props.active_chat?.chat_id
     if (chat) params.chat = chat
-    if (q.value) params.q = q.value
+    const query = qDraft.value.trim()
+    if (query) params.q = query
     if (extra.mark_read) params.mark_read = extra.mark_read
     return params
 }
+
+let qTimer: ReturnType<typeof setTimeout> | null = null
+watch(qDraft, (value) => {
+    if (value === (props.filters?.q || '')) return
+    if (qTimer) clearTimeout(qTimer)
+    qTimer = setTimeout(() => {
+        router.get('/admin/store/avito', avitoQuery({ chat: props.tab === 'chats' ? null : undefined }), {
+            preserveState: true,
+            replace: true,
+        })
+    }, 350)
+})
 
 const settingsForm = useForm({
     enabled: Boolean(props.settings.enabled),
@@ -212,6 +221,7 @@ watch(tab, (t) => {
 onUnmounted(() => {
     if (pollTimer) clearInterval(pollTimer)
     if (chatPollTimer) clearInterval(chatPollTimer)
+    if (qTimer) clearTimeout(qTimer)
     if (photoPreview.value) URL.revokeObjectURL(photoPreview.value)
 })
 
@@ -510,7 +520,7 @@ const initials = (name?: string | null) => {
                     </p>
                 </div>
                 <div class="flex gap-2 items-center">
-                    <input v-model="q" placeholder="ID сборки…"
+                    <input v-if="tab !== 'chats'" v-model="qDraft" placeholder="ID сборки…"
                            class="bg-black border border-white/10 rounded-xl px-4 py-3 text-sm w-44 uppercase tracking-widest" />
                     <button class="px-4 py-3 rounded-xl text-[10px] uppercase font-black"
                             :class="tab === 'ads' ? 'bg-amber-500 text-black' : 'border border-white/10 text-white/50'"
@@ -561,7 +571,7 @@ const initials = (name?: string | null) => {
                             </button>
                         </div>
                     </div>
-                    <div v-if="!ads.length" class="text-white/30 text-sm py-10 text-center">{{ q ? 'Нет объявлений с таким ID' : 'Объявлений нет — включите генерацию в настройках.' }}</div>
+                    <div v-if="!ads.length" class="text-white/30 text-sm py-10 text-center">{{ qDraft ? 'Нет объявлений с таким ID' : 'Объявлений нет — включите генерацию в настройках.' }}</div>
                 </div>
             </div>
 
@@ -678,7 +688,12 @@ const initials = (name?: string | null) => {
                     </div>
                 </div>
                 <div class="grid lg:grid-cols-[320px_1fr] gap-4 h-[calc(100dvh-13rem)] min-h-[520px]">
-                    <div class="border border-white/5 rounded-2xl overflow-y-auto bg-[#080808] min-h-0">
+                    <div class="border border-white/5 rounded-2xl overflow-hidden bg-[#080808] min-h-0 flex flex-col">
+                        <div class="p-3 border-b border-white/5 shrink-0">
+                            <input v-model="qDraft" placeholder="Имя, объявление, текст…"
+                                   class="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-sm" />
+                        </div>
+                        <div class="overflow-y-auto min-h-0 flex-1">
                         <div v-for="c in chats" :key="c.id"
                              class="px-4 py-3 border-b border-white/5 cursor-pointer"
                              :class="active_chat?.chat_id === c.chat_id ? 'bg-amber-500/10' : 'hover:bg-white/[0.03]'"
@@ -700,11 +715,12 @@ const initials = (name?: string | null) => {
                                     </div>
                                     <div class="text-[10px] text-white/30 truncate">{{ c.config_id || c.ad_title || c.chat_id }}</div>
                                     <div v-if="c.accepted_by_name" class="text-[10px] text-amber-400/80 truncate mt-1">принял {{ c.accepted_by_name }}</div>
-                                    <div v-else-if="folder === 'favorite'" class="text-[10px] text-white/25 uppercase mt-1">{{ workflowLabel[c.workflow] }}</div>
+                                    <div v-else-if="qDraft || folder === 'favorite'" class="text-[10px] text-white/25 uppercase mt-1">{{ workflowLabel[c.workflow] }}</div>
                                 </div>
                             </div>
                         </div>
-                        <div v-if="!chats.length" class="p-6 text-white/30 text-sm">{{ q ? 'Нет чатов с таким ID' : folderEmpty[folder] }}</div>
+                        <div v-if="!chats.length" class="p-6 text-white/30 text-sm">{{ qDraft ? 'Ничего не найдено' : folderEmpty[folder] }}</div>
+                        </div>
                     </div>
                     <div class="border border-white/5 rounded-2xl bg-[#080808] flex flex-col min-h-0 overflow-hidden">
                         <div v-if="active_chat" class="px-5 py-4 border-b border-white/5 space-y-3 shrink-0">

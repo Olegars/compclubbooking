@@ -27,7 +27,7 @@ class AvitoController extends StoreController
     {
         $settings = StoreAvitoSetting::current();
         $tab = $request->string('tab')->toString() ?: 'ads';
-        $q = mb_strtoupper(trim($request->string('q')->toString()));
+        $q = trim($request->string('q')->toString());
         $chatId = $request->string('chat')->toString();
         $folder = $request->string('folder')->toString();
         if (! in_array($folder, StoreAvitoChat::FOLDERS, true)) {
@@ -42,8 +42,10 @@ class AvitoController extends StoreController
         $adsQuery = StoreAvitoAd::query()->orderByDesc('id');
         if ($q !== '') {
             $adsQuery->where(function ($w) use ($q) {
-                $w->where('config_id', 'like', '%'.$q.'%')
-                    ->orWhere('title', 'like', '%'.$q.'%');
+                $like = $this->likeOperator();
+                $needle = '%'.$q.'%';
+                $w->where('config_id', $like, $needle)
+                    ->orWhere('title', $like, $needle);
             });
         }
 
@@ -52,15 +54,13 @@ class AvitoController extends StoreController
             ->orderByDesc('last_message_at')
             ->orderByDesc('id');
         if ($q !== '') {
-            $chatsBase->where(function ($w) use ($q) {
-                $w->where('config_id', 'like', '%'.$q.'%')
-                    ->orWhere('ad_title', 'like', '%'.$q.'%')
-                    ->orWhere('client_name', 'like', '%'.$q.'%');
-            });
+            $this->applyChatSearch($chatsBase, $q);
         }
 
         $chatsQuery = clone $chatsBase;
-        $this->applyChatFolder($chatsQuery, $folder);
+        if ($q === '') {
+            $this->applyChatFolder($chatsQuery, $folder);
+        }
         $chats = $chatsQuery->limit(80)->get();
 
         $activeChat = $chatId !== ''
@@ -586,6 +586,36 @@ class AvitoController extends StoreController
                 'psu' => $c->psu?->label,
             ])
             ->all();
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<StoreAvitoChat>  $query
+     */
+    private function applyChatSearch($query, string $q): void
+    {
+        $like = $this->likeOperator();
+        $needle = '%'.$q.'%';
+        $query->where(function ($w) use ($like, $needle) {
+            $w->where('client_name', $like, $needle)
+                ->orWhere('ad_title', $like, $needle)
+                ->orWhere('config_id', $like, $needle)
+                ->orWhere('chat_id', $like, $needle)
+                ->orWhereExists(function ($m) use ($like, $needle) {
+                    $m->selectRaw('1')
+                        ->from('store_avito_messages')
+                        ->whereColumn('store_avito_messages.chat_id', 'store_avito_chats.chat_id');
+                    if ($like === 'ilike') {
+                        $m->whereRaw('content::text ilike ?', [$needle]);
+                    } else {
+                        $m->whereRaw('CAST(content AS TEXT) LIKE ?', [$needle]);
+                    }
+                });
+        });
+    }
+
+    private function likeOperator(): string
+    {
+        return \Illuminate\Support\Facades\Schema::getConnection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
     }
 
     /**
