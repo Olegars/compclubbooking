@@ -40,6 +40,11 @@ const computers = ref<any[]>([])
 
 const currentPoints = ref<any[]>([])
 const wallCursor = ref<{ x: number; y: number } | null>(null)
+const selectedWall = ref<any>(null)
+const wallVertexDrag = ref<{ wall: any; index: number } | null>(null)
+const wallStroke = ref(false)
+const wallStrokeMoved = ref(false)
+const wallStrokeFrom = ref<{ x: number; y: number } | null>(null)
 const isDragging = ref(false)
 const dragTarget = ref<any>(null)
 const zoneDrag = ref<{
@@ -176,7 +181,9 @@ const snap = (val: number) => {
     }
     return Math.round(val / fine) * fine
 }
+const snapFine = (val: number) => Math.round(val / gridSize.value) * gridSize.value
 const softRound = (val: number) => Math.round(val * 2) / 2
+const freeRound = (val: number) => Math.round(val * 100) / 100
 
 const majorStep = computed(() => gridSize.value * 5)
 
@@ -267,6 +274,51 @@ const constrainToOctant = (from: { x: number; y: number }, to: { x: number; y: n
     }
 }
 
+const parseWallPath = (d: unknown): { points: { x: number; y: number }[]; closed: boolean } => {
+    const s = String(d || '')
+    const closed = /z\s*$/i.test(s.trim())
+    const nums = s.match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi)?.map(Number) || []
+    const points: { x: number; y: number }[] = []
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+        if (Number.isFinite(nums[i]) && Number.isFinite(nums[i + 1])) {
+            points.push({ x: nums[i], y: nums[i + 1] })
+        }
+    }
+    return { points, closed }
+}
+
+const wallPathFromPoints = (points: { x: number; y: number }[], closed: boolean) => {
+    if (!points.length) return ''
+    const body = `M${points.map(p => `${p.x},${p.y}`).join(' L')}`
+    return closed ? `${body} Z` : body
+}
+
+const wallPathPoints = (wall: any) => parseWallPath(wall?.d).points
+
+const snapToNearbyVertex = (pt: { x: number; y: number }, ignore?: { x: number; y: number } | null) => {
+    const threshold = Math.max(gridSize.value * 0.6, 0.35)
+    let best: { x: number; y: number } | null = null
+    let bestD = threshold
+    const consider = (v: { x: number; y: number }) => {
+        if (ignore && Math.hypot(v.x - ignore.x, v.y - ignore.y) < 1e-6) return
+        const d = Math.hypot(pt.x - v.x, pt.y - v.y)
+        if (d < bestD) {
+            bestD = d
+            best = v
+        }
+    }
+    for (const w of walls.value) {
+        for (const v of parseWallPath(w.d).points) consider(v)
+    }
+    for (const v of currentPoints.value) consider(v)
+    return best
+}
+
+const applyWallMagnet = (x: number, y: number) => {
+    if (isMagnetOn.value) return { x: snapFine(x), y: snapFine(y) }
+    return { x: freeRound(x), y: freeRound(y) }
+}
+
 const getSVGPoint = (evt: MouseEvent) => {
     if (!svgRef.value) return { x: 0, y: 0 }
     const pt = svgRef.value.createSVGPoint()
@@ -276,26 +328,40 @@ const getSVGPoint = (evt: MouseEvent) => {
     let x = cursorPt.x
     let y = cursorPt.y
 
-    if (mode.value === 'walls' && evt.shiftKey && currentPoints.value.length) {
-        const last = currentPoints.value[currentPoints.value.length - 1]
-        const c = constrainToOctant(last, { x, y })
-        if (isMagnetOn.value) {
-            const dx = c.x - last.x
-            const dy = c.y - last.y
-            if (Math.abs(dy) < 1e-6) {
-                x = snap(c.x)
-                y = last.y
-            } else if (Math.abs(dx) < 1e-6) {
-                x = last.x
-                y = snap(c.y)
+    if (mode.value === 'walls') {
+        const drag = wallVertexDrag.value
+        const dragPts = drag ? parseWallPath(drag.wall.d).points : []
+        const draggedPt = drag ? dragPts[drag.index] : null
+        const last = currentPoints.value.length
+            ? currentPoints.value[currentPoints.value.length - 1]
+            : (drag ? (dragPts[drag.index - 1] || dragPts[drag.index + 1] || null) : null)
+
+        if (evt.shiftKey && last) {
+            const c = constrainToOctant(last, { x, y })
+            if (isMagnetOn.value) {
+                const dx = c.x - last.x
+                const dy = c.y - last.y
+                if (Math.abs(dy) < 1e-6) {
+                    x = snapFine(c.x)
+                    y = last.y
+                } else if (Math.abs(dx) < 1e-6) {
+                    x = last.x
+                    y = snapFine(c.y)
+                } else {
+                    const s = snapFine(Math.abs(dx))
+                    x = last.x + Math.sign(dx) * s
+                    y = last.y + Math.sign(dy) * s
+                }
             } else {
-                const s = snap(Math.abs(dx))
-                x = last.x + Math.sign(dx) * s
-                y = last.y + Math.sign(dy) * s
+                x = freeRound(c.x)
+                y = freeRound(c.y)
             }
             return { x, y }
         }
-        return { x: softRound(c.x), y: softRound(c.y) }
+
+        const magnet = applyWallMagnet(x, y)
+        const snapped = snapToNearbyVertex(magnet, draggedPt || last)
+        return snapped || magnet
     }
 
     return {
@@ -390,6 +456,45 @@ const deleteSelectedZone = () => {
     zones.value = zones.value.filter(item => item !== z)
     selectedZone.value = null
     zoneDrag.value = null
+}
+
+const deleteSelectedWall = () => {
+    const w = selectedWall.value
+    if (!w) return
+    walls.value = walls.value.filter(item => item !== w)
+    selectedWall.value = null
+    wallVertexDrag.value = null
+}
+
+const onWallMouseDown = (e: MouseEvent, wall: any) => {
+    if (mode.value === 'erase') {
+        e.stopPropagation()
+        walls.value = walls.value.filter(item => item !== wall)
+        if (selectedWall.value === wall) selectedWall.value = null
+        return
+    }
+    if (mode.value !== 'walls' || currentPoints.value.length) return
+    e.stopPropagation()
+    selectedWall.value = wall
+    selectedZone.value = null
+    selectedPc.value = null
+    selectedLabel.value = null
+    selectedAddon.value = null
+}
+
+const startWallVertexDrag = (e: MouseEvent, wall: any, index: number) => {
+    if (mode.value !== 'walls') return
+    e.stopPropagation()
+    selectedWall.value = wall
+    wallVertexDrag.value = { wall, index }
+    wallStroke.value = false
+    wallStrokeMoved.value = false
+}
+
+const screenDragThreshold = () => {
+    const ctm = svgRef.value?.getScreenCTM()
+    const px = ctm ? (1 / (Math.hypot(ctm.a, ctm.b) || 1)) : 0.3
+    return px * 8
 }
 
 // --- ОБРАБОТЧИКИ МЫШИ ---
@@ -562,6 +667,9 @@ const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
             currentPoints.value = []
             wallCursor.value = null
+            wallStroke.value = false
+            wallStrokeMoved.value = false
+            selectedWall.value = null
             e.preventDefault()
             return
         }
@@ -572,6 +680,11 @@ const handleKeyDown = (e: KeyboardEvent) => {
         }
         if (e.key === 'Backspace' && currentPoints.value.length) {
             currentPoints.value.pop()
+            e.preventDefault()
+            return
+        }
+        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedWall.value && !currentPoints.value.length) {
+            deleteSelectedWall()
             e.preventDefault()
             return
         }
@@ -826,6 +939,7 @@ const handleSvgMouseDown = (e: MouseEvent) => {
     selectedPc.value = null;
     selectedAddon.value = null;
     selectedZone.value = null;
+    if (mode.value !== 'walls') selectedWall.value = null
 
     // Ластик: попадание в тонкий SVG-текст почти невозможно — ищем ближайший объект.
     if (mode.value === 'erase') {
@@ -858,8 +972,12 @@ const handleSvgMouseDown = (e: MouseEvent) => {
     }
 
     if (mode.value === 'walls') {
+        selectedWall.value = null
         currentPoints.value.push(pt)
         wallCursor.value = pt
+        wallStroke.value = true
+        wallStrokeMoved.value = false
+        wallStrokeFrom.value = pt
     } else if (mode.value === 'zones') {
         if (!currentZoneType.value || !topologyZones.value.length) return
         isDragging.value = true
@@ -870,8 +988,22 @@ const handleSvgMouseDown = (e: MouseEvent) => {
 
 const handleMouseMove = (e: MouseEvent) => {
     const pt = getSVGPoint(e)
+    if (wallVertexDrag.value) {
+        const { wall, index } = wallVertexDrag.value
+        const parsed = parseWallPath(wall.d)
+        if (parsed.points[index]) {
+            parsed.points[index] = { x: pt.x, y: pt.y }
+            wall.d = wallPathFromPoints(parsed.points, parsed.closed)
+        }
+        return
+    }
     if (mode.value === 'walls' && currentPoints.value.length) {
         wallCursor.value = pt
+        if (wallStroke.value && wallStrokeFrom.value) {
+            if (Math.hypot(pt.x - wallStrokeFrom.value.x, pt.y - wallStrokeFrom.value.y) > screenDragThreshold()) {
+                wallStrokeMoved.value = true
+            }
+        }
     }
     if (zoneDrag.value) {
         const { zone, kind, orig, startX, startY, handle } = zoneDrag.value
@@ -898,6 +1030,27 @@ const handleMouseMove = (e: MouseEvent) => {
 }
 
 const handleMouseUp = () => {
+    if (wallVertexDrag.value) {
+        wallVertexDrag.value = null
+        return
+    }
+    if (wallStroke.value) {
+        const draggedLine = wallStrokeMoved.value
+            && currentPoints.value.length === 1
+            && wallCursor.value
+            && Math.hypot(
+                wallCursor.value.x - currentPoints.value[0].x,
+                wallCursor.value.y - currentPoints.value[0].y,
+            ) >= 0.2
+        wallStroke.value = false
+        wallStrokeMoved.value = false
+        wallStrokeFrom.value = null
+        if (draggedLine) {
+            currentPoints.value.push({ ...wallCursor.value! })
+            finishWall(false)
+            return
+        }
+    }
     if (zoneDrag.value) {
         zoneDrag.value = null
         isDragging.value = false
@@ -930,8 +1083,17 @@ const handleMouseUp = () => {
 }
 
 const handleMouseLeave = () => {
+    if (wallVertexDrag.value || wallStroke.value) return
     wallCursor.value = null
     handleMouseUp()
+}
+
+const handleWindowMouseMove = (e: MouseEvent) => {
+    if (wallVertexDrag.value || wallStroke.value) handleMouseMove(e)
+}
+
+const handleWindowMouseUp = () => {
+    if (wallVertexDrag.value || wallStroke.value) handleMouseUp()
 }
 
 const finishWall = (closed = false) => {
@@ -945,6 +1107,9 @@ const finishWall = (closed = false) => {
     }
     currentPoints.value = []
     wallCursor.value = null
+    wallStroke.value = false
+    wallStrokeMoved.value = false
+    wallStrokeFrom.value = null
 }
 
 const handleWallDblClick = (e: MouseEvent) => {
@@ -1002,6 +1167,8 @@ const loadFromDB = async () => {
         currentPoints.value = [];
         wallCursor.value = null;
         selectedZone.value = null;
+        selectedWall.value = null;
+        wallVertexDrag.value = null;
         zoneDrag.value = null;
 
         if (rawConfig) {
@@ -1092,11 +1259,23 @@ const resetMap = () => {
         currentPoints.value = [];
         wallCursor.value = null
         selectedZone.value = null
+        selectedWall.value = null
+        wallVertexDrag.value = null
         zoneDrag.value = null
     }
 }
 
 const generatedJson = computed(() => JSON.stringify({ walls: walls.value, zoneRects: zones.value, labels: labels.value, viewbox: viewbox.value }, null, 2))
+
+watch(mode, () => {
+    currentPoints.value = []
+    wallCursor.value = null
+    wallStroke.value = false
+    wallStrokeMoved.value = false
+    wallStrokeFrom.value = null
+    wallVertexDrag.value = null
+    if (mode.value !== 'walls') selectedWall.value = null
+})
 
 onMounted(() => {
     if (props.clubs && props.clubs.length > 0) {
@@ -1106,10 +1285,14 @@ onMounted(() => {
     }
     loadFromDB();
     window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('mousemove', handleWindowMouseMove)
+    window.addEventListener('mouseup', handleWindowMouseUp)
 })
 
 onUnmounted(() => {
     window.removeEventListener('keydown', handleKeyDown)
+    window.removeEventListener('mousemove', handleWindowMouseMove)
+    window.removeEventListener('mouseup', handleWindowMouseUp)
 })
 </script>
 
@@ -1188,8 +1371,8 @@ onUnmounted(() => {
                             class="shrink-0 bg-blue-600/20 border border-blue-500 text-blue-400 px-4 py-1.5 text-xs font-semibold rounded-lg hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-blue-600/20 disabled:hover:text-blue-400">
                             Замкнуть контур
                         </button>
-                        <span class="text-[10px] text-white/35 hidden xl:inline max-w-[220px] leading-tight">
-                            любой угол · Shift — 0°/45°/90° · двойной клик — линия
+                        <span class="text-[10px] text-white/35 hidden xl:inline max-w-[260px] leading-tight">
+                            тяни линию под любым углом · клики — ломаная · Shift — 0°/45°/90°
                         </span>
                     </template>
                     <button v-if="mode === 'pcs'" @click="syncDefaultPcs" class="bg-purple-500/20 text-purple-400 border border-purple-500/30 px-4 py-1.5 text-xs font-semibold rounded-lg hover:bg-purple-500 hover:text-white transition-all shrink-0">Добавить ПК</button>
@@ -1216,7 +1399,7 @@ onUnmounted(() => {
             <div class="flex-1 flex overflow-hidden">
                 <main class="flex-1 bg-[#020202] relative overflow-auto p-4 custom-scrollbar">
                     <svg ref="svgRef" :viewBox="viewbox" preserveAspectRatio="xMinYMin meet" overflow="hidden"
-                         class="w-[150%] h-[200vh] border border-white/5 rounded-2xl bg-black"
+                         :class="['w-[150%] h-[200vh] border border-white/5 rounded-2xl bg-black select-none', mode === 'walls' ? 'cursor-crosshair' : '']"
                          @mousedown="handleSvgMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseLeave" @dblclick="handleWallDblClick">
                         <defs>
                             <pattern id="smallGrid" :width="gridSize" :height="gridSize" patternUnits="userSpaceOnUse">
@@ -1256,11 +1439,29 @@ onUnmounted(() => {
 
                         <!-- Порядок слоёв снизу вверх: стены → зоны → текст → ПК -->
                         <g class="layer-walls">
-                            <path v-for="(w, i) in walls" :key="'w'+i" :d="w.d"
-                                  :class="['transition-colors hover:stroke-white', isLayerInteractive('wall') ? 'cursor-pointer' : 'pointer-events-none']"
-                                  @mousedown.stop="isLayerInteractive('wall') && handleItemMouseDown($event, w, 'wall')"
-                                  :fill="wallIsClosed(w.d) ? 'rgba(6,182,212,0.02)' : 'none'"
-                                  stroke="#06b6d4" stroke-width="0.2" stroke-linejoin="round" stroke-linecap="round" />
+                            <g v-for="(w, i) in walls" :key="'w'+i">
+                                <path :d="w.d"
+                                      fill="none"
+                                      stroke="transparent"
+                                      stroke-width="1.4"
+                                      stroke-linejoin="round"
+                                      stroke-linecap="round"
+                                      pointer-events="stroke"
+                                      :class="(mode === 'walls' && !currentPoints.length) || mode === 'erase' ? 'cursor-pointer' : 'pointer-events-none'"
+                                      @mousedown.stop="onWallMouseDown($event, w)" />
+                                <path :d="w.d" class="pointer-events-none"
+                                      :fill="wallIsClosed(w.d) ? 'rgba(6,182,212,0.02)' : 'none'"
+                                      :stroke="selectedWall === w ? '#fff' : '#06b6d4'"
+                                      :stroke-width="selectedWall === w ? 0.35 : 0.2"
+                                      stroke-linejoin="round" stroke-linecap="round" />
+                                <g v-if="mode === 'walls' && selectedWall === w && !currentPoints.length">
+                                    <circle v-for="(p, vi) in wallPathPoints(w)" :key="'wv'+i+'-'+vi"
+                                            :cx="p.x" :cy="p.y" r="0.55"
+                                            fill="#fff" stroke="#06b6d4" stroke-width="0.12"
+                                            class="cursor-move"
+                                            @mousedown.stop="startWallVertexDrag($event, w, vi)" />
+                                </g>
+                            </g>
                         </g>
 
                         <g class="layer-zones">
@@ -1425,6 +1626,17 @@ onUnmounted(() => {
                                 <option v-for="club in clubList" :key="club.id" :value="club.id">{{ club.name }}</option>
                             </select>
                         </div>
+                    </div>
+
+                    <div v-if="selectedWall && mode === 'walls'" class="p-4 bg-cyan-500/5 border border-cyan-500/20 rounded-2xl animate-in zoom-in duration-200 flex flex-col gap-3">
+                        <p class="text-[10px] text-cyan-500 font-black uppercase tracking-widest">Линия</p>
+                        <p class="text-[11px] text-white/60 leading-snug">
+                            Тяни белые точки — линия под любым углом. Shift удерживает 0° / 45° / 90°.
+                        </p>
+                        <button @click="deleteSelectedWall"
+                                class="text-[10px] font-black tracking-widest uppercase bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white py-2.5 rounded-xl transition-colors border border-red-500/20">
+                            Удалить линию
+                        </button>
                     </div>
 
                     <div v-if="selectedZone" class="p-4 bg-white/5 border border-white/10 rounded-2xl animate-in zoom-in duration-200 flex flex-col gap-3">
