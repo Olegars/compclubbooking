@@ -111,7 +111,7 @@ onUnmounted(() => {
                     </label>
                 </div>
                 <p v-if="form.stylize" class="text-[10px] text-white/30 mt-2 leading-snug">
-                    Лицо с фото встанет на стандартный клубный аватар. Броня, причёска и схемы шаблона останутся — DeepSeek картинки не рисует.
+                    Лицо встанет на стандартный клубный аватар. Если подключены Hugging Face или ComfyUI — нейросеть дорисует стиль. DeepSeek картинки не рисует.
                 </p>
                 <button
                     v-if="form.photo"

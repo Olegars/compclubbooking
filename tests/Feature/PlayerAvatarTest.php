@@ -36,7 +36,10 @@ class PlayerAvatarTest extends TestCase
             'ai_assistant.deepseek.api_key' => 'sk-deepseek-test',
             'ai_assistant.deepseek.base_url' => 'https://api.deepseek.com',
             'ai_assistant.deepseek.vision_model' => 'deepseek-flash',
+            'ai_assistant.openai.api_key' => '',
             'ai_assistant.avatar_dir' => $this->avatarDir,
+            'ai_assistant.avatar.huggingface.token' => '',
+            'ai_assistant.avatar.comfyui.url' => '',
         ]);
 
         Club::create([
@@ -150,6 +153,85 @@ class PlayerAvatarTest extends TestCase
         $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
         Storage::disk('public')->assertExists('avatars/'.basename($this->user->avatar));
         Http::assertNothingSent();
+    }
+
+    public function test_stylize_uses_huggingface_when_token_set(): void
+    {
+        config(['ai_assistant.avatar.huggingface.token' => 'hf_test_token']);
+        $styled = $this->tinyPngBytes();
+
+        $this->fakeHttp(function ($request) use ($styled) {
+            if (str_contains($request->url(), 'huggingface')) {
+                return Http::response($styled, 200, ['Content-Type' => 'image/png']);
+            }
+
+            return Http::response('unexpected '.$request->url(), 599);
+        });
+
+        $this->actingAs($this->user)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/account/profile/avatar', [
+                'photo' => $this->fakeImageUpload('face.png'),
+                'stylize' => 1,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->user->refresh();
+        $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'huggingface')
+            && $request->hasHeader('Authorization', 'Bearer hf_test_token'));
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'deepseek'));
+    }
+
+    public function test_stylize_uses_comfyui_when_url_set(): void
+    {
+        config(['ai_assistant.avatar.comfyui.url' => 'http://127.0.0.1:8188']);
+        $styled = $this->tinyPngBytes();
+
+        $this->fakeHttp(function ($request) use ($styled) {
+            $url = $request->url();
+            if (str_contains($url, '/upload/image')) {
+                return Http::response(['name' => 'club_avatar.png', 'subfolder' => '', 'type' => 'input']);
+            }
+            if (str_contains($url, '/prompt')) {
+                return Http::response(['prompt_id' => 'abc']);
+            }
+            if (str_contains($url, '/history/')) {
+                return Http::response([
+                    'abc' => [
+                        'status' => ['completed' => true],
+                        'outputs' => [
+                            '9' => ['images' => [[
+                                'filename' => 'out.png',
+                                'subfolder' => '',
+                                'type' => 'output',
+                            ]]],
+                        ],
+                    ],
+                ]);
+            }
+            if (str_contains($url, '/view')) {
+                return Http::response($styled, 200, ['Content-Type' => 'image/png']);
+            }
+
+            return Http::response('unexpected '.$url, 599);
+        });
+
+        $this->actingAs($this->user)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/account/profile/avatar', [
+                'photo' => $this->fakeImageUpload('face.png'),
+                'stylize' => 1,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->user->refresh();
+        $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
+        Http::assertSent(fn ($request) => str_contains($request->url(), '127.0.0.1:8188/upload/image'));
+        Http::assertSent(fn ($request) => str_contains($request->url(), '127.0.0.1:8188/prompt'));
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'deepseek'));
     }
 
     public function test_rejects_non_image_upload(): void

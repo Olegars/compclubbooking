@@ -39,4 +39,24 @@ return [
         'tts_model' => env('AI_TTS_MODEL', 'tts-1'),
         'tts_voice' => env('AI_TTS_VOICE', 'nova'),
     ],
+
+    /*
+     * Стилизация аватара. DeepSeek (chat) картинки не рисует.
+     * huggingface — облако, токен hf_…, лимиты/кредиты Inference Providers.
+     * comfyui — своё GPU (PuLID / IP-Adapter FaceID), URL должен быть доступен с сервера booking.
+     */
+    'avatar' => [
+        'huggingface' => [
+            'token' => env('HF_TOKEN', env('HUGGINGFACE_API_TOKEN')),
+            'provider' => env('HF_AVATAR_PROVIDER', 'hf-inference'),
+            'model' => env('HF_AVATAR_MODEL', 'Qwen/Qwen-Image-Edit'),
+            'base_url' => rtrim((string) env('HF_AVATAR_BASE_URL', 'https://router.huggingface.co'), '/'),
+        ],
+        'comfyui' => [
+            'url' => rtrim((string) env('COMFYUI_URL', ''), '/'),
+            'workflow' => env('COMFYUI_WORKFLOW', ''),
+            'checkpoint' => env('COMFYUI_CHECKPOINT', 'v1-5-pruned-emaonly.safetensors'),
+            'timeout' => (float) env('COMFYUI_TIMEOUT', 90),
+        ],
+    ],
 ];

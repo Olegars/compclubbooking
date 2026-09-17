@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\User;
 use App\Services\AiAssistant\DeepSeekChat;
+use App\Services\Avatar\ComfyUiAvatarClient;
+use App\Services\Avatar\HuggingFaceAvatarClient;
 use App\Support\UserAvatar;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\RateLimiter;
@@ -15,6 +17,8 @@ class PlayerAvatarService
 {
     public function __construct(
         private readonly DeepSeekChat $llm,
+        private readonly HuggingFaceAvatarClient $huggingface,
+        private readonly ComfyUiAvatarClient $comfyui,
     ) {}
 
     public function save(User $user, UploadedFile $photo, bool $stylize = false): void
@@ -32,20 +36,8 @@ class PlayerAvatarService
             $this->assertStylizeAllowed($user);
             $photoPacked = $this->compress($bytes, $mime, 512);
             $samplePacked = $this->samplePacked($user);
-            $styled = null;
-            try {
-                $styled = $this->llm->stylizeWithOpenAi($photoPacked['bytes'], $samplePacked['bytes']);
-            } catch (\Throwable $e) {
-                report($e);
-            }
-            if ($styled === null) {
-                try {
-                    $styled = $this->blendClubFormat($photoPacked['bytes'], $samplePacked['bytes']);
-                } catch (\Throwable $e) {
-                    report($e);
-                }
-            }
-            $bytes = $styled ?: $photoPacked['bytes'];
+            $bytes = $this->stylizePhoto($photoPacked['bytes'], $samplePacked['bytes'])
+                ?: $photoPacked['bytes'];
             $mime = $this->detectMime($bytes, $photo);
         }
 
@@ -60,6 +52,62 @@ class PlayerAvatarService
             throw new RuntimeException('Слишком часто. Подождите несколько минут.');
         }
         RateLimiter::hit($key, 600);
+    }
+
+    private function stylizePhoto(string $photoBytes, string $sampleBytes): ?string
+    {
+        $prompt = $this->clubAvatarPrompt();
+        $negative = 'photo, selfie, blurry, extra face, watermark, low quality, deformed';
+        $blend = null;
+        try {
+            $blend = $this->blendClubFormat($photoBytes, $sampleBytes);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        try {
+            if (trim((string) config('ai_assistant.avatar.comfyui.url', '')) !== '') {
+                $loads = $this->comfyui->loadImageCount();
+                $comfyImages = $loads >= 2
+                    ? [
+                        ['bytes' => $photoBytes, 'name' => 'club_face.png'],
+                        ['bytes' => $sampleBytes, 'name' => 'club_style.png'],
+                    ]
+                    : [['bytes' => $blend ?: $photoBytes, 'name' => 'club_avatar.png']];
+                $fromComfy = $this->comfyui->generate($comfyImages, $prompt, $negative);
+                if ($fromComfy !== null) {
+                    return $fromComfy;
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        $canvas = $blend ?: $photoBytes;
+        try {
+            $fromHf = $this->huggingface->refine($canvas, $prompt, $negative);
+            if ($fromHf !== null) {
+                return $fromHf;
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        try {
+            $fromOpenAi = $this->llm->stylizeWithOpenAi($photoBytes, $sampleBytes);
+            if ($fromOpenAi !== null) {
+                return $fromOpenAi;
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $blend;
+    }
+
+    private function clubAvatarPrompt(): string
+    {
+        return 'Cyberpunk digital illustration club avatar, keep the same face and composition, neon green circuit tattoos, armored collar, dark background, sharp ink lines, no extra person';
     }
 
     private function store(User $user, string $png): void
