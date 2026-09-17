@@ -657,7 +657,7 @@ onUnmounted(() => {
     -moz-osx-font-smoothing: grayscale;
 }
 .nav-meta-name {
-    @apply truncate max-w-[4.5rem] sm:max-w-[6rem] lg:max-w-[10rem];
+    @apply truncate max-w-[8.5rem] sm:max-w-[12rem] lg:max-w-[16rem] pr-[0.4em];
     font-family: inherit;
 }
 .nav-meta-balance {
