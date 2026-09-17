@@ -632,4 +632,3 @@ const handleAddonClick = (m: AddonMarker) => {
     50% { opacity: 1; }
 }
 </style>
-</style>
