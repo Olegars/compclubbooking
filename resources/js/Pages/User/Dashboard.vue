@@ -211,10 +211,76 @@ const arenaForm = ref({
     kind: 'duel' as 'duel' | 'battle',
     modeIndex: 0,
     presetIndex: 1,
-    scheduled: '',
+    dateKey: '',
+    hour: 18,
+    minute: 0,
     maxPlayers: 8,
     raiseTo: '',
 })
+const pad2 = (n: number) => String(n).padStart(2, '0')
+const arenaDateKeyOf = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+const nextArenaSlot = () => {
+    const d = new Date(Date.now() + 15 * 60_000)
+    const rem = d.getMinutes() % 15
+    if (rem) d.setMinutes(d.getMinutes() + (15 - rem))
+    d.setSeconds(0, 0)
+    return d
+}
+const arenaDays = computed(() => {
+    const horizonH = Math.max(1, Number(arenaData.value?.advance_ttl_hours || 24))
+    const count = Math.min(3, Math.max(1, Math.ceil(horizonH / 24) + 1))
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return Array.from({ length: count }, (_, i) => {
+        const d = new Date(today)
+        d.setDate(today.getDate() + i)
+        return {
+            key: arenaDateKeyOf(d),
+            dayNum: d.getDate(),
+            dayName: i === 0 ? 'СЕГ' : d.toLocaleDateString('ru-RU', { weekday: 'short' }).toUpperCase(),
+        }
+    })
+})
+const arenaHourOptions = computed(() => {
+    const all = Array.from({ length: 24 }, (_, i) => i)
+    if (arenaForm.value.dateKey !== arenaDateKeyOf(new Date())) return all
+    return all.filter((h) => h >= nextArenaSlot().getHours())
+})
+const arenaMinuteOptions = computed(() => {
+    const all = [0, 15, 30, 45]
+    const slot = nextArenaSlot()
+    if (arenaForm.value.dateKey !== arenaDateKeyOf(new Date())) return all
+    if (arenaForm.value.hour > slot.getHours()) return all
+    return all.filter((m) => m >= slot.getMinutes())
+})
+const pickArenaDay = (key: string) => {
+    arenaForm.value.dateKey = key
+    if (!key) return
+    const slot = nextArenaSlot()
+    if (key === arenaDateKeyOf(slot)) {
+        arenaForm.value.hour = slot.getHours()
+        arenaForm.value.minute = slot.getMinutes()
+        return
+    }
+    arenaForm.value.hour = 18
+    arenaForm.value.minute = 0
+}
+watch(
+    () => [arenaForm.value.dateKey, arenaForm.value.hour],
+    () => {
+        const hours = arenaHourOptions.value
+        if (hours.length && !hours.includes(arenaForm.value.hour)) arenaForm.value.hour = hours[0]
+        const mins = arenaMinuteOptions.value
+        if (mins.length && !mins.includes(arenaForm.value.minute)) arenaForm.value.minute = mins[0]
+    },
+)
+const arenaScheduledAt = () => {
+    if (!arenaForm.value.dateKey) return null
+    const isoLocal = `${arenaForm.value.dateKey}T${pad2(arenaForm.value.hour)}:${pad2(arenaForm.value.minute)}:00`
+    const d = new Date(isoLocal)
+    if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) return null
+    return d.toISOString()
+}
 const arenaBoard = computed(() => arenaData.value?.board || (arenaData.value?.open || []).filter((row: any) => row.scope === 'hall'))
 const arenaMine = computed(() => arenaData.value?.mine || null)
 const arenaModes = computed(() => arenaData.value?.modes || [
@@ -264,11 +330,11 @@ const arenaCreate = async () => {
             kind: arenaForm.value.kind,
             entry_fee: arenaFee.value,
             scope: 'hall',
-            scheduled_at: arenaForm.value.scheduled ? new Date(arenaForm.value.scheduled).toISOString() : null,
+            scheduled_at: arenaScheduledAt(),
             max_players: arenaForm.value.kind === 'battle' ? Number(arenaForm.value.maxPlayers || arenaMaxBattle.value) : undefined,
         })
         arenaApply(data)
-        arenaForm.value.scheduled = ''
+        arenaForm.value.dateKey = ''
     } catch (e: any) {
         arenaError.value = e?.response?.data?.message || 'Не удалось бросить вызов'
     } finally {
@@ -686,13 +752,44 @@ onMounted(() => {
                                     {{ p }} ₽
                                 </button>
                             </div>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-                                <label class="text-[9px] uppercase tracking-widest text-white/30 font-black">
-                                    Время
-                                    <input v-model="arenaForm.scheduled" type="datetime-local"
-                                           class="mt-1 w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white font-mono">
-                                </label>
-                                <label v-if="arenaForm.kind === 'battle'" class="text-[9px] uppercase tracking-widest text-white/30 font-black">
+                            <div class="mb-2">
+                                <span class="text-[9px] uppercase tracking-widest text-white/30 font-black block mb-1.5">Когда</span>
+                                <div class="flex gap-1.5 overflow-x-auto no-scrollbar flex-nowrap">
+                                    <button type="button" @click="arenaForm.dateKey = ''"
+                                            :class="['shrink-0 min-w-[52px] h-[52px] px-2 flex flex-col items-center justify-center rounded-xl border text-[10px] font-black uppercase tracking-widest',
+                                                !arenaForm.dateKey ? 'bg-orange-400 border-orange-400 text-black' : 'bg-black/40 border-white/10 text-white/50']">
+                                        <span class="text-[8px] leading-none mb-1" :class="!arenaForm.dateKey ? 'text-black/60' : 'text-white/30'">старт</span>
+                                        Сейчас
+                                    </button>
+                                    <button v-for="d in arenaDays" :key="d.key" type="button" @click="pickArenaDay(d.key)"
+                                            :class="['shrink-0 min-w-[52px] h-[52px] px-2 flex flex-col items-center justify-center rounded-xl border',
+                                                arenaForm.dateKey === d.key ? 'bg-orange-400 border-orange-400' : 'bg-black/40 border-white/10']">
+                                        <span class="text-[8px] font-black uppercase leading-none mb-1"
+                                              :class="arenaForm.dateKey === d.key ? 'text-black/60' : 'text-white/35'">{{ d.dayName }}</span>
+                                        <span class="text-[16px] font-mono font-black leading-none"
+                                              :class="arenaForm.dateKey === d.key ? 'text-black' : 'text-white'">{{ d.dayNum }}</span>
+                                    </button>
+                                </div>
+                                <div v-if="arenaForm.dateKey" class="grid gap-2 mt-2" :class="arenaForm.kind === 'battle' ? 'grid-cols-3' : 'grid-cols-2'">
+                                    <label class="text-[9px] uppercase tracking-widest text-white/30 font-black">
+                                        Час
+                                        <select v-model.number="arenaForm.hour" class="mt-1 w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white font-mono">
+                                            <option v-for="h in arenaHourOptions" :key="'h'+h" :value="h">{{ pad2(h) }}</option>
+                                        </select>
+                                    </label>
+                                    <label class="text-[9px] uppercase tracking-widest text-white/30 font-black">
+                                        Мин
+                                        <select v-model.number="arenaForm.minute" class="mt-1 w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white font-mono">
+                                            <option v-for="m in arenaMinuteOptions" :key="'m'+m" :value="m">{{ pad2(m) }}</option>
+                                        </select>
+                                    </label>
+                                    <label v-if="arenaForm.kind === 'battle'" class="text-[9px] uppercase tracking-widest text-white/30 font-black">
+                                        Игроков
+                                        <input v-model.number="arenaForm.maxPlayers" type="number" min="3" :max="arenaMaxBattle"
+                                               class="mt-1 w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white font-mono">
+                                    </label>
+                                </div>
+                                <label v-else-if="arenaForm.kind === 'battle'" class="mt-2 block text-[9px] uppercase tracking-widest text-white/30 font-black">
                                     Игроков, макс
                                     <input v-model.number="arenaForm.maxPlayers" type="number" min="3" :max="arenaMaxBattle"
                                            class="mt-1 w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white font-mono">
@@ -1299,4 +1396,6 @@ onMounted(() => {
     from { opacity: 0; transform: scale(0.98); }
     to { opacity: 1; transform: scale(1); }
 }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 </style>

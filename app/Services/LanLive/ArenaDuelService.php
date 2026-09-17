@@ -159,6 +159,7 @@ class ArenaDuelService
             'rake_percent' => $settings['rake_percent'],
             'min_battle_players' => $settings['min_battle_players'],
             'max_battle_players' => $settings['max_battle_players'],
+            'advance_ttl_hours' => $settings['advance_ttl_hours'],
             'incoming' => $incoming,
             'mine' => $mine,
             'board' => $board->map(fn (ArenaDuel $d) => $this->payload($d, $computer, $booking, $user))->values()->all(),
