@@ -6,6 +6,7 @@ use Inertia\Inertia;
 // Контроллеры Игроков
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ClubController;
+use App\Http\Controllers\ClubOpenRegisterController;
 use App\Http\Controllers\TerminalController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\BookingController;
@@ -87,6 +88,10 @@ use App\Http\Controllers\GameRequestController;
 |--------------------------------------------------------------------------
 */
 Route::get('/', [HomeController::class, 'index'])->name('home');
+Route::get('/clubs/join', [ClubOpenRegisterController::class, 'create'])->name('clubs.join');
+Route::post('/clubs/join', [ClubOpenRegisterController::class, 'store'])
+    ->middleware('throttle:8,60')
+    ->name('clubs.join.store');
 Route::get('/app.apk', function () {
     $path = storage_path('app/apk/sector0451.apk');
     abort_unless(is_file($path), 404);
@@ -545,7 +550,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
 
         // КАРТА И ТАРИФЫ
         Route::get('/map-builder', fn() => Inertia::render('Admin/MapBuilder', [
-            'clubs' => \App\Models\Club::select('id', 'name')->get(),
+            'clubs' => \App\Models\Club::operational()->select('id', 'name')->get(),
             'topologyZones' => \App\Models\Zone::select('id', 'name', 'slug', 'color')->orderBy('name')->get(),
         ]))->name('admin.map-builder');
         Route::post('/save-map', [MapController::class, 'save']);

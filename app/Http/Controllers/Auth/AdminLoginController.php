@@ -84,7 +84,7 @@ class AdminLoginController extends Controller
             'password.confirmed' => 'Пароли не совпадают',
         ]);
 
-        $clubId = Club::query()->orderBy('id')->value('id');
+        $clubId = Club::operational()->orderBy('id')->value('id');
 
         $admin = Admin::query()->create([
             'name' => $data['name'],

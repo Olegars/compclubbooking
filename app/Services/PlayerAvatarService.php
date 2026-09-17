@@ -34,19 +34,9 @@ class PlayerAvatarService
             $samplePacked = $this->samplePacked($user);
             $styled = null;
             try {
-                $styled = $this->llm->stylizeAvatar(
-                    $this->dataUrl($photoPacked),
-                    $this->dataUrl($samplePacked),
-                );
+                $styled = $this->llm->stylizeWithOpenAi($photoPacked['bytes'], $samplePacked['bytes']);
             } catch (\Throwable $e) {
                 report($e);
-            }
-            if ($styled === null) {
-                try {
-                    $styled = $this->llm->stylizeWithOpenAi($photoPacked['bytes'], $samplePacked['bytes']);
-                } catch (\Throwable $e) {
-                    report($e);
-                }
             }
             if ($styled === null) {
                 try {
@@ -251,188 +241,339 @@ class PlayerAvatarService
     }
 
     /**
-     * DeepSeek API не отдаёт PNG: стилизуем само фото под клуб
-     * (неон, схемы, тёмный круг). Образец — только цвет, не чужое лицо.
+     * Лицо с фото — в овал стандартного клубного аватара. Броня, волосы, неон шаблона остаются.
      */
     private function blendClubFormat(string $photoBytes, string $sampleBytes): ?string
     {
+        $sample = $this->gdFromBytes($sampleBytes);
         $photo = $this->gdFromBytes($photoBytes);
-        if ($photo === null) {
-            return $photoBytes !== '' ? $photoBytes : null;
+        if ($sample === null || $photo === null) {
+            if ($sample !== null) {
+                imagedestroy($sample);
+            }
+            if ($photo !== null) {
+                imagedestroy($photo);
+            }
+
+            return null;
         }
 
         $size = 512;
+        $base = $this->squareTruecolor($sample, $size);
         $face = $this->squareTruecolor($photo, $size);
+        imagedestroy($sample);
         imagedestroy($photo);
-        if ($face === null) {
-            return $photoBytes !== '' ? $photoBytes : null;
+        if ($base === null || $face === null) {
+            if ($base !== null) {
+                imagedestroy($base);
+            }
+            if ($face !== null) {
+                imagedestroy($face);
+            }
+
+            return null;
         }
 
-        $neon = [34, 230, 90];
-        $sample = $this->gdFromBytes($sampleBytes);
-        if ($sample !== null) {
-            $style = $this->squareTruecolor($sample, $size);
-            imagedestroy($sample);
-            if ($style !== null) {
-                $neon = $this->sampleNeon($style);
-                imagedestroy($style);
+        $stamp = imagecreatetruecolor($size, $size);
+        imagecopy($stamp, $base, 0, 0, 0, 0, $size, $size);
+
+        $oval = $this->detectTemplateFaceOval($base, $size);
+        $src = $this->detectPhotoFaceRect($face);
+        $match = $this->skinMatch($base, $face, $oval, $src);
+        $cx = $oval['cx'];
+        $cy = $oval['cy'];
+        $rx = max(8.0, $oval['rx']);
+        $ry = max(8.0, $oval['ry']);
+        $minX = max(0, (int) floor($cx - $rx) - 1);
+        $maxX = min($size - 1, (int) ceil($cx + $rx) + 1);
+        $minY = max(0, (int) floor($cy - $ry) - 1);
+        $maxY = min($size - 1, (int) ceil($cy + $ry) + 1);
+
+        for ($y = $minY; $y <= $maxY; $y++) {
+            for ($x = $minX; $x <= $maxX; $x++) {
+                $dx = ($x - $cx) / $rx;
+                $dy = ($y - $cy) / $ry;
+                $d2 = $dx * $dx + $dy * $dy;
+                if ($d2 > 1) {
+                    continue;
+                }
+                if ($this->isNeonPixel(imagecolorat($stamp, $x, $y))) {
+                    continue;
+                }
+                $a = $d2 < 0.70 ? 1.0 : (1.0 - $d2) / 0.30;
+                $a = max(0.0, min(1.0, $a));
+                $u = ($dx + 1) / 2;
+                $v = ($dy + 1) / 2;
+                $fx = $src['x'] + $u * max(1.0, $src['w'] - 1);
+                $fy = $src['y'] + $v * max(1.0, $src['h'] - 1);
+                $prgb = $this->sampleBilinear($face, $fx, $fy);
+                $brgb = imagecolorat($base, $x, $y);
+                $r = $this->matchChannel(($prgb >> 16) & 0xFF, $match[0]);
+                $g = $this->matchChannel(($prgb >> 8) & 0xFF, $match[1]);
+                $b = $this->matchChannel($prgb & 0xFF, $match[2]);
+                $r = $this->mixChannel($r, ($brgb >> 16) & 0xFF, $a);
+                $g = $this->mixChannel($g, ($brgb >> 8) & 0xFF, $a);
+                $b = $this->mixChannel($b, $brgb & 0xFF, $a);
+                imagesetpixel($base, $x, $y, imagecolorallocate($base, $r, $g, $b));
             }
         }
 
-        $this->gradeClubFace($face, $neon);
-        $this->drawClubCircuits($face, $neon);
-        $this->circleOnBlack($face, $neon);
+        for ($y = $minY; $y <= $maxY; $y++) {
+            for ($x = $minX; $x <= $maxX; $x++) {
+                $srgb = imagecolorat($stamp, $x, $y);
+                if ($this->isNeonPixel($srgb)) {
+                    imagesetpixel($base, $x, $y, $srgb);
+                }
+            }
+        }
+
+        imagedestroy($face);
+        imagedestroy($stamp);
 
         ob_start();
-        imagepng($face, null, 8);
+        imagepng($base, null, 8);
         $out = (string) ob_get_clean();
-        imagedestroy($face);
+        imagedestroy($base);
 
-        return $out !== '' ? $out : $photoBytes;
+        return $out !== '' ? $out : null;
     }
 
     /**
      * @param  \GdImage  $img
-     * @param  array{0:int,1:int,2:int}  $neon
+     * @return array{cx: float, cy: float, rx: float, ry: float}
      */
-    private function gradeClubFace($img, array $neon): void
+    private function detectTemplateFaceOval($img, int $size): array
     {
-        if (function_exists('imagefilter')) {
-            imagefilter($img, IMG_FILTER_CONTRAST, -28);
-            imagefilter($img, IMG_FILTER_BRIGHTNESS, -12);
-            imagefilter($img, IMG_FILTER_COLORIZE, -20, 28, -18, 0);
-            $edges = imagecreatetruecolor(imagesx($img), imagesy($img));
-            if ($edges !== false) {
-                imagecopy($edges, $img, 0, 0, 0, 0, imagesx($img), imagesy($img));
-                imagefilter($edges, IMG_FILTER_EDGEDETECT);
-                imagefilter($edges, IMG_FILTER_COLORIZE, -90, 70, -90, 0);
-                imagecopymerge($img, $edges, 0, 0, 0, 0, imagesx($img), imagesy($img), 22);
-                imagedestroy($edges);
-            }
-        }
-
-        $w = imagesx($img);
-        $h = imagesy($img);
-        $cx = ($w - 1) / 2;
-        $cy = ($h - 1) / 2;
-        $maxR = hypot($cx, $cy);
-        $nr = $neon[0] / 255;
-        $ng = $neon[1] / 255;
-        $nb = $neon[2] / 255;
-
-        for ($y = 0; $y < $h; $y++) {
-            for ($x = 0; $x < $w; $x++) {
-                $rgb = imagecolorat($img, $x, $y);
-                $r = ($rgb >> 16) & 0xFF;
-                $g = ($rgb >> 8) & 0xFF;
-                $b = $rgb & 0xFF;
-                $dist = hypot($x - $cx, $y - $cy) / $maxR;
-                $vignette = 1 - ($dist * $dist * 0.92);
-                $r = (int) max(0, min(255, $r * $vignette * 0.82));
-                $g = (int) max(0, min(255, $g * $vignette * 0.92 + $ng * 28));
-                $b = (int) max(0, min(255, $b * $vignette * 0.72));
-                $r = (int) max(0, min(255, $r + $nr * 10));
-                $b = (int) max(0, min(255, $b + $nb * 8));
-                imagesetpixel($img, $x, $y, imagecolorallocate($img, $r, $g, $b));
-            }
-        }
-    }
-
-    /**
-     * @param  \GdImage  $img
-     * @param  array{0:int,1:int,2:int}  $neon
-     */
-    private function drawClubCircuits($img, array $neon): void
-    {
-        $w = imagesx($img);
-        $h = imagesy($img);
-        $color = imagecolorallocate($img, $neon[0], $neon[1], $neon[2]);
-        $dim = imagecolorallocate($img, (int) ($neon[0] * 0.45), (int) ($neon[1] * 0.55), (int) ($neon[2] * 0.4));
-        imagesetthickness($img, max(2, (int) round($w / 160)));
-
-        $line = function (int $x1, int $y1, int $x2, int $y2) use ($img, $color, $w, $h): void {
-            imageline($img, (int) round($x1 * $w / 512), (int) round($y1 * $h / 512), (int) round($x2 * $w / 512), (int) round($y2 * $h / 512), $color);
-        };
-
-        $line(170, 70, 210, 118);
-        $line(210, 118, 248, 90);
-        $line(248, 90, 268, 128);
-        $line(340, 72, 300, 120);
-        $line(300, 120, 328, 158);
-        $line(120, 210, 168, 198);
-        $line(168, 198, 188, 248);
-        $line(188, 248, 150, 300);
-        $line(392, 210, 344, 198);
-        $line(344, 198, 324, 250);
-        $line(324, 250, 362, 305);
-        $line(200, 330, 256, 312);
-        $line(256, 312, 312, 330);
-
-        imagesetthickness($img, 1);
-        imageellipse($img, (int) round(188 * $w / 512), (int) round(198 * $h / 512), max(6, (int) round($w / 42)), max(6, (int) round($h / 42)), $dim);
-        imageellipse($img, (int) round(324 * $w / 512), (int) round(198 * $h / 512), max(6, (int) round($w / 42)), max(6, (int) round($h / 42)), $dim);
-    }
-
-    /**
-     * @param  \GdImage  $img
-     * @param  array{0:int,1:int,2:int}  $neon
-     */
-    private function circleOnBlack($img, array $neon): void
-    {
-        $w = imagesx($img);
-        $h = imagesy($img);
-        $cx = ($w - 1) / 2.0;
-        $cy = ($h - 1) / 2.0;
-        $radius = min($w, $h) / 2 - 4;
-        $black = imagecolorallocate($img, 0, 0, 0);
-        $ring = imagecolorallocate($img, $neon[0], $neon[1], $neon[2]);
-
-        for ($y = 0; $y < $h; $y++) {
-            for ($x = 0; $x < $w; $x++) {
-                if (hypot($x - $cx, $y - $cy) > $radius) {
-                    imagesetpixel($img, $x, $y, $black);
+        $fallback = [
+            'cx' => $size * 0.50,
+            'cy' => $size * 0.34,
+            'rx' => $size * 0.20,
+            'ry' => $size * 0.24,
+        ];
+        $sx = $sy = $n = 0;
+        $minX = $size;
+        $minY = $size;
+        $maxX = 0;
+        $maxY = 0;
+        $y0 = (int) ($size * 0.06);
+        $y1 = (int) ($size * 0.62);
+        $x0 = (int) ($size * 0.16);
+        $x1 = (int) ($size * 0.84);
+        for ($y = $y0; $y < $y1; $y++) {
+            for ($x = $x0; $x < $x1; $x++) {
+                if (! $this->isTemplateSkin(imagecolorat($img, $x, $y))) {
+                    continue;
                 }
+                $sx += $x;
+                $sy += $y;
+                $n++;
+                $minX = min($minX, $x);
+                $minY = min($minY, $y);
+                $maxX = max($maxX, $x);
+                $maxY = max($maxY, $y);
             }
         }
-
-        imagesetthickness($img, max(3, (int) round($w / 85)));
-        imageellipse($img, (int) $cx, (int) $cy, (int) round($radius * 2), (int) round($radius * 2), $ring);
-    }
-
-    /**
-     * @param  \GdImage  $img
-     * @return array{0:int,1:int,2:int}
-     */
-    private function sampleNeon($img): array
-    {
-        $w = imagesx($img);
-        $h = imagesy($img);
-        $step = max(1, (int) floor(min($w, $h) / 48));
-        $sr = $sg = $sb = $n = 0;
-        for ($y = 0; $y < $h; $y += $step) {
-            for ($x = 0; $x < $w; $x += $step) {
-                $rgb = imagecolorat($img, $x, $y);
-                $r = ($rgb >> 16) & 0xFF;
-                $g = ($rgb >> 8) & 0xFF;
-                $b = $rgb & 0xFF;
-                if ($g > 140 && $g > $r + 25 && $g > $b + 25) {
-                    $sr += $r;
-                    $sg += $g;
-                    $sb += $b;
-                    $n++;
-                }
-            }
+        if ($n < 120) {
+            return $fallback;
         }
-
-        if ($n < 4) {
-            return [34, 230, 90];
-        }
+        $cx = $sx / $n;
+        $cy = $sy / $n;
+        $rx = max($cx - $minX, $maxX - $cx) * 0.92;
+        $ry = max($cy - $minY, $maxY - $cy) * 0.90;
 
         return [
-            (int) round($sr / $n),
-            (int) round($sg / $n),
-            (int) round($sb / $n),
+            'cx' => $cx,
+            'cy' => $cy,
+            'rx' => max($size * 0.12, min($size * 0.28, $rx)),
+            'ry' => max($size * 0.14, min($size * 0.32, $ry)),
         ];
+    }
+
+    /**
+     * @param  \GdImage  $img
+     * @return array{x: float, y: float, w: float, h: float}
+     */
+    private function detectPhotoFaceRect($img): array
+    {
+        $w = imagesx($img);
+        $h = imagesy($img);
+        $sx = $sy = $n = 0;
+        $minX = $w;
+        $minY = $h;
+        $maxX = 0;
+        $maxY = 0;
+        $step = max(1, (int) floor(min($w, $h) / 96));
+        for ($y = 0; $y < $h; $y += $step) {
+            for ($x = 0; $x < $w; $x += $step) {
+                if (! $this->isPhotoSkin(imagecolorat($img, $x, $y))) {
+                    continue;
+                }
+                $sx += $x;
+                $sy += $y;
+                $n++;
+                $minX = min($minX, $x);
+                $minY = min($minY, $y);
+                $maxX = max($maxX, $x);
+                $maxY = max($maxY, $y);
+            }
+        }
+        if ($n < 40) {
+            $side = min($w, $h) * 0.62;
+            $x = ($w - $side) / 2;
+            $y = ($h - $side) * 0.38;
+
+            return ['x' => $x, 'y' => max(0, $y), 'w' => $side, 'h' => $side];
+        }
+        $padX = ($maxX - $minX) * 0.08;
+        $padY = ($maxY - $minY) * 0.10;
+        $x = max(0, $minX - $padX);
+        $y = max(0, $minY - $padY);
+        $rw = min($w - $x, ($maxX - $minX) + $padX * 2);
+        $rh = min($h - $y, ($maxY - $minY) + $padY * 2);
+
+        return ['x' => $x, 'y' => $y, 'w' => max(8, $rw), 'h' => max(8, $rh)];
+    }
+
+    /**
+     * @param  \GdImage  $template
+     * @param  \GdImage  $photo
+     * @param  array{cx: float, cy: float, rx: float, ry: float}  $oval
+     * @param  array{x: float, y: float, w: float, h: float}  $src
+     * @return array{0: float, 1: float, 2: float}
+     */
+    private function skinMatch($template, $photo, array $oval, array $src): array
+    {
+        $tr = $tg = $tb = $tn = 0;
+        $pr = $pg = $pb = $pn = 0;
+        $size = imagesx($template);
+        $step = 3;
+        for ($y = 0; $y < $size; $y += $step) {
+            for ($x = 0; $x < $size; $x += $step) {
+                $dx = ($x - $oval['cx']) / max(1.0, $oval['rx']);
+                $dy = ($y - $oval['cy']) / max(1.0, $oval['ry']);
+                if (($dx * $dx + $dy * $dy) > 0.55) {
+                    continue;
+                }
+                $rgb = imagecolorat($template, $x, $y);
+                if ($this->isNeonPixel($rgb) || ! $this->isTemplateSkin($rgb)) {
+                    continue;
+                }
+                $tr += ($rgb >> 16) & 0xFF;
+                $tg += ($rgb >> 8) & 0xFF;
+                $tb += $rgb & 0xFF;
+                $tn++;
+            }
+        }
+        $pw = imagesx($photo);
+        $ph = imagesy($photo);
+        for ($i = 0; $i < 80; $i++) {
+            $px = (int) min($pw - 1, max(0, round($src['x'] + ($src['w'] * ($i % 10) / 9))));
+            $py = (int) min($ph - 1, max(0, round($src['y'] + ($src['h'] * intdiv($i, 10) / 7))));
+            $rgb = imagecolorat($photo, $px, $py);
+            $pr += ($rgb >> 16) & 0xFF;
+            $pg += ($rgb >> 8) & 0xFF;
+            $pb += $rgb & 0xFF;
+            $pn++;
+        }
+        if ($tn < 8 || $pn < 8) {
+            return [1.0, 1.0, 1.0];
+        }
+        $clamp = static fn (float $v): float => max(0.82, min(1.18, $v));
+
+        return [
+            $clamp(($tr / $tn) / max(1.0, $pr / $pn)),
+            $clamp(($tg / $tn) / max(1.0, $pg / $pn)),
+            $clamp(($tb / $tn) / max(1.0, $pb / $pn)),
+        ];
+    }
+
+    /**
+     * @param  \GdImage  $img
+     */
+    private function sampleBilinear($img, float $x, float $y): int
+    {
+        $w = imagesx($img);
+        $h = imagesy($img);
+        $x = max(0.0, min($w - 1.001, $x));
+        $y = max(0.0, min($h - 1.001, $y));
+        $x0 = (int) floor($x);
+        $y0 = (int) floor($y);
+        $x1 = min($w - 1, $x0 + 1);
+        $y1 = min($h - 1, $y0 + 1);
+        $fx = $x - $x0;
+        $fy = $y - $y0;
+        $c00 = imagecolorat($img, $x0, $y0);
+        $c10 = imagecolorat($img, $x1, $y0);
+        $c01 = imagecolorat($img, $x0, $y1);
+        $c11 = imagecolorat($img, $x1, $y1);
+        $mix = function (int $a, int $b, float $t): int {
+            $shift = static fn (int $c, int $s): int => ($c >> $s) & 0xFF;
+            $r = (int) round($shift($a, 16) * (1 - $t) + $shift($b, 16) * $t);
+            $g = (int) round($shift($a, 8) * (1 - $t) + $shift($b, 8) * $t);
+            $bl = (int) round($shift($a, 0) * (1 - $t) + $shift($b, 0) * $t);
+
+            return ($r << 16) | ($g << 8) | $bl;
+        };
+        $top = $mix($c00, $c10, $fx);
+        $bot = $mix($c01, $c11, $fx);
+
+        return $mix($top, $bot, $fy);
+    }
+
+    private function isNeonPixel(int $rgb): bool
+    {
+        $r = ($rgb >> 16) & 0xFF;
+        $g = ($rgb >> 8) & 0xFF;
+        $b = $rgb & 0xFF;
+
+        return $g > 145 && $g > $r + 28 && $g > $b + 22;
+    }
+
+    private function isTemplateSkin(int $rgb): bool
+    {
+        $r = ($rgb >> 16) & 0xFF;
+        $g = ($rgb >> 8) & 0xFF;
+        $b = $rgb & 0xFF;
+        $max = max($r, $g, $b);
+        $min = min($r, $g, $b);
+        if ($max < 70 || $max > 245 || ($max - $min) < 12) {
+            return false;
+        }
+        if ($g > $r + 16 && $g > $b + 10) {
+            return false;
+        }
+        if ($b > $r + 22 && $b > $g + 12) {
+            return false;
+        }
+
+        return $r >= $g - 10 && $r >= $b - 8;
+    }
+
+    private function isPhotoSkin(int $rgb): bool
+    {
+        $r = ($rgb >> 16) & 0xFF;
+        $g = ($rgb >> 8) & 0xFF;
+        $b = $rgb & 0xFF;
+        $max = max($r, $g, $b);
+        $min = min($r, $g, $b);
+
+        return $r > 40 && $g > 18 && $b > 12
+            && $r >= $g && $r >= $b
+            && ($r - $g) >= 8
+            && ($max - $min) >= 12
+            && $max > 50;
+    }
+
+    private function matchChannel(int $src, float $scale): int
+    {
+        $lumaBoost = ($src - 128) * 1.06 + 128;
+
+        return (int) max(0, min(255, round($lumaBoost * $scale)));
+    }
+
+    private function mixChannel(int $src, int $dst, float $a): int
+    {
+        return (int) round($src * $a + $dst * (1 - $a));
     }
 
     /**
@@ -502,18 +643,5 @@ class PlayerAvatarService
         imagecopyresampled($dst, $src, 0, 0, $sx, $sy, $size, $size, $side, $side);
 
         return $dst;
-    }
-
-    /**
-     * @param  array{bytes: string, mime: string}|string  $packed
-     */
-    private function dataUrl(array|string $packed): string
-    {
-        if (is_string($packed)) {
-            $packed = ['bytes' => $packed, 'mime' => 'image/png'];
-        }
-        $mime = $packed['mime'] !== '' ? $packed['mime'] : 'image/png';
-
-        return 'data:'.$mime.';base64,'.base64_encode($packed['bytes']);
     }
 }

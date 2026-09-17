@@ -22,7 +22,7 @@ class LightAdminController extends Controller
 {
     public function index(Request $request, LightEventCatalog $catalog)
     {
-        $clubs = Club::query()->select('id', 'name')->orderBy('name')->get();
+        $clubs = Club::visibleToAdmin(AdminLocation::id())->select('id', 'name')->orderBy('name')->get();
         $clubId = (int) ($request->integer('club_id')
             ?: (AdminLocation::id() ?: ($clubs->first()?->id ?? 0)));
 

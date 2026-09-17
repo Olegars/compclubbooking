@@ -294,63 +294,8 @@ class DeepSeekChat
             return $fromImages;
         }
 
-        $userContent = [
-            ['type' => 'text', 'text' => $prompt],
-            [
-                'type' => 'image_url',
-                'image_url' => ['url' => $photoDataUrl, 'detail' => 'high'],
-            ],
-            [
-                'type' => 'image_url',
-                'image_url' => ['url' => $sampleDataUrl, 'detail' => 'high'],
-            ],
-        ];
-
-        try {
-            $json = $this->postAvatarChat(
-                $base,
-                $key,
-                $model,
-                $this->avatarStyleSystemPrompt(),
-                $userContent,
-                $timeout,
-                8192,
-            );
-        } catch (RuntimeException) {
-            $json = [];
-        } catch (\Throwable $e) {
-            report($e);
-            $json = [];
-        }
-        $bytes = $this->extractImageBytes($json) ?? $this->rasterizeSvg($this->extractSvg($this->extractMessageText($json)));
-        if ($bytes !== null) {
-            return $bytes;
-        }
-
-        try {
-            $json = $this->postAvatarChat(
-                $base,
-                $key,
-                $model,
-                'Ответ — только SVG-документ. Никакого текста вокруг.',
-                [
-                    ['type' => 'text', 'text' => $this->avatarSvgRetryPrompt()],
-                    $userContent[1],
-                    $userContent[2],
-                ],
-                $timeout,
-                8192,
-            );
-        } catch (RuntimeException) {
-            return null;
-        } catch (\Throwable $e) {
-            report($e);
-
-            return null;
-        }
-
-        return $this->extractImageBytes($json)
-            ?? $this->rasterizeSvg($this->extractSvg($this->extractMessageText($json)));
+        // Хостовый DeepSeek не генерирует пиксели — лицо на шаблон клеим локально.
+        return null;
     }
 
     /**
@@ -527,11 +472,8 @@ class DeepSeekChat
     private function avatarStylePrompt(): string
     {
         return <<<'PROMPT'
-Первое изображение — фото игрока. Второе — образец клубного аватара (cyberpunk, неон-зелёные схемы на лице, тёмный фон).
-Перерисуй этого человека в точности в стиле второго образца: digital illustration, портрет анфас, тот же штрих и свет, узнаваемое лицо.
-Хостовый API не умеет отдать PNG, поэтому верни ТОЛЬКО один SVG-документ:
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">...</svg>
-Без markdown, без пояснений, без base64. Круглый аватар.
+Первое изображение — фото игрока. Второе — стандартный клубный аватар (иллюстрация, броня, неон-зелёные схемы).
+Замени только лицо на шаблоне лицом с фото. Причёску, броню, фон и неоновые татуировки шаблона оставь. Не перекрашивай всё фото зелёным.
 PROMPT;
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Club;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -14,7 +15,7 @@ class ClubController extends Controller
     {
         // 1. Редирект, если слаг не указан
         if (!$slug) {
-            $firstClub = DB::table('clubs')->first();
+            $firstClub = Club::operational()->orderBy('id')->first();
 
             if (!$firstClub) {
                 abort(404, 'Клубы не найдены в базе данных.');
@@ -23,11 +24,11 @@ class ClubController extends Controller
         }
 
         // 2. Ищем клуб
-        $club = DB::table('clubs')->where('slug', $slug)->first();
-
-        if (!$club) {
+        $clubModel = Club::query()->where('slug', $slug)->first();
+        if (! $clubModel || $clubModel->isOpenPartner()) {
             abort(404, 'Клуб с таким адресом не найден.');
         }
+        $club = DB::table('clubs')->where('id', $clubModel->id)->first();
 
         // 3. Получаем данные
         $computers = DB::table('computers')->where('club_id', $club->id)->get();

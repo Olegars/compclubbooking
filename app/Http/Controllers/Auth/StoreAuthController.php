@@ -67,7 +67,7 @@ class StoreAuthController extends Controller
             'role.in' => 'Выберите должность: сборщик или менеджер',
         ]);
 
-        $club = Club::query()
+        $club = Club::operational()
             ->whereIn('type', ['store', 'both'])
             ->orderByRaw("CASE WHEN type = 'store' THEN 0 ELSE 1 END")
             ->orderBy('id')

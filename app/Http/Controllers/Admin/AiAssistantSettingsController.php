@@ -8,6 +8,7 @@ use App\Models\Club;
 use App\Services\AiAssistant\DeepSeekChat;
 use App\Services\AiAssistant\SpeechService;
 use App\Services\StoreCaseCatalogEnrichmentService;
+use App\Support\AdminLocation;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -27,7 +28,7 @@ class AiAssistantSettingsController extends Controller
             'llmProviders' => AiAssistantSetting::LLM_PROVIDERS,
             'speechProviders' => AiAssistantSetting::SPEECH_PROVIDERS,
             'llmPresets' => AiAssistantSetting::LLM_PRESETS,
-            'clubs' => Club::query()->select('id', 'name')->orderBy('name')->get(),
+            'clubs' => Club::visibleToAdmin(AdminLocation::id())->select('id', 'name')->orderBy('name')->get(),
             'placeholders' => [
                 'companion' => ['{{club}}', '{{player}}', '{{game}}', '{{max_chars}}'],
                 'greeting' => ['{{club}}', '{{player}}', '{{pc}}', '{{time}}', '{{visit_line}}', '{{games}}', '{{max_chars}}'],

@@ -9,6 +9,7 @@ use App\Models\Club;
 use App\Models\ClubGame;
 use App\Models\Computer;
 use App\Models\ComputerGame;
+use App\Support\AdminLocation;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -30,7 +31,7 @@ class LicenseController extends Controller
 
         return Inertia::render('Admin/Licenses', [
             'games' => $games,
-            'clubs' => Club::query()->select('id', 'name')->orderBy('name')->get(),
+            'clubs' => Club::visibleToAdmin(AdminLocation::id())->select('id', 'name')->orderBy('name')->get(),
         ]);
     }
 

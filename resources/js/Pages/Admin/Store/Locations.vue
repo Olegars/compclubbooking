@@ -61,7 +61,7 @@ const save = (id: number) => {
             <div class="flex justify-between items-end border-b border-white/10 pb-6">
                 <div>
                     <h1 class="text-3xl font-black uppercase italic tracking-tighter">Locations</h1>
-                    <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">Клуб / магазин / оба</p>
+                    <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">Точки вашей сети. Чужой клуб регистрируется сам на /clubs/join</p>
                 </div>
                 <button @click="showCreate = true"
                         class="px-6 py-4 bg-amber-500 text-black font-black uppercase tracking-widest text-[10px] rounded-2xl">

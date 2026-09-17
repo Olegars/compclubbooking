@@ -23,7 +23,7 @@ class HomeController extends Controller
 
     public function index()
     {
-        $club = Schema::hasTable('clubs') ? Club::query()->orderBy('id')->first() : null;
+        $club = Schema::hasTable('clubs') ? Club::operational()->orderBy('id')->first() : null;
         $siteReviews = $this->reviews->siteReviews()->map(fn ($r) => [
             'id' => (int) $r->id,
             'author' => (string) ($r->author_name ?: 'Гость'),

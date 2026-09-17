@@ -37,7 +37,7 @@ class ClanWarController extends Controller
         return Inertia::render('Admin/ClanWars', [
             'wars' => $list,
             'board' => $board,
-            'clubs' => Club::query()
+            'clubs' => Club::operational()
                 ->where(function ($q) {
                     $q->whereNull('type')->orWhereIn('type', ['club', 'both']);
                 })

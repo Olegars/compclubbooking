@@ -27,8 +27,8 @@ class TournamentController extends Controller
         $list = Tournament::query()
             ->with([
                 'game:id,title',
-                'club:id,name',
-                'opponentClub:id,name',
+                'club:id,name,city,network_name',
+                'opponentClub:id,name,city,network_name',
                 'players.user:id,name,phone',
                 'players.club:id,name',
                 'matches',
@@ -45,7 +45,7 @@ class TournamentController extends Controller
             ->map(fn (Tournament $t) => $this->serialize($t, $clubId));
 
         $inbox = TournamentChallenge::query()
-            ->with(['hostClub:id,name', 'guestClub:id,name', 'game:id,title'])
+            ->with(['hostClub:id,name,slug,city,network_name', 'guestClub:id,name,slug,city,network_name', 'game:id,title'])
             ->when($clubId, function ($q) use ($clubId) {
                 $q->where(function ($q) use ($clubId) {
                     $q->where('host_club_id', $clubId)->orWhere('guest_club_id', $clubId);
@@ -65,13 +65,12 @@ class TournamentController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'kind']);
 
-        $clubs = Club::query()
-            ->where(function ($q) {
-                $q->whereNull('type')->orWhereIn('type', ['club', 'both']);
-            })
+        $clubs = Club::tournamentRoster()
             ->when($clubId, fn ($q) => $q->where('id', '!=', $clubId))
             ->orderBy('name')
-            ->get(['id', 'name', 'slug']);
+            ->get()
+            ->map(fn (Club $club) => $club->circuitCard())
+            ->values();
 
         return Inertia::render('Admin/Tournaments', [
             'tournaments' => $list,
@@ -80,6 +79,7 @@ class TournamentController extends Controller
             'computers' => $computers,
             'clubs' => $clubs,
             'host_club_id' => $clubId,
+            'join_url' => url('/clubs/join'),
         ]);
     }
 
@@ -346,8 +346,8 @@ class TournamentController extends Controller
     private function serialize(Tournament $t, ?int $viewerClubId): array
     {
         $t->loadMissing([
-            'club:id,name',
-            'opponentClub:id,name',
+            'club:id,name,city,network_name',
+            'opponentClub:id,name,city,network_name',
             'players.user:id,name,phone',
             'players.club:id,name',
             'matches.player1.user:id,name',
@@ -371,8 +371,8 @@ class TournamentController extends Controller
             'computers_count' => $t->computers_count ?? $t->computers->count(),
             'computer_ids' => $t->computers->pluck('id')->values(),
             'game' => $t->game ? ['id' => $t->game->id, 'title' => $t->game->title] : null,
-            'host' => $t->club ? ['id' => $t->club->id, 'name' => $t->club->name] : null,
-            'opponent' => $t->opponentClub ? ['id' => $t->opponentClub->id, 'name' => $t->opponentClub->name] : null,
+            'host' => $t->club?->circuitCard(),
+            'opponent' => $t->opponentClub?->circuitCard(),
             'challenge_id' => $t->challenge_id,
             'roster_size' => $t->roster_size,
             'venue' => $t->venue,

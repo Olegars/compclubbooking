@@ -11,6 +11,7 @@ use App\Models\DayGroup;
 use App\Models\Tariff;
 use App\Models\TariffPrice;
 use App\Models\Zone;
+use App\Support\AdminLocation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -21,7 +22,7 @@ class TariffController extends Controller
 {
     public function index(Request $request)
     {
-        $clubs = Club::query()->orderBy('name')->get(['id', 'name']);
+        $clubs = Club::visibleToAdmin(AdminLocation::id())->orderBy('name')->get(['id', 'name']);
         $clubId = (int) ($request->query('club') ?: $clubs->first()?->id);
         $tariffId = $request->query('tariff') ? (int) $request->query('tariff') : null;
 

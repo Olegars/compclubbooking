@@ -13,6 +13,7 @@ use App\Models\Space;
 use App\Models\SpaceFan;
 use App\Services\Fan\FanControlService;
 use App\Services\Fan\SharedFanControlService;
+use App\Support\AdminLocation;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -21,7 +22,7 @@ class FanAdminController extends Controller
 {
     public function index(Request $request, SharedFanControlService $shared)
     {
-        $clubs = Club::query()->select('id', 'name')->orderBy('name')->get();
+        $clubs = Club::visibleToAdmin(AdminLocation::id())->select('id', 'name')->orderBy('name')->get();
         $clubId = (int) ($request->integer('club_id') ?: ($clubs->first()?->id ?? 0));
 
         $boards = RelayBoard::query()

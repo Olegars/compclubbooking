@@ -134,8 +134,8 @@ class TournamentChallengeService
     public function serialize(TournamentChallenge $challenge, ?int $viewerClubId = null): array
     {
         $challenge->loadMissing([
-            'hostClub:id,name,slug',
-            'guestClub:id,name,slug',
+            'hostClub:id,name,slug,city,network_name',
+            'guestClub:id,name,slug,city,network_name',
             'waitingClub:id,name',
             'game:id,title',
             'revisions.admin:id,name',
@@ -150,8 +150,8 @@ class TournamentChallengeService
             'name' => $challenge->name,
             'format' => $challenge->format,
             'game' => $challenge->game ? ['id' => $challenge->game->id, 'title' => $challenge->game->title] : null,
-            'host' => $challenge->hostClub ? ['id' => $challenge->hostClub->id, 'name' => $challenge->hostClub->name] : null,
-            'guest' => $challenge->guestClub ? ['id' => $challenge->guestClub->id, 'name' => $challenge->guestClub->name] : null,
+            'host' => $challenge->hostClub?->circuitCard(),
+            'guest' => $challenge->guestClub?->circuitCard(),
             'waiting_club_id' => (int) $challenge->waiting_club_id,
             'waiting_club' => $challenge->waitingClub?->name,
             'mine_turn' => $viewerClubId > 0 && (int) $challenge->waiting_club_id === $viewerClubId
@@ -225,12 +225,13 @@ class TournamentChallengeService
         }
         if ($guestId < 1 || $guestId === $fromClubId) {
             throw ValidationException::withMessages([
-                'guest_club_id' => 'Выберите другой клуб сети.',
+                'guest_club_id' => 'Выберите другой клуб.',
             ]);
         }
-        if (! Club::query()->whereKey($guestId)->exists()) {
+        $guest = Club::query()->find($guestId);
+        if (! $guest || ! $guest->isTournamentClub()) {
             throw ValidationException::withMessages([
-                'guest_club_id' => 'Клуб не найден.',
+                'guest_club_id' => 'Этот клуб не участвует в турнирах.',
             ]);
         }
         if (! $this->features->enabled($fromClubId, 'tournaments')) {
@@ -240,7 +241,7 @@ class TournamentChallengeService
         }
         if (! $this->features->enabled($guestId, 'tournaments')) {
             throw ValidationException::withMessages([
-                'guest_club_id' => 'У второй локации выключены турниры.',
+                'guest_club_id' => 'У соперника выключены турниры.',
             ]);
         }
         $open = TournamentChallenge::query()

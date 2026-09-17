@@ -17,6 +17,7 @@ const clientPages = import.meta.glob([
     './Pages/Booking/**/*.vue',
     './Pages/User/**/*.vue',
     './Pages/Legal/**/*.vue',
+    './Pages/Club/**/*.vue',
 ]);
 const adminPages = import.meta.glob([
     './Pages/Admin/**/*.vue',

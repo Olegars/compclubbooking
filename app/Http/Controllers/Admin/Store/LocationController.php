@@ -12,7 +12,7 @@ class LocationController extends StoreController
     public function index()
     {
         return Inertia::render('Admin/Store/Locations', [
-            'locations' => Club::query()->orderBy('name')->get(),
+            'locations' => Club::operational()->orderBy('name')->get(),
         ]);
     }
 
@@ -34,6 +34,7 @@ class LocationController extends StoreController
             'name' => $data['name'],
             'slug' => $slug,
             'type' => $data['type'],
+            'source' => Club::SOURCE_LOCATION,
             'address' => $data['address'] ?? null,
         ]);
 

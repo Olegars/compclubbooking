@@ -25,7 +25,7 @@ class ClubBrand
                 return 'Клуб';
             }
 
-            $fromDb = Club::query()->orderBy('id')->value('name');
+            $fromDb = Club::operational()->orderBy('id')->value('name');
             if (filled($fromDb)) {
                 return trim((string) $fromDb);
             }

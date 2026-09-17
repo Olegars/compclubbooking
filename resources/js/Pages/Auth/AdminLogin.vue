@@ -137,7 +137,10 @@ const submitRegister = () => {
                 </p>
             </form>
 
-            <Link v-if="!isAdminApp && !isBossApp" href="/store/login" class="mt-8 block text-center text-[10px] uppercase tracking-widest text-white/35 hover:text-[#22c55e] font-black">
+            <Link v-if="!isAdminApp && !isBossApp" href="/clubs/join" class="mt-8 block text-center text-[10px] uppercase tracking-widest text-cyan-400/80 hover:text-cyan-300 font-black">
+                Зарегистрировать свой клуб →
+            </Link>
+            <Link v-if="!isAdminApp && !isBossApp" href="/store/login" class="mt-3 block text-center text-[10px] uppercase tracking-widest text-white/35 hover:text-[#22c55e] font-black">
                 Сотрудникам магазина →
             </Link>
         </div>

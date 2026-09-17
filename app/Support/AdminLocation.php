@@ -24,26 +24,26 @@ class AdminLocation
             $sessionId = Session::get('admin_location_id');
             if ($sessionId) {
                 $fromSession = Club::query()->find($sessionId);
-                if ($fromSession) {
+                if ($fromSession && $fromSession->isOperationalLocation()) {
                     return $fromSession;
                 }
             }
 
             if ($admin->club_id) {
                 $fromClub = Club::query()->find($admin->club_id);
-                if ($fromClub) {
+                if ($fromClub && $fromClub->isOperationalLocation()) {
                     return $fromClub;
                 }
             }
 
-            return Club::query()->orderBy('id')->first();
+            return Club::operational()->orderBy('id')->first();
         }
 
         if ($admin->club_id) {
             return Club::query()->find($admin->club_id);
         }
 
-        return Club::query()->orderBy('id')->first();
+        return Club::operational()->orderBy('id')->first();
     }
 
     public static function id(?Admin $admin = null): ?int
@@ -58,7 +58,7 @@ class AdminLocation
             return false;
         }
 
-        if (! Club::query()->whereKey($clubId)->exists()) {
+        if (! Club::operational()->whereKey($clubId)->exists()) {
             return false;
         }
 
@@ -74,7 +74,7 @@ class AdminLocation
             return [];
         }
 
-        return Club::query()
+        return Club::operational()
             ->orderBy('name')
             ->get(['id', 'name', 'slug', 'type', 'address'])
             ->all();

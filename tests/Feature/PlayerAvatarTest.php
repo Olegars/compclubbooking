@@ -97,21 +97,45 @@ class PlayerAvatarTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_stylize_sends_photo_and_default_sample_to_deepseek(): void
+    public function test_stylize_puts_photo_face_on_club_template(): void
     {
-        $styled = $this->tinyPngBytes();
+        Http::fake();
+        file_put_contents($this->avatarDir.DIRECTORY_SEPARATOR.'avatar_1.png', $this->clubTemplatePng());
 
-        $this->fakeHttp(function ($request) use ($styled) {
-            if (str_contains($request->url(), 'images/generations')) {
-                return Http::response([
-                    'data' => [[
-                        'b64_json' => base64_encode($styled),
-                    ]],
-                ]);
-            }
+        $this->actingAs($this->user)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/account/profile/avatar', [
+                'photo' => UploadedFile::fake()->createWithContent('face.png', $this->redFacePng()),
+                'stylize' => 1,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
 
-            return Http::response('unexpected '.$request->url(), 599);
-        });
+        $this->user->refresh();
+        $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
+        $stored = Storage::disk('public')->get('avatars/'.basename($this->user->avatar));
+        $this->assertNotFalse($stored);
+        $img = imagecreatefromstring($stored);
+        $this->assertNotFalse($img);
+
+        $face = imagecolorat($img, 256, 174);
+        $this->assertGreaterThan(140, ($face >> 16) & 0xFF, 'лицо с фото должно быть в овале шаблона');
+        $this->assertLessThan(120, $face & 0xFF);
+
+        $armor = imagecolorat($img, 256, 450);
+        $this->assertLessThan(90, ($armor >> 16) & 0xFF, 'низ шаблона (броня) не должен стать фото');
+
+        $neon = imagecolorat($img, 200, 200);
+        $this->assertGreaterThan(140, ($neon >> 8) & 0xFF);
+        $this->assertGreaterThan((($neon >> 16) & 0xFF) + 20, ($neon >> 8) & 0xFF);
+
+        imagedestroy($img);
+        Http::assertNothingSent();
+    }
+
+    public function test_stylize_does_not_call_deepseek(): void
+    {
+        Http::fake();
 
         $this->actingAs($this->user)
             ->withoutMiddleware(ValidateCsrfToken::class)
@@ -125,111 +149,7 @@ class PlayerAvatarTest extends TestCase
         $this->user->refresh();
         $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
         Storage::disk('public')->assertExists('avatars/'.basename($this->user->avatar));
-
-        Http::assertSent(function ($request) {
-            if (! str_contains($request->url(), 'images/generations')) {
-                return false;
-            }
-            $images = data_get($request, 'images');
-            if (! is_array($images) || count($images) < 2) {
-                return false;
-            }
-            $first = (string) data_get($images, '0.image_url.url');
-            $second = (string) data_get($images, '1.image_url.url');
-
-            return str_starts_with($first, 'data:image/')
-                && str_starts_with($second, 'data:image/')
-                && $request->hasHeader('Authorization', 'Bearer sk-deepseek-test');
-        });
-    }
-
-    public function test_stylize_falls_back_to_vision_chat_when_images_api_missing(): void
-    {
-        $styled = $this->tinyPngBytes();
-
-        $this->fakeHttp(function ($request) use ($styled) {
-            if (str_contains($request->url(), 'images/generations')) {
-                return Http::response('nope', 404);
-            }
-            if (str_contains($request->url(), 'chat/completions')) {
-                return Http::response([
-                    'choices' => [[
-                        'message' => [
-                            'content' => [
-                                [
-                                    'type' => 'image_url',
-                                    'image_url' => [
-                                        'url' => 'data:image/png;base64,'.base64_encode($styled),
-                                    ],
-                                ],
-                            ],
-                        ],
-                    ]],
-                ]);
-            }
-
-            return Http::response('unexpected '.$request->url(), 599);
-        });
-
-        $this->actingAs($this->user)
-            ->withoutMiddleware(ValidateCsrfToken::class)
-            ->post('/account/profile/avatar', [
-                'photo' => $this->fakeImageUpload('face.png'),
-                'stylize' => 1,
-            ])
-            ->assertRedirect();
-
-        $this->user->refresh();
-        $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
-
-        Http::assertSent(function ($request) {
-            if (! str_contains($request->url(), 'chat/completions')) {
-                return false;
-            }
-            $content = data_get($request, 'messages.1.content');
-            if (! is_array($content)) {
-                return false;
-            }
-            $urls = [];
-            foreach ($content as $part) {
-                $url = data_get($part, 'image_url.url');
-                if (is_string($url)) {
-                    $urls[] = $url;
-                }
-            }
-
-            return count($urls) === 2
-                && data_get($request, 'thinking.type') === 'disabled';
-        });
-    }
-
-    public function test_stylize_saves_when_deepseek_returns_text_only(): void
-    {
-        $this->fakeHttp(function ($request) {
-            if (str_contains($request->url(), 'images/generations')) {
-                return Http::response('nope', 404);
-            }
-            if (str_contains($request->url(), 'chat/completions')) {
-                return Http::response([
-                    'choices' => [['message' => ['content' => 'Я не умею генерировать изображения.']]],
-                ]);
-            }
-
-            return Http::response('unexpected '.$request->url(), 599);
-        });
-
-        $this->actingAs($this->user)
-            ->withoutMiddleware(ValidateCsrfToken::class)
-            ->post('/account/profile/avatar', [
-                'photo' => $this->fakeImageUpload('face.png'),
-                'stylize' => 1,
-            ])
-            ->assertRedirect()
-            ->assertSessionHas('success');
-
-        $this->user->refresh();
-        $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
-        Storage::disk('public')->assertExists('avatars/'.basename($this->user->avatar));
+        Http::assertNothingSent();
     }
 
     public function test_rejects_non_image_upload(): void
@@ -245,5 +165,49 @@ class PlayerAvatarTest extends TestCase
 
         $this->user->refresh();
         $this->assertSame('avatar_1.png', $this->user->avatar);
+    }
+
+    private function clubTemplatePng(): string
+    {
+        $size = 512;
+        $im = imagecreatetruecolor($size, $size);
+        imagefilledrectangle($im, 0, 0, $size, $size, imagecolorallocate($im, 4, 6, 8));
+        imagefilledrectangle($im, 0, (int) ($size * 0.68), $size, $size, imagecolorallocate($im, 36, 48, 42));
+        imagefilledellipse(
+            $im,
+            (int) ($size * 0.50),
+            (int) ($size * 0.34),
+            (int) ($size * 0.42),
+            (int) ($size * 0.50),
+            imagecolorallocate($im, 198, 158, 128)
+        );
+        imagesetthickness($im, 10);
+        imageline(
+            $im,
+            (int) ($size * 0.36),
+            (int) ($size * 0.22),
+            (int) ($size * 0.44),
+            (int) ($size * 0.48),
+            imagecolorallocate($im, 30, 230, 80)
+        );
+        ob_start();
+        imagepng($im);
+        $bytes = (string) ob_get_clean();
+        imagedestroy($im);
+
+        return $bytes;
+    }
+
+    private function redFacePng(): string
+    {
+        $size = 512;
+        $im = imagecreatetruecolor($size, $size);
+        imagefilledrectangle($im, 0, 0, $size, $size, imagecolorallocate($im, 220, 48, 42));
+        ob_start();
+        imagepng($im);
+        $bytes = (string) ob_get_clean();
+        imagedestroy($im);
+
+        return $bytes;
     }
 }

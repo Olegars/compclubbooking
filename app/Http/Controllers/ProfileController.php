@@ -394,7 +394,7 @@ class ProfileController extends Controller
         }
 
         return back()->with('success', $request->boolean('stylize')
-            ? 'Аватар стилизован'
+            ? 'Клубный аватар собран'
             : 'Фото сохранено');
     }
 

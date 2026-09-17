@@ -90,7 +90,7 @@ class StaffController extends Controller
                 'value' => $role,
                 'label' => Admin::labelForRole($role),
             ])->values()->all(),
-            'clubs' => Club::query()->orderBy('name')->get(['id', 'name']),
+            'clubs' => Club::visibleToAdmin(AdminLocation::id($actor))->orderBy('name')->get(['id', 'name']),
             'default_club_id' => $actor->role === Admin::ROLE_OWNER
                 ? AdminLocation::id($actor)
                 : $actor->club_id,

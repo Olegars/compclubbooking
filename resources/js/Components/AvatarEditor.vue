@@ -111,7 +111,7 @@ onUnmounted(() => {
                     </label>
                 </div>
                 <p v-if="form.stylize" class="text-[10px] text-white/30 mt-2 leading-snug">
-                    Снимок и образец клубного аватара уйдут в DeepSeek — в профиль встанет то, что вернёт модель.
+                    Лицо с фото встанет на стандартный клубный аватар. Броня, причёска и схемы шаблона останутся — DeepSeek картинки не рисует.
                 </p>
                 <button
                     v-if="form.photo"
@@ -121,8 +121,8 @@ onUnmounted(() => {
                     @click="save"
                 >
                     {{ form.processing
-                        ? (form.stylize ? 'Стилизуем…' : 'Сохранение…')
-                        : (form.stylize ? 'Стилизовать и сохранить' : 'Сохранить фото') }}
+                        ? (form.stylize ? 'Собираем аватар…' : 'Сохранение…')
+                        : (form.stylize ? 'Собрать клубный аватар' : 'Сохранить фото') }}
                 </button>
                 <div v-if="form.errors.photo" class="text-red-500 text-[10px] uppercase mt-2">{{ form.errors.photo }}</div>
                 <div v-else-if="flashSuccess" class="text-[#22c55e] text-[10px] uppercase mt-2 tracking-widest">{{ flashSuccess }}</div>

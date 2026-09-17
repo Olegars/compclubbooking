@@ -12,6 +12,7 @@ const props = defineProps({
     computers: Array,
     clubs: { type: Array, default: () => [] },
     host_club_id: [Number, String],
+    join_url: { type: String, default: '/clubs/join' },
 })
 
 const { success, error } = useToast()
@@ -152,7 +153,7 @@ const submitChallenge = () => {
             counterId.value = null
             challengeForm.reset()
             Object.assign(challengeForm, emptyChallenge())
-            success(wasCounter ? 'Встречные условия отправлены' : 'Условия отправлены второй локации')
+            success(wasCounter ? 'Встречные условия отправлены' : 'Условия отправлены сопернику')
         },
         onError: (errors) => error(Object.values(errors)[0] || 'Не удалось отправить'),
     })
@@ -261,12 +262,12 @@ const actionLabel = (action) => {
                 <div>
                     <h1 class="text-4xl font-black italic tracking-tighter uppercase text-blue-500">Event Manager</h1>
                     <p class="text-[10px] text-white/30 uppercase tracking-widest mt-2">
-                        Две локации согласовывают регламент · затем сетка и призы. Clan Wars — отдельный live-счёт, не это.
+                        Любой клуб регистрируется сам и согласовывает регламент в админке. Clan Wars — отдельный live-счёт, не это.
                     </p>
                 </div>
                 <div class="flex gap-2">
-                    <button @click="openPropose" :disabled="!clubs.length"
-                            class="px-6 py-3 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white font-black rounded-xl tracking-widest text-xs uppercase">
+                    <button @click="openPropose"
+                            class="px-6 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-black rounded-xl tracking-widest text-xs uppercase">
                         Вызвать клуб
                     </button>
                     <button @click="showCreateModal = true"
@@ -276,8 +277,11 @@ const actionLabel = (action) => {
                 </div>
             </div>
 
-            <div v-if="!clubs.length" class="mb-6 text-[11px] text-amber-300/80 uppercase tracking-widest">
-                В сети одна локация — межклубный вызов появится, когда добавите второй клуб.
+            <div class="mb-6 text-[11px] text-white/45 uppercase tracking-widest space-y-2">
+                <p v-if="!clubs.length" class="text-amber-300/80">
+                    Соперников пока нет. Скиньте ссылку — клуб из любой сети или независимый регистрируется сам.
+                </p>
+                <a :href="join_url" class="text-cyan-400 hover:text-cyan-300">{{ join_url }}</a>
             </div>
 
             <section v-if="pendingChallenges.length" class="mb-8">
@@ -332,7 +336,7 @@ const actionLabel = (action) => {
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div v-if="!tournaments.length && !pendingChallenges.length"
                      class="col-span-full border border-dashed border-white/10 rounded-3xl p-12 text-center text-white/30 uppercase text-xs tracking-widest">
-                    Ивентов нет. Вызовите второй клуб или создайте локальный турнир.
+                    Ивентов нет. Вызовите клуб из списка или создайте локальный турнир.
                 </div>
                 <div v-for="event in tournaments" :key="event.id"
                      class="bg-[#0a0a0a] border border-white/5 rounded-3xl p-6 relative overflow-hidden">
@@ -475,14 +479,18 @@ const actionLabel = (action) => {
                 <div class="absolute inset-0 bg-black/90 backdrop-blur-xl" @click="showChallengeModal = false"></div>
                 <div class="relative w-full max-w-2xl bg-[#0a0a0a] border border-cyan-500/20 rounded-[1.125rem] p-10 max-h-[90vh] overflow-y-auto">
                     <h2 class="text-2xl font-black uppercase italic mb-2">{{ counterId ? 'Встречные условия' : 'Вызов клуба' }}</h2>
-                    <p class="text-[10px] text-white/35 uppercase tracking-widest mb-8">Вторая локация должна принять регламент. Пока не приняли — ивента нет.</p>
+                    <p class="text-[10px] text-white/35 uppercase tracking-widest mb-8">Соперник принимает регламент. Пока не приняли — ивента нет.</p>
                     <form @submit.prevent="submitChallenge" class="grid grid-cols-2 gap-6">
                         <div v-if="!counterId" class="col-span-2">
                             <label class="text-[10px] uppercase text-white/40 mb-2 block">Клуб-соперник</label>
-                            <select v-model="challengeForm.guest_club_id" class="w-full bg-black border border-white/10 rounded-2xl p-4" required>
-                                <option disabled value="">Выберите локацию сети</option>
-                                <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.name }}</option>
+                            <select v-if="clubs.length" v-model="challengeForm.guest_club_id" class="w-full bg-black border border-white/10 rounded-2xl p-4" required>
+                                <option disabled value="">Любой зарегистрированный клуб</option>
+                                <option v-for="club in clubs" :key="club.id" :value="club.id">{{ club.label || club.name }}</option>
                             </select>
+                            <p v-else class="text-xs text-amber-300/80">
+                                Список пуст.
+                                <a :href="join_url" class="text-cyan-400 underline">Пусть соперник заведёт клуб</a>
+                            </p>
                         </div>
                         <div class="col-span-2">
                             <label class="text-[10px] uppercase text-white/40 mb-2 block">Название</label>
@@ -552,7 +560,7 @@ const actionLabel = (action) => {
                             <textarea v-model="challengeForm.rules" rows="3" class="w-full bg-black border border-white/10 rounded-2xl p-4 text-sm" placeholder="BO3, FACEIT, только премьер, таймаут 10 мин…"></textarea>
                         </div>
                         <div class="col-span-2">
-                            <label class="text-[10px] uppercase text-white/40 mb-2 block">Сообщение второй локации</label>
+                            <label class="text-[10px] uppercase text-white/40 mb-2 block">Сообщение сопернику</label>
                             <input v-model="challengeForm.comment" type="text" class="w-full bg-black border border-white/10 rounded-2xl p-4" placeholder="Можем сдвинуть на час" />
                         </div>
                         <label class="col-span-2 flex items-center gap-3 text-[11px] uppercase tracking-widest text-white/60">

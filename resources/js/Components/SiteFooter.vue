@@ -100,6 +100,7 @@ const clubName = useClubName()
             <span>© {{ year }} {{ contacts?.club_name || clubName }}</span>
             <span v-if="legal.entity">{{ legal.entity }}</span>
             <span v-if="legal.inn">ИНН {{ legal.inn }}</span>
+            <a href="/clubs/join" class="hover:text-cyan-400 transition-colors">Зарегистрировать клуб</a>
         </div>
     </footer>
 </template>

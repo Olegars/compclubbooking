@@ -7,6 +7,7 @@ use App\Models\Club;
 use App\Models\VideoSurveillanceEvent;
 use App\Models\VideoSurveillanceSetting;
 use App\Services\VideoMarkerService;
+use App\Support\AdminLocation;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -30,7 +31,7 @@ class VideoSurveillanceController extends Controller
             'events' => $events,
             'providers' => VideoSurveillanceSetting::PROVIDERS,
             'triggers' => VideoSurveillanceSetting::TRIGGERS,
-            'clubs' => Club::query()->select('id', 'name')->orderBy('name')->get(),
+            'clubs' => Club::visibleToAdmin(AdminLocation::id())->select('id', 'name')->orderBy('name')->get(),
             'pending_jobs' => $markers->pendingCount($clubId),
         ]);
     }
