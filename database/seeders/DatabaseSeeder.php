@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
             GameSeeder::class,
             ProductSeeder::class,
             OverlaySeeder::class,
+            AchievementSeeder::class,
         ]);
     }
 }
