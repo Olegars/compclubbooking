@@ -12,6 +12,7 @@ class DatabaseSeeder extends Seeder
             ClubMapSeeder::class,
             AdminSeeder::class,
             GameSeeder::class,
+            ProductSeeder::class,
             OverlaySeeder::class,
         ]);
     }

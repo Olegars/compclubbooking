@@ -18,6 +18,8 @@ class RestrictPublicInAdminApp
         if ($request->is(
             'admin',
             'admin/*',
+            'pc',
+            'pc/*',
             'admin-app.apk',
             'admin-app.json',
             'build/*',

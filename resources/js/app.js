@@ -53,15 +53,17 @@ const isBossAppPage = (name) => (
     || name === 'Auth/StoreHire'
 );
 
+const isPcPath = (path) => /^\/pc(\/|$)/.test(path);
+
 if (isClientApp && /^\/(admin|store)(\/|$)/.test(window.location.pathname)) {
     window.location.replace('/');
 }
 
-if (isAdminApp && !/^\/admin(\/|$)/.test(window.location.pathname)) {
+if (isAdminApp && !/^\/admin(\/|$)/.test(window.location.pathname) && !isPcPath(window.location.pathname)) {
     window.location.replace('/admin/login');
 }
 
-if (isBossApp && !/^\/(admin|store)(\/|$)/.test(window.location.pathname)) {
+if (isBossApp && !/^\/(admin|store)(\/|$)/.test(window.location.pathname) && !isPcPath(window.location.pathname)) {
     window.location.replace('/admin/login');
 }
 
@@ -70,7 +72,8 @@ if (isStoreApp) {
     const storeOk = /^\/store(\/|$)/.test(path)
         || /^\/admin\/salary(\/|$)/.test(path)
         || /^\/admin\/store(\/|$)/.test(path)
-        || /^\/admin\/docs(\/|$)/.test(path);
+        || /^\/admin\/docs(\/|$)/.test(path)
+        || isPcPath(path);
     if (!storeOk) {
         window.location.replace('/store/login');
     }

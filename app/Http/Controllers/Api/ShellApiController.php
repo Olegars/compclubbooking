@@ -645,7 +645,11 @@ class ShellApiController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Shell API getGames: '.$e->getMessage());
-            return response()->json([]);
+            return response()->json([
+                'status' => 'error',
+                'games' => [],
+                'featured' => ['games' => []],
+            ], 500);
         }
     }
 
@@ -1781,8 +1785,23 @@ class ShellApiController extends Controller
         $computer = $terminalId > 0 ? Computer::query()->find($terminalId) : null;
         $storeOn = app(\App\Services\ClubFeatureService::class)->enabledForComputer($computer, 'shell_store');
 
+        $products = Product::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'category', 'price', 'stock', 'image', 'is_active'])
+            ->map(fn (Product $p) => [
+                'id' => (int) $p->id,
+                'name' => (string) $p->name,
+                'category' => (string) ($p->category ?? ''),
+                'price' => (float) $p->price,
+                'stock' => (int) $p->stock,
+                'image' => (string) ($p->image ?? ''),
+                'is_active' => (bool) $p->is_active,
+            ])
+            ->values();
+
         return response()->json(array_merge($snapshot, [
-            'products' => $storeOn ? Product::query()->orderBy('name')->get() : [],
+            'products' => $products,
             'store_enabled' => $storeOn,
         ]));
     }

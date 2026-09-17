@@ -37,4 +37,11 @@ class AdminAppBlocksPublicTest extends TestCase
             'User-Agent' => 'Mozilla/5.0 CompClubClient/1.0',
         ])->get('/admin/login')->assertRedirect('/');
     }
+
+    public function test_admin_apk_can_open_pc_passport(): void
+    {
+        $this->withHeaders([
+            'User-Agent' => 'Mozilla/5.0 CompClubAdmin/1.0',
+        ])->get('/pc')->assertNotFound();
+    }
 }

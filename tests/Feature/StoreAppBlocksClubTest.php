@@ -34,4 +34,11 @@ class StoreAppBlocksClubTest extends TestCase
             'User-Agent' => 'Mozilla/5.0 CompClubStore/1.0',
         ])->get('/store/login')->assertOk();
     }
+
+    public function test_store_apk_can_open_pc_passport(): void
+    {
+        $this->withHeaders([
+            'User-Agent' => 'Mozilla/5.0 CompClubStore/1.0',
+        ])->get('/pc')->assertNotFound();
+    }
 }
