@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class TournamentPlayer extends Model
 {
     protected $fillable = [
-        'tournament_id', 'user_id', 'seed', 'computer_id', 'placement', 'prize_paid_minor',
+        'tournament_id', 'user_id', 'club_id', 'seed', 'computer_id', 'placement', 'prize_paid_minor',
     ];
 
     protected $casts = [
@@ -30,5 +30,10 @@ class TournamentPlayer extends Model
     public function computer(): BelongsTo
     {
         return $this->belongsTo(Computer::class);
+    }
+
+    public function club(): BelongsTo
+    {
+        return $this->belongsTo(Club::class);
     }
 }

@@ -13,7 +13,7 @@ use Illuminate\Validation\ValidationException;
 
 class TournamentService
 {
-    public function register(Tournament $tournament, User $user, ?int $computerId = null): TournamentPlayer
+    public function register(Tournament $tournament, User $user, ?int $computerId = null, ?int $clubId = null): TournamentPlayer
     {
         if ($tournament->status !== 'planned') {
             throw ValidationException::withMessages([
@@ -28,12 +28,26 @@ class TournamentService
                 'user_id' => 'Этот гость уже в сетке.',
             ]);
         }
+        $clubId = $clubId ?: null;
+        $roster = (int) ($tournament->roster_size ?? 0);
+        if ($roster > 0 && $clubId && $tournament->opponent_club_id) {
+            $taken = TournamentPlayer::query()
+                ->where('tournament_id', $tournament->id)
+                ->where('club_id', $clubId)
+                ->count();
+            if ($taken >= $roster) {
+                throw ValidationException::withMessages([
+                    'user_id' => 'Состав этой локации уже набран ('.$roster.').',
+                ]);
+            }
+        }
 
         $seed = (int) TournamentPlayer::query()->where('tournament_id', $tournament->id)->max('seed') + 1;
 
         return TournamentPlayer::query()->create([
             'tournament_id' => $tournament->id,
             'user_id' => $user->id,
+            'club_id' => $clubId,
             'seed' => $seed,
             'computer_id' => $computerId,
         ]);

@@ -623,6 +623,11 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         // Ивенты
         Route::get('/tournaments', [TournamentController::class, 'index'])->name('admin.tournaments.index');
         Route::post('/tournaments', [TournamentController::class, 'store']);
+        Route::post('/tournaments/challenges', [TournamentController::class, 'propose']);
+        Route::post('/tournaments/challenges/{challenge}/counter', [TournamentController::class, 'counter']);
+        Route::post('/tournaments/challenges/{challenge}/accept', [TournamentController::class, 'accept']);
+        Route::post('/tournaments/challenges/{challenge}/decline', [TournamentController::class, 'decline']);
+        Route::post('/tournaments/challenges/{challenge}/cancel', [TournamentController::class, 'cancelChallenge']);
         Route::patch('/tournaments/{tournament}/status', [TournamentController::class, 'updateStatus']);
         Route::delete('/tournaments/{tournament}', [TournamentController::class, 'destroy']);
         Route::post('/tournaments/{tournament}/players', [TournamentController::class, 'addPlayer']);

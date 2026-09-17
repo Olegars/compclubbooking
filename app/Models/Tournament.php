@@ -10,6 +10,8 @@ class Tournament extends Model
 {
     protected $fillable = [
         'club_id',
+        'opponent_club_id',
+        'challenge_id',
         'name',
         'game_id',
         'start_at',
@@ -23,6 +25,10 @@ class Tournament extends Model
         'status',
         'format',
         'lock_games',
+        'roster_size',
+        'venue',
+        'prize_funding',
+        'rules',
     ];
 
     protected $casts = [
@@ -34,6 +40,7 @@ class Tournament extends Model
         'prize_first_minor' => 'integer',
         'prize_second_minor' => 'integer',
         'prize_third_minor' => 'integer',
+        'roster_size' => 'integer',
     ];
 
     public function game(): BelongsTo
@@ -44,6 +51,16 @@ class Tournament extends Model
     public function club(): BelongsTo
     {
         return $this->belongsTo(Club::class);
+    }
+
+    public function opponentClub(): BelongsTo
+    {
+        return $this->belongsTo(Club::class, 'opponent_club_id');
+    }
+
+    public function challenge(): BelongsTo
+    {
+        return $this->belongsTo(TournamentChallenge::class, 'challenge_id');
     }
 
     public function computers()

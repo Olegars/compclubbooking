@@ -372,7 +372,12 @@ onUnmounted(() => {
                     <Link v-if="featureOn('tournaments')" href="/admin/tournaments"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/tournaments') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
-                        <span>🏆</span> Менеджер ивентов
+                        <span>🏆</span>
+                        <span class="flex-1">Менеджер ивентов</span>
+                        <span v-if="counts.tournament_inbox > 0"
+                              class="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-cyan-500 text-black text-[10px] font-black grid place-items-center">
+                            {{ counts.tournament_inbox }}
+                        </span>
                     </Link>
                     <Link v-if="featureOn('clan_wars')" href="/admin/clan-wars"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"

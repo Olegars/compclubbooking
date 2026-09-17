@@ -19,6 +19,15 @@ class AdminAlerts
             $input = (int) DB::table('computer_input_alerts')->whereNull('resolved_at')->count();
             $incidents = (int) DB::table('incidents')->whereNull('resolved_at')->count();
 
+            $clubId = AdminLocation::id();
+            $tournamentInbox = 0;
+            if ($clubId && Schema::hasTable('tournament_challenges')) {
+                $tournamentInbox = (int) DB::table('tournament_challenges')
+                    ->where('waiting_club_id', $clubId)
+                    ->where('status', 'pending')
+                    ->count();
+            }
+
             return [
                 'pending_orders' => $pendingOrders,
                 'sos' => $sos,
@@ -27,6 +36,7 @@ class AdminAlerts
                 'avito_unread' => Schema::hasTable('store_avito_chats')
                     ? (int) DB::table('store_avito_chats')->where('unread', true)->count()
                     : 0,
+                'tournament_inbox' => $tournamentInbox,
             ];
         } catch (\Throwable $e) {
             Log::warning('AdminAlerts::counts failed: '.$e->getMessage());
@@ -43,6 +53,7 @@ class AdminAlerts
             'input' => 0,
             'incidents' => 0,
             'avito_unread' => 0,
+            'tournament_inbox' => 0,
         ];
     }
 }

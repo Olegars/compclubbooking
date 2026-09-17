@@ -270,7 +270,7 @@ class ClubFeatureCatalog
             [
                 'key' => 'tournaments',
                 'title' => 'Турниры',
-                'description' => 'Менеджер ивентов: сетка Single Elim, призы, lock каталога игр на ПК арены.',
+                'description' => 'Межклубное согласование регламента и сетка Single Elim: вызов второй локации, встречные условия, призы, lock каталога игр.',
                 'group' => self::GROUP_ESPORTS,
                 'icon' => '🏆',
                 'admin_path' => '/admin/tournaments',

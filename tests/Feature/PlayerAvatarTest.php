@@ -203,6 +203,35 @@ class PlayerAvatarTest extends TestCase
         });
     }
 
+    public function test_stylize_saves_when_deepseek_returns_text_only(): void
+    {
+        $this->fakeHttp(function ($request) {
+            if (str_contains($request->url(), 'images/generations')) {
+                return Http::response('nope', 404);
+            }
+            if (str_contains($request->url(), 'chat/completions')) {
+                return Http::response([
+                    'choices' => [['message' => ['content' => 'Я не умею генерировать изображения.']]],
+                ]);
+            }
+
+            return Http::response('unexpected '.$request->url(), 599);
+        });
+
+        $this->actingAs($this->user)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/account/profile/avatar', [
+                'photo' => $this->fakeImageUpload('face.png'),
+                'stylize' => 1,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->user->refresh();
+        $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
+        Storage::disk('public')->assertExists('avatars/'.basename($this->user->avatar));
+    }
+
     public function test_rejects_non_image_upload(): void
     {
         $this->actingAs($this->user)

@@ -30,10 +30,18 @@ class PlayerAvatarService
                 @set_time_limit(130);
             }
             $this->assertStylizeAllowed($user);
-            $photoUrl = $this->dataUrl($this->compress($bytes, $mime));
+            $photoPacked = $this->compress($bytes, $mime);
+            $photoUrl = $this->dataUrl($photoPacked);
             $sample = $this->readFile(UserAvatar::samplePath($user->avatar));
-            $sampleUrl = $this->dataUrl($this->compress($sample['bytes'], $sample['mime']));
-            $bytes = $this->llm->stylizeAvatar($photoUrl, $sampleUrl);
+            $samplePacked = $this->compress($sample['bytes'], $sample['mime']);
+            $sampleUrl = $this->dataUrl($samplePacked);
+            $styled = $this->llm->stylizeAvatar($photoUrl, $sampleUrl)
+                ?? $this->llm->stylizeWithOpenAi($photoPacked['bytes'], $samplePacked['bytes'])
+                ?? $this->blendClubFormat($photoPacked['bytes'], $samplePacked['bytes']);
+            if ($styled === null) {
+                throw new RuntimeException('Не удалось стилизовать фото.');
+            }
+            $bytes = $styled;
             $mime = $this->detectMime($bytes, $photo);
         }
 
@@ -210,6 +218,77 @@ class PlayerAvatarService
         imagedestroy($dst);
 
         return $out !== '' ? $out : $bytes;
+    }
+
+    /**
+     * Хостовый DeepSeek не рисует PNG — смешиваем фото с клубным образцом.
+     */
+    private function blendClubFormat(string $photoBytes, string $sampleBytes): ?string
+    {
+        if (! function_exists('imagecreatefromstring')) {
+            return null;
+        }
+        $photo = @imagecreatefromstring($photoBytes);
+        $sample = @imagecreatefromstring($sampleBytes);
+        if ($photo === false || $sample === false) {
+            if (is_object($photo)) {
+                imagedestroy($photo);
+            }
+            if (is_object($sample)) {
+                imagedestroy($sample);
+            }
+
+            return null;
+        }
+
+        $size = 512;
+        $face = $this->squareTruecolor($photo, $size);
+        $style = $this->squareTruecolor($sample, $size);
+        imagedestroy($photo);
+        imagedestroy($sample);
+        if ($face === null || $style === null) {
+            if ($face) {
+                imagedestroy($face);
+            }
+            if ($style) {
+                imagedestroy($style);
+            }
+
+            return null;
+        }
+
+        imagecopymerge($face, $style, 0, 0, 0, 0, $size, $size, 42);
+        imagefilter($face, IMG_FILTER_CONTRAST, -18);
+        imagefilter($face, IMG_FILTER_COLORIZE, 8, 48, 12, 0);
+        imagefilter($face, IMG_FILTER_BRIGHTNESS, -8);
+        imagedestroy($style);
+
+        ob_start();
+        imagepng($face, null, 8);
+        $out = (string) ob_get_clean();
+        imagedestroy($face);
+
+        return $out !== '' ? $out : null;
+    }
+
+    /**
+     * @param  \GdImage  $src
+     * @return \GdImage|null
+     */
+    private function squareTruecolor($src, int $size)
+    {
+        $width = imagesx($src);
+        $height = imagesy($src);
+        if ($width < 1 || $height < 1) {
+            return null;
+        }
+        $side = min($width, $height);
+        $sx = (int) floor(($width - $side) / 2);
+        $sy = (int) floor(($height - $side) / 2);
+        $dst = imagecreatetruecolor($size, $size);
+        imagecopyresampled($dst, $src, 0, 0, $sx, $sy, $size, $size, $side, $side);
+
+        return $dst;
     }
 
     /**

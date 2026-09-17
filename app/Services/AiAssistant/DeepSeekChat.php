@@ -274,9 +274,9 @@ class DeepSeekChat
     }
 
     /**
-     * Клубный аватар: фото игрока + образец дефолтного аватара → картинка от модели.
+     * Клубный аватар: фото игрока + образец дефолтного аватара → PNG/JPEG или null, если модель вернула только текст.
      */
-    public function stylizeAvatar(string $photoDataUrl, string $sampleDataUrl, ?int $clubId = null): string
+    public function stylizeAvatar(string $photoDataUrl, string $sampleDataUrl, ?int $clubId = null): ?string
     {
         $settings = $this->settingsForOptionalClub($clubId);
         $key = $settings->resolvedLlmApiKey();
@@ -294,30 +294,82 @@ class DeepSeekChat
             return $fromImages;
         }
 
+        $userContent = [
+            ['type' => 'text', 'text' => $prompt],
+            [
+                'type' => 'image_url',
+                'image_url' => ['url' => $photoDataUrl, 'detail' => 'high'],
+            ],
+            [
+                'type' => 'image_url',
+                'image_url' => ['url' => $sampleDataUrl, 'detail' => 'high'],
+            ],
+        ];
+
+        try {
+            $json = $this->postAvatarChat(
+                $base,
+                $key,
+                $model,
+                $this->avatarStyleSystemPrompt(),
+                $userContent,
+                $timeout,
+                8192,
+            );
+        } catch (RuntimeException) {
+            $json = [];
+        }
+        $bytes = $this->extractImageBytes($json) ?? $this->rasterizeSvg($this->extractSvg($this->extractMessageText($json)));
+        if ($bytes !== null) {
+            return $bytes;
+        }
+
+        try {
+            $json = $this->postAvatarChat(
+                $base,
+                $key,
+                $model,
+                'Ответ — только SVG-документ. Никакого текста вокруг.',
+                [
+                    ['type' => 'text', 'text' => $this->avatarSvgRetryPrompt()],
+                    $userContent[1],
+                    $userContent[2],
+                ],
+                $timeout,
+                8192,
+            );
+        } catch (RuntimeException) {
+            return null;
+        }
+
+        return $this->extractImageBytes($json)
+            ?? $this->rasterizeSvg($this->extractSvg($this->extractMessageText($json)));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $userContent
+     * @return array<string, mixed>
+     */
+    private function postAvatarChat(
+        string $base,
+        string $key,
+        string $model,
+        string $system,
+        array $userContent,
+        float $timeout,
+        int $maxTokens,
+    ): array {
         $response = Http::timeout($timeout)
             ->withToken($key)
             ->acceptJson()
             ->post($base.'/chat/completions', $this->chatPayload(
                 $model,
                 [
-                    ['role' => 'system', 'content' => $this->avatarStyleSystemPrompt()],
-                    [
-                        'role' => 'user',
-                        'content' => [
-                            ['type' => 'text', 'text' => $prompt],
-                            [
-                                'type' => 'image_url',
-                                'image_url' => ['url' => $photoDataUrl, 'detail' => 'high'],
-                            ],
-                            [
-                                'type' => 'image_url',
-                                'image_url' => ['url' => $sampleDataUrl, 'detail' => 'high'],
-                            ],
-                        ],
-                    ],
+                    ['role' => 'system', 'content' => $system],
+                    ['role' => 'user', 'content' => $userContent],
                 ],
                 temperature: 0.4,
-                maxTokens: 4096,
+                maxTokens: $maxTokens,
             ));
 
         if (! $response->successful()) {
@@ -329,12 +381,9 @@ class DeepSeekChat
             throw new RuntimeException('DeepSeek не стилизовал аватар: HTTP '.$response->status().' '.$body);
         }
 
-        $bytes = $this->extractImageBytes($response->json());
-        if ($bytes === null) {
-            throw new RuntimeException('DeepSeek не вернул изображение. Попробуйте без стилизации.');
-        }
+        $json = $response->json();
 
-        return $bytes;
+        return is_array($json) ? $json : [];
     }
 
     public function resolvedVisionModel(?AiAssistantSetting $settings = null): string
@@ -471,14 +520,25 @@ class DeepSeekChat
     private function avatarStylePrompt(): string
     {
         return <<<'PROMPT'
-Первое изображение — фото игрока. Второе — образец клубного аватара.
-Перерисуй человека с первого фото в точности в визуальном стиле второго образца: cyberpunk digital illustration, неоновые зелёные схемы на лице, тёмный фон, портрет анфас, та же линия и свет. Сохрани личность, форму лица, волосы и выражение. Без текста и водяных знаков. Верни только готовое изображение аватара.
+Первое изображение — фото игрока. Второе — образец клубного аватара (cyberpunk, неон-зелёные схемы на лице, тёмный фон).
+Перерисуй этого человека в точности в стиле второго образца: digital illustration, портрет анфас, тот же штрих и свет, узнаваемое лицо.
+Хостовый API не умеет отдать PNG, поэтому верни ТОЛЬКО один SVG-документ:
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">...</svg>
+Без markdown, без пояснений, без base64. Круглый аватар.
 PROMPT;
     }
 
     private function avatarStyleSystemPrompt(): string
     {
-        return 'Ты художник клубных аватаров. По фото игрока и образцу стиля верни готовое изображение (PNG), не описание.';
+        return 'Ты векторный художник клубных аватаров. Ответ — только SVG, без текста вокруг.';
+    }
+
+    private function avatarSvgRetryPrompt(): string
+    {
+        return <<<'PROMPT'
+По этим двум картинкам нарисуй векторный клубный аватар игрока в стиле образца.
+Верни только SVG с viewBox="0 0 512 512". Никакого текста.
+PROMPT;
     }
 
     private function tryImageGeneration(
@@ -505,20 +565,30 @@ PROMPT;
             $payload['thinking'] = ['type' => 'disabled'];
         }
 
-        try {
-            $response = Http::timeout($timeout)
-                ->withToken($key)
-                ->acceptJson()
-                ->post($base.'/images/generations', $payload);
-        } catch (\Throwable) {
-            return null;
+        $paths = ['/images/generations'];
+        if (! str_ends_with($base, '/v1')) {
+            $paths[] = '/v1/images/generations';
         }
 
-        if (! $response->successful()) {
-            return null;
+        foreach ($paths as $path) {
+            try {
+                $response = Http::timeout($timeout)
+                    ->withToken($key)
+                    ->acceptJson()
+                    ->post($base.$path, $payload);
+            } catch (\Throwable) {
+                continue;
+            }
+            if (! $response->successful()) {
+                continue;
+            }
+            $bytes = $this->extractImageBytes($response->json());
+            if ($bytes !== null) {
+                return $bytes;
+            }
         }
 
-        return $this->extractImageBytes($response->json());
+        return null;
     }
 
     /**
@@ -684,5 +754,126 @@ PROMPT;
             || str_starts_with($bytes, "\xff\xd8\xff")
             || str_starts_with($bytes, 'GIF8')
             || (str_starts_with($bytes, 'RIFF') && substr($bytes, 8, 4) === 'WEBP');
+    }
+
+    public function stylizeWithOpenAi(string $photoBytes, string $sampleBytes, ?int $clubId = null): ?string
+    {
+        $settings = $this->settingsForOptionalClub($clubId);
+        $key = $settings->resolvedOpenAiApiKey();
+        if ($key === '') {
+            return null;
+        }
+
+        $base = trim((string) config('ai_assistant.openai.base_url', 'https://api.openai.com/v1'));
+        $base = rtrim($base !== '' ? $base : 'https://api.openai.com/v1', '/');
+        $timeout = (float) config('ai_assistant.image_timeout', 120);
+
+        try {
+            $response = Http::timeout($timeout)
+                ->withToken($key)
+                ->attach('image[]', $photoBytes, 'photo.png')
+                ->attach('image[]', $sampleBytes, 'style.png')
+                ->post($base.'/images/edits', [
+                    'model' => 'gpt-image-1',
+                    'prompt' => $this->avatarStylePrompt(),
+                    'n' => '1',
+                    'size' => '1024x1024',
+                ]);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (! $response->successful()) {
+            return null;
+        }
+
+        return $this->extractImageBytes($response->json());
+    }
+
+    private function extractSvg(?string $text): ?string
+    {
+        $text = trim((string) $text);
+        if ($text === '') {
+            return null;
+        }
+        if (preg_match('/```(?:svg)?\s*(<svg\b.*<\/svg>)\s*```/is', $text, $m)) {
+            return $m[1];
+        }
+        if (preg_match('/<svg\b[^>]*>.*<\/svg>/is', $text, $m)) {
+            return $m[0];
+        }
+
+        return null;
+    }
+
+    private function rasterizeSvg(?string $svg): ?string
+    {
+        $svg = trim((string) $svg);
+        if ($svg === '' || ! str_contains(strtolower($svg), '<svg')) {
+            return null;
+        }
+        if (! str_contains($svg, 'xmlns')) {
+            $svg = preg_replace('/<svg\b/i', '<svg xmlns="http://www.w3.org/2000/svg"', $svg, 1) ?? $svg;
+        }
+
+        if (class_exists(\Imagick::class)) {
+            try {
+                $im = new \Imagick;
+                $im->setBackgroundColor(new \ImagickPixel('transparent'));
+                $im->setResolution(144, 144);
+                $im->readImageBlob($svg);
+                $im->setImageFormat('png');
+                $blob = $im->getImageBlob();
+                $im->clear();
+                $im->destroy();
+                if (is_string($blob) && $this->looksLikeImage($blob)) {
+                    return $blob;
+                }
+            } catch (\Throwable) {
+            }
+        }
+
+        $in = tempnam(sys_get_temp_dir(), 'clubsvg');
+        if ($in === false) {
+            return null;
+        }
+        $svgFile = $in.'.svg';
+        $pngFile = $in.'.png';
+        file_put_contents($svgFile, $svg);
+        @unlink($in);
+
+        $commands = [
+            ['rsvg-convert', '-w', '512', '-h', '512', '-f', 'png', '-o', $pngFile, $svgFile],
+            ['convert', '-background', 'none', '-resize', '512x512', $svgFile, $pngFile],
+            ['magick', '-background', 'none', '-resize', '512x512', $svgFile, $pngFile],
+        ];
+        foreach ($commands as $cmd) {
+            if (! $this->binaryOnPath($cmd[0])) {
+                continue;
+            }
+            $escaped = array_map('escapeshellarg', $cmd);
+            exec(implode(' ', $escaped).' 2>/dev/null', $out, $code);
+            if ($code === 0 && is_file($pngFile)) {
+                $blob = (string) file_get_contents($pngFile);
+                @unlink($svgFile);
+                @unlink($pngFile);
+                if ($this->looksLikeImage($blob)) {
+                    return $blob;
+                }
+            }
+        }
+        @unlink($svgFile);
+        @unlink($pngFile);
+
+        return null;
+    }
+
+    private function binaryOnPath(string $name): bool
+    {
+        $which = str_starts_with(PHP_OS_FAMILY, 'Windows') ? 'where' : 'command -v';
+        $line = $which.' '.escapeshellarg($name).' 2>/dev/null';
+        exec($line, $out, $code);
+
+        return $code === 0 && $out !== [];
     }
 }

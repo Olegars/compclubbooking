@@ -8,6 +8,7 @@ const counts = reactive({
     input: 0,
     incidents: 0,
     avito_unread: 0,
+    tournament_inbox: 0,
 })
 
 let lastAvitoUnread = null
