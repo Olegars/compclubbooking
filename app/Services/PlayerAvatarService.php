@@ -30,18 +30,32 @@ class PlayerAvatarService
                 @set_time_limit(130);
             }
             $this->assertStylizeAllowed($user);
-            $photoPacked = $this->compress($bytes, $mime);
-            $photoUrl = $this->dataUrl($photoPacked);
-            $sample = $this->readFile(UserAvatar::samplePath($user->avatar));
-            $samplePacked = $this->compress($sample['bytes'], $sample['mime']);
-            $sampleUrl = $this->dataUrl($samplePacked);
-            $styled = $this->llm->stylizeAvatar($photoUrl, $sampleUrl)
-                ?? $this->llm->stylizeWithOpenAi($photoPacked['bytes'], $samplePacked['bytes'])
-                ?? $this->blendClubFormat($photoPacked['bytes'], $samplePacked['bytes']);
-            if ($styled === null) {
-                throw new RuntimeException('Не удалось стилизовать фото.');
+            $photoPacked = $this->compress($bytes, $mime, 512);
+            $samplePacked = $this->samplePacked($user);
+            $styled = null;
+            try {
+                $styled = $this->llm->stylizeAvatar(
+                    $this->dataUrl($photoPacked),
+                    $this->dataUrl($samplePacked),
+                );
+            } catch (\Throwable $e) {
+                report($e);
             }
-            $bytes = $styled;
+            if ($styled === null) {
+                try {
+                    $styled = $this->llm->stylizeWithOpenAi($photoPacked['bytes'], $samplePacked['bytes']);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+            if ($styled === null) {
+                try {
+                    $styled = $this->blendClubFormat($photoPacked['bytes'], $samplePacked['bytes']);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+            $bytes = $styled ?: $photoPacked['bytes'];
             $mime = $this->detectMime($bytes, $photo);
         }
 
@@ -148,20 +162,36 @@ class PlayerAvatarService
     /**
      * @return array{bytes: string, mime: string}
      */
-    private function compress(string $bytes, string $mime): array
+    private function samplePacked(User $user): array
+    {
+        try {
+            $sample = $this->readFile(UserAvatar::samplePath($user->avatar));
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $this->compress($this->tinyClubPng(), 'image/png', 512);
+        }
+
+        return $this->compress($sample['bytes'], $sample['mime'], 512);
+    }
+
+    /**
+     * @return array{bytes: string, mime: string}
+     */
+    private function compress(string $bytes, string $mime, int $maxSide = 1024): array
     {
         if (! function_exists('imagecreatefromstring')) {
             return ['bytes' => $bytes, 'mime' => $mime];
         }
 
-        $src = @imagecreatefromstring($bytes);
-        if ($src === false) {
+        $src = $this->gdFromBytes($bytes);
+        if ($src === null) {
             return ['bytes' => $bytes, 'mime' => $mime];
         }
 
         $width = imagesx($src);
         $height = imagesy($src);
-        $maxSide = 1024;
+        $maxSide = max(64, $maxSide);
         $scale = max($width, $height) > $maxSide
             ? $maxSide / max($width, $height)
             : 1.0;
@@ -225,50 +255,97 @@ class PlayerAvatarService
      */
     private function blendClubFormat(string $photoBytes, string $sampleBytes): ?string
     {
-        if (! function_exists('imagecreatefromstring')) {
-            return null;
-        }
-        $photo = @imagecreatefromstring($photoBytes);
-        $sample = @imagecreatefromstring($sampleBytes);
-        if ($photo === false || $sample === false) {
-            if (is_object($photo)) {
-                imagedestroy($photo);
-            }
-            if (is_object($sample)) {
+        $photo = $this->gdFromBytes($photoBytes);
+        $sample = $this->gdFromBytes($sampleBytes);
+        if ($photo === null) {
+            if ($sample !== null) {
                 imagedestroy($sample);
             }
 
-            return null;
+            return $photoBytes !== '' ? $photoBytes : null;
         }
 
         $size = 512;
         $face = $this->squareTruecolor($photo, $size);
-        $style = $this->squareTruecolor($sample, $size);
         imagedestroy($photo);
-        imagedestroy($sample);
-        if ($face === null || $style === null) {
-            if ($face) {
-                imagedestroy($face);
-            }
-            if ($style) {
-                imagedestroy($style);
+        if ($face === null) {
+            if ($sample !== null) {
+                imagedestroy($sample);
             }
 
-            return null;
+            return $photoBytes !== '' ? $photoBytes : null;
         }
 
-        imagecopymerge($face, $style, 0, 0, 0, 0, $size, $size, 42);
-        imagefilter($face, IMG_FILTER_CONTRAST, -18);
-        imagefilter($face, IMG_FILTER_COLORIZE, 8, 48, 12, 0);
-        imagefilter($face, IMG_FILTER_BRIGHTNESS, -8);
-        imagedestroy($style);
+        if ($sample !== null) {
+            $style = $this->squareTruecolor($sample, $size);
+            imagedestroy($sample);
+            if ($style !== null) {
+                imagecopymerge($face, $style, 0, 0, 0, 0, $size, $size, 42);
+                imagedestroy($style);
+            }
+        }
+
+        if (function_exists('imagefilter')) {
+            imagefilter($face, IMG_FILTER_CONTRAST, -18);
+            imagefilter($face, IMG_FILTER_COLORIZE, 8, 48, 12, 0);
+            imagefilter($face, IMG_FILTER_BRIGHTNESS, -8);
+        }
 
         ob_start();
         imagepng($face, null, 8);
         $out = (string) ob_get_clean();
         imagedestroy($face);
 
-        return $out !== '' ? $out : null;
+        return $out !== '' ? $out : $photoBytes;
+    }
+
+    /**
+     * @return \GdImage|null
+     */
+    private function gdFromBytes(string $bytes)
+    {
+        if ($bytes === '' || ! function_exists('imagecreatefromstring')) {
+            return null;
+        }
+        $src = @imagecreatefromstring($bytes);
+        if ($src !== false) {
+            return $src;
+        }
+
+        $tmp = tempnam(sys_get_temp_dir(), 'clubimg');
+        if ($tmp === false) {
+            return null;
+        }
+        file_put_contents($tmp, $bytes);
+        foreach (['imagecreatefrompng', 'imagecreatefromjpeg', 'imagecreatefromwebp', 'imagecreatefromgif'] as $fn) {
+            if (! function_exists($fn)) {
+                continue;
+            }
+            $src = @$fn($tmp);
+            if ($src !== false) {
+                @unlink($tmp);
+
+                return $src;
+            }
+        }
+        @unlink($tmp);
+
+        return null;
+    }
+
+    private function tinyClubPng(): string
+    {
+        $decoded = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            true
+        );
+
+        return is_string($decoded) && $decoded !== '' ? $decoded : $this->minimalPng();
+    }
+
+    private function minimalPng(): string
+    {
+        return "\x89PNG\r\n\x1a\n";
     }
 
     /**

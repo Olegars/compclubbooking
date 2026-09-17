@@ -318,6 +318,9 @@ class DeepSeekChat
             );
         } catch (RuntimeException) {
             $json = [];
+        } catch (\Throwable $e) {
+            report($e);
+            $json = [];
         }
         $bytes = $this->extractImageBytes($json) ?? $this->rasterizeSvg($this->extractSvg($this->extractMessageText($json)));
         if ($bytes !== null) {
@@ -339,6 +342,10 @@ class DeepSeekChat
                 8192,
             );
         } catch (RuntimeException) {
+            return null;
+        } catch (\Throwable $e) {
+            report($e);
+
             return null;
         }
 

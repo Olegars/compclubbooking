@@ -387,8 +387,10 @@ class ProfileController extends Controller
                 return back()->withErrors(['photo' => 'Нужно фото.']);
             }
             $avatars->save(Auth::user(), $photo, $request->boolean('stylize'));
-        } catch (\RuntimeException $e) {
-            return back()->withErrors(['photo' => $e->getMessage()]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return back()->withErrors(['photo' => $e->getMessage() ?: 'Не удалось сохранить фото.']);
         }
 
         return back()->with('success', $request->boolean('stylize')
