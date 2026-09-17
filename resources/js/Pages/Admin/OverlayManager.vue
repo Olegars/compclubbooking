@@ -118,6 +118,25 @@ const fetchOverlays = async () => {
     }
 }
 
+const saveErrorMessage = (error: any): string => {
+    const status = error?.response?.status
+    const data = error?.response?.data
+    if (status === 419)
+        return 'Сессия истекла — обновите страницу'
+    if (data && typeof data === 'object') {
+        const bag = data.errors
+        if (bag && typeof bag === 'object') {
+            const first = Object.values(bag).flat().find((v) => typeof v === 'string' && v.trim())
+            if (first) return String(first)
+        }
+        if (typeof data.message === 'string' && data.message.trim())
+            return data.message
+    }
+    if (typeof error?.message === 'string' && error.message.trim())
+        return error.message
+    return status ? `Ошибка сохранения (HTTP ${status})` : 'Ошибка сохранения'
+}
+
 const saveOverlay = async (block: OverlayBlock, opts: { goLive?: boolean; quiet?: boolean } = {}) => {
     if (isProcessing.value) return
     isProcessing.value = true
@@ -131,12 +150,14 @@ const saveOverlay = async (block: OverlayBlock, opts: { goLive?: boolean; quiet?
             title: block.title,
             type: block.type || 'video',
             content: buildContentForSave(block),
-            is_active: block.is_active ? 1 : 0,
+            is_active: !!block.is_active,
         }
 
-        const response = await axios.put(`/admin/api/overlays/${block.id}`, payload)
+        const response = await axios.put(`/admin/api/overlays/${block.id}`, payload, {
+            headers: { Accept: 'application/json' },
+        })
 
-        if (response.data.status === 'success') {
+        if (response.data?.status === 'success') {
             if (!opts.quiet) {
                 const live = !!block.is_active && !!videoUrl
                 alert(live
@@ -144,10 +165,13 @@ const saveOverlay = async (block: OverlayBlock, opts: { goLive?: boolean; quiet?
                     : `${clubName.value}: блок сохранён, но трансляция ВЫКЛЮЧЕНА — на экраны не уйдёт.`)
             }
             await fetchOverlays()
+        } else if (!opts.quiet) {
+            alert(response.data?.message || 'Сервер не подтвердил сохранение')
         }
     } catch (error: any) {
-        console.error('ОШИБКА:', error.response?.data)
-        alert('Ошибка при сохранении: ' + JSON.stringify(error.response?.data?.errors))
+        console.error('ОШИБКА:', error.response?.data || error)
+        if (!opts.quiet)
+            alert('Ошибка при сохранении: ' + saveErrorMessage(error))
     } finally {
         isProcessing.value = false
     }

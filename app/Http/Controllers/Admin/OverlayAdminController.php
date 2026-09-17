@@ -59,11 +59,15 @@ class OverlayAdminController extends Controller
         // Теперь в базу пишется чистая структура без привязки к конкретному IP/домену
         $overlay->update($validated);
 
-        broadcast(new \App\Events\OverlayUpdated($overlay));
+        try {
+            broadcast(new OverlayUpdated($overlay->fresh() ?? $overlay));
+        } catch (\Throwable $e) {
+            \Log::warning('overlay.changed broadcast failed: '.$e->getMessage());
+        }
 
         return response()->json([
             'status' => 'success',
-            'data'   => $overlay->fresh()
+            'data'   => $overlay->fresh(),
         ]);
     }
     public function uploadImage(Request $request)

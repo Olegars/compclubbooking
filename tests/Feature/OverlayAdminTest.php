@@ -7,6 +7,7 @@ use App\Models\Club;
 use App\Models\Overlay;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class OverlayAdminTest extends TestCase
@@ -45,6 +46,7 @@ class OverlayAdminTest extends TestCase
 
     public function test_active_video_overlay_is_served_to_shell(): void
     {
+        Event::fake();
         $slot = Overlay::query()->where('block_position', 'top_left')->first();
         $this->assertNotNull($slot);
 
