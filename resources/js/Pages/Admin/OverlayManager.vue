@@ -118,9 +118,13 @@ const fetchOverlays = async () => {
     }
 }
 
-const saveOverlay = async (block: OverlayBlock) => {
+const saveOverlay = async (block: OverlayBlock, opts: { goLive?: boolean; quiet?: boolean } = {}) => {
     if (isProcessing.value) return
     isProcessing.value = true
+
+    const videoUrl = (videoLayer(block).value || '').trim()
+    if (opts.goLive && videoUrl)
+        block.is_active = true
 
     try {
         const payload = {
@@ -133,7 +137,12 @@ const saveOverlay = async (block: OverlayBlock) => {
         const response = await axios.put(`/admin/api/overlays/${block.id}`, payload)
 
         if (response.data.status === 'success') {
-            alert(`${clubName.value}: БЛОК УСПЕШНО СИНХРОНИЗИРОВАН!`)
+            if (!opts.quiet) {
+                const live = !!block.is_active && !!videoUrl
+                alert(live
+                    ? `${clubName.value}: трансляция включена. Видео появится на экранах в течение нескольких секунд.`
+                    : `${clubName.value}: блок сохранён, но трансляция ВЫКЛЮЧЕНА — на экраны не уйдёт.`)
+            }
             await fetchOverlays()
         }
     } catch (error: any) {
@@ -164,7 +173,8 @@ const handleVideoUpload = async (event: Event) => {
         })
 
         videoLayer(currentUploadBlock.value).value = response.data.url
-        alert('Видео загружено! Нажмите "СИНХРОНИЗИРОВАТЬ" для отправки на экраны.')
+        currentUploadBlock.value.is_active = true
+        alert('Видео загружено. Нажмите «СИНХРОНИЗИРОВАТЬ БЛОК» — трансляция включится.')
     } catch {
         alert('Ошибка при загрузке видео на сервер! Проверьте лимиты (upload_max_filesize).')
     } finally {
@@ -203,6 +213,7 @@ const formatPositionName = (pos: string) => {
                         {{ clubName }} Media Center
                     </h2>
                     <p class="text-[10px] text-white/40 uppercase tracking-[0.3em] ml-6 italic">Video + Text Overlay · v3.1</p>
+                    <p class="text-[10px] text-white/25 ml-6 mt-2">«Синхронизировать» включает трансляцию. Выключить слот — тумблером.</p>
                 </div>
                 <div class="text-xs text-purple-500/50 font-black tracking-widest">{{ clubName }}</div>
             </div>
@@ -229,7 +240,8 @@ const formatPositionName = (pos: string) => {
                             </div>
 
                             <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" v-model="block.is_active" class="sr-only peer">
+                                <input type="checkbox" v-model="block.is_active" class="sr-only peer"
+                                       @change="saveOverlay(block, { quiet: true })">
                                 <div class="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0)] peer-checked:shadow-[0_0_15px_rgba(34,197,94,0.4)]"></div>
                                 <span class="ml-3 text-[10px] font-bold uppercase tracking-wider" :class="block.is_active ? 'text-green-500' : 'text-white/30'">
                                     {{ block.is_active ? 'ТРАНСЛЯЦИЯ ВКЛ' : 'ВЫКЛЮЧЕНО' }}
@@ -271,7 +283,7 @@ const formatPositionName = (pos: string) => {
                         </div>
                     </div>
 
-                    <button type="button" @click="saveOverlay(block)" :disabled="isProcessing"
+                    <button type="button" @click="saveOverlay(block, { goLive: true })" :disabled="isProcessing"
                             class="w-full bg-[#22c55e]/10 hover:bg-[#22c55e] text-[#22c55e] hover:text-black border border-[#22c55e]/30 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] transition-all disabled:opacity-50">
                         {{ isProcessing ? 'СИНХРОНИЗАЦИЯ...' : 'СИНХРОНИЗИРОВАТЬ БЛОК' }}
                     </button>

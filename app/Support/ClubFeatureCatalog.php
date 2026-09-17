@@ -100,7 +100,7 @@ class ClubFeatureCatalog
                     self::intField('rake_percent', 'Сбор клуба, %', 10, 0, 20, 1, '%', 'Организационный сбор в момент закрытия матча. Приз = банк − сбор.'),
                     self::intField('invite_seconds', 'TTL адресного вызова, секунды', 60, 20, 180, 5, 'с'),
                     self::intField('open_ttl_minutes', 'TTL открытого котла, минуты', 5, 1, 180, 1, 'мин'),
-                    self::intField('advance_ttl_hours', 'TTL вызова из ЛК, часы', 4, 1, 48, 1, 'ч', 'Если время не указано. С расписанием лобби живёт до старта + TTL котла.'),
+                    self::intField('advance_ttl_hours', 'TTL вызова из ЛК, часы', 24, 1, 48, 1, 'ч', 'Если время не указано. С расписанием лобби живёт до старта + TTL котла.'),
                     self::intField('min_battle_players', 'Битва: минимум игроков', 3, 3, 8, 1),
                     self::intField('max_battle_players', 'Битва: максимум игроков', 8, 3, 16, 1),
                     self::intField('rank_delta', 'Допуск по рангу, ступеней', 3, 0, 8, 1, '', '0 — только тот же ранг LFG. Нет ранга — не блокируем.'),

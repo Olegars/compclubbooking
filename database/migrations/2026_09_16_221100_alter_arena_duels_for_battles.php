@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -12,16 +13,17 @@ return new class extends Migration
             $table->dropForeign(['creator_computer_id']);
         });
 
+        $this->nullableUnsigned('arena_duels', 'creator_computer_id');
+
         Schema::table('arena_duels', function (Blueprint $table) {
-            $table->unsignedBigInteger('creator_computer_id')->nullable()->change();
             $table->foreign('creator_computer_id')->references('id')->on('computers')->nullOnDelete();
-            $table->string('kind', 16)->default('duel')->after('mode');
-            $table->unsignedTinyInteger('min_players')->default(2)->after('kind');
-            $table->unsignedTinyInteger('max_players')->default(2)->after('min_players');
-            $table->timestamp('scheduled_at')->nullable()->after('expires_at');
-            $table->decimal('raise_to', 10, 2)->nullable()->after('winner_prize');
-            $table->foreignId('raise_by_user_id')->nullable()->after('raise_to')->constrained('users')->nullOnDelete();
-            $table->json('raise_votes')->nullable()->after('raise_by_user_id');
+            $table->string('kind', 16)->default('duel');
+            $table->unsignedTinyInteger('min_players')->default(2);
+            $table->unsignedTinyInteger('max_players')->default(2);
+            $table->timestamp('scheduled_at')->nullable();
+            $table->decimal('raise_to', 10, 2)->nullable();
+            $table->foreignId('raise_by_user_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->json('raise_votes')->nullable();
             $table->index(['club_id', 'kind', 'status']);
         });
 
@@ -29,10 +31,11 @@ return new class extends Migration
             $table->dropForeign(['computer_id']);
         });
 
+        $this->nullableUnsigned('arena_duel_participants', 'computer_id');
+
         Schema::table('arena_duel_participants', function (Blueprint $table) {
-            $table->unsignedBigInteger('computer_id')->nullable()->change();
             $table->foreign('computer_id')->references('id')->on('computers')->nullOnDelete();
-            $table->decimal('held_amount', 10, 2)->nullable()->after('escrow_status');
+            $table->decimal('held_amount', 10, 2)->nullable();
         });
     }
 
@@ -46,6 +49,24 @@ return new class extends Migration
 
         Schema::table('arena_duel_participants', function (Blueprint $table) {
             $table->dropColumn('held_amount');
+        });
+    }
+
+    private function nullableUnsigned(string $table, string $column): void
+    {
+        $driver = Schema::getConnection()->getDriverName();
+        if ($driver === 'mysql') {
+            DB::statement("ALTER TABLE {$table} MODIFY {$column} BIGINT UNSIGNED NULL");
+
+            return;
+        }
+        if ($driver === 'pgsql') {
+            DB::statement("ALTER TABLE {$table} ALTER COLUMN {$column} DROP NOT NULL");
+
+            return;
+        }
+        Schema::table($table, function (Blueprint $blueprint) use ($column) {
+            $blueprint->unsignedBigInteger($column)->nullable()->change();
         });
     }
 };

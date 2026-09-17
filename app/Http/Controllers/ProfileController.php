@@ -519,13 +519,16 @@ class ProfileController extends Controller
 
     public function createArena(\Illuminate\Http\Request $request)
     {
-        [$computer, $booking, $user] = $this->arenaSession();
+        [$computer, $booking, $user] = $this->arenaSeat();
         $data = $request->validate([
             'game' => 'nullable|in:cs2,dota,dota2',
             'mode' => 'required|in:1v1_aim,2v2_wingman,1v1_mid',
+            'kind' => 'nullable|in:duel,battle',
             'entry_fee' => 'required|numeric|min:1|max:20000',
             'scope' => 'nullable|in:hall,computer,pc,zone,bootcamp',
             'target_computer_id' => 'nullable|integer',
+            'scheduled_at' => 'nullable|date',
+            'max_players' => 'nullable|integer|min:2|max:16',
         ]);
         try {
             $duel = app(\App\Services\LanLive\ArenaDuelService::class)->create($user, $computer, $booking, $data);
@@ -537,13 +540,13 @@ class ProfileController extends Controller
             'status' => 'success',
             'message' => 'Вызов брошен, взнос в эскроу',
             'arena' => $this->arenaCabinet($user->fresh()),
-            'duel' => app(\App\Services\LanLive\ArenaDuelService::class)->payload($duel, $computer, $booking),
+            'duel' => app(\App\Services\LanLive\ArenaDuelService::class)->payload($duel, $computer, $booking, $user),
         ]);
     }
 
     public function acceptArena(string $uuid)
     {
-        [$computer, $booking, $user] = $this->arenaSession();
+        [$computer, $booking, $user] = $this->arenaSeat();
         $arena = app(\App\Services\LanLive\ArenaDuelService::class);
         try {
             $duel = $arena->accept($user, $computer, $booking, $arena->findByUuid($uuid));
@@ -553,15 +556,15 @@ class ProfileController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Дуэль принята',
+            'message' => 'Вызов принят, ставка списана',
             'arena' => $this->arenaCabinet($user->fresh()),
-            'duel' => $arena->payload($duel, $computer, $booking),
+            'duel' => $arena->payload($duel, $computer, $booking, $user),
         ]);
     }
 
     public function declineArena(string $uuid)
     {
-        [$computer, $booking, $user] = $this->arenaSession();
+        [$computer, $booking, $user] = $this->arenaSeat();
         $arena = app(\App\Services\LanLive\ArenaDuelService::class);
         try {
             $arena->decline($user, $computer, $arena->findByUuid($uuid));
@@ -593,6 +596,66 @@ class ProfileController extends Controller
         ]);
     }
 
+    public function raiseArena(\Illuminate\Http\Request $request, string $uuid)
+    {
+        [$computer, $booking, $user] = $this->arenaSeat();
+        $arena = app(\App\Services\LanLive\ArenaDuelService::class);
+        $data = $request->validate([
+            'entry_fee' => 'required|numeric|min:1|max:20000',
+        ]);
+        try {
+            $duel = $arena->proposeRaise($user, $arena->findByUuid($uuid), (float) $data['entry_fee']);
+        } catch (\RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $duel->raise_to ? 'Ждём согласие остальных' : 'Ставка повышена',
+            'arena' => $this->arenaCabinet($user->fresh()),
+            'duel' => $arena->payload($duel, $computer, $booking, $user),
+        ]);
+    }
+
+    public function voteArenaRaise(\Illuminate\Http\Request $request, string $uuid)
+    {
+        [$computer, $booking, $user] = $this->arenaSeat();
+        $arena = app(\App\Services\LanLive\ArenaDuelService::class);
+        $data = $request->validate([
+            'agree' => 'required|boolean',
+        ]);
+        try {
+            $duel = $arena->voteRaise($user, $arena->findByUuid($uuid), (bool) $data['agree']);
+        } catch (\RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $data['agree'] ? ($duel->raise_to ? 'Голос принят' : 'Ставка повышена') : 'Повышение отклонено',
+            'arena' => $this->arenaCabinet($user->fresh()),
+            'duel' => $arena->payload($duel, $computer, $booking, $user),
+        ]);
+    }
+
+    public function startArena(string $uuid)
+    {
+        $user = Auth::user();
+        $arena = app(\App\Services\LanLive\ArenaDuelService::class);
+        try {
+            $duel = $arena->start($user, $arena->findByUuid($uuid));
+        } catch (\RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Лобби закрыто, можно начинать',
+            'arena' => $this->arenaCabinet($user->fresh()),
+            'duel' => $arena->payload($duel, null, null, $user),
+        ]);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -603,14 +666,14 @@ class ProfileController extends Controller
         } catch (\Throwable $e) {
             report($e);
 
-            return ['enabled' => false, 'incoming' => null, 'open' => [], 'live' => [], 'highlight_computer_ids' => []];
+            return ['enabled' => false, 'incoming' => null, 'board' => [], 'open' => [], 'live' => [], 'highlight_computer_ids' => []];
         }
     }
 
     /**
-     * @return array{0: Computer, 1: Booking, 2: \App\Models\User}
+     * @return array{0: ?Computer, 1: ?Booking, 2: \App\Models\User}
      */
-    private function arenaSession(): array
+    private function arenaSeat(): array
     {
         $user = Auth::user();
         $booking = Booking::query()
@@ -618,13 +681,7 @@ class ProfileController extends Controller
             ->where('status', 'active')
             ->latest('id')
             ->first();
-        if (! $booking) {
-            abort(response()->json(['status' => 'error', 'message' => 'Нужна активная сессия'], 403));
-        }
-        $computer = Computer::query()->find((int) $booking->computer_id);
-        if (! $computer) {
-            abort(response()->json(['status' => 'error', 'message' => 'ПК сессии не найден'], 404));
-        }
+        $computer = $booking ? Computer::query()->find((int) $booking->computer_id) : null;
 
         return [$computer, $booking, $user];
     }

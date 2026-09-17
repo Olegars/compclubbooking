@@ -244,6 +244,159 @@ class ArenaDuelsTest extends TestCase
         $this->assertTrue($f->bool($this->club->id, 'arena_duels', 'print_voucher', false));
     }
 
+    public function test_lk_creates_advance_challenge_without_session(): void
+    {
+        $a = $this->player('Prep', '79001113101', 600);
+        $when = now()->addHours(2)->toIso8601String();
+        $this->actingAs($a)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges', [
+                'game' => 'cs2',
+                'mode' => '1v1_aim',
+                'kind' => 'duel',
+                'entry_fee' => 100,
+                'scope' => 'hall',
+                'scheduled_at' => $when,
+            ])
+            ->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('duel.kind', 'duel')
+            ->assertJsonPath('duel.kind_label', 'Дуэль');
+
+        $this->assertEquals(500.0, (float) $a->fresh()->availableBalance());
+        $duel = ArenaDuel::query()->first();
+        $this->assertNotNull($duel);
+        $this->assertNull($duel->creator_computer_id);
+        $this->assertSame(ArenaDuel::STATUS_PENDING, $duel->status);
+        $this->assertSame(ArenaDuel::KIND_DUEL, $duel->kind);
+
+        $b = $this->player('Join', '79001113102', 400);
+        $this->actingAs($b)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->getJson('/account/arena/live')
+            ->assertOk()
+            ->assertJsonPath('arena.board.0.entry_fee', 100)
+            ->assertJsonPath('arena.board.0.kind', 'duel');
+
+        $this->actingAs($b)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges/'.$duel->uuid.'/accept')
+            ->assertOk()
+            ->assertJsonPath('status', 'success');
+
+        $this->assertEquals(300.0, (float) $b->fresh()->availableBalance());
+        $this->assertSame(ArenaDuel::STATUS_ACCEPTED, ArenaDuel::query()->first()->status);
+    }
+
+    public function test_battle_stays_open_until_creator_starts(): void
+    {
+        $a = $this->player('Host', '79001113201', 800);
+        $b = $this->player('Two', '79001113202', 800);
+        $c = $this->player('Three', '79001113203', 800);
+        $this->actingAs($a)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges', [
+                'mode' => '1v1_aim',
+                'kind' => 'battle',
+                'entry_fee' => 100,
+                'scope' => 'hall',
+                'max_players' => 4,
+            ])
+            ->assertOk()
+            ->assertJsonPath('duel.kind', 'battle');
+
+        $uuid = ArenaDuel::query()->first()->uuid;
+        $this->actingAs($b)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges/'.$uuid.'/accept')
+            ->assertOk();
+        $this->assertSame(ArenaDuel::STATUS_PENDING, ArenaDuel::query()->first()->status);
+        $this->assertEquals(2, ArenaDuel::query()->first()->participants()->count());
+
+        $this->actingAs($c)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges/'.$uuid.'/accept')
+            ->assertOk();
+        $this->assertSame(ArenaDuel::STATUS_PENDING, ArenaDuel::query()->first()->status);
+        $this->assertEquals(300.0, (float) ArenaDuel::query()->first()->total_pot);
+
+        $this->actingAs($a)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges/'.$uuid.'/start')
+            ->assertOk();
+        $this->assertSame(ArenaDuel::STATUS_ACCEPTED, ArenaDuel::query()->first()->status);
+    }
+
+    public function test_raise_applies_when_everyone_agrees(): void
+    {
+        $a = $this->player('Ra', '79001113301', 500);
+        $b = $this->player('Rb', '79001113302', 500);
+        $this->actingAs($a)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges', [
+                'mode' => '1v1_aim',
+                'kind' => 'duel',
+                'entry_fee' => 100,
+                'scope' => 'hall',
+            ])->assertOk();
+        $uuid = ArenaDuel::query()->first()->uuid;
+        $this->actingAs($b)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges/'.$uuid.'/accept')
+            ->assertOk();
+
+        $this->actingAs($a)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges/'.$uuid.'/raise', ['entry_fee' => 200])
+            ->assertOk()
+            ->assertJsonPath('duel.raise_to', 200);
+        $this->assertEquals(400.0, (float) $a->fresh()->availableBalance());
+        $this->assertEquals(400.0, (float) $b->fresh()->availableBalance());
+
+        $this->actingAs($b)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges/'.$uuid.'/raise-vote', ['agree' => true])
+            ->assertOk();
+
+        $this->assertEquals(300.0, (float) $a->fresh()->availableBalance());
+        $this->assertEquals(300.0, (float) $b->fresh()->availableBalance());
+        $this->assertEquals(200.0, (float) ArenaDuel::query()->first()->entry_fee);
+        $this->assertNull(ArenaDuel::query()->first()->raise_to);
+        $this->assertEquals(400.0, (float) ArenaDuel::query()->first()->total_pot);
+    }
+
+    public function test_raise_rejected_keeps_original_fee(): void
+    {
+        $a = $this->player('Na', '79001113401', 500);
+        $b = $this->player('Nb', '79001113402', 500);
+        $this->actingAs($a)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges', [
+                'mode' => '1v1_aim',
+                'kind' => 'duel',
+                'entry_fee' => 100,
+                'scope' => 'hall',
+            ])->assertOk();
+        $uuid = ArenaDuel::query()->first()->uuid;
+        $this->actingAs($b)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges/'.$uuid.'/accept')
+            ->assertOk();
+        $this->actingAs($a)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges/'.$uuid.'/raise', ['entry_fee' => 250])
+            ->assertOk();
+        $this->actingAs($b)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges/'.$uuid.'/raise-vote', ['agree' => false])
+            ->assertOk();
+
+        $this->assertEquals(100.0, (float) ArenaDuel::query()->first()->entry_fee);
+        $this->assertNull(ArenaDuel::query()->first()->raise_to);
+        $this->assertEquals(400.0, (float) $a->fresh()->availableBalance());
+        $this->assertEquals(400.0, (float) $b->fresh()->availableBalance());
+    }
+
     private function player(string $name, string $phone, float $balance): User
     {
         $user = User::create([

@@ -292,6 +292,9 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/arena/challenges/{uuid}/accept', [ProfileController::class, 'acceptArena']);
         Route::post('/arena/challenges/{uuid}/decline', [ProfileController::class, 'declineArena']);
         Route::post('/arena/challenges/{uuid}/cancel', [ProfileController::class, 'cancelArena']);
+        Route::post('/arena/challenges/{uuid}/raise', [ProfileController::class, 'raiseArena']);
+        Route::post('/arena/challenges/{uuid}/raise-vote', [ProfileController::class, 'voteArenaRaise']);
+        Route::post('/arena/challenges/{uuid}/start', [ProfileController::class, 'startArena']);
         Route::post('/qr/redeem', [\App\Http\Controllers\ShellQrLoginController::class, 'redeem']);
         Route::post('/qr/quote', [\App\Http\Controllers\ShellQrLoginController::class, 'quote']);
         Route::post('/qr/book', [\App\Http\Controllers\ShellQrLoginController::class, 'book']);
@@ -845,6 +848,9 @@ Route::prefix('api/shell')->group(function () {
     Route::post('/arena/challenges/{uuid}/accept', [ShellLanLiveController::class, 'acceptArena']);
     Route::post('/arena/challenges/{uuid}/decline', [ShellLanLiveController::class, 'declineArena']);
     Route::post('/arena/challenges/{uuid}/cancel', [ShellLanLiveController::class, 'cancelArena']);
+    Route::post('/arena/challenges/{uuid}/raise', [ShellLanLiveController::class, 'raiseArena']);
+    Route::post('/arena/challenges/{uuid}/raise-vote', [ShellLanLiveController::class, 'voteArenaRaise']);
+    Route::post('/arena/challenges/{uuid}/start', [ShellLanLiveController::class, 'startArena']);
     Route::post('/arena/gsi', [ShellLanLiveController::class, 'gsi']);
     Route::post('/lootbox/{id}/open', [ShellLanLiveController::class, 'openLootbox']);
     Route::post('/lfg', [ShellLanLiveController::class, 'enqueueLfg']);

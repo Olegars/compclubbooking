@@ -124,9 +124,12 @@ class ShellLanLiveController extends Controller
         $data = $request->validate([
             'game' => 'nullable|in:cs2,dota,dota2',
             'mode' => 'required|in:1v1_aim,2v2_wingman,1v1_mid',
+            'kind' => 'nullable|in:duel,battle',
             'entry_fee' => 'required|numeric|min:1|max:20000',
             'scope' => 'nullable|in:hall,computer,pc,zone,bootcamp',
             'target_computer_id' => 'nullable|integer',
+            'scheduled_at' => 'nullable|date',
+            'max_players' => 'nullable|integer|min:2|max:16',
             'terms' => 'nullable|boolean',
         ]);
         try {
@@ -140,7 +143,7 @@ class ShellLanLiveController extends Controller
             [
                 'status' => 'success',
                 'message' => 'Вызов брошен, взнос в эскроу',
-                'duel' => $this->arena->payload($duel, $computer, $booking),
+                'duel' => $this->arena->payload($duel, $computer, $booking, $user),
             ]
         ));
     }
@@ -159,7 +162,7 @@ class ShellLanLiveController extends Controller
             [
                 'status' => 'success',
                 'message' => 'Дуэль принята. Пароль лобби скопирован.',
-                'duel' => $this->arena->payload($duel, $computer, $booking),
+                'duel' => $this->arena->payload($duel, $computer, $booking, $user),
             ]
         ));
     }
@@ -191,6 +194,69 @@ class ShellLanLiveController extends Controller
         return response()->json(array_merge(
             $this->livePayload($computer, $booking, $user->fresh()),
             ['status' => 'success', 'message' => 'Вызов снят, взнос возвращён']
+        ));
+    }
+
+    public function raiseArena(Request $request, string $uuid): JsonResponse
+    {
+        [$computer, $booking, $user] = $this->session($request);
+        $data = $request->validate([
+            'entry_fee' => 'required|numeric|min:1|max:20000',
+        ]);
+        try {
+            $duel = $this->arena->proposeRaise($user, $this->arena->findByUuid($uuid), (float) $data['entry_fee']);
+        } catch (RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(array_merge(
+            $this->livePayload($computer, $booking, $user->fresh()),
+            [
+                'status' => 'success',
+                'message' => $duel->raise_to ? 'Ждём согласие остальных' : 'Ставка повышена',
+                'duel' => $this->arena->payload($duel, $computer, $booking, $user),
+            ]
+        ));
+    }
+
+    public function voteArenaRaise(Request $request, string $uuid): JsonResponse
+    {
+        [$computer, $booking, $user] = $this->session($request);
+        $data = $request->validate([
+            'agree' => 'required|boolean',
+        ]);
+        try {
+            $duel = $this->arena->voteRaise($user, $this->arena->findByUuid($uuid), (bool) $data['agree']);
+        } catch (RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(array_merge(
+            $this->livePayload($computer, $booking, $user->fresh()),
+            [
+                'status' => 'success',
+                'message' => $data['agree'] ? ($duel->raise_to ? 'Голос принят' : 'Ставка повышена') : 'Повышение отклонено',
+                'duel' => $this->arena->payload($duel, $computer, $booking, $user),
+            ]
+        ));
+    }
+
+    public function startArena(Request $request, string $uuid): JsonResponse
+    {
+        [$computer, $booking, $user] = $this->session($request);
+        try {
+            $duel = $this->arena->start($user, $this->arena->findByUuid($uuid));
+        } catch (RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(array_merge(
+            $this->livePayload($computer, $booking, $user->fresh()),
+            [
+                'status' => 'success',
+                'message' => 'Лобби закрыто, можно начинать',
+                'duel' => $this->arena->payload($duel, $computer, $booking, $user),
+            ]
         ));
     }
 
