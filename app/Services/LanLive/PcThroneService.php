@@ -295,14 +295,6 @@ class PcThroneService
 
     private function avatarUrl(?string $avatar): string
     {
-        $name = trim((string) $avatar);
-        if ($name === '') {
-            $name = 'avatar_1.png';
-        }
-        if (! str_contains($name, '.')) {
-            $name .= '.png';
-        }
-
-        return url('/images/avatars/'.$name);
+        return \App\Support\UserAvatar::url($avatar);
     }
 }

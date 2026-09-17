@@ -335,6 +335,7 @@ class ProfileController extends Controller
                 'name' => $user->name,
                 'phone' => $user->phone,
                 'avatar' => $user->avatar,
+                'avatar_url' => $user->avatar_url,
             ],
             'transactions' => $transactions,
             'active_bookings' => $activeBookings,
@@ -371,6 +372,28 @@ class ProfileController extends Controller
         ]);
 
         return back();
+    }
+
+    public function updateAvatar(Request $request, \App\Services\PlayerAvatarService $avatars)
+    {
+        $request->validate([
+            'photo' => ['required', 'file', 'max:8192'],
+            'stylize' => ['sometimes', 'boolean'],
+        ]);
+
+        try {
+            $photo = $request->file('photo');
+            if (! $photo instanceof \Illuminate\Http\UploadedFile) {
+                return back()->withErrors(['photo' => 'Нужно фото.']);
+            }
+            $avatars->save(Auth::user(), $photo, $request->boolean('stylize'));
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['photo' => $e->getMessage()]);
+        }
+
+        return back()->with('success', $request->boolean('stylize')
+            ? 'Аватар стилизован'
+            : 'Фото сохранено');
     }
 
     public function transferTargets(\App\Services\BookingSeatTransferService $transfers)

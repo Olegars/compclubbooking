@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useForm, usePage } from '@inertiajs/vue3'
 import MainLayout from '@/Layouts/MainLayout.vue'
+import AvatarEditor from '@/Components/AvatarEditor.vue'
 
 const page = usePage()
 const user = page.props.auth.user
@@ -35,6 +36,11 @@ const updateProfile = () => {
             </div>
 
             <h2 class="text-[#22c55e] text-2xl font-black mb-8 tracking-widest uppercase italic">Настройки аккаунта</h2>
+
+            <div class="mb-10 pb-8 border-b border-white/5">
+                <span class="text-[10px] uppercase text-white/30 tracking-[0.2em] ml-1 font-black block mb-5">Фото профиля</span>
+                <AvatarEditor />
+            </div>
 
             <form @submit.prevent="updateProfile" class="space-y-6">
                 <div class="space-y-2">

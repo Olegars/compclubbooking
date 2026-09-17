@@ -281,6 +281,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/dashboard', [ProfileController::class, 'dashboard'])->name('dashboard');
         Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar'])
+            ->middleware('throttle:8,1')
+            ->name('profile.avatar');
         Route::post('/clips/{clip}/telegram', [ProfileController::class, 'shareClipTelegram']);
         Route::post('/telegram/unlink', [ProfileController::class, 'unlinkTelegram']);
         Route::delete('/clips/{clip}', [ProfileController::class, 'destroyClip']);

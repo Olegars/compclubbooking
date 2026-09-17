@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { usePage, Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import MainLayout from '@/Layouts/MainLayout.vue'
+import AvatarEditor from '@/Components/AvatarEditor.vue'
 import ClubMap from '@/Components/ClubMap.vue'
 import YooKassaWidgetModal from '@/Components/YooKassaWidgetModal.vue'
 import PaymentReceiptConsent from '@/Components/PaymentReceiptConsent.vue'
@@ -1039,12 +1040,9 @@ onMounted(() => {
             </div>
 
             <div class="min-w-0 flex flex-col gap-3 md:gap-6 md:space-y-0 bg-transparent md:sticky md:top-28 md:self-start mt-3 md:mt-0 px-4 md:px-0 overflow-visible">
-                <div class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-white/5 rounded-xl md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 flex flex-row md:flex-col items-center gap-4 md:gap-0 md:shadow-xl overflow-visible">
-                    <div class="w-16 h-16 md:w-32 md:h-32 rounded-full bg-black flex items-center justify-center text-2xl md:text-5xl font-black text-[#22c55e] italic border-2 border-[#22c55e]/30 md:mb-6 overflow-hidden shadow-[0_0_40px_rgba(34,197,94,0.1)] shrink-0">
-                        <img v-if="page.props.user?.avatar" :src="`/images/avatars/${page.props.user.avatar}`" class="w-full h-full object-cover" />
-                        <span v-else>{{ (page.props.user?.name || 'S')[0] }}</span>
-                    </div>
-                    <div class="min-w-0 w-full flex-1 text-left md:text-center overflow-visible">
+                <div class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-white/5 rounded-xl md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 flex flex-col items-center gap-4 md:gap-6 md:shadow-xl overflow-visible">
+                    <AvatarEditor compact class="w-full" />
+                    <div class="min-w-0 w-full text-center overflow-visible">
                         <h3 class="text-xl md:text-3xl font-black uppercase italic tracking-tight text-white break-words leading-[1.2] px-[0.35em]">{{ page.props.user?.name }}</h3>
                         <div class="mt-2 md:mt-4 inline-flex px-4 md:px-6 py-1.5 md:py-2 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[9px] md:text-[10px] text-[#22c55e] font-black uppercase italic tracking-widest">СТАЛКЕР</div>
                     </div>

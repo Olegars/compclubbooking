@@ -8,6 +8,8 @@ return [
     'rate_limit_per_minute' => (int) env('AI_ASSISTANT_RATE_LIMIT', 8),
     'http_timeout' => (float) env('AI_ASSISTANT_HTTP_TIMEOUT', 60),
     'vision_timeout' => (float) env('AI_ASSISTANT_VISION_TIMEOUT', 90),
+    'image_timeout' => (float) env('AI_ASSISTANT_IMAGE_TIMEOUT', 120),
+    'avatar_dir' => env('CLUB_AVATAR_DIR'),
 
     'deepseek' => [
         'api_key' => env('DEEPSEEK_API_KEY'),

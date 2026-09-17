@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 class User extends Authenticatable
 {
     use HasFactory, Notifiable;
-    protected $appends = ['total_balance'];
+    protected $appends = ['total_balance', 'avatar_url'];
 
     protected $fillable = [
         'name',
@@ -165,6 +165,11 @@ class User extends Authenticatable
     public function getTotalBalanceAttribute()
     {
         return $this->availableBalance();
+    }
+
+    public function getAvatarUrlAttribute(): string
+    {
+        return \App\Support\UserAvatar::url($this->getAttribute('avatar'));
     }
 
     /**
