@@ -251,17 +251,13 @@ class PlayerAvatarService
     }
 
     /**
-     * Хостовый DeepSeek не рисует PNG — смешиваем фото с клубным образцом.
+     * DeepSeek API не отдаёт PNG: стилизуем само фото под клуб
+     * (неон, схемы, тёмный круг). Образец — только цвет, не чужое лицо.
      */
     private function blendClubFormat(string $photoBytes, string $sampleBytes): ?string
     {
         $photo = $this->gdFromBytes($photoBytes);
-        $sample = $this->gdFromBytes($sampleBytes);
         if ($photo === null) {
-            if ($sample !== null) {
-                imagedestroy($sample);
-            }
-
             return $photoBytes !== '' ? $photoBytes : null;
         }
 
@@ -269,27 +265,23 @@ class PlayerAvatarService
         $face = $this->squareTruecolor($photo, $size);
         imagedestroy($photo);
         if ($face === null) {
-            if ($sample !== null) {
-                imagedestroy($sample);
-            }
-
             return $photoBytes !== '' ? $photoBytes : null;
         }
 
+        $neon = [34, 230, 90];
+        $sample = $this->gdFromBytes($sampleBytes);
         if ($sample !== null) {
             $style = $this->squareTruecolor($sample, $size);
             imagedestroy($sample);
             if ($style !== null) {
-                imagecopymerge($face, $style, 0, 0, 0, 0, $size, $size, 42);
+                $neon = $this->sampleNeon($style);
                 imagedestroy($style);
             }
         }
 
-        if (function_exists('imagefilter')) {
-            imagefilter($face, IMG_FILTER_CONTRAST, -18);
-            imagefilter($face, IMG_FILTER_COLORIZE, 8, 48, 12, 0);
-            imagefilter($face, IMG_FILTER_BRIGHTNESS, -8);
-        }
+        $this->gradeClubFace($face, $neon);
+        $this->drawClubCircuits($face, $neon);
+        $this->circleOnBlack($face, $neon);
 
         ob_start();
         imagepng($face, null, 8);
@@ -297,6 +289,150 @@ class PlayerAvatarService
         imagedestroy($face);
 
         return $out !== '' ? $out : $photoBytes;
+    }
+
+    /**
+     * @param  \GdImage  $img
+     * @param  array{0:int,1:int,2:int}  $neon
+     */
+    private function gradeClubFace($img, array $neon): void
+    {
+        if (function_exists('imagefilter')) {
+            imagefilter($img, IMG_FILTER_CONTRAST, -28);
+            imagefilter($img, IMG_FILTER_BRIGHTNESS, -12);
+            imagefilter($img, IMG_FILTER_COLORIZE, -20, 28, -18, 0);
+            $edges = imagecreatetruecolor(imagesx($img), imagesy($img));
+            if ($edges !== false) {
+                imagecopy($edges, $img, 0, 0, 0, 0, imagesx($img), imagesy($img));
+                imagefilter($edges, IMG_FILTER_EDGEDETECT);
+                imagefilter($edges, IMG_FILTER_COLORIZE, -90, 70, -90, 0);
+                imagecopymerge($img, $edges, 0, 0, 0, 0, imagesx($img), imagesy($img), 22);
+                imagedestroy($edges);
+            }
+        }
+
+        $w = imagesx($img);
+        $h = imagesy($img);
+        $cx = ($w - 1) / 2;
+        $cy = ($h - 1) / 2;
+        $maxR = hypot($cx, $cy);
+        $nr = $neon[0] / 255;
+        $ng = $neon[1] / 255;
+        $nb = $neon[2] / 255;
+
+        for ($y = 0; $y < $h; $y++) {
+            for ($x = 0; $x < $w; $x++) {
+                $rgb = imagecolorat($img, $x, $y);
+                $r = ($rgb >> 16) & 0xFF;
+                $g = ($rgb >> 8) & 0xFF;
+                $b = $rgb & 0xFF;
+                $dist = hypot($x - $cx, $y - $cy) / $maxR;
+                $vignette = 1 - ($dist * $dist * 0.92);
+                $r = (int) max(0, min(255, $r * $vignette * 0.82));
+                $g = (int) max(0, min(255, $g * $vignette * 0.92 + $ng * 28));
+                $b = (int) max(0, min(255, $b * $vignette * 0.72));
+                $r = (int) max(0, min(255, $r + $nr * 10));
+                $b = (int) max(0, min(255, $b + $nb * 8));
+                imagesetpixel($img, $x, $y, imagecolorallocate($img, $r, $g, $b));
+            }
+        }
+    }
+
+    /**
+     * @param  \GdImage  $img
+     * @param  array{0:int,1:int,2:int}  $neon
+     */
+    private function drawClubCircuits($img, array $neon): void
+    {
+        $w = imagesx($img);
+        $h = imagesy($img);
+        $color = imagecolorallocate($img, $neon[0], $neon[1], $neon[2]);
+        $dim = imagecolorallocate($img, (int) ($neon[0] * 0.45), (int) ($neon[1] * 0.55), (int) ($neon[2] * 0.4));
+        imagesetthickness($img, max(2, (int) round($w / 160)));
+
+        $line = function (int $x1, int $y1, int $x2, int $y2) use ($img, $color, $w, $h): void {
+            imageline($img, (int) round($x1 * $w / 512), (int) round($y1 * $h / 512), (int) round($x2 * $w / 512), (int) round($y2 * $h / 512), $color);
+        };
+
+        $line(170, 70, 210, 118);
+        $line(210, 118, 248, 90);
+        $line(248, 90, 268, 128);
+        $line(340, 72, 300, 120);
+        $line(300, 120, 328, 158);
+        $line(120, 210, 168, 198);
+        $line(168, 198, 188, 248);
+        $line(188, 248, 150, 300);
+        $line(392, 210, 344, 198);
+        $line(344, 198, 324, 250);
+        $line(324, 250, 362, 305);
+        $line(200, 330, 256, 312);
+        $line(256, 312, 312, 330);
+
+        imagesetthickness($img, 1);
+        imageellipse($img, (int) round(188 * $w / 512), (int) round(198 * $h / 512), max(6, (int) round($w / 42)), max(6, (int) round($h / 42)), $dim);
+        imageellipse($img, (int) round(324 * $w / 512), (int) round(198 * $h / 512), max(6, (int) round($w / 42)), max(6, (int) round($h / 42)), $dim);
+    }
+
+    /**
+     * @param  \GdImage  $img
+     * @param  array{0:int,1:int,2:int}  $neon
+     */
+    private function circleOnBlack($img, array $neon): void
+    {
+        $w = imagesx($img);
+        $h = imagesy($img);
+        $cx = ($w - 1) / 2.0;
+        $cy = ($h - 1) / 2.0;
+        $radius = min($w, $h) / 2 - 4;
+        $black = imagecolorallocate($img, 0, 0, 0);
+        $ring = imagecolorallocate($img, $neon[0], $neon[1], $neon[2]);
+
+        for ($y = 0; $y < $h; $y++) {
+            for ($x = 0; $x < $w; $x++) {
+                if (hypot($x - $cx, $y - $cy) > $radius) {
+                    imagesetpixel($img, $x, $y, $black);
+                }
+            }
+        }
+
+        imagesetthickness($img, max(3, (int) round($w / 85)));
+        imageellipse($img, (int) $cx, (int) $cy, (int) round($radius * 2), (int) round($radius * 2), $ring);
+    }
+
+    /**
+     * @param  \GdImage  $img
+     * @return array{0:int,1:int,2:int}
+     */
+    private function sampleNeon($img): array
+    {
+        $w = imagesx($img);
+        $h = imagesy($img);
+        $step = max(1, (int) floor(min($w, $h) / 48));
+        $sr = $sg = $sb = $n = 0;
+        for ($y = 0; $y < $h; $y += $step) {
+            for ($x = 0; $x < $w; $x += $step) {
+                $rgb = imagecolorat($img, $x, $y);
+                $r = ($rgb >> 16) & 0xFF;
+                $g = ($rgb >> 8) & 0xFF;
+                $b = $rgb & 0xFF;
+                if ($g > 140 && $g > $r + 25 && $g > $b + 25) {
+                    $sr += $r;
+                    $sg += $g;
+                    $sb += $b;
+                    $n++;
+                }
+            }
+        }
+
+        if ($n < 4) {
+            return [34, 230, 90];
+        }
+
+        return [
+            (int) round($sr / $n),
+            (int) round($sg / $n),
+            (int) round($sb / $n),
+        ];
     }
 
     /**
