@@ -33,6 +33,8 @@ class Product extends Model
         'requires_marking' => 'boolean',
     ];
 
+    public const DEFAULT_IMAGE = 'images/shop/default.png';
+
     public function units(): HasMany
     {
         return $this->hasMany(ProductUnit::class);
@@ -46,5 +48,18 @@ class Product extends Model
     public function availableUnits(): HasMany
     {
         return $this->units()->where('status', ProductUnit::STATUS_AVAILABLE);
+    }
+
+    public function publicImageUrl(): string
+    {
+        $image = trim((string) ($this->image ?? ''));
+        if ($image === '') {
+            $image = self::DEFAULT_IMAGE;
+        }
+        if (preg_match('#^https?://#i', $image) === 1) {
+            return $image;
+        }
+
+        return url('/'.ltrim($image, '/'));
     }
 }

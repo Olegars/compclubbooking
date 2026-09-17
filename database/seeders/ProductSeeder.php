@@ -16,7 +16,7 @@ class ProductSeeder extends Seeder
                     'category' => $row['category'],
                     'price' => $row['price'],
                     'stock' => $row['stock'],
-                    'image' => $row['image'] ?? '',
+                    'image' => $row['image'] ?? Product::DEFAULT_IMAGE,
                     'is_active' => true,
                 ]
             );

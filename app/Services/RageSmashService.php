@@ -222,7 +222,7 @@ class RageSmashService
                 'id' => (int) $p->id,
                 'name' => (string) $p->name,
                 'price' => (float) $p->price,
-                'image' => $p->image ? (string) $p->image : null,
+                'image' => $p->publicImageUrl(),
                 'category' => $p->category ? (string) $p->category : null,
             ])
             ->values()

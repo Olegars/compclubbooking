@@ -53,4 +53,29 @@ class ProductSeederTest extends TestCase
             ->assertJsonCount(1, 'products')
             ->assertJsonPath('products.0.name', 'Витрина');
     }
+
+    public function test_shell_products_send_absolute_image_urls(): void
+    {
+        Product::query()->create([
+            'name' => 'Кола',
+            'category' => 'Напитки',
+            'price' => 100,
+            'stock' => 4,
+            'is_active' => true,
+            'image' => 'images/shop/cola.png',
+        ]);
+        Product::query()->create([
+            'name' => 'Чипсы',
+            'category' => 'Снэки',
+            'price' => 90,
+            'stock' => 4,
+            'is_active' => true,
+            'image' => '',
+        ]);
+
+        $this->getJson('/api/shell/store/products?terminal_id=1')
+            ->assertOk()
+            ->assertJsonPath('products.0.image', url('/images/shop/cola.png'))
+            ->assertJsonPath('products.1.image', url('/'.Product::DEFAULT_IMAGE));
+    }
 }

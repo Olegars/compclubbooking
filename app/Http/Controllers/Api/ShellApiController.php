@@ -1795,7 +1795,7 @@ class ShellApiController extends Controller
                 'category' => (string) ($p->category ?? ''),
                 'price' => (float) $p->price,
                 'stock' => (int) $p->stock,
-                'image' => (string) ($p->image ?? ''),
+                'image' => $p->publicImageUrl(),
                 'is_active' => (bool) $p->is_active,
             ])
             ->values();
