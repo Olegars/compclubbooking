@@ -125,7 +125,6 @@ class ShellLanLiveController extends Controller
             'game' => 'nullable|in:cs2,dota,dota2',
             'mode' => 'required|in:1v1_aim,2v2_wingman,1v1_mid',
             'kind' => 'nullable|in:duel,battle',
-            'entry_fee' => 'required|numeric|min:1|max:20000',
             'scope' => 'nullable|in:hall,computer,pc,zone,bootcamp',
             'target_computer_id' => 'nullable|integer',
             'scheduled_at' => 'nullable|date',
@@ -142,7 +141,7 @@ class ShellLanLiveController extends Controller
             $this->livePayload($computer, $booking, $user->fresh()),
             [
                 'status' => 'success',
-                'message' => 'Вызов брошен, взнос в эскроу',
+                'message' => 'Вызов брошен',
                 'duel' => $this->arena->payload($duel, $computer, $booking, $user),
             ]
         ));
@@ -193,7 +192,7 @@ class ShellLanLiveController extends Controller
 
         return response()->json(array_merge(
             $this->livePayload($computer, $booking, $user->fresh()),
-            ['status' => 'success', 'message' => 'Вызов снят, взнос возвращён']
+            ['status' => 'success', 'message' => 'Вызов снят']
         ));
     }
 

@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Admin;
 use App\Models\ArenaDuel;
+use App\Models\ArenaKothEvening;
+use App\Models\ArenaRating;
 use App\Models\Booking;
 use App\Models\Club;
 use App\Models\Computer;
@@ -29,28 +31,33 @@ class ArenaDuelsTest extends TestCase
         $this->club = Club::create(['name' => 'Arena Club', 'slug' => 'arena-club']);
     }
 
-    public function test_create_holds_deposit_and_accept_settles_on_match_win(): void
+    public function test_create_accept_and_win_updates_elo_without_wallet(): void
     {
+        app(ClubFeatureService::class)->save($this->club->id, 'arena_duels', true, [
+            'koth_min_streak' => 1,
+            'koth_prefer_drink' => false,
+            'koth_minutes' => 60,
+        ]);
         $a = $this->player('FrostFox', '79001113001', 800);
         $b = $this->player('Rival', '79001113002', 800);
         $pcA = $this->pc('PC-08');
         $pcB = $this->pc('PC-14');
         $bookA = $this->activeSeat($a, $pcA);
         $bookB = $this->activeSeat($b, $pcB);
+        $endsBefore = CarbonImmutable::parse($bookA->ends_at);
 
         $create = $this->postJson('/api/shell/arena/challenges', [
             'terminal_id' => $pcA->id,
             'booking_id' => $bookA->id,
             'game' => 'cs2',
             'mode' => '1v1_aim',
-            'entry_fee' => 250,
             'scope' => 'computer',
             'target_computer_id' => $pcB->id,
         ]);
         $create->assertOk()->assertJsonPath('status', 'success');
         $uuid = $create->json('duel.uuid');
         $this->assertNotEmpty($uuid);
-        $this->assertEquals(550.0, (float) $a->fresh()->availableBalance());
+        $this->assertEquals(800.0, (float) $a->fresh()->availableBalance());
         $this->assertEquals(800.0, (float) $b->fresh()->availableBalance());
 
         $this->postJson('/api/shell/arena/challenges/'.$uuid.'/accept', [
@@ -58,7 +65,7 @@ class ArenaDuelsTest extends TestCase
             'booking_id' => $bookB->id,
         ])->assertOk()->assertJsonPath('status', 'success');
 
-        $this->assertEquals(550.0, (float) $b->fresh()->availableBalance());
+        $this->assertEquals(800.0, (float) $b->fresh()->availableBalance());
         $this->assertSame(ArenaDuel::STATUS_ACCEPTED, ArenaDuel::query()->first()->status);
 
         $this->postJson('/api/shell/gsi', [
@@ -81,13 +88,33 @@ class ArenaDuelsTest extends TestCase
             'in_match' => true,
             'match_id' => 'aim-1',
         ]);
-        $win->assertOk()->assertJsonPath('arena_settled.prize', 450);
-        $this->assertEquals(1000.0, (float) $a->fresh()->availableBalance());
-        $this->assertEquals(550.0, (float) $b->fresh()->availableBalance());
+        $win->assertOk();
+        $this->assertEquals(0, (int) $win->json('arena_settled.prize'));
+        $this->assertEquals(800.0, (float) $a->fresh()->availableBalance());
+        $this->assertEquals(800.0, (float) $b->fresh()->availableBalance());
         $this->assertSame(ArenaDuel::STATUS_COMPLETED, ArenaDuel::query()->first()->status);
+
+        $winner = ArenaRating::query()->where('user_id', $a->id)->first();
+        $loser = ArenaRating::query()->where('user_id', $b->id)->first();
+        $this->assertNotNull($winner);
+        $this->assertGreaterThan(ArenaRating::BASE, (int) $winner->rating);
+        $this->assertSame(1, (int) $winner->wins);
+        $this->assertSame(1, (int) $winner->evening_streak);
+        $this->assertLessThan(ArenaRating::BASE, (int) $loser->rating);
+
+        $koth = ArenaKothEvening::query()->first();
+        $this->assertNotNull($koth);
+        $this->assertNotNull($koth->perk_awarded_at);
+        $this->assertSame('minutes', $koth->perk_kind);
+        $this->assertTrue(CarbonImmutable::parse($bookA->fresh()->ends_at)->gt($endsBefore));
+
+        $live = $this->actingAs($a)->getJson('/account/arena/live')->assertOk();
+        $this->assertSame('Босс клуба', $live->json('arena.boss.title'));
+        $this->assertSame('FrostFox', $live->json('arena.koth.name'));
+        $this->assertSame(1, (int) $live->json('arena.ladder.0.rank'));
     }
 
-    public function test_cancel_refunds_creator(): void
+    public function test_cancel_does_not_touch_wallet(): void
     {
         $a = $this->player('A', '79001113011', 400);
         $b = $this->player('B', '79001113012', 400);
@@ -100,7 +127,6 @@ class ArenaDuelsTest extends TestCase
             'terminal_id' => $pcA->id,
             'booking_id' => $bookA->id,
             'mode' => '1v1_aim',
-            'entry_fee' => 100,
             'scope' => 'hall',
         ])->assertOk()->json('duel.uuid');
 
@@ -124,27 +150,35 @@ class ArenaDuelsTest extends TestCase
             'terminal_id' => $pc->id,
             'booking_id' => $book->id,
             'mode' => '1v1_aim',
-            'entry_fee' => 100,
             'scope' => 'hall',
         ])->assertStatus(422)->assertJsonPath('message', 'Арена выключена');
     }
 
-    public function test_insufficient_deposit_rejected(): void
+    public function test_raise_is_disabled(): void
     {
-        $a = $this->player('Poor', '79001113031', 40);
-        $pc = $this->pc('PC-POOR');
-        $book = $this->activeSeat($a, $pc);
+        $a = $this->player('Ra', '79001113301', 500);
+        $b = $this->player('Rb', '79001113302', 500);
+        $this->actingAs($a)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges', [
+                'mode' => '1v1_aim',
+                'kind' => 'duel',
+                'scope' => 'hall',
+            ])->assertOk();
+        $uuid = ArenaDuel::query()->first()->uuid;
+        $this->actingAs($b)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges/'.$uuid.'/accept')
+            ->assertOk();
 
-        $this->postJson('/api/shell/arena/challenges', [
-            'terminal_id' => $pc->id,
-            'booking_id' => $book->id,
-            'mode' => '1v1_aim',
-            'entry_fee' => 100,
-            'scope' => 'hall',
-        ])->assertStatus(422)->assertJsonPath('message', 'Недостаточно депозита на взнос');
+        $this->actingAs($a)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/account/arena/challenges/'.$uuid.'/raise', ['entry_fee' => 200])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Ставки на арене отключены');
     }
 
-    public function test_admin_force_refund_returns_escrow(): void
+    public function test_admin_force_refund_cancels_match(): void
     {
         $a = $this->player('Af', '79001113041', 300);
         $b = $this->player('Bf', '79001113042', 300);
@@ -156,7 +190,6 @@ class ArenaDuelsTest extends TestCase
             'terminal_id' => $pcA->id,
             'booking_id' => $bookA->id,
             'mode' => '1v1_aim',
-            'entry_fee' => 100,
             'scope' => 'computer',
             'target_computer_id' => $pcB->id,
         ])->json('duel.uuid');
@@ -181,6 +214,7 @@ class ArenaDuelsTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', 'success');
 
+        $this->assertSame(ArenaDuel::STATUS_CANCELLED, ArenaDuel::query()->first()->status);
         $this->assertEquals(300.0, (float) $a->fresh()->availableBalance());
         $this->assertEquals(300.0, (float) $b->fresh()->availableBalance());
     }
@@ -197,14 +231,15 @@ class ArenaDuelsTest extends TestCase
             'terminal_id' => $pcA->id,
             'booking_id' => $bookA->id,
             'mode' => '1v1_aim',
-            'entry_fee' => 100,
             'scope' => 'computer',
             'target_computer_id' => $pcB->id,
         ])->assertOk();
 
         $this->actingAs($b)->getJson('/account/arena/live')
             ->assertOk()
-            ->assertJsonPath('arena.incoming.entry_fee', 100);
+            ->assertJsonPath('arena.incoming.kind', 'duel')
+            ->assertJsonPath('arena.incoming.mode', '1v1_aim')
+            ->assertJsonPath('arena.legal.kind', 'club_ladder');
     }
 
     public function test_can_save_arena_settings_from_features_page(): void
@@ -224,9 +259,9 @@ class ArenaDuelsTest extends TestCase
             ->post('/admin/config/features/arena_duels', [
                 'enabled' => true,
                 'settings' => [
-                    'min_entry_fee' => 80,
-                    'max_entry_fee' => 2000,
-                    'rake_percent' => 8,
+                    'koth_min_streak' => 4,
+                    'koth_minutes' => 45,
+                    'koth_prefer_drink' => false,
                     'invite_seconds' => 45,
                     'open_ttl_minutes' => 7,
                     'rank_delta' => 2,
@@ -240,7 +275,9 @@ class ArenaDuelsTest extends TestCase
 
         $f = app(ClubFeatureService::class);
         $this->assertTrue($f->enabled($this->club->id, 'arena_duels'));
-        $this->assertSame(8, $f->int($this->club->id, 'arena_duels', 'rake_percent'));
+        $this->assertSame(4, $f->int($this->club->id, 'arena_duels', 'koth_min_streak'));
+        $this->assertSame(45, $f->int($this->club->id, 'arena_duels', 'koth_minutes'));
+        $this->assertFalse($f->bool($this->club->id, 'arena_duels', 'koth_prefer_drink', true));
         $this->assertTrue($f->bool($this->club->id, 'arena_duels', 'print_voucher', false));
     }
 
@@ -254,7 +291,6 @@ class ArenaDuelsTest extends TestCase
                 'game' => 'cs2',
                 'mode' => '1v1_aim',
                 'kind' => 'duel',
-                'entry_fee' => 100,
                 'scope' => 'hall',
                 'scheduled_at' => $when,
             ])
@@ -263,20 +299,21 @@ class ArenaDuelsTest extends TestCase
             ->assertJsonPath('duel.kind', 'duel')
             ->assertJsonPath('duel.kind_label', 'Дуэль');
 
-        $this->assertEquals(500.0, (float) $a->fresh()->availableBalance());
+        $this->assertEquals(600.0, (float) $a->fresh()->availableBalance());
         $duel = ArenaDuel::query()->first();
         $this->assertNotNull($duel);
         $this->assertNull($duel->creator_computer_id);
         $this->assertSame(ArenaDuel::STATUS_PENDING, $duel->status);
         $this->assertSame(ArenaDuel::KIND_DUEL, $duel->kind);
+        $this->assertEquals(0.0, (float) $duel->entry_fee);
 
         $b = $this->player('Join', '79001113102', 400);
         $this->actingAs($b)
             ->withoutMiddleware(ValidateCsrfToken::class)
             ->getJson('/account/arena/live')
             ->assertOk()
-            ->assertJsonPath('arena.board.0.entry_fee', 100)
-            ->assertJsonPath('arena.board.0.kind', 'duel');
+            ->assertJsonPath('arena.board.0.kind', 'duel')
+            ->assertJsonPath('arena.board.0.creator_name', 'Prep');
 
         $this->actingAs($b)
             ->withoutMiddleware(ValidateCsrfToken::class)
@@ -284,7 +321,7 @@ class ArenaDuelsTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', 'success');
 
-        $this->assertEquals(300.0, (float) $b->fresh()->availableBalance());
+        $this->assertEquals(400.0, (float) $b->fresh()->availableBalance());
         $this->assertSame(ArenaDuel::STATUS_ACCEPTED, ArenaDuel::query()->first()->status);
     }
 
@@ -298,7 +335,6 @@ class ArenaDuelsTest extends TestCase
             ->postJson('/account/arena/challenges', [
                 'mode' => '1v1_aim',
                 'kind' => 'battle',
-                'entry_fee' => 100,
                 'scope' => 'hall',
                 'max_players' => 4,
             ])
@@ -318,83 +354,13 @@ class ArenaDuelsTest extends TestCase
             ->postJson('/account/arena/challenges/'.$uuid.'/accept')
             ->assertOk();
         $this->assertSame(ArenaDuel::STATUS_PENDING, ArenaDuel::query()->first()->status);
-        $this->assertEquals(300.0, (float) ArenaDuel::query()->first()->total_pot);
+        $this->assertEquals(0.0, (float) ArenaDuel::query()->first()->total_pot);
 
         $this->actingAs($a)
             ->withoutMiddleware(ValidateCsrfToken::class)
             ->postJson('/account/arena/challenges/'.$uuid.'/start')
             ->assertOk();
         $this->assertSame(ArenaDuel::STATUS_ACCEPTED, ArenaDuel::query()->first()->status);
-    }
-
-    public function test_raise_applies_when_everyone_agrees(): void
-    {
-        $a = $this->player('Ra', '79001113301', 500);
-        $b = $this->player('Rb', '79001113302', 500);
-        $this->actingAs($a)
-            ->withoutMiddleware(ValidateCsrfToken::class)
-            ->postJson('/account/arena/challenges', [
-                'mode' => '1v1_aim',
-                'kind' => 'duel',
-                'entry_fee' => 100,
-                'scope' => 'hall',
-            ])->assertOk();
-        $uuid = ArenaDuel::query()->first()->uuid;
-        $this->actingAs($b)
-            ->withoutMiddleware(ValidateCsrfToken::class)
-            ->postJson('/account/arena/challenges/'.$uuid.'/accept')
-            ->assertOk();
-
-        $this->actingAs($a)
-            ->withoutMiddleware(ValidateCsrfToken::class)
-            ->postJson('/account/arena/challenges/'.$uuid.'/raise', ['entry_fee' => 200])
-            ->assertOk()
-            ->assertJsonPath('duel.raise_to', 200);
-        $this->assertEquals(400.0, (float) $a->fresh()->availableBalance());
-        $this->assertEquals(400.0, (float) $b->fresh()->availableBalance());
-
-        $this->actingAs($b)
-            ->withoutMiddleware(ValidateCsrfToken::class)
-            ->postJson('/account/arena/challenges/'.$uuid.'/raise-vote', ['agree' => true])
-            ->assertOk();
-
-        $this->assertEquals(300.0, (float) $a->fresh()->availableBalance());
-        $this->assertEquals(300.0, (float) $b->fresh()->availableBalance());
-        $this->assertEquals(200.0, (float) ArenaDuel::query()->first()->entry_fee);
-        $this->assertNull(ArenaDuel::query()->first()->raise_to);
-        $this->assertEquals(400.0, (float) ArenaDuel::query()->first()->total_pot);
-    }
-
-    public function test_raise_rejected_keeps_original_fee(): void
-    {
-        $a = $this->player('Na', '79001113401', 500);
-        $b = $this->player('Nb', '79001113402', 500);
-        $this->actingAs($a)
-            ->withoutMiddleware(ValidateCsrfToken::class)
-            ->postJson('/account/arena/challenges', [
-                'mode' => '1v1_aim',
-                'kind' => 'duel',
-                'entry_fee' => 100,
-                'scope' => 'hall',
-            ])->assertOk();
-        $uuid = ArenaDuel::query()->first()->uuid;
-        $this->actingAs($b)
-            ->withoutMiddleware(ValidateCsrfToken::class)
-            ->postJson('/account/arena/challenges/'.$uuid.'/accept')
-            ->assertOk();
-        $this->actingAs($a)
-            ->withoutMiddleware(ValidateCsrfToken::class)
-            ->postJson('/account/arena/challenges/'.$uuid.'/raise', ['entry_fee' => 250])
-            ->assertOk();
-        $this->actingAs($b)
-            ->withoutMiddleware(ValidateCsrfToken::class)
-            ->postJson('/account/arena/challenges/'.$uuid.'/raise-vote', ['agree' => false])
-            ->assertOk();
-
-        $this->assertEquals(100.0, (float) ArenaDuel::query()->first()->entry_fee);
-        $this->assertNull(ArenaDuel::query()->first()->raise_to);
-        $this->assertEquals(400.0, (float) $a->fresh()->availableBalance());
-        $this->assertEquals(400.0, (float) $b->fresh()->availableBalance());
     }
 
     private function player(string $name, string $phone, float $balance): User

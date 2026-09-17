@@ -210,12 +210,10 @@ const pollArena = async () => {
 const arenaForm = ref({
     kind: 'duel' as 'duel' | 'battle',
     modeIndex: 0,
-    presetIndex: 1,
     dateKey: '',
     hour: 18,
     minute: 0,
     maxPlayers: 8,
-    raiseTo: '',
 })
 const pad2 = (n: number) => String(n).padStart(2, '0')
 const arenaDateKeyOf = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
@@ -288,9 +286,13 @@ const arenaModes = computed(() => arenaData.value?.modes || [
     { game: 'cs2', mode: '2v2_wingman', label: 'CS2 2v2 Wingman' },
     { game: 'dota', mode: '1v1_mid', label: 'Dota 2 1v1 Mid Only' },
 ])
-const arenaPresets = computed(() => arenaData.value?.presets || [100, 250, 500])
-const arenaFee = computed(() => Number(arenaPresets.value[arenaForm.value.presetIndex] || 250))
 const arenaMaxBattle = computed(() => Number(arenaData.value?.max_battle_players || 8))
+const arenaLadder = computed(() => (arenaData.value?.ladder || []).slice(0, 5))
+const arenaWeek = computed(() => (arenaData.value?.week || []).slice(0, 5))
+const arenaBoss = computed(() => arenaData.value?.boss || null)
+const arenaKoth = computed(() => arenaData.value?.koth || null)
+const arenaMe = computed(() => arenaData.value?.me || null)
+const arenaKothNeed = computed(() => Number(arenaData.value?.koth_min_streak || 3))
 
 const formatArenaWhen = (iso?: string | null) => {
     if (!iso) return 'сейчас'
@@ -328,7 +330,6 @@ const arenaCreate = async () => {
             game: mode?.game || 'cs2',
             mode: mode?.mode || '1v1_aim',
             kind: arenaForm.value.kind,
-            entry_fee: arenaFee.value,
             scope: 'hall',
             scheduled_at: arenaScheduledAt(),
             max_players: arenaForm.value.kind === 'battle' ? Number(arenaForm.value.maxPlayers || arenaMaxBattle.value) : undefined,
@@ -342,30 +343,23 @@ const arenaCreate = async () => {
     }
 }
 
-const arenaRaise = async (uuid: string) => {
-    const fee = Number(arenaForm.value.raiseTo || 0)
-    if (!uuid || !fee || arenaBusy.value) return
+const arenaChallengeBoss = async () => {
+    const boss = arenaBoss.value
+    if (!boss?.computer_id || arenaBusy.value) return
     arenaBusy.value = true
     arenaError.value = ''
+    const mode = arenaModes.value[arenaForm.value.modeIndex] || arenaModes.value[0]
     try {
-        const { data } = await axios.post(`/account/arena/challenges/${uuid}/raise`, { entry_fee: fee })
+        const { data } = await axios.post('/account/arena/challenges', {
+            game: mode?.game || 'cs2',
+            mode: mode?.mode || '1v1_aim',
+            kind: 'duel',
+            scope: 'computer',
+            target_computer_id: boss.computer_id,
+        })
         arenaApply(data)
     } catch (e: any) {
-        arenaError.value = e?.response?.data?.message || 'Не удалось повысить ставку'
-    } finally {
-        arenaBusy.value = false
-    }
-}
-
-const arenaVoteRaise = async (uuid: string, agree: boolean) => {
-    if (!uuid || arenaBusy.value) return
-    arenaBusy.value = true
-    arenaError.value = ''
-    try {
-        const { data } = await axios.post(`/account/arena/challenges/${uuid}/raise-vote`, { agree })
-        arenaApply(data)
-    } catch (e: any) {
-        arenaError.value = e?.response?.data?.message || 'Не удалось проголосовать'
+        arenaError.value = e?.response?.data?.message || 'Не удалось вызвать босса'
     } finally {
         arenaBusy.value = false
     }
@@ -713,7 +707,7 @@ onMounted(() => {
                         type="button"
                         class="absolute top-3 right-3 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full border border-orange-400/50 bg-orange-500/15 text-orange-300 text-[9px] font-black uppercase tracking-widest italic animate-pulse"
                     >
-                        ⚔ {{ arenaIncoming.creator_pc || 'ПК' }} · {{ Math.round(arenaIncoming.entry_fee || 0) }} ₽
+                        ⚔ {{ arenaIncoming.creator_pc || arenaIncoming.creator_name || 'ПК' }} · 1v1
                         <span class="font-mono text-orange-200">{{ arenaSecondsLeft }}с</span>
                     </button>
 
@@ -730,8 +724,46 @@ onMounted(() => {
 
                         <div v-if="featureOn('arena_duels')" class="min-w-0 lg:pl-6 lg:border-l lg:border-orange-400/20">
                             <span class="text-[10px] uppercase text-orange-300 tracking-[0.35em] font-black italic block mb-2">Арена / дуэли</span>
-                            <p class="text-[10px] text-white/35 mb-3 leading-relaxed line-clamp-2">{{ arenaData.legal?.notice || 'Взнос за участие в соревновании мастерства. Приз на депозит клуба, без вывода на карту.' }}</p>
+                            <p class="text-[10px] text-white/35 mb-3 leading-relaxed line-clamp-3">{{ arenaData.legal?.notice || 'Дуэль без ставок: кто лучше на этом ПК. Рейтинг клуба, серия побед, царь горы.' }}</p>
                             <p v-if="arenaError" class="text-red-400 text-xs mb-2">{{ arenaError }}</p>
+
+                            <div v-if="arenaMe" class="mb-3 text-[10px] text-white/50 font-mono">
+                                Ты · Elo {{ arenaMe.rating }} · серия {{ arenaMe.streak }}
+                                <span v-if="arenaMe.title" class="text-orange-300 font-black uppercase"> · {{ arenaMe.title }}</span>
+                            </div>
+                            <div v-if="arenaKoth" class="mb-2 border border-amber-400/30 bg-amber-500/10 rounded-xl px-3 py-2">
+                                <div class="text-[9px] uppercase tracking-widest font-black text-amber-200">Царь горы</div>
+                                <div class="text-[12px] text-white font-black">{{ arenaKoth.name }} · серия {{ arenaKoth.streak }}</div>
+                                <div v-if="arenaKoth.perk" class="text-[10px] text-amber-100/70">{{ arenaKoth.perk }}</div>
+                                <div v-else class="text-[10px] text-white/35">До перка клуба: {{ arenaKothNeed }} побед подряд за вечер</div>
+                            </div>
+                            <div v-if="arenaBoss" class="mb-3 border border-orange-400/30 bg-orange-500/10 rounded-xl px-3 py-2">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div>
+                                        <div class="text-[9px] uppercase tracking-widest font-black text-orange-200">Босс клуба</div>
+                                        <div class="text-[12px] text-white font-black">{{ arenaBoss.name }} · Elo {{ arenaBoss.rating }}</div>
+                                        <div class="text-[10px] text-white/35">{{ arenaBoss.in_club ? (arenaBoss.pc || 'в зале') : 'сейчас не в клубе' }}</div>
+                                    </div>
+                                    <button v-if="arenaBoss.in_club && arenaBoss.computer_id" type="button" :disabled="arenaBusy" @click="arenaChallengeBoss"
+                                            class="shrink-0 px-3 py-2 bg-orange-400 text-black rounded-lg text-[9px] font-black uppercase tracking-widest">
+                                        Вызвать
+                                    </button>
+                                </div>
+                            </div>
+                            <div v-if="arenaLadder.length" class="mb-3 space-y-1">
+                                <div class="text-[9px] uppercase tracking-widest text-white/30 font-black">Зал славы</div>
+                                <div v-for="row in arenaLadder" :key="'elo-'+row.user_id" class="flex items-center justify-between text-[11px] font-mono text-white/70">
+                                    <span>{{ row.rank }}. {{ row.name }}{{ row.title ? ' · ' + row.title : '' }}</span>
+                                    <span class="text-orange-200">{{ row.rating }}</span>
+                                </div>
+                            </div>
+                            <div v-if="arenaWeek.length" class="mb-3 space-y-1">
+                                <div class="text-[9px] uppercase tracking-widest text-white/30 font-black">Серия недели</div>
+                                <div v-for="row in arenaWeek" :key="'week-'+row.user_id" class="flex items-center justify-between text-[11px] font-mono text-white/70">
+                                    <span>{{ row.name }}</span>
+                                    <span class="text-amber-200">{{ row.week_wins }}W · x{{ row.best_streak }}</span>
+                                </div>
+                            </div>
 
                             <div class="grid grid-cols-2 gap-2 mb-2">
                                 <button type="button" @click="arenaForm.kind = 'duel'"
@@ -746,12 +778,6 @@ onMounted(() => {
                             <select v-model="arenaForm.modeIndex" class="w-full mb-2 bg-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white">
                                 <option v-for="(m, i) in arenaModes" :key="m.mode + m.game" :value="i">{{ m.label }}</option>
                             </select>
-                            <div class="grid grid-cols-3 gap-2 mb-2">
-                                <button v-for="(p, i) in arenaPresets" :key="p" type="button" @click="arenaForm.presetIndex = i"
-                                        :class="['py-2.5 rounded-xl text-[11px] font-black', arenaForm.presetIndex === i ? 'bg-orange-400 text-black' : 'bg-black/40 border border-orange-400/40 text-orange-200']">
-                                    {{ p }} ₽
-                                </button>
-                            </div>
                             <div class="mb-2">
                                 <span class="text-[9px] uppercase tracking-widest text-white/30 font-black block mb-1.5">Когда</span>
                                 <div class="flex gap-1.5 overflow-x-auto no-scrollbar flex-nowrap">
@@ -797,7 +823,7 @@ onMounted(() => {
                             </div>
                             <button type="button" :disabled="arenaBusy" @click="arenaCreate"
                                     class="w-full py-3 bg-orange-400 text-black uppercase font-black rounded-xl text-[10px] tracking-widest disabled:opacity-40">
-                                Бросить вызов · −{{ Math.round(arenaFee) }} ₽
+                                Бросить вызов
                             </button>
                         </div>
                     </div>
@@ -813,7 +839,7 @@ onMounted(() => {
                         <button v-if="featureOn('game_requests')" @click="openGameRequestModal" class="py-3.5 sm:py-4 px-1 bg-white/5 border border-cyan-500/40 text-cyan-400 font-black rounded-lg sm:rounded-xl text-[11px] sm:text-sm tracking-wide hover:bg-cyan-500/10 transition-all uppercase italic leading-tight">Хочу игру</button>
                     </div>
 
-                    <div v-if="featureOn('arena_duels') && (arenaMapReady || arenaMine || arenaIncoming || arenaBoard.length || (arenaData.live || []).length)"
+                    <div v-if="featureOn('arena_duels') && (arenaMapReady || arenaMine || arenaIncoming || arenaBoard.length || (arenaData.live || []).length || arenaLadder.length || arenaKoth || arenaBoss)"
                          class="mt-5 pt-5 border-t border-white/5 relative z-10">
                         <div v-if="arenaMapReady" class="w-full h-[180px] mb-4">
                             <ClubMap
@@ -827,25 +853,11 @@ onMounted(() => {
                         <div v-if="arenaMine" class="border border-orange-400/40 bg-orange-500/10 rounded-xl p-4 mb-4">
                             <div class="flex items-center justify-between gap-2 mb-1">
                                 <span class="text-[9px] uppercase tracking-widest font-black text-orange-200">{{ arenaMine.kind_label }} · вы в лобби</span>
-                                <span class="font-mono text-orange-100 text-sm">{{ Math.round(arenaMine.entry_fee || 0) }} ₽</span>
+                                <span class="font-mono text-orange-100 text-sm">{{ arenaMine.players_count }}/{{ arenaMine.max_players }}</span>
                             </div>
-                            <div class="text-[11px] text-white/70 mb-2">{{ arenaMine.mode_label }} · {{ formatArenaWhen(arenaMine.scheduled_at) }} · {{ arenaMine.players_count }}/{{ arenaMine.max_players }}</div>
+                            <div class="text-[11px] text-white/70 mb-2">{{ arenaMine.mode_label }} · {{ formatArenaWhen(arenaMine.scheduled_at) }}</div>
                             <div class="text-[10px] text-white/40 mb-3">{{ (arenaMine.players || []).map((p: any) => p.name).join(', ') }}</div>
-                            <div v-if="arenaMine.raise_to" class="text-[11px] text-amber-200 mb-3">
-                                Повысить до {{ Math.round(arenaMine.raise_to) }} ₽ · за {{ arenaMine.raise_yes || 0 }}/{{ arenaMine.players_count }}
-                            </div>
-                            <div class="flex flex-wrap gap-2 mb-3">
-                                <input v-model="arenaForm.raiseTo" type="number" :min="Math.round((arenaMine.entry_fee || 0) + 50)"
-                                       placeholder="Новая ставка"
-                                       class="flex-1 min-w-[120px] bg-black/60 border border-white/10 rounded-xl px-3 py-3 text-xs text-white font-mono">
-                                <button v-if="arenaMine.can_raise" type="button" :disabled="arenaBusy" @click="arenaRaise(arenaMine.uuid)"
-                                        class="px-4 py-3 bg-black border border-orange-400/50 text-orange-200 rounded-xl text-[10px] font-black uppercase">Повысить</button>
-                            </div>
                             <div class="flex flex-wrap gap-2">
-                                <button v-if="arenaMine.can_vote_raise" type="button" :disabled="arenaBusy" @click="arenaVoteRaise(arenaMine.uuid, true)"
-                                        class="px-4 py-3 bg-orange-400 text-black rounded-xl text-[10px] font-black uppercase">Согласен</button>
-                                <button v-if="arenaMine.can_vote_raise" type="button" :disabled="arenaBusy" @click="arenaVoteRaise(arenaMine.uuid, false)"
-                                        class="px-4 py-3 border border-white/15 text-white/50 rounded-xl text-[10px] font-black uppercase">Против</button>
                                 <button v-if="arenaMine.can_start" type="button" :disabled="arenaBusy" @click="arenaAct(arenaMine.uuid, 'start')"
                                         class="px-4 py-3 bg-emerald-400 text-black rounded-xl text-[10px] font-black uppercase">Старт</button>
                                 <button v-if="arenaMine.can_cancel" type="button" :disabled="arenaBusy" @click="arenaAct(arenaMine.uuid, 'cancel')"
@@ -855,7 +867,7 @@ onMounted(() => {
 
                         <div v-if="arenaIncoming && !arenaIncoming.joined" class="border border-orange-400/40 bg-orange-500/10 rounded-xl p-4 mb-3">
                             <div class="text-[11px] text-orange-200 font-black uppercase">{{ arenaIncoming.line }}</div>
-                            <div class="text-[10px] text-white/40 mt-1 font-mono">{{ arenaSecondsLeft }}с · {{ Math.round(arenaIncoming.entry_fee || 0) }} ₽</div>
+                            <div class="text-[10px] text-white/40 mt-1 font-mono">{{ arenaSecondsLeft }}с · 1 на 1 или зассал</div>
                         </div>
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -864,7 +876,7 @@ onMounted(() => {
                                 <div class="flex items-center justify-between gap-2 mb-2">
                                     <span class="text-[9px] uppercase tracking-widest font-black"
                                           :class="row.kind === 'battle' ? 'text-amber-300' : 'text-orange-300'">{{ row.kind_label || 'Дуэль' }}</span>
-                                    <span class="font-mono text-white text-sm">{{ Math.round(row.entry_fee || 0) }} ₽</span>
+                                    <span class="font-mono text-white text-sm">Elo {{ row.creator_rating || 1000 }}</span>
                                 </div>
                                 <div class="text-[12px] text-white/80 font-black mb-1">{{ row.mode_label }}</div>
                                 <div class="text-[10px] text-white/40 mb-3 font-mono">
@@ -872,7 +884,7 @@ onMounted(() => {
                                 </div>
                                 <button v-if="row.can_accept" type="button" :disabled="arenaBusy" @click="arenaAct(row.uuid, 'accept')"
                                         class="w-full py-3 bg-orange-400 text-black rounded-xl text-[10px] font-black uppercase">
-                                    Принять (−{{ Math.round(row.entry_fee || 0) }} ₽)
+                                    Принять вызов
                                 </button>
                                 <div v-else-if="row.joined" class="text-[10px] text-emerald-400 uppercase font-black tracking-widest">Вы в лобби</div>
                                 <div v-else class="text-[10px] text-white/30 uppercase font-black tracking-widest">Набор</div>
@@ -1259,15 +1271,15 @@ onMounted(() => {
                     <div class="text-4xl mb-3">⚔</div>
                     <h2 class="text-orange-300 text-2xl font-black uppercase italic mb-2 tracking-tighter">{{ arenaIncoming.kind_label || 'Вызов на дуэль' }}</h2>
                     <p class="text-white/70 text-sm mb-2">{{ arenaIncoming.creator_name }} · {{ arenaIncoming.creator_pc }}</p>
-                    <p class="text-orange-200 font-black text-lg mb-1">{{ Math.round(arenaIncoming.entry_fee || 0) }} ₽ · {{ arenaIncoming.mode_label }}</p>
-                    <p class="text-[10px] text-white/30 uppercase tracking-widest font-black mb-6">{{ arenaSecondsLeft }}с · приз на депозит, без вывода</p>
+                    <p class="text-orange-200 font-black text-lg mb-1">{{ arenaIncoming.mode_label }} · 1 на 1 или зассал</p>
+                    <p class="text-[10px] text-white/30 uppercase tracking-widest font-black mb-6">{{ arenaSecondsLeft }}с · без ставок, за рейтинг клуба</p>
                     <p v-if="arenaError" class="text-red-400 text-xs mb-3">{{ arenaError }}</p>
                     <div class="flex gap-3">
                         <button type="button" :disabled="arenaBusy" @click="arenaAct(arenaIncoming.uuid, 'decline')"
                                 class="flex-1 py-4 border border-white/15 text-white/50 uppercase font-black rounded-xl text-[10px]">Отклонить</button>
                         <button type="button" :disabled="arenaBusy" @click="arenaAct(arenaIncoming.uuid, 'accept')"
                                 class="flex-[2] py-4 bg-orange-400 text-black uppercase font-black rounded-xl text-[10px]">
-                            Принять (−{{ Math.round(arenaIncoming.entry_fee || 0) }} ₽)
+                            Принять вызов
                         </button>
                     </div>
                 </div>

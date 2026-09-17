@@ -21,7 +21,7 @@ class ArenaDuelAdminController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Эскроу возвращён',
+            'message' => 'Матч снят',
             'duel' => $arena->payload($row),
         ]);
     }
