@@ -137,6 +137,10 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('HookResult.Handled', $blob);
         $this->assertStringContainsString('validate-station', $blob);
         $this->assertStringContainsString('SSL Pinning', $blob);
+        $this->assertStringContainsString('active-sessions', $blob);
+        $this->assertStringContainsString('grace cycle', $blob);
+        $this->assertStringContainsString('Intermediate', $blob);
+        $this->assertStringContainsString('AC_KEEPALIVE_HTTP_GRACE_CYCLES', $blob);
         $this->assertStringContainsString('ReactorAcSvc', $blob);
         $this->assertStringNotContainsString('ReactorAcWatchdog', $blob);
         $this->assertStringNotContainsString('assertPlayer($user)', $blob);
