@@ -106,6 +106,10 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('--lowvram', $blob);
         $this->assertStringContainsString('club-face-agent', $blob);
         $this->assertStringContainsString('gpu_mem_limit', $blob);
+        $this->assertStringContainsString('OpenVINOExecutionProvider', $blob);
+        $this->assertStringContainsString('CPUExecutionProvider', $blob);
+        $this->assertStringContainsString('ctx_id=-1', $blob);
+        $this->assertStringContainsString('Channels/102', $blob);
         $this->assertStringContainsString('SDXL Lightning', $blob);
     }
 
