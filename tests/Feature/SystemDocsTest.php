@@ -100,8 +100,13 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('ПК лиц: ТЗ железа и место в сети', $blob);
         $this->assertStringContainsString('ПК лиц: софт (метки, лица, ComfyUI)', $blob);
         $this->assertStringContainsString('ПК лиц: подключение к бэкенду', $blob);
+        $this->assertStringContainsString('ПК лиц: VRAM и три службы', $blob);
         $this->assertStringContainsString('/api/avatar/stylize-targets', $blob);
         $this->assertStringContainsString('--listen 127.0.0.1', $blob);
+        $this->assertStringContainsString('--lowvram', $blob);
+        $this->assertStringContainsString('club-face-agent', $blob);
+        $this->assertStringContainsString('gpu_mem_limit', $blob);
+        $this->assertStringContainsString('SDXL Lightning', $blob);
     }
 
     public function test_pdf_includes_reactor_ac_plan(): void
