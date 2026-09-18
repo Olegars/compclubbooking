@@ -84,6 +84,26 @@ class SystemDocsTest extends TestCase
             );
     }
 
+    public function test_pdf_includes_face_pc_spec(): void
+    {
+        $admin = $this->makeAdmin('supervisor');
+
+        $this->actingAs($admin, 'admin')
+            ->get('/admin/docs/pdf?q='.rawurlencode('FACE-01'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SystemDocsPrint')
+                ->where('sections.0.id', 'network')
+            );
+
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('ПК лиц: ТЗ железа и место в сети', $blob);
+        $this->assertStringContainsString('ПК лиц: софт (метки, лица, ComfyUI)', $blob);
+        $this->assertStringContainsString('ПК лиц: подключение к бэкенду', $blob);
+        $this->assertStringContainsString('/api/avatar/stylize-targets', $blob);
+        $this->assertStringContainsString('--listen 127.0.0.1', $blob);
+    }
+
     private function makeAdmin(string $role): Admin
     {
         return Admin::query()->create([
