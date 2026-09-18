@@ -130,6 +130,11 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('heartbeat-check', $blob);
         $this->assertStringContainsString('token_connect_ttl', $blob);
         $this->assertStringContainsString('Переподключиться к матчу', $blob);
+        $this->assertStringContainsString('validate-station', $blob);
+        $this->assertStringContainsString('is_validating', $blob);
+        $this->assertStringContainsString('SSL Pinning', $blob);
+        $this->assertStringContainsString('ConnectedPlayers', $blob);
+        $this->assertStringContainsString('changelevel', $blob);
         $this->assertStringContainsString('ReactorAcSvc', $blob);
         $this->assertStringNotContainsString('ReactorAcWatchdog', $blob);
         $this->assertStringNotContainsString('assertPlayer($user)', $blob);
