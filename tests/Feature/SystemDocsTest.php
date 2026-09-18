@@ -120,11 +120,12 @@ class SystemDocsTest extends TestCase
 
         $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
         $this->assertStringContainsString('Античит домашней игры (REACTOR AC)', $blob);
-        $this->assertStringContainsString('/api/ac/heartbeat', $blob);
+        $this->assertStringContainsString('/api/ac/connect-token', $blob);
+        $this->assertStringContainsString('CounterStrikeSharp', $blob);
+        $this->assertStringContainsString('Protocol Gate', $blob);
+        $this->assertStringContainsString('match_making', $blob);
+        $this->assertStringContainsString('R&D / Conditional', $blob);
         $this->assertStringContainsString('ReactorAcSvc', $blob);
-        $this->assertStringContainsString('ARENA_CS2_CONNECT', $blob);
-        $this->assertStringContainsString('/ac/download', $blob);
-        $this->assertStringContainsString('station_trusted', $blob);
         $this->assertStringNotContainsString('ReactorAcWatchdog', $blob);
         $this->assertStringNotContainsString('assertPlayer($user)', $blob);
     }
