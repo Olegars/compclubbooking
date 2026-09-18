@@ -200,6 +200,11 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('Ban Evasion', $blob);
         $this->assertStringContainsString('Roaming', $blob);
         $this->assertStringContainsString('Колонок access_token / refresh_token нет', $blob);
+        $this->assertStringContainsString('/auth/v1/userinfo', $blob);
+        $this->assertStringContainsString('sc query FACEIT', $blob);
+        $this->assertStringContainsString('taskkill /F /IM FACEIT.exe /T', $blob);
+        $this->assertStringContainsString('Поток данных: ЛК → API → шелл', $blob);
+        $this->assertStringContainsString('никакого take()', $blob);
     }
 
     private function makeAdmin(string $role): Admin
