@@ -155,6 +155,41 @@ class SystemDocsTest extends TestCase
         $this->assertStringNotContainsString('assertPlayer($user)', $blob);
     }
 
+    public function test_pdf_includes_faceit_club_spec(): void
+    {
+        $admin = $this->makeAdmin('supervisor');
+
+        $this->actingAs($admin, 'admin')
+            ->get('/admin/docs/pdf?section=faceit&q='.rawurlencode('свой FACEIT'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SystemDocsPrint')
+                ->where('section', 'faceit')
+                ->where('sections.0.id', 'faceit')
+                ->where('sections.0.items.0.title', 'Назначение: свой FACEIT с ПК зала')
+            );
+
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('FACEIT в клубе', $blob);
+        $this->assertStringContainsString('open.faceit.com/data/v4', $blob);
+        $this->assertStringContainsString('FACEIT Connect', $blob);
+        $this->assertStringContainsString('game_player_id', $blob);
+        $this->assertStringContainsString('skill_level', $blob);
+        $this->assertStringContainsString('match_status_finished', $blob);
+        $this->assertStringContainsString('faceit_identities', $blob);
+        $this->assertStringContainsString('FACEIT_CLIENT_SECRET', $blob);
+        $this->assertStringContainsString('D:/ShellData/faceit', $blob);
+        $this->assertStringContainsString('faceit_player_id', $blob);
+        $this->assertStringContainsString('Привязать FACEIT', $blob);
+        $this->assertStringContainsString('reactor:sync-faceit', $blob);
+        $this->assertStringContainsString('/api/faceit/webhook', $blob);
+        $this->assertStringContainsString('App Studio', $blob);
+        $this->assertStringContainsString('не пул клуба', $blob);
+        $this->assertStringContainsString('FaceitIdentityService', $blob);
+        $this->assertStringContainsString('FaceitLfgRankTest', $blob);
+        $this->assertStringContainsString('публичного queue API нет', $blob);
+    }
+
     private function makeAdmin(string $role): Admin
     {
         return Admin::query()->create([
