@@ -104,6 +104,30 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('--listen 127.0.0.1', $blob);
     }
 
+    public function test_pdf_includes_reactor_ac_plan(): void
+    {
+        $admin = $this->makeAdmin('supervisor');
+
+        $this->actingAs($admin, 'admin')
+            ->get('/admin/docs/pdf?section=anticheat&q='.rawurlencode('REACTOR AC'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SystemDocsPrint')
+                ->where('section', 'anticheat')
+                ->where('sections.0.id', 'anticheat')
+                ->where('sections.0.items.0.title', 'Назначение: честная конкуренция в зале')
+            );
+
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('Античит клуба (REACTOR AC)', $blob);
+        $this->assertStringContainsString('Trusted Mode', $blob);
+        $this->assertStringContainsString('/api/shell/ac/events', $blob);
+        $this->assertStringContainsString('ReactorAcWatchdog', $blob);
+        $this->assertStringContainsString('reactor_ac', $blob);
+        $this->assertStringContainsString('AcVerdictService', $blob);
+        $this->assertStringNotContainsString('assertPlayer($user)', $blob);
+    }
+
     private function makeAdmin(string $role): Admin
     {
         return Admin::query()->create([
