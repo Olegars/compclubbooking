@@ -125,6 +125,11 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('Protocol Gate', $blob);
         $this->assertStringContainsString('match_making', $blob);
         $this->assertStringContainsString('R&D / Conditional', $blob);
+        $this->assertStringContainsString('ReactorAcGatePlugin', $blob);
+        $this->assertStringContainsString('OnClientAuthorized', $blob);
+        $this->assertStringContainsString('heartbeat-check', $blob);
+        $this->assertStringContainsString('token_connect_ttl', $blob);
+        $this->assertStringContainsString('Переподключиться к матчу', $blob);
         $this->assertStringContainsString('ReactorAcSvc', $blob);
         $this->assertStringNotContainsString('ReactorAcWatchdog', $blob);
         $this->assertStringNotContainsString('assertPlayer($user)', $blob);
