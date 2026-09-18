@@ -115,16 +115,17 @@ class SystemDocsTest extends TestCase
                 ->component('Admin/SystemDocsPrint')
                 ->where('section', 'anticheat')
                 ->where('sections.0.id', 'anticheat')
-                ->where('sections.0.items.0.title', 'Назначение: честная конкуренция в зале')
+                ->where('sections.0.items.0.title', 'Назначение: домашний ПК на сервер клуба')
             );
 
         $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
-        $this->assertStringContainsString('Античит клуба (REACTOR AC)', $blob);
-        $this->assertStringContainsString('Trusted Mode', $blob);
-        $this->assertStringContainsString('/api/shell/ac/events', $blob);
-        $this->assertStringContainsString('ReactorAcWatchdog', $blob);
-        $this->assertStringContainsString('reactor_ac', $blob);
-        $this->assertStringContainsString('AcVerdictService', $blob);
+        $this->assertStringContainsString('Античит домашней игры (REACTOR AC)', $blob);
+        $this->assertStringContainsString('/api/ac/heartbeat', $blob);
+        $this->assertStringContainsString('ReactorAcSvc', $blob);
+        $this->assertStringContainsString('ARENA_CS2_CONNECT', $blob);
+        $this->assertStringContainsString('/ac/download', $blob);
+        $this->assertStringContainsString('station_trusted', $blob);
+        $this->assertStringNotContainsString('ReactorAcWatchdog', $blob);
         $this->assertStringNotContainsString('assertPlayer($user)', $blob);
     }
 
