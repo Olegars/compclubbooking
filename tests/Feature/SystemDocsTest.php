@@ -188,6 +188,18 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('FaceitIdentityService', $blob);
         $this->assertStringContainsString('FaceitLfgRankTest', $blob);
         $this->assertStringContainsString('публичного queue API нет', $blob);
+        $this->assertStringContainsString('Cyber Cafe IP Whitelist', $blob);
+        $this->assertStringContainsString('Source NAT', $blob);
+        $this->assertStringContainsString('TPM 2.0', $blob);
+        $this->assertStringContainsString('Secure Boot', $blob);
+        $this->assertStringContainsString('FACEIT.sys', $blob);
+        $this->assertStringContainsString('The service cannot be started', $blob);
+        $this->assertStringContainsString('openid', $blob);
+        $this->assertStringContainsString('не хранить', $blob);
+        $this->assertStringContainsString('reg delete', $blob);
+        $this->assertStringContainsString('Ban Evasion', $blob);
+        $this->assertStringContainsString('Roaming', $blob);
+        $this->assertStringContainsString('Колонок access_token / refresh_token нет', $blob);
     }
 
     private function makeAdmin(string $role): Admin
