@@ -207,6 +207,49 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('никакого take()', $blob);
     }
 
+    public function test_pdf_includes_battlepass_spec(): void
+    {
+        $admin = $this->makeAdmin('supervisor');
+
+        $this->actingAs($admin, 'admin')
+            ->get('/admin/docs/pdf?section=battlepass&q='.rawurlencode('боевой пропуск'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SystemDocsPrint')
+                ->where('section', 'battlepass')
+                ->where('sections.0.id', 'battlepass')
+                ->where('sections.0.items.0.title', 'Назначение: витрина гостя и реальные награды')
+            );
+
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('Профиль, ачивки и боевой пропуск', $blob);
+        $this->assertStringContainsString('/admin/achievements', $blob);
+        $this->assertStringContainsString('tab=quests', $blob);
+        $this->assertStringContainsString('source_kind', $blob);
+        $this->assertStringContainsString('gsi_cs2', $blob);
+        $this->assertStringContainsString('OpenDota', $blob);
+        $this->assertStringContainsString('Tracker Network', $blob);
+        $this->assertStringContainsString('session_minutes', $blob);
+        $this->assertStringContainsString('tariff_discount', $blob);
+        $this->assertStringContainsString('partner_promo', $blob);
+        $this->assertStringContainsString('lfg_vip', $blob);
+        $this->assertStringContainsString('BattlePassService', $blob);
+        $this->assertStringContainsString('GsiAceAwardTest', $blob);
+        $this->assertStringContainsString('reactor:close-battle-season', $blob);
+        $this->assertStringContainsString('user_identities', $blob);
+        $this->assertStringContainsString('ladder_reward_tiers', $blob);
+        $this->assertStringContainsString('Ночной волк', $blob);
+        $this->assertStringContainsString('Гладиатор', $blob);
+        $this->assertStringContainsString('кешбэк часами', $blob);
+        $this->assertStringContainsString('Не строить отдельный MM', $blob);
+        $this->assertStringContainsString('Lucky Seat', $blob);
+        $this->assertStringContainsString('bonus-logs source=battle_pass', $blob);
+        $this->assertStringContainsString('Вкладка 6. Источники', $blob);
+        $this->assertStringContainsString('127.0.0.1:59898', $blob);
+        $this->assertStringContainsString('GetUserStatsForGame', $blob);
+        $this->assertStringNotContainsString('htmlspecialchars_decode', $blob);
+    }
+
     private function makeAdmin(string $role): Admin
     {
         return Admin::query()->create([
