@@ -257,6 +257,15 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('Вкладка 6. Источники', $blob);
         $this->assertStringContainsString('127.0.0.1:59898', $blob);
         $this->assertStringContainsString('GetUserStatsForGame', $blob);
+        $this->assertStringContainsString('ON CONFLICT DO NOTHING', $blob);
+        $this->assertStringContainsString('match_round_key', $blob);
+        $this->assertStringContainsString('claim_grace_period', $blob);
+        $this->assertStringContainsString('identities-high', $blob);
+        $this->assertStringContainsString('RateLimiter', $blob);
+        $this->assertStringContainsString('ReactiveLighting::Priority', $blob);
+        $this->assertStringContainsString('stock_movements reason=battle_pass', $blob);
+        $this->assertStringContainsString('GsiAceAwardTest', $blob);
+        $this->assertStringContainsString('BattlePassGraceTest', $blob);
         $this->assertStringNotContainsString('htmlspecialchars_decode', $blob);
     }
 
