@@ -221,6 +221,16 @@ class SystemDocsTest extends TestCase
                 ->where('sections.0.items.0.title', 'Назначение: витрина гостя и реальные награды')
             );
 
+        $this->actingAs($admin, 'admin')
+            ->get('/admin/docs/pdf?q=battlepass')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SystemDocsPrint')
+                ->where('query', 'battlepass')
+                ->where('sections.0.id', 'battlepass')
+                ->where('sections.0.items.0.title', 'Назначение: витрина гостя и реальные награды')
+            );
+
         $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
         $this->assertStringContainsString('Профиль, ачивки и боевой пропуск', $blob);
         $this->assertStringContainsString('/admin/achievements', $blob);

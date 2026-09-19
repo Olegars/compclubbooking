@@ -39,22 +39,27 @@ const ensureDefaults = () => {
 ensureDefaults()
 watch(() => props.sections.map(s => s.id).join(','), ensureDefaults)
 
+const compact = (value: string) => value.toLowerCase().replace(/[_\-\s]+/g, '')
+
 const filtered = computed(() => {
     const q = query.value.trim().toLowerCase()
+    const qCompact = compact(q)
     return props.sections
         .filter(s => activeSection.value === 'all' || s.id === activeSection.value)
-        .map(s => ({
-            ...s,
-            items: s.items.filter(item => {
-                if (!q) return true
-                return (
-                    item.title.toLowerCase().includes(q)
-                    || item.description.toLowerCase().includes(q)
-                    || item.audience.toLowerCase().includes(q)
-                    || (item.path || '').toLowerCase().includes(q)
-                )
-            }),
-        }))
+        .map(s => {
+            if (!q) return { ...s }
+            const sectionHay = `${s.id}\n${s.title}`.toLowerCase()
+            if (sectionHay.includes(q) || (qCompact && compact(sectionHay).includes(qCompact))) {
+                return { ...s }
+            }
+            return {
+                ...s,
+                items: s.items.filter((item) => {
+                    const hay = `${item.title}\n${item.description}\n${item.audience}\n${item.path || ''}`.toLowerCase()
+                    return hay.includes(q) || (qCompact && compact(hay).includes(qCompact))
+                }),
+            }
+        })
         .filter(s => s.items.length > 0)
 })
 
@@ -134,7 +139,7 @@ watch([query, activeSection, filtered], () => {
                     <input
                         v-model="query"
                         type="search"
-                        placeholder="Поиск: транзакции, чек, вентилятор, TV shell…"
+                        placeholder="Поиск: боевой пропуск, FACEIT, чек, вентилятор…"
                         class="flex-1 bg-black border border-white/10 rounded-2xl px-5 py-4 text-sm text-white placeholder:text-white/20 outline-none focus:border-[#22c55e]/40"
                     />
                     <select

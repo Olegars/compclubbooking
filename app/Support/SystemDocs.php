@@ -501,7 +501,7 @@ class SystemDocs
             ],
             [
                 'id' => 'battlepass',
-                'title' => 'Профиль, ачивки и боевой пропуск',
+                'title' => 'Профиль, ачивки и боевой пропуск (Battle Pass)',
                 'items' => [
                     [
                         'title' => 'Назначение: витрина гостя и реальные награды',
@@ -1339,16 +1339,28 @@ class SystemDocs
         }
 
         $needle = mb_strtolower($query);
+        $needleCompact = preg_replace('/[_\-\s]+/u', '', $needle) ?? $needle;
 
-        return array_values(array_filter(array_map(static function (array $section) use ($needle): array {
+        return array_values(array_filter(array_map(static function (array $section) use ($needle, $needleCompact): array {
+            $sectionHay = mb_strtolower($section['id']."\n".$section['title']);
+            $sectionCompact = preg_replace('/[_\-\s]+/u', '', $sectionHay) ?? $sectionHay;
+            if (str_contains($sectionHay, $needle)
+                || ($needleCompact !== '' && str_contains($sectionCompact, $needleCompact))) {
+                return $section;
+            }
+
             $section['items'] = array_values(array_filter(
                 $section['items'],
-                static function (array $item) use ($needle): bool {
+                static function (array $item) use ($needle, $needleCompact): bool {
                     $haystack = mb_strtolower(
                         $item['title']."\n".$item['description']."\n".$item['audience']."\n".($item['path'] ?? '')
                     );
+                    if (str_contains($haystack, $needle)) {
+                        return true;
+                    }
+                    $compact = preg_replace('/[_\-\s]+/u', '', $haystack) ?? $haystack;
 
-                    return str_contains($haystack, $needle);
+                    return $needleCompact !== '' && str_contains($compact, $needleCompact);
                 }
             ));
 
