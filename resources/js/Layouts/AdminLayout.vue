@@ -447,8 +447,13 @@ onUnmounted(() => {
                     <Link v-if="isOwner"
                           href="/admin/taxes"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
-                          :class="isActive('/admin/taxes') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                          :class="isActive('/admin/taxes') && !isActive('/admin/taxes/cadre') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🧾</span> Налоги
+                    </Link>
+                    <Link href="/admin/taxes/cadre"
+                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
+                          :class="isActive('/admin/taxes/cadre') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🗂️</span> СФР / ФНС
                     </Link>
                     <Link v-if="isSupervisorPlus"
                           href="/admin/staff"

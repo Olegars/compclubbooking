@@ -68,12 +68,13 @@ class StaffEmploymentTest extends TestCase
         $this->assertTrue((bool) $admin->employment_pending);
         $this->assertNull($admin->hired_at);
         $this->assertSame('Иванов Иван Иванович', $admin->name);
-        $this->assertDatabaseHas('staff_employment_profiles', [
-            'admin_id' => $admin->id,
-            'status' => StaffEmploymentProfile::STATUS_REVIEW,
-            'passport_series' => '1234',
-            'passport_number' => '567890',
-        ]);
+        $profile = StaffEmploymentProfile::query()->where('admin_id', $admin->id)->first();
+        $this->assertNotNull($profile);
+        $this->assertSame(StaffEmploymentProfile::STATUS_REVIEW, $profile->status);
+        $this->assertSame('1234', $profile->passport_series);
+        $this->assertSame('567890', $profile->passport_number);
+        $this->assertSame('112-233-445 95', $profile->snils);
+        $this->assertNotSame('1234', $profile->getRawOriginal('passport_series'));
 
         $this->actingAs($admin, 'admin')
             ->get('/admin/salary')
@@ -397,6 +398,10 @@ class StaffEmploymentTest extends TestCase
             'issued_at' => '2020-01-15',
             'department_code' => '770-001',
             'birth_date' => '1998-05-20',
+            'snils' => '112-233-445 95',
+            'inn' => '500100732259',
+            'gender' => 'male',
+            'part_time_code' => 'НЕПД',
         ], $extra);
     }
 }

@@ -246,6 +246,10 @@ class StaffPayrollController extends Controller
                     'issued_at' => null,
                     'department_code' => null,
                     'birth_date' => null,
+                    'snils' => null,
+                    'inn' => null,
+                    'gender' => null,
+                    'part_time_code' => null,
                     'has_scan' => false,
                 ],
             ];

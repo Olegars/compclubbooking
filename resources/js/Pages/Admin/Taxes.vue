@@ -136,6 +136,9 @@ const props = defineProps<{
         items: CalendarItem[]
         months: CalendarMonth[]
     }
+    cadre?: {
+        alerts: Array<{ id: string; tone: string; title: string; hint: string }>
+    }
 }>()
 
 const clubName = useClubName()
@@ -211,6 +214,7 @@ const filteredMonths = computed(() => {
                         {{ profile.entity }} · {{ profile.regime }} {{ profile.usn_rate_percent }}% · наёмные · НДС
                     </p>
                     <div class="flex flex-wrap gap-2 mt-4">
+                        <a href="/admin/taxes/cadre" class="px-3 py-1 rounded-full border border-cyan-500/40 text-[10px] uppercase tracking-widest text-cyan-300">Отчётность СФР / ФНС</a>
                         <span class="px-3 py-1 rounded-full border border-white/10 text-[10px] uppercase tracking-widest text-white/50">ИП</span>
                         <span class="px-3 py-1 rounded-full border border-indigo-500/30 text-[10px] uppercase tracking-widest text-indigo-400">УСН 6%</span>
                         <span class="px-3 py-1 rounded-full border border-amber-500/30 text-[10px] uppercase tracking-widest text-amber-400">Вычет взносов ≤ 50%</span>
@@ -248,6 +252,15 @@ const filteredMonths = computed(() => {
                 >
                     {{ item.text }}
                 </div>
+            </div>
+
+            <div v-if="cadre?.alerts?.length" class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <a v-for="alert in cadre.alerts" :key="alert.id" href="/admin/taxes/cadre"
+                   class="rounded-2xl border bg-black/40 px-5 py-4 block"
+                   :class="alert.tone === 'overdue' ? 'border-red-500/40 text-red-200' : alert.tone === 'due_soon' ? 'border-amber-500/40 text-amber-100' : 'border-cyan-500/30 text-cyan-100'">
+                    <div class="text-sm font-black">{{ alert.title }}</div>
+                    <div class="text-[10px] uppercase tracking-widest mt-2 opacity-70">{{ alert.hint }}</div>
+                </a>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">

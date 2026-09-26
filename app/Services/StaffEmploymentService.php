@@ -13,6 +13,7 @@ class StaffEmploymentService
 {
     public function __construct(
         private readonly StaffDocumentService $documents,
+        private readonly StaffCadreService $cadre,
     ) {
     }
 
@@ -46,6 +47,12 @@ class StaffEmploymentService
                 'issued_at' => $profile->issued_at?->toDateString(),
                 'department_code' => $profile->department_code,
                 'birth_date' => $profile->birth_date?->toDateString(),
+                'snils' => $profile->snils,
+                'inn' => $profile->inn,
+                'gender' => $profile->gender,
+                'okz_code' => $profile->okz_code,
+                'work_function_title' => $profile->work_function_title,
+                'part_time_code' => $profile->part_time_code,
                 'has_scan' => filled($profile->passport_scan_path),
             ],
         ];
@@ -77,6 +84,12 @@ class StaffEmploymentService
                 'issued_at' => null,
                 'department_code' => null,
                 'birth_date' => null,
+                'snils' => null,
+                'inn' => null,
+                'gender' => null,
+                'okz_code' => null,
+                'work_function_title' => null,
+                'part_time_code' => null,
                 'reviewed_at' => null,
                 'reviewer_name' => null,
                 'biometrics_captured_at' => null,
@@ -107,6 +120,12 @@ class StaffEmploymentService
             'issued_at' => $profile->issued_at?->toDateString(),
             'department_code' => $profile->department_code,
             'birth_date' => $profile->birth_date?->toDateString(),
+            'snils' => $profile->snils,
+            'inn' => $profile->inn,
+            'gender' => $profile->gender,
+            'okz_code' => $profile->okz_code,
+            'work_function_title' => $profile->work_function_title,
+            'part_time_code' => $profile->part_time_code,
             'reviewed_at' => $profile->reviewed_at?->toIso8601String(),
             'reviewer_name' => $profile->reviewer?->name,
             'biometrics_captured_at' => $profile->biometrics_captured_at?->toIso8601String(),
@@ -173,6 +192,10 @@ class StaffEmploymentService
             'issued_at' => $data['issued_at'],
             'department_code' => $data['department_code'],
             'birth_date' => $data['birth_date'],
+            'snils' => \App\Support\RussianIdentity::normalizeSnils((string) $data['snils']),
+            'inn' => \App\Support\RussianIdentity::normalizeInn((string) $data['inn']),
+            'gender' => $data['gender'],
+            'part_time_code' => filled($data['part_time_code'] ?? null) ? $data['part_time_code'] : null,
         ]);
 
         if ($scan) {
@@ -345,8 +368,10 @@ class StaffEmploymentService
         if (! $admin->isStoreRole()) {
             $payload['role'] = Admin::ROLE_INTERN;
         }
+        $payload['is_official_employee'] = true;
 
         $admin->update($payload);
+        $this->cadre->recordHire($admin->fresh());
     }
 
     /**
@@ -362,6 +387,22 @@ class StaffEmploymentService
             'issued_at' => ['required', 'date', 'before_or_equal:today'],
             'department_code' => ['required', 'regex:/^\d{3}-\d{3}$/'],
             'birth_date' => ['required', 'date', 'before:-16 years', 'after:-80 years'],
+            'snils' => ['required', 'string', 'max:20', function (string $attribute, mixed $value, \Closure $fail) {
+                try {
+                    \App\Support\RussianIdentity::normalizeSnils((string) $value);
+                } catch (RuntimeException $e) {
+                    $fail($e->getMessage());
+                }
+            }],
+            'inn' => ['required', 'string', 'max:16', function (string $attribute, mixed $value, \Closure $fail) {
+                try {
+                    \App\Support\RussianIdentity::normalizeInn((string) $value);
+                } catch (RuntimeException $e) {
+                    $fail($e->getMessage());
+                }
+            }],
+            'gender' => ['required', 'in:male,female'],
+            'part_time_code' => ['nullable', 'in:НЕПД,НЕПН'],
             'passport_scan' => [$hasScan ? 'nullable' : 'required', 'file', 'mimes:jpg,jpeg,png,pdf,webp', 'max:8192'],
         ];
     }
@@ -380,6 +421,9 @@ class StaffEmploymentService
             'department_code.regex' => 'Код подразделения в формате 000-000',
             'birth_date.required' => 'Укажите дату рождения',
             'birth_date.before' => 'Устройство с 16 лет',
+            'gender.required' => 'Укажите пол',
+            'snils.required' => 'Укажите СНИЛС',
+            'inn.required' => 'Укажите ИНН',
             'passport_scan.required' => 'Загрузите скан паспорта',
             'passport_scan.mimes' => 'Скан: JPG, PNG или PDF',
         ];

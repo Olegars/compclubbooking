@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="ЭДПФР">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="ЕФС-1">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="Страхователь">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="РегНомер" type="xs:string"/>
+                    <xs:element name="Наименование" type="xs:string"/>
+                    <xs:element name="ИНН" type="xs:string"/>
+                    <xs:element name="КПП" type="xs:string" minOccurs="0"/>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="СЗВ" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="ЗЛ">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="СНИЛС" type="xs:string"/>
+                          <xs:element name="ИНН" type="xs:string"/>
+                          <xs:element name="Фамилия" type="xs:string"/>
+                          <xs:element name="Имя" type="xs:string"/>
+                          <xs:element name="Отчество" type="xs:string" minOccurs="0"/>
+                          <xs:element name="ДатаРождения" type="xs:date"/>
+                          <xs:element name="Пол" type="xs:string"/>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="Мероприятие" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="Дата" type="xs:date"/>
+                          <xs:element name="Вид" type="xs:string"/>
+                          <xs:element name="Должность" type="xs:string"/>
+                          <xs:element name="КодОКЗ" type="xs:string"/>
+                          <xs:element name="НомерПриказа" type="xs:string"/>
+                          <xs:element name="ДатаПриказа" type="xs:date"/>
+                          <xs:element name="НеполноеВремя" type="xs:string" minOccurs="0"/>
+                          <xs:element name="ПричинаУвольнения" type="xs:string" minOccurs="0"/>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="ДатаЗаполнения" type="xs:date"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

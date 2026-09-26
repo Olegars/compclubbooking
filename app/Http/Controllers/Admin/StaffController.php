@@ -8,6 +8,7 @@ use App\Models\Club;
 use App\Models\ShiftIntern;
 use App\Models\StaffLedger;
 use App\Services\StaffBonusService;
+use App\Services\StaffCadreService;
 use App\Services\StaffEdoService;
 use App\Services\StaffEmploymentService;
 use App\Services\StaffPayrollService;
@@ -27,6 +28,7 @@ class StaffController extends Controller
         private readonly StaffEmploymentService $employment,
         private readonly StaffEdoService $edo,
         private readonly StaffBonusService $bonus,
+        private readonly StaffCadreService $cadre,
     ) {
     }
 
@@ -217,6 +219,10 @@ class StaffController extends Controller
             'base_rate' => ['required', 'numeric', 'min:0'],
             'pay_type' => ['required', 'in:shift,monthly'],
             'is_official_employee' => ['nullable', 'boolean'],
+            'snils' => ['nullable', 'string', 'max:20'],
+            'inn' => ['nullable', 'string', 'max:16'],
+            'gender' => ['nullable', 'in:male,female'],
+            'part_time_code' => ['nullable', 'in:НЕПД,НЕПН'],
         ], [
             'email.unique' => 'Этот email уже занят',
             'password.confirmed' => 'Пароли не совпадают',
@@ -231,7 +237,12 @@ class StaffController extends Controller
             $data['club_id'] = $clubId;
         }
 
-        Admin::query()->create([
+        $official = (bool) ($data['is_official_employee'] ?? false);
+        if ($official && (! filled($data['snils'] ?? null) || ! filled($data['inn'] ?? null) || ! filled($data['gender'] ?? null))) {
+            return back()->withErrors(['snils' => 'Для трудового договора нужны СНИЛС, ИНН и пол.']);
+        }
+
+        $employee = Admin::query()->create([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => $data['password'],
@@ -239,15 +250,26 @@ class StaffController extends Controller
             'club_id' => $data['club_id'],
             'base_rate' => $data['base_rate'],
             'pay_type' => $data['pay_type'],
-            'is_official_employee' => (bool) ($data['is_official_employee'] ?? false),
+            'is_official_employee' => $official,
             'employment_pending' => false,
             'hired_at' => now(),
         ]);
 
+        if ($official) {
+            try {
+                $this->cadre->saveRequisites($employee, $data);
+                $this->cadre->recordHire($employee->fresh());
+            } catch (RuntimeException $e) {
+                $employee->delete();
+
+                return back()->withErrors(['snils' => $e->getMessage()]);
+            }
+        }
+
         return back()->with('success', 'Сотрудник нанят: '.$data['name']);
     }
 
-    public function fire(Admin $admin)
+    public function fire(Request $request, Admin $admin)
     {
         $actor = auth('admin')->user();
         $open = \App\Support\AdminShift::openShift();
@@ -256,6 +278,10 @@ class StaffController extends Controller
         if (! $this->canFire($actor, $admin, $open, $ownerCount)) {
             return back()->withErrors(['staff' => $this->fireBlockReason($actor, $admin, $open, $ownerCount)]);
         }
+
+        $data = $request->validate([
+            'fire_reason_code' => ['nullable', 'in:article_77_3,article_81_6a'],
+        ]);
 
         ShiftIntern::query()
             ->where('admin_id', $admin->id)
@@ -266,6 +292,12 @@ class StaffController extends Controller
             'fired_at' => now(),
             'fired_by' => $actor->id,
         ]);
+
+        try {
+            $this->cadre->recordFire($admin->fresh(), $data['fire_reason_code'] ?? 'article_77_3');
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['staff' => $e->getMessage()]);
+        }
 
         return back()->with('success', 'Сотрудник уволен: '.$admin->name);
     }
@@ -281,6 +313,10 @@ class StaffController extends Controller
             'fired_at' => null,
             'fired_by' => null,
         ]);
+
+        if ($admin->is_official_employee) {
+            $this->cadre->recordHire($admin->fresh());
+        }
 
         return back()->with('success', 'Сотрудник снова в штате: '.$admin->name);
     }

@@ -47,6 +47,7 @@ use App\Http\Controllers\Admin\LightAdminController;
 use App\Http\Controllers\Admin\ShiftController;
 use App\Http\Controllers\Admin\BonusController;
 use App\Http\Controllers\Admin\TaxController;
+use App\Http\Controllers\Admin\StaffCadreController;
 use App\Http\Controllers\Admin\StaffController;
 use App\Http\Controllers\Admin\StaffPayrollController;
 use App\Http\Controllers\Admin\StaffEdoController;
@@ -716,7 +717,15 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::post('/staff/{admin}/employment/biometrics', [StaffController::class, 'captureEmploymentBiometrics'])->name('admin.staff.employment.biometrics');
         Route::post('/staff/{admin}/employment/reject', [StaffController::class, 'rejectEmployment'])->name('admin.staff.employment.reject');
         Route::post('/staff/{admin}/fire', [StaffController::class, 'fire'])->name('admin.staff.fire');
+        Route::post('/staff/{admin}/cadre', [StaffCadreController::class, 'updateRequisites'])->name('admin.staff.cadre');
         Route::post('/staff/{admin}/restore', [StaffController::class, 'restore'])->name('admin.staff.restore');
+
+        Route::get('/taxes/cadre', [StaffCadreController::class, 'index'])->name('admin.taxes.cadre');
+        Route::post('/taxes/cadre/efs1/generate', [StaffCadreController::class, 'generateEfs1'])->name('admin.taxes.cadre.efs1');
+        Route::post('/taxes/cadre/pers-records/generate', [StaffCadreController::class, 'generatePers'])->name('admin.taxes.cadre.pers');
+        Route::get('/taxes/cadre/download/{report}', [StaffCadreController::class, 'download'])->name('admin.taxes.cadre.download');
+        Route::post('/taxes/cadre/mark-submitted/{report}', [StaffCadreController::class, 'markSubmitted'])->name('admin.taxes.cadre.submitted');
+        Route::get('/taxes/cadre/events/{event}/preview', [StaffCadreController::class, 'preview'])->name('admin.taxes.cadre.preview');
     });
 
     // УРОВЕНЬ: OWNER

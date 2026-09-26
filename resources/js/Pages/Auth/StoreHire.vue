@@ -28,6 +28,10 @@ type Employment = {
         issued_at: string | null
         department_code: string | null
         birth_date: string | null
+        snils?: string | null
+        inn?: string | null
+        gender?: string | null
+        part_time_code?: string | null
         has_scan: boolean
     }
 }

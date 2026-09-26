@@ -34,6 +34,22 @@ class WorkingDaysCalculator
         throw new \RuntimeException('Не удалось посчитать срок по производственному календарю.');
     }
 
+    public function nextWorkingDay(CarbonInterface $day): Carbon
+    {
+        $cursor = Carbon::parse($day)->timezone(config('app.timezone', 'Europe/Moscow'))->startOfDay()->addDay();
+        $guard = 0;
+
+        while ($guard < 40) {
+            $guard++;
+            if ($this->isWorkingDay($cursor)) {
+                return $cursor->copy();
+            }
+            $cursor->addDay();
+        }
+
+        throw new \RuntimeException('Не удалось найти следующий рабочий день.');
+    }
+
     public function canIssueNoExplanationAct(CarbonInterface $deadline, CarbonInterface $now): bool
     {
         return Carbon::parse($now)->greaterThan(Carbon::parse($deadline));

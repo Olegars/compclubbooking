@@ -13,6 +13,10 @@ type Profile = {
     issued_at: string | null
     department_code: string | null
     birth_date: string | null
+    snils?: string | null
+    inn?: string | null
+    gender?: string | null
+    part_time_code?: string | null
     has_scan: boolean
 }
 
@@ -104,6 +108,10 @@ const form = useForm({
     issued_at: props.profile.issued_at || '',
     department_code: props.profile.department_code || '',
     birth_date: props.profile.birth_date || '',
+    snils: props.profile.snils || '',
+    inn: props.profile.inn || '',
+    gender: props.profile.gender || 'male',
+    part_time_code: props.profile.part_time_code || 'НЕПД',
     passport_scan: null as File | null,
 })
 
@@ -115,6 +123,10 @@ watch(() => props.profile, (next) => {
     form.issued_at = next.issued_at || form.issued_at
     form.department_code = next.department_code || form.department_code
     form.birth_date = next.birth_date || form.birth_date
+    form.snils = next.snils || form.snils
+    form.inn = next.inn || form.inn
+    form.gender = next.gender || form.gender
+    form.part_time_code = next.part_time_code || form.part_time_code
 })
 
 const fieldsFilled = computed(() => {
@@ -126,6 +138,9 @@ const fieldsFilled = computed(() => {
         && form.issued_at
         && /^\d{3}-\d{3}$/.test(form.department_code)
         && form.birth_date
+        && /^\d{3}-?\d{3}-?\d{3}\s?\d{2}$/.test(form.snils.trim())
+        && /^\d{12}$/.test(form.inn.trim())
+        && (form.gender === 'male' || form.gender === 'female')
         && (form.passport_scan || props.profile.has_scan)
     )
 })
@@ -232,7 +247,7 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                   @submit.prevent="hire">
                 <div>
                     <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Шаг 2 · Личные данные</div>
-                    <p class="text-white/50 text-xs font-bold mt-2">ФИО и паспорт. Скан — фото или PDF разворота.</p>
+                    <p class="text-white/50 text-xs font-bold mt-2">ФИО, паспорт, СНИЛС и ИНН. Скан — фото или PDF разворота.</p>
                 </div>
 
                 <label class="block">
@@ -275,6 +290,38 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                         <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Дата рождения</span>
                         <input v-model="form.birth_date" type="date" :class="inputClass">
                         <p v-if="form.errors.birth_date" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ form.errors.birth_date }}</p>
+                    </label>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label class="block">
+                        <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">СНИЛС</span>
+                        <input v-model="form.snils" type="text" inputmode="numeric" maxlength="14" :class="inputClass" placeholder="123-456-789 64">
+                        <p v-if="form.errors.snils" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ form.errors.snils }}</p>
+                    </label>
+                    <label class="block">
+                        <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">ИНН</span>
+                        <input v-model="form.inn" type="text" inputmode="numeric" maxlength="12" :class="inputClass" placeholder="12 цифр">
+                        <p v-if="form.errors.inn" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ form.errors.inn }}</p>
+                    </label>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label class="block">
+                        <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Пол</span>
+                        <select v-model="form.gender" :class="inputClass">
+                            <option value="male">Мужской</option>
+                            <option value="female">Женский</option>
+                        </select>
+                        <p v-if="form.errors.gender" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ form.errors.gender }}</p>
+                    </label>
+                    <label class="block">
+                        <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Режим времени</span>
+                        <select v-model="form.part_time_code" :class="inputClass">
+                            <option value="НЕПД">Неполный день</option>
+                            <option value="НЕПН">Неполная неделя</option>
+                            <option value="">Полная ставка</option>
+                        </select>
                     </label>
                 </div>
 

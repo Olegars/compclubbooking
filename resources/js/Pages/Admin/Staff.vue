@@ -376,9 +376,11 @@ const confirmDelete = () => {
 
 const fireTarget = ref<any>(null)
 const fireProcessing = ref(false)
+const fireReason = ref('article_77_3')
 
 const openFire = (person: any) => {
     if (!person?.can_fire || fireProcessing.value) return
+    fireReason.value = 'article_77_3'
     fireTarget.value = person
 }
 
@@ -390,13 +392,45 @@ const closeFire = () => {
 const confirmFire = () => {
     if (!fireTarget.value || fireProcessing.value) return
     fireProcessing.value = true
-    router.post(`/admin/staff/${fireTarget.value.id}/fire`, {}, {
+    router.post(`/admin/staff/${fireTarget.value.id}/fire`, { fire_reason_code: fireReason.value }, {
         preserveScroll: true,
         onFinish: () => { fireProcessing.value = false },
         onSuccess: () => { fireTarget.value = null },
         onError: (errors) => {
             error((errors as any).staff || 'Не удалось уволить сотрудника')
         },
+    })
+}
+
+const cadreTarget = ref<any>(null)
+const cadreForm = useForm({
+    snils: '',
+    inn: '',
+    gender: 'male',
+    okz_code: '4222.0',
+    part_time_code: 'НЕПД',
+})
+
+const openCadre = (person: any) => {
+    cadreTarget.value = person
+    cadreForm.clearErrors()
+    cadreForm.snils = person.employment?.snils || ''
+    cadreForm.inn = person.employment?.inn || ''
+    cadreForm.gender = person.employment?.gender || 'male'
+    cadreForm.okz_code = person.employment?.okz_code || '4222.0'
+    cadreForm.part_time_code = person.employment?.part_time_code || 'НЕПД'
+}
+
+const closeCadre = () => {
+    if (cadreForm.processing) return
+    cadreTarget.value = null
+}
+
+const submitCadre = () => {
+    if (!cadreTarget.value || cadreForm.processing) return
+    cadreForm.post(`/admin/staff/${cadreTarget.value.id}/cadre`, {
+        preserveScroll: true,
+        onSuccess: () => { cadreTarget.value = null },
     })
 }
 
@@ -433,6 +467,10 @@ const hireForm = useForm({
     base_rate: 1500 as number | string,
     pay_type: 'shift',
     is_official_employee: false,
+    snils: '',
+    inn: '',
+    gender: 'male',
+    part_time_code: 'НЕПД',
 })
 
 const openHire = () => {
@@ -445,6 +483,10 @@ const openHire = () => {
     hireForm.base_rate = defaultRates[firstRole] ?? 1500
     hireForm.pay_type = firstRole === 'senior_manager' ? 'monthly' : 'shift'
     hireForm.is_official_employee = false
+    hireForm.snils = ''
+    hireForm.inn = ''
+    hireForm.gender = 'male'
+    hireForm.part_time_code = 'НЕПД'
     hireOpen.value = true
 }
 
@@ -605,6 +647,10 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                         <div class="text-white/50 text-[11px] font-bold space-y-1">
                             <div>Статус: {{ person.employment.status_label || person.employment.status }}</div>
                             <div v-if="person.employment.birth_date">Дата рождения {{ formatDay(person.employment.birth_date) }}</div>
+                            <div v-if="person.employment.snils">СНИЛС {{ person.employment.snils }}</div>
+                            <div v-if="person.employment.inn">ИНН {{ person.employment.inn }}</div>
+                            <div v-if="person.employment.okz_code">ОКЗ {{ person.employment.okz_code }} {{ person.employment.work_function_title }}</div>
+                            <div v-if="person.employment.part_time_code">Режим {{ person.employment.part_time_code }}</div>
                             <div v-if="person.employment.passport_series || person.employment.passport_number">
                                 Паспорт {{ person.employment.passport_series }} {{ person.employment.passport_number }}
                             </div>
@@ -619,6 +665,12 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                             <div v-if="person.employment.reviewer_name">Проверил {{ person.employment.reviewer_name }}</div>
                             <div v-if="person.employment.rejection_reason" class="text-red-400">{{ person.employment.rejection_reason }}</div>
                         </div>
+                        <button v-if="!person.is_fired"
+                                type="button"
+                                class="w-full py-3 border border-cyan-500/30 text-cyan-300 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                                @click="openCadre(person)">
+                            Реквизиты СФР
+                        </button>
                         <button v-if="hasPassport(person)"
                                 type="button"
                                 class="w-full py-3 border border-amber-500/30 hover:border-amber-400/60 text-amber-400 rounded-xl text-[10px] font-black uppercase tracking-widest"
@@ -890,16 +942,72 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
             @confirm="confirmDelete"
         />
 
-        <AdminConfirm
-            :is-open="!!fireTarget"
-            title="Уволить сотрудника"
-            :message="fireTarget ? `${fireTarget.name} останется в штате, но вход будет закрыт.` : ''"
-            confirm-text="Уволить"
-            cancel-text="Отмена"
-            :is-processing="fireProcessing"
-            @close="closeFire"
-            @confirm="confirmFire"
-        />
+        <div v-if="fireTarget" class="fixed inset-0 z-[99999] flex items-center justify-center p-4 font-mono">
+            <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="closeFire"></div>
+            <div class="relative z-10 w-full max-w-lg bg-[#0a0a0a] border border-red-500/30 rounded-[1rem] p-8">
+                <h3 class="text-xl font-black uppercase italic text-white">Уволить сотрудника</h3>
+                <p class="text-white/50 text-sm font-bold mt-3">{{ fireTarget.name }} останется в штате, вход будет закрыт. Для трудового договора соберётся карточка ЕФС-1.</p>
+                <label class="block mt-6">
+                    <span class="text-[10px] uppercase font-black tracking-widest text-white/30">Основание</span>
+                    <select v-model="fireReason" class="mt-2 w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none">
+                        <option value="article_77_3">п. 3 ч. 1 ст. 77 ТК РФ — инициатива работника</option>
+                        <option value="article_81_6a">пп. «а» п. 6 ч. 1 ст. 81 ТК РФ — прогул</option>
+                    </select>
+                </label>
+                <div class="flex gap-3 mt-6">
+                    <button type="button" class="flex-1 py-4 border border-white/10 text-white/50 rounded-xl text-[10px] font-black uppercase tracking-widest" @click="closeFire">Отмена</button>
+                    <button type="button" class="flex-1 py-4 bg-red-500 text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40" :disabled="fireProcessing" @click="confirmFire">Уволить</button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="cadreTarget" class="fixed inset-0 z-[99999] flex items-center justify-center p-4 font-mono">
+            <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="closeCadre"></div>
+            <form class="relative z-10 w-full max-w-lg bg-[#0a0a0a] border border-cyan-500/30 rounded-[1rem] p-8 space-y-4" @submit.prevent="submitCadre">
+                <h3 class="text-xl font-black uppercase italic text-white">Реквизиты СФР</h3>
+                <p class="text-white/40 text-[11px] font-bold">{{ cadreTarget.name }}. Паспорт, СНИЛС и ИНН хранятся в зашифрованном виде.</p>
+                <label class="block">
+                    <span class="text-[10px] uppercase font-black tracking-widest text-white/30">СНИЛС</span>
+                    <input v-model="cadreForm.snils" type="text" :class="inputClass" placeholder="123-456-789 64">
+                    <p v-if="cadreForm.errors.snils" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ cadreForm.errors.snils }}</p>
+                </label>
+                <label class="block">
+                    <span class="text-[10px] uppercase font-black tracking-widest text-white/30">ИНН</span>
+                    <input v-model="cadreForm.inn" type="text" maxlength="12" :class="inputClass">
+                    <p v-if="cadreForm.errors.inn" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ cadreForm.errors.inn }}</p>
+                </label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label class="block">
+                        <span class="text-[10px] uppercase font-black tracking-widest text-white/30">Пол</span>
+                        <select v-model="cadreForm.gender" :class="inputClass">
+                            <option value="male">Мужской</option>
+                            <option value="female">Женский</option>
+                        </select>
+                    </label>
+                    <label class="block">
+                        <span class="text-[10px] uppercase font-black tracking-widest text-white/30">ОКЗ</span>
+                        <select v-model="cadreForm.okz_code" :class="inputClass">
+                            <option value="4222.0">4222.0 администратор зала</option>
+                            <option value="3343.3">3343.3 старший администратор</option>
+                            <option value="5230.1">5230.1 кассир</option>
+                            <option value="7422.2">7422.2 сборщик ПК</option>
+                        </select>
+                    </label>
+                </div>
+                <label class="block">
+                    <span class="text-[10px] uppercase font-black tracking-widest text-white/30">Режим времени</span>
+                    <select v-model="cadreForm.part_time_code" :class="inputClass">
+                        <option value="НЕПД">Неполный день</option>
+                        <option value="НЕПН">Неполная неделя</option>
+                        <option value="">Полная ставка</option>
+                    </select>
+                </label>
+                <div class="flex gap-3 pt-2">
+                    <button type="button" class="flex-1 py-4 border border-white/10 text-white/50 rounded-xl text-[10px] font-black uppercase tracking-widest" @click="closeCadre">Отмена</button>
+                    <button type="submit" class="flex-1 py-4 bg-cyan-400 text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40" :disabled="cadreForm.processing">Сохранить</button>
+                </div>
+            </form>
+        </div>
 
         <div v-if="hireOpen" class="fixed inset-0 z-[99998] flex items-center justify-center p-4 font-mono">
             <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="closeHire"></div>
@@ -961,6 +1069,33 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                         <input v-model="hireForm.is_official_employee" type="checkbox" class="rounded border-white/20 bg-black">
                         Оформлен по ТК РФ
                     </label>
+                    <div v-if="hireForm.is_official_employee" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label class="block">
+                            <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">СНИЛС</span>
+                            <input v-model="hireForm.snils" type="text" :class="inputClass" placeholder="123-456-789 64">
+                            <p v-if="hireForm.errors.snils" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ hireForm.errors.snils }}</p>
+                        </label>
+                        <label class="block">
+                            <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">ИНН</span>
+                            <input v-model="hireForm.inn" type="text" maxlength="12" :class="inputClass">
+                            <p v-if="hireForm.errors.inn" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ hireForm.errors.inn }}</p>
+                        </label>
+                        <label class="block">
+                            <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Пол</span>
+                            <select v-model="hireForm.gender" :class="inputClass">
+                                <option value="male">Мужской</option>
+                                <option value="female">Женский</option>
+                            </select>
+                        </label>
+                        <label class="block">
+                            <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Режим</span>
+                            <select v-model="hireForm.part_time_code" :class="inputClass">
+                                <option value="НЕПД">Неполный день</option>
+                                <option value="НЕПН">Неполная неделя</option>
+                                <option value="">Полная ставка</option>
+                            </select>
+                        </label>
+                    </div>
 
                     <div class="flex gap-3 pt-2">
                         <button type="button" @click="closeHire"

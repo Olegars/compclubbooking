@@ -145,6 +145,10 @@ class StoreStaffAuthTest extends TestCase
                 'issued_at' => '2020-01-15',
                 'department_code' => '770-001',
                 'birth_date' => '1998-05-20',
+                'snils' => '112-233-445 95',
+                'inn' => '500100732259',
+                'gender' => 'male',
+                'part_time_code' => 'НЕПД',
                 'passport_scan' => $this->fakeImageUpload('passport.jpg'),
             ])
             ->assertRedirect('/store/hire');

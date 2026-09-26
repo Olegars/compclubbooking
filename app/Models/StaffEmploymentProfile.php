@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\EncryptedPersonal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -35,6 +36,12 @@ class StaffEmploymentProfile extends Model
         'issued_at',
         'department_code',
         'birth_date',
+        'snils',
+        'inn',
+        'gender',
+        'okz_code',
+        'work_function_title',
+        'part_time_code',
         'passport_scan_path',
         'accepted_rule_ids',
         'status',
@@ -49,6 +56,12 @@ class StaffEmploymentProfile extends Model
     ];
 
     protected $casts = [
+        'passport_series' => EncryptedPersonal::class,
+        'passport_number' => EncryptedPersonal::class,
+        'issued_by' => EncryptedPersonal::class,
+        'department_code' => EncryptedPersonal::class,
+        'snils' => EncryptedPersonal::class,
+        'inn' => EncryptedPersonal::class,
         'issued_at' => 'date',
         'birth_date' => 'date',
         'accepted_rule_ids' => 'array',
