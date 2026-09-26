@@ -260,14 +260,6 @@ class Admin extends Authenticatable
 
     public static function defaultRateFor(string $role): ?float
     {
-        return match ($role) {
-            self::ROLE_INTERN => 1500,
-            self::ROLE_ADMIN => 2000,
-            self::ROLE_SUPERVISOR => 3000,
-            'store_manager' => 2500,
-            'assembler' => 2200,
-            'senior_manager' => 3500,
-            default => null,
-        };
+        return app(\App\Services\StaffPaySettingsService::class)->rateFor($role);
     }
 }

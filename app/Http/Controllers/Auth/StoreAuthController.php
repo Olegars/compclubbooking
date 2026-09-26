@@ -88,7 +88,7 @@ class StoreAuthController extends Controller
             'club_id' => $club->id,
             'is_official_employee' => false,
             'base_rate' => Admin::defaultRateFor($role),
-            'pay_type' => $role === 'senior_manager' ? 'monthly' : 'shift',
+            'pay_type' => 'shift',
             'employment_pending' => true,
         ]);
 

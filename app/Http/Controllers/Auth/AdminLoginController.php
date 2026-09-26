@@ -93,7 +93,7 @@ class AdminLoginController extends Controller
             'role' => Admin::ROLE_INTERN,
             'club_id' => $clubId,
             'is_official_employee' => false,
-            'base_rate' => 1500,
+            'base_rate' => Admin::defaultRateFor(Admin::ROLE_INTERN) ?? 1500,
             'pay_type' => 'shift',
             'employment_pending' => true,
         ]);

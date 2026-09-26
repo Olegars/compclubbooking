@@ -5,6 +5,7 @@ import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AdminConfirm from '@/Components/AdminConfirm.vue'
 import StaffEdoJournal from '@/Components/StaffEdoJournal.vue'
 import StaffBonusBoard from '@/Components/StaffBonusBoard.vue'
+import StaffPaySettings from '@/Components/StaffPaySettings.vue'
 import { useClubName } from '@/Composables/useClubName'
 import { useToast } from '@/Composables/useToast'
 
@@ -29,6 +30,16 @@ const props = withDefaults(defineProps<{
         previous_quarter: string
         rows: Array<{ id: number; name: string; role: string; open_xp: number; month_rub: number; safe_rub: number; burned: boolean }>
     } | null
+    pay_settings?: {
+        hourly: number
+        day_hours: number
+        night_hours: number
+        night_coefficient: number
+        day_pay: number
+        night_pay: number
+        official: number
+        roles: Array<{ role: string; label: string; group: string; shift_rate: number; staff_count: number }>
+    }
 }>(), {
     can_hire: false,
     hire_roles: () => [],
@@ -36,6 +47,16 @@ const props = withDefaults(defineProps<{
     default_club_id: null,
     edo_incidents: () => [],
     bonus_board: null,
+    pay_settings: () => ({
+        hourly: 241.5,
+        day_hours: 16,
+        night_hours: 8,
+        night_coefficient: 1.2,
+        day_pay: 3864,
+        night_pay: 2318.4,
+        official: 6182.4,
+        roles: [],
+    }),
 })
 
 const flashSuccess = computed(() => (page.props as any).flash?.success as string | undefined)
@@ -89,6 +110,32 @@ const payTypeLabel = (type: string | null | undefined) => {
     if (type === 'shift') return 'За смену'
     if (type === 'monthly') return 'Оклад'
     return '—'
+}
+
+const moneyKopeks = (value: number) => {
+    const [whole, frac = '00'] = value.toFixed(2).split('.')
+    return Number(whole) * 100 + Number(frac.padEnd(2, '0').slice(0, 2))
+}
+
+const parseRate = (raw: number | string | null | undefined) => {
+    if (raw === null || raw === undefined || raw === '') return null
+    const value = Number(String(raw).replace(',', '.'))
+    return Number.isFinite(value) ? value : null
+}
+
+const shiftSplit = (raw: number | string | null | undefined) => {
+    const value = parseRate(raw)
+    const official = props.pay_settings?.official ?? 6182.4
+    if (value === null) return null
+    const entered = moneyKopeks(value)
+    const floor = moneyKopeks(official)
+    if (entered < floor) return { ok: false as const, bonus: 0 }
+    return { ok: true as const, bonus: (entered - floor) / 100 }
+}
+
+const payRateFor = (role: string) => {
+    const row = props.pay_settings?.roles?.find((item) => item.role === role)
+    return row?.shift_rate ?? 1500
 }
 
 const roleClass = (duty: string, role: string) => {
@@ -448,14 +495,6 @@ const restoreEmployee = (person: any) => {
 }
 
 const hireOpen = ref(false)
-const defaultRates: Record<string, number> = {
-    intern: 1500,
-    admin: 2000,
-    supervisor: 3000,
-    store_manager: 2500,
-    assembler: 2200,
-    senior_manager: 3500,
-}
 
 const hireForm = useForm({
     name: '',
@@ -480,8 +519,8 @@ const openHire = () => {
     hireForm.clearErrors()
     hireForm.role = firstRole
     hireForm.club_id = props.default_club_id || props.clubs[0]?.id || null
-    hireForm.base_rate = defaultRates[firstRole] ?? 1500
-    hireForm.pay_type = firstRole === 'senior_manager' ? 'monthly' : 'shift'
+    hireForm.base_rate = payRateFor(firstRole)
+    hireForm.pay_type = 'shift'
     hireForm.is_official_employee = false
     hireForm.snils = ''
     hireForm.inn = ''
@@ -491,10 +530,8 @@ const openHire = () => {
 }
 
 watch(() => hireForm.role, (role) => {
-    if (defaultRates[role] !== undefined) {
-        hireForm.base_rate = defaultRates[role]
-    }
-    hireForm.pay_type = role === 'senior_manager' ? 'monthly' : 'shift'
+    hireForm.base_rate = payRateFor(role)
+    hireForm.pay_type = 'shift'
 })
 
 const closeHire = () => {
@@ -558,6 +595,12 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                         @click="activeTab = 'fired'">
                     Уволенные {{ firedCount }}
                 </button>
+                <button type="button"
+                        class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                        :class="activeTab === 'pay' ? 'bg-purple-500 text-black' : 'border border-purple-500/40 text-purple-300 hover:text-white'"
+                        @click="activeTab = 'pay'">
+                    Зарплата
+                </button>
                 <button v-for="tab in roleTabs" :key="tab.value" type="button"
                         class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
                         :class="activeTab === tab.value ? 'bg-purple-500 text-black' : 'border border-white/10 text-white/50 hover:text-white'"
@@ -566,7 +609,9 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                 </button>
             </div>
 
-            <div v-if="visibleStaff.length === 0" class="py-20 text-center">
+            <StaffPaySettings v-if="activeTab === 'pay' && pay_settings" :settings="pay_settings" />
+
+            <div v-else-if="visibleStaff.length === 0" class="py-20 text-center">
                 <div class="text-white/10 text-xl font-black uppercase tracking-widest italic mb-2">Нет сотрудников</div>
                 <div class="text-white/30 text-[10px] uppercase tracking-widest">
                     {{ activeTab === 'review' ? 'Анкет на проверке нет' : (activeTab === 'fired' ? 'Уволенных нет' : 'В этой роли пока никого нет') }}
@@ -615,6 +660,14 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                             <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">Ставка</span>
                             <span class="text-white font-black">{{ formatMoney(person.base_rate) }}</span>
                         </div>
+                        <p v-if="person.pay_type === 'shift' && shiftSplit(person.base_rate)"
+                           class="text-[10px] text-right -mt-2"
+                           :class="shiftSplit(person.base_rate)?.ok ? 'text-white/40' : 'text-red-400'">
+                            <template v-if="shiftSplit(person.base_rate)?.ok">
+                                оклад {{ formatMoney(pay_settings.official) }} · премия {{ formatMoney(shiftSplit(person.base_rate)?.bonus ?? 0) }}
+                            </template>
+                            <template v-else>Ниже минимальной ставки по МРОТ с учетом ночных</template>
+                        </p>
                         <div class="flex justify-between items-center text-xs">
                             <span class="text-white/30 uppercase font-black tracking-widest text-[9px]">Тип оплаты</span>
                             <span class="text-white font-black uppercase text-[11px]">{{ payTypeLabel(person.pay_type) }}</span>
@@ -1053,8 +1106,17 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                     </label>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <label class="block">
-                            <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">Ставка, ₽</span>
-                            <input v-model="hireForm.base_rate" type="number" min="0" step="0.01" :class="inputClass">
+                            <span class="text-[10px] text-white/30 uppercase font-black tracking-widest">{{ hireForm.pay_type === 'monthly' ? 'Оклад, ₽' : 'Ставка за смену, ₽' }}</span>
+                            <input v-model="hireForm.base_rate" type="number" min="0" step="0.01"
+                                   :class="[inputClass, hireForm.pay_type === 'shift' && shiftSplit(hireForm.base_rate)?.ok === false ? '!border-red-500' : '']">
+                            <p v-if="hireForm.pay_type === 'shift' && shiftSplit(hireForm.base_rate)?.ok === false"
+                               class="text-red-400 text-[10px] uppercase font-black mt-2">
+                                Ниже минимальной ставки по МРОТ с учетом ночных
+                            </p>
+                            <p v-else-if="hireForm.pay_type === 'shift' && shiftSplit(hireForm.base_rate)?.ok"
+                               class="text-white/40 text-[10px] mt-2">
+                                Окладная часть {{ formatMoney(pay_settings.official) }} · премия {{ formatMoney(shiftSplit(hireForm.base_rate)?.bonus ?? 0) }}
+                            </p>
                             <p v-if="hireForm.errors.base_rate" class="text-red-400 text-[10px] uppercase font-black mt-2">{{ hireForm.errors.base_rate }}</p>
                         </label>
                         <label class="block">
@@ -1102,7 +1164,8 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                                 class="flex-1 py-4 bg-white/5 border border-white/10 text-white/50 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest">
                             Отмена
                         </button>
-                        <button type="submit" :disabled="hireForm.processing"
+                        <button type="submit"
+                                :disabled="hireForm.processing || (hireForm.pay_type === 'shift' && shiftSplit(hireForm.base_rate)?.ok !== true)"
                                 class="flex-1 py-4 bg-purple-500 hover:bg-purple-400 text-black rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40">
                             {{ hireForm.processing ? 'Сохранение…' : 'Нанять' }}
                         </button>

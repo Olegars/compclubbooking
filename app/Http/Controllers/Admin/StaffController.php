@@ -11,6 +11,7 @@ use App\Services\StaffBonusService;
 use App\Services\StaffCadreService;
 use App\Services\StaffEdoService;
 use App\Services\StaffEmploymentService;
+use App\Services\StaffPaySettingsService;
 use App\Services\StaffPayrollService;
 use App\Support\AdminLocation;
 use Illuminate\Http\Request;
@@ -29,6 +30,7 @@ class StaffController extends Controller
         private readonly StaffEdoService $edo,
         private readonly StaffBonusService $bonus,
         private readonly StaffCadreService $cadre,
+        private readonly StaffPaySettingsService $paySettings,
     ) {
     }
 
@@ -102,7 +104,30 @@ class StaffController extends Controller
                 : $actor->club_id,
             'edo_incidents' => $this->edo->journal($actor),
             'bonus_board' => $this->bonus->summary(),
+            'pay_settings' => $this->paySettings->present(),
         ]);
+    }
+
+    public function updatePaySettings(Request $request)
+    {
+        $data = $request->validate([
+            'role' => ['required', 'string', 'max:32'],
+            'shift_rate' => ['required', 'numeric', 'max:1000000'],
+        ]);
+
+        try {
+            $saved = $this->paySettings->save((string) $data['role'], (float) $data['shift_rate']);
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['shift_rate' => $e->getMessage()]);
+        }
+
+        $label = Admin::labelForRole((string) $data['role']);
+        $money = number_format($saved['shift_rate'], 2, ',', ' ');
+
+        return back()->with(
+            'success',
+            'Ставка «'.$label.'»: '.$money.' ₽ за смену. В штате обновлено: '.$saved['updated'].'.'
+        );
     }
 
     public function updateBonusSettings(Request $request)

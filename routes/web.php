@@ -704,6 +704,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
     // УРОВЕНЬ: SUPERVISOR / OWNER — штат и проверка анкет
     Route::middleware(['role:supervisor,owner'])->group(function () {
         Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
+        Route::post('/staff/pay-settings', [StaffController::class, 'updatePaySettings'])->name('admin.staff.pay.settings');
         Route::post('/staff/bonus/settings', [StaffController::class, 'updateBonusSettings'])->name('admin.staff.bonus.settings');
         Route::post('/staff/bonus/adjust', [StaffController::class, 'adjustBonus'])->name('admin.staff.bonus.adjust');
         Route::post('/staff/bonus/close-month', [StaffController::class, 'closeBonusMonth'])->name('admin.staff.bonus.close-month');
