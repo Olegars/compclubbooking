@@ -7,6 +7,7 @@ use App\Models\Admin;
 use App\Models\Club;
 use App\Models\ShiftIntern;
 use App\Models\StaffLedger;
+use App\Services\StaffEdoService;
 use App\Services\StaffEmploymentService;
 use App\Services\StaffPayrollService;
 use App\Support\AdminLocation;
@@ -23,6 +24,7 @@ class StaffController extends Controller
     public function __construct(
         private readonly StaffPayrollService $payroll,
         private readonly StaffEmploymentService $employment,
+        private readonly StaffEdoService $edo,
     ) {
     }
 
@@ -94,6 +96,7 @@ class StaffController extends Controller
             'default_club_id' => $actor->role === Admin::ROLE_OWNER
                 ? AdminLocation::id($actor)
                 : $actor->club_id,
+            'edo_incidents' => $this->edo->journal($actor),
         ]);
     }
 

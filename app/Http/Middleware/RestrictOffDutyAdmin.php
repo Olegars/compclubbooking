@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\StaffEdoService;
 use App\Support\AdminShift;
 use Closure;
 use Illuminate\Http\Request;
@@ -49,6 +50,15 @@ class RestrictOffDutyAdmin
 
             return redirect()->route($admin->homeRoute())
                 ->with('error', 'Сначала завершите устройство на работу.');
+        }
+
+        if ($this->disciplineLocked($admin) && ! $this->isDisciplinePath($request)) {
+            if ($request->expectsJson()) {
+                abort(403, 'Кабинет закрыт до решения по дисциплинарному инциденту.');
+            }
+
+            return redirect()->route('admin.salary')
+                ->with('error', 'Кабинет закрыт до решения по дисциплинарному инциденту.');
         }
 
         if ($admin->hasFullClubOps()) {
@@ -164,5 +174,27 @@ class RestrictOffDutyAdmin
         }
 
         return false;
+    }
+
+    private function disciplineLocked($admin): bool
+    {
+        try {
+            return app(StaffEdoService::class)->isBlocked($admin);
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function isDisciplinePath(Request $request): bool
+    {
+        $path = '/'.ltrim($request->path(), '/');
+        if ($path === '/admin/logout') {
+            return true;
+        }
+        if ($path === '/admin/salary' && ($request->isMethod('GET') || $request->isMethod('HEAD'))) {
+            return true;
+        }
+
+        return str_starts_with($path, '/admin/salary/edo');
     }
 }

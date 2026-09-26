@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\KitchenPrintRelayController;
 use App\Http\Controllers\Api\VideoMarkerRelayController;
 use App\Http\Controllers\Api\StoreAssemblyClipRelayController;
 use App\Http\Controllers\Api\IncidentClipRelayController;
+use App\Http\Controllers\Api\StaffPresenceRelayController;
 use App\Http\Controllers\WifiAccessController;
 use App\Http\Controllers\StorePcPassportController;
 
@@ -48,6 +49,7 @@ use App\Http\Controllers\Admin\BonusController;
 use App\Http\Controllers\Admin\TaxController;
 use App\Http\Controllers\Admin\StaffController;
 use App\Http\Controllers\Admin\StaffPayrollController;
+use App\Http\Controllers\Admin\StaffEdoController;
 use App\Http\Controllers\Admin\OwnerCabinetController;
 use App\Http\Controllers\Admin\OwnerSystemTestsController;
 use App\Http\Controllers\Store\StoreHireController;
@@ -378,6 +380,10 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
     Route::post('/salary/employment/rules', [StaffPayrollController::class, 'acceptEmploymentRule'])->name('admin.salary.employment.rules');
     Route::post('/salary/employment/fire-rules', [StaffPayrollController::class, 'acceptFireSafetyRule'])->name('admin.salary.employment.fire-rules');
     Route::post('/salary/employment/hire', [StaffPayrollController::class, 'hire'])->name('admin.salary.employment.hire');
+    Route::post('/salary/edo/otp', [StaffEdoController::class, 'sendOtp'])->name('admin.salary.edo.otp');
+    Route::post('/salary/edo/sign', [StaffEdoController::class, 'signAgreement'])->name('admin.salary.edo.sign');
+    Route::post('/salary/edo/explanation', [StaffEdoController::class, 'submitExplanation'])->name('admin.salary.edo.explanation');
+    Route::get('/salary/edo/documents/{document}', [StaffEdoController::class, 'document'])->name('admin.salary.edo.document');
     Route::get('/api/shifts/status', [ShiftController::class, 'status']);
     Route::post('/shifts/intern/join', [ShiftController::class, 'internJoin'])->name('admin.shift.intern.join');
     Route::post('/shifts/intern/leave', [ShiftController::class, 'internLeave'])->name('admin.shift.intern.leave');
@@ -694,6 +700,10 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
     // УРОВЕНЬ: SUPERVISOR / OWNER — штат и проверка анкет
     Route::middleware(['role:supervisor,owner'])->group(function () {
         Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
+        Route::post('/staff/incidents/{incident}/sign', [StaffEdoController::class, 'signAct'])->name('admin.staff.incidents.sign');
+        Route::post('/staff/incidents/{incident}/resolve', [StaffEdoController::class, 'resolve'])->name('admin.staff.incidents.resolve');
+        Route::post('/staff/incidents/{incident}/deliver', [StaffEdoController::class, 'deliver'])->name('admin.staff.incidents.deliver');
+        Route::get('/staff/incidents/{incident}/dossier', [StaffEdoController::class, 'dossier'])->name('admin.staff.incidents.dossier');
         Route::post('/staff', [StaffController::class, 'store'])->name('admin.staff.store');
         Route::post('/staff/{admin}/fines', [StaffController::class, 'storeFine'])->name('admin.staff.fines.store');
         Route::post('/staff/{admin}/role', [StaffController::class, 'updateRole'])->name('admin.staff.role.update');
@@ -769,6 +779,7 @@ Route::prefix('api/video')->group(function () {
     Route::post('/incident-clips', [IncidentClipRelayController::class, 'upload']);
     Route::post('/incident-clip-failed', [IncidentClipRelayController::class, 'failed']);
     Route::post('/incident-clip-applied', [IncidentClipRelayController::class, 'applied']);
+    Route::post('/staff-presence', [StaffPresenceRelayController::class, 'store']);
 });
 
 /*

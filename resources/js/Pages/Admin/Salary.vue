@@ -4,6 +4,8 @@ import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AdminConfirm from '@/Components/AdminConfirm.vue'
 import StaffEmployment from '@/Components/StaffEmployment.vue'
+import StaffEdoAgreement from '@/Components/StaffEdoAgreement.vue'
+import StaffEdoIncident from '@/Components/StaffEdoIncident.vue'
 import { useClubName } from '@/Composables/useClubName'
 import { useToast } from '@/Composables/useToast'
 
@@ -109,6 +111,22 @@ const props = withDefaults(defineProps<{
     monthly_accruals: LedgerRow[]
     calendar?: Calendar
     employment?: Employment
+    edo?: {
+        needs_agreement: boolean
+        blocking: boolean
+        version?: string
+        texts?: { agreement: string; kedo: string; bonus: string }
+        incident: null | {
+            id: number
+            type_label: string
+            status: string
+            status_label: string
+            deadline_at: string | null
+            slot_label?: string
+            explanation_text?: string | null
+        }
+        documents?: Array<{ id: number; title: string; type: string }>
+    }
 }>(), {
     calendar: () => ({
         month: '',
@@ -139,6 +157,13 @@ const props = withDefaults(defineProps<{
             birth_date: '',
             has_scan: false,
         },
+    }),
+    edo: () => ({
+        needs_agreement: false,
+        blocking: false,
+        texts: { agreement: '', kedo: '', bonus: '' },
+        incident: null,
+        documents: [],
     }),
 })
 
@@ -410,6 +435,9 @@ const kindLabel = (kind: string | null | undefined) => {
                 :accepted-fire-ids="employment.accepted_fire_ids || []"
                 :fire-rules-complete="employment.fire_rules_complete || false"
             />
+
+            <StaffEdoAgreement v-else-if="edo.needs_agreement" :edo="edo" />
+            <StaffEdoIncident v-else-if="edo.blocking && edo.incident" :edo="edo" />
 
             <template v-else>
             <div class="flex justify-between items-end mb-4 border-b border-white/10 pb-6">

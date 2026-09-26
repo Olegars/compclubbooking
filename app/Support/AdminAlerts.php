@@ -28,6 +28,13 @@ class AdminAlerts
                     ->count();
             }
 
+            $edoOpen = 0;
+            if (Schema::hasTable('staff_disciplinary_incidents')) {
+                $edoOpen = (int) DB::table('staff_disciplinary_incidents')
+                    ->whereIn('status', ['demand_sent', 'explanation_submitted', 'expired_no_response'])
+                    ->count();
+            }
+
             return [
                 'pending_orders' => $pendingOrders,
                 'sos' => $sos,
@@ -37,6 +44,7 @@ class AdminAlerts
                     ? (int) DB::table('store_avito_chats')->where('unread', true)->count()
                     : 0,
                 'tournament_inbox' => $tournamentInbox,
+                'edo_open' => $edoOpen,
             ];
         } catch (\Throwable $e) {
             Log::warning('AdminAlerts::counts failed: '.$e->getMessage());
@@ -54,6 +62,7 @@ class AdminAlerts
             'incidents' => 0,
             'avito_unread' => 0,
             'tournament_inbox' => 0,
+            'edo_open' => 0,
         ];
     }
 }

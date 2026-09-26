@@ -9,6 +9,10 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('reactor:check-quality')->everyMinute();
+Schedule::command('staff:edo-scan')
+    ->everyMinute()
+    ->timezone('Europe/Moscow')
+    ->withoutOverlapping();
 Schedule::command('reactor:update-statuses')->everyMinute()->withoutOverlapping();
 Schedule::command('reactor:check-reviews')->dailyAt('10:00')->withoutOverlapping();
 Schedule::command('reactor:sync-payments')->everyFiveMinutes()->withoutOverlapping();

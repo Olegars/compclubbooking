@@ -1,0 +1,83 @@
+﻿Ниже представлено готовое подробное техническое задание (ТЗ), полностью соответствующее архитектуре и регламентам системы 0451 KOSINO / REACTOR.
+Техническое задание (ТЗ)
+Тема: Автоматическая выгрузка видеоэпизодов инцидентов зала (RTSP Playback $\rightarrow$ внешний архив) и привязка к ленте инцидентов.
+1. Назначение и цель доработки
+В дополнение к простановке текстовых меток (recordTag) на таймлайне Hikvision NVR, реализовать автоматическую вырезку видеофайла инцидента (.mp4), его выгрузку во внешнее постоянное хранилище (S3 / Local Storage / NAS) и сохранение ссылки/имени файла в теле инцидента бэкенда (/admin/incidents).
+Временное окно эпизода:
+Старт: строго за 30 секунд до момента срабатывания события ($T_{start} = T_{event} - 30\,\text{с}$).
+Длительность (длина клипа): конфигурируемый параметр (по умолчанию $45\,\text{с}$: $30\,\text{с}$ пре-ролл $+ 15\,\text{с}$ пост-ролл).
+2. Архитектурные ограничения и принципы
+Правило сети: Бэкенд в облаке напрямую в локальную сеть клуба и к NVR не ходит. Все операции с NVR выполняет локальный агент на служебном хосте FACE-01 (VLAN 20), опрашивающий очереди бэкенда через pull (HTTPS).
+Захват видео: Использование протокола RTSP Playback NVR (ISAPI/Streaming/tracks/...) через утилиту FFmpeg без транскодирования (-c copy для минимальной нагрузки на CPU/GPU).
+Безопасность хранения: Имя файла генерируется детерминированно, без уязвимых символов, с включением уникального ID инцидента или таймстемпа.
+3. Требования к компонентам
+3.1. Изменения в схеме БД (Laravel)
+Таблица incidents:
+Добавить поля:
+clip_file_name (string, nullable) — имя итогового файла (например, inc_4821_pc08_hid_disconnected_20260923_190000.mp4).
+clip_url (string, nullable) — относительный или публичный URL к файлу на диске хранилища.
+clip_status (enum: none, pending, processing, ready, failed, default none).
+Таблица очереди задач выгрузки (incident_clip_jobs):
+Создать по аналогии со store_assembly_clip_jobs:
+id (bigint)
+incident_id (foreignId -> incidents.id)
+computer_id / channel (int — номер канала NVR)
+event_time (timestamp — точное время фиксации события)
+start_time (timestamp — $T_{event} - 30\,\text{с}$)
+end_time (timestamp — $T_{event} + 15\,\text{с}$)
+status (pending, in_progress, done, failed)
+attempts (tinyint, default 0)
+error_message (text, nullable)
+3.2. Логика бэкенда (Laravel API)
+Создание инцидента (Triggers: hid.alert, sos, hardware_abuse):
+При фиксации инцидента:
+Создается запись в incidents со статусом clip_status = pending.
+Параллельно с video_surveillance_marker_jobs (простановка тега на NVR) создается запись в incident_clip_jobs.
+Канал NVR определяется по привязке ПК к камере в /admin/video-surveillance (маппинг computer_id -> nvr_channel).
+Маршруты API для локального агента (защищены VIDEO_MARKER_TOKEN / Bearer):
+GET /api/video/incident-clip-targets
+Отдает ожидающие задачи (status=pending, лимит 2–3 задачи за опрос).
+Payload: job_id, incident_id, nvr_channel, start_time_iso, end_time_iso, file_name_target.
+POST /api/video/incident-clips (Multipart Form Data):
+Принимает: job_id, incident_id, файл .mp4.
+Обработка:
+Валидация размера и MIME-типа.
+Сохранение файла во внешнее/локальное хранилище (Storage::disk(config('video.clips_disk'))).
+Обновление инцидента: clip_file_name, clip_url, clip_status = 'ready'.
+Закрытие задачи: status = 'done'.
+POST /api/video/incident-clip-failed:
+Перевод clip_status = 'failed', запись error_message.
+3.3. Доработка локального агента (PowerShell / Python на FACE-01)
+Доработать службу club-marker-agent (или расширить hikvision-marker-agent.ps1):
+Цикл опроса (Poll):
+Агент каждые 3–5 секунд вызывает GET /api/video/incident-clip-targets.
+Формирование параметров RTSP Playback:
+Время старта ($T_{start}$) и конца ($T_{end}$) форматируются в UTC по стандарту Hikvision ISAPI: YYYYMMDDTHHmmssZ.
+Канал для трека архива: trackID = channel * 100 + 1 (для канала 8 $\rightarrow$ 801).
+URL RTSP:Plaintextrtsp://:@:554/Streaming/tracks/?starttime=&endtime=
+Захват через FFmpeg:
+Запуск процесса вырезки:Bashffmpeg -y -rtsp_transport tcp -i "rtsp://..." -c copy -movflags +faststart "C:\temp_clips\"
+Важно: Флаг -movflags +faststart обязателен, чтобы заголовок MP4 (moov atom) помещался в начало файла для потокового воспроизведения в админке без полного скачивания.
+Отправка на бэкенд:
+После успешного завершения FFmpeg агент отправляет файл по POST /api/video/incident-clips и удаляет временный файл с диска C:\temp_clips.
+3.4. Интерфейс панели управления (/admin/incidents)
+Таблица инцидентов:
+В строке инцидента добавить иконку/колонку «Запись»:
+pending / processing — серый индикатор (анимация загрузки).
+failed — красный бейдж ошибки (с подсказкой при наведении).
+ready — кликабельная иконка плеера/камеры.
+Модальное окно / карточка инцидента:
+Отображение Имя файла: с кнопкой копирования в буфер обмена.
+Встроенный HTML5 видеоплеер для мгновенного просмотра отрезка ($30\,\text{с}$ пре-ролл $+ 15\,\text{с}$ пост-ролл).
+Кнопка «Скачать эпизод» (.mp4).
+4. Контрольные кейсы и приемочные тесты (QA)
+Кейс 1: Временной интервал ($T_{event} - 30\,\text{с}$):
+Инициировать тестовое событие SOS или отключение периферии ровно в 14:00:00.
+Проверить таймстемп в задаче: start_time должен быть ровно 13:59:30.
+Открыть скачанный ролик: первые кадры должны соответствовать состоянию за 30 секунд до нажатия кнопки.
+Кейс 2: Потоковое воспроизведение:
+Убедиться, что при открытии модалки в админке видео начинает воспроизводиться сразу, без многосекундной буферизации всего файла (проверка -movflags +faststart).
+Кейс 3: Защита от сбоя NVR / сети:
+Сымитировать недоступность NVR: агент фиксирует таймаут FFmpeg, передает статус failed, бэкенд не падает с ошибкой 500, в инциденте фиксируется clip_status = failed.
+Кейс 4: Нагрузка и изоляция:
+Выгрузка клипа не должна прерывать работу службы детекции лиц и простановки основных меток recordTag на NVR.

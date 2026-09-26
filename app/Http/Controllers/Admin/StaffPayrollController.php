@@ -7,6 +7,7 @@ use App\Models\Admin;
 use App\Models\ShiftSlot;
 use App\Models\ShiftSlotBooking;
 use App\Services\ShiftSlotService;
+use App\Services\StaffEdoService;
 use App\Services\StaffEmploymentService;
 use App\Services\StaffPayrollService;
 use App\Services\StoreStaffCabinetService;
@@ -20,6 +21,7 @@ class StaffPayrollController extends Controller
         private readonly StaffPayrollService $payroll,
         private readonly ShiftSlotService $slots,
         private readonly StaffEmploymentService $employment,
+        private readonly StaffEdoService $edo,
         private readonly StoreStaffCabinetService $storeDesk,
     ) {
     }
@@ -57,6 +59,9 @@ class StaffPayrollController extends Controller
         if ($admin->needsEmployment()) {
             return back()->withErrors(['message' => 'Сначала завершите устройство на работу.']);
         }
+        if ($blocked = $this->edoClosed($admin)) {
+            return $blocked;
+        }
 
         $data = $request->validate([
             'amount' => ['nullable', 'numeric', 'min:0.01'],
@@ -83,6 +88,9 @@ class StaffPayrollController extends Controller
         if ($admin->needsEmployment()) {
             return back()->withErrors(['message' => 'Сначала завершите устройство на работу.']);
         }
+        if ($blocked = $this->edoClosed($admin)) {
+            return $blocked;
+        }
 
         try {
             $this->slots->book($admin, $slot);
@@ -97,6 +105,9 @@ class StaffPayrollController extends Controller
     {
         $admin = auth('admin')->user();
         $this->assertStaffCabinet($admin);
+        if ($blocked = $this->edoClosed($admin)) {
+            return $blocked;
+        }
 
         try {
             $this->slots->cancel($admin, $booking);
@@ -170,6 +181,17 @@ class StaffPayrollController extends Controller
     private function assertStaffCabinet(?Admin $admin): void
     {
         abort_if(! $admin || $admin->isOwner(), 403, 'У владельца отдельный кабинет.');
+    }
+
+    private function edoClosed(Admin $admin): ?\Illuminate\Http\RedirectResponse
+    {
+        try {
+            $this->edo->assertOperable($admin);
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['message' => $e->getMessage()]);
+        }
+
+        return null;
     }
 
     private function renderCabinet(Request $request, Admin $admin, string $page, bool $withStoreDesk)
@@ -247,6 +269,13 @@ class StaffPayrollController extends Controller
                 'days' => [],
                 'my_bookings' => [],
             ];
+        }
+        try {
+            $this->edo->markDelivered($admin);
+            $payload['edo'] = $this->edo->cabinetPayload($admin);
+        } catch (\Throwable $e) {
+            report($e);
+            $payload['edo'] = $this->edo->emptyCabinet();
         }
         if ($withStoreDesk) {
             $payload['store_desk'] = $this->storeDesk->desk($admin);

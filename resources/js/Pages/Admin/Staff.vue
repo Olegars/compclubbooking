@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AdminConfirm from '@/Components/AdminConfirm.vue'
+import StaffEdoJournal from '@/Components/StaffEdoJournal.vue'
 import { useClubName } from '@/Composables/useClubName'
 import { useToast } from '@/Composables/useToast'
 
@@ -16,11 +17,13 @@ const props = withDefaults(defineProps<{
     hire_roles?: Array<{ value: string; label: string }>
     clubs?: Array<{ id: number; name: string }>
     default_club_id?: number | null
+    edo_incidents?: any[]
 }>(), {
     can_hire: false,
     hire_roles: () => [],
     clubs: () => [],
     default_club_id: null,
+    edo_incidents: () => [],
 })
 
 const flashSuccess = computed(() => (page.props as any).flash?.success as string | undefined)
@@ -477,6 +480,8 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
                     + Нанять сотрудника
                 </button>
             </div>
+
+            <StaffEdoJournal :incidents="edo_incidents" />
 
             <div class="flex flex-wrap gap-2">
                 <button type="button"

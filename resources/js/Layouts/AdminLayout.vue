@@ -455,6 +455,10 @@ onUnmounted(() => {
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/staff') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>👥</span> Штат
+                        <span v-if="counts.edo_open > 0"
+                              class="ml-auto min-w-[1.25rem] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center">
+                            {{ counts.edo_open }}
+                        </span>
                     </Link>
                         </div>
                     </div>

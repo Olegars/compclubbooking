@@ -76,6 +76,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/video/incident-clips',
             'api/video/incident-clip-failed',
             'api/video/incident-clip-applied',
+            'api/video/staff-presence',
             'api/store/build-verify',
             'api/store/avito/webhook',
             'api/telegram/webhook',
