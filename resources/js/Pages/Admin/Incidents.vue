@@ -38,6 +38,23 @@ const isProcessing = ref(false)
 const resolveTarget = ref<any>(null)
 const resyncBusy = ref(false)
 const rollbackBusy = ref(false)
+const clipTarget = ref<any>(null)
+
+const openClip = (incident: any) => {
+    if (incident?.clip?.status !== 'ready' || !incident.clip.play_url) return
+    clipTarget.value = incident
+}
+
+const copyClipName = async () => {
+    const name = clipTarget.value?.clip?.file_name
+    if (!name) return
+    try {
+        await navigator.clipboard.writeText(name)
+        success('Имя файла скопировано')
+    } catch {
+        error('Не удалось скопировать имя файла')
+    }
+}
 
 const resolveMessage = computed(() => {
     if (!resolveTarget.value) return ''
@@ -148,6 +165,7 @@ const formatDate = (dateStr: string) => {
                             <th class="p-8">Время фиксации</th>
                             <th class="p-8">Тип / Уровень</th>
                             <th class="p-8">Детали нарушения</th>
+                            <th class="p-8">Запись</th>
                             <th class="p-8 text-right">Действие</th>
                         </tr>
                         </thead>
@@ -186,6 +204,27 @@ const formatDate = (dateStr: string) => {
                                 <div v-if="incident.pc_name" class="mt-2 inline-flex items-center gap-2 text-[9px] text-cyan-500/50 font-black uppercase tracking-widest border-b border-cyan-500/10 pb-1">
                                     Терминал: {{ incident.pc_name }}
                                 </div>
+                            </td>
+
+                            <td class="p-8">
+                                <button v-if="incident.clip?.status === 'ready'"
+                                        type="button"
+                                        @click="openClip(incident)"
+                                        class="px-4 py-2 rounded-xl border border-cyan-500/40 text-[9px] font-black uppercase tracking-widest text-cyan-300 hover:bg-cyan-500 hover:text-black transition-all">
+                                    Смотреть
+                                </button>
+                                <span v-else-if="incident.clip?.status === 'pending' || incident.clip?.status === 'processing'"
+                                      class="inline-flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-white/40"
+                                      title="Агент вырезает эпизод с NVR">
+                                    <span class="w-2 h-2 rounded-full bg-white/40 animate-pulse"></span>
+                                    Выгрузка
+                                </span>
+                                <span v-else-if="incident.clip?.status === 'failed'"
+                                      class="inline-flex px-3 py-1 rounded-md text-[9px] font-black uppercase border border-red-600/50 text-red-500 bg-red-600/10"
+                                      :title="incident.clip.error || 'Не удалось снять эпизод'">
+                                    Ошибка
+                                </span>
+                                <span v-else class="text-[9px] uppercase font-black tracking-widest text-white/15">—</span>
                             </td>
 
                             <td class="p-8 text-right">
@@ -234,6 +273,44 @@ const formatDate = (dateStr: string) => {
                 <div class="text-right">
                     <div class="text-2xl font-black text-red-600 italic tracking-tighter">{{ incidents.length }}</div>
                     <div class="text-[9px] text-white/20 uppercase font-black italic">Активных инцидентов</div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="clipTarget" class="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80" @click.self="clipTarget = null">
+            <div class="w-full max-w-3xl bg-[#050505] border border-white/10 rounded-[1.25rem] p-6 space-y-5 shadow-2xl">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <div class="text-[10px] uppercase tracking-[0.3em] text-white/30 font-black">Эпизод камеры</div>
+                        <div class="text-white font-black italic text-lg mt-1">30 с до события · 15 с после</div>
+                    </div>
+                    <button type="button" @click="clipTarget = null"
+                            class="px-4 py-2 rounded-xl border border-white/10 text-[10px] font-black uppercase tracking-widest text-white/40 hover:text-white">
+                        Закрыть
+                    </button>
+                </div>
+                <video v-if="clipTarget.clip?.play_url"
+                       :src="clipTarget.clip.play_url"
+                       controls
+                       autoplay
+                       playsinline
+                       preload="metadata"
+                       class="w-full max-h-[52vh] bg-black rounded-2xl" />
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="text-[9px] uppercase tracking-widest text-white/30 font-black">Имя файла</div>
+                        <div class="text-sm text-white/80 font-mono truncate">{{ clipTarget.clip?.file_name }}</div>
+                    </div>
+                    <div class="flex gap-2 shrink-0">
+                        <button type="button" @click="copyClipName"
+                                class="px-4 py-3 rounded-xl border border-white/10 text-[10px] font-black uppercase tracking-widest text-white/60 hover:text-white">
+                            Копировать
+                        </button>
+                        <a :href="clipTarget.clip.play_url + '?download=1'"
+                           class="px-4 py-3 rounded-xl bg-cyan-500 text-black text-[10px] font-black uppercase tracking-widest hover:bg-cyan-400">
+                            Скачать эпизод
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>

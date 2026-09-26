@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Computer extends Model
 {
     protected $fillable = [
-        'club_id', 'name', 'x', 'y', 'type', 'seat_class_id', 'space_id',
+        'club_id', 'name', 'nvr_channel', 'x', 'y', 'type', 'seat_class_id', 'space_id',
         'kind', 'booth_id', 'status', 'hwid',
         'mac_address', 'lan_ip', 'patch_seed_port', 'patch_seed_role', 'power_desired', 'power_state',
         'power_state_updated_at', 'last_seen_at', 'wol_sent_at',

@@ -59,6 +59,14 @@ class HikvisionIsapiMarker
         return $at->format('Y-m-d\TH:i:sP');
     }
 
+    /** Hikvision RTSP playback: YYYYMMDDTHHmmssZ в UTC. */
+    public static function playbackStamp(DateTimeInterface $at): string
+    {
+        $utc = \DateTimeImmutable::createFromInterface($at)->setTimezone(new \DateTimeZone('UTC'));
+
+        return $utc->format('Ymd\THis\Z');
+    }
+
     public static function recordTagXml(string $name, DateTimeInterface $at): string
     {
         $nameEsc = htmlspecialchars(self::tagName($name), ENT_XML1 | ENT_QUOTES, 'UTF-8');

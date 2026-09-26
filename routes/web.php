@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\WifiGrantRelayController;
 use App\Http\Controllers\Api\KitchenPrintRelayController;
 use App\Http\Controllers\Api\VideoMarkerRelayController;
 use App\Http\Controllers\Api\StoreAssemblyClipRelayController;
+use App\Http\Controllers\Api\IncidentClipRelayController;
 use App\Http\Controllers\WifiAccessController;
 use App\Http\Controllers\StorePcPassportController;
 
@@ -60,6 +61,7 @@ use App\Http\Controllers\Admin\PromoCodeAdminController;
 use App\Http\Controllers\Admin\AchievementAdminController;
 use App\Http\Controllers\Admin\OverlayAdminController;
 use App\Http\Controllers\Admin\VideoSurveillanceController;
+use App\Http\Controllers\Admin\IncidentClipController;
 use App\Http\Controllers\Admin\BookingSettingsController;
 use App\Http\Controllers\Admin\ClubConfigController;
 use App\Http\Controllers\Admin\ClubFeatureController;
@@ -422,6 +424,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::post('/orders/{id}/fulfill-scan', [AdminController::class, 'fulfillOrderScan']);
 
         Route::get('/incidents', [AdminController::class, 'incidents'])->name('admin.incidents');
+        Route::get('/incidents/clips/{job}', [IncidentClipController::class, 'stream'])->name('admin.incidents.clip');
 
         Route::prefix('api')->group(function () {
             Route::get('/pc-statuses', [AdminController::class, 'getPcStatuses']);
@@ -599,6 +602,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::post('/video-surveillance/events', [VideoSurveillanceController::class, 'storeEvent']);
         Route::put('/video-surveillance/events/{event}', [VideoSurveillanceController::class, 'updateEvent']);
         Route::delete('/video-surveillance/events/{event}', [VideoSurveillanceController::class, 'destroyEvent']);
+        Route::post('/video-surveillance/channels', [VideoSurveillanceController::class, 'updateChannels']);
 
         Route::get('/booking-settings', [BookingSettingsController::class, 'index'])->name('admin.booking-settings');
         Route::post('/booking-settings', [BookingSettingsController::class, 'update']);
@@ -761,6 +765,10 @@ Route::prefix('api/video')->group(function () {
     Route::get('/assembly-clip-targets', [StoreAssemblyClipRelayController::class, 'targets']);
     Route::post('/assembly-clips', [StoreAssemblyClipRelayController::class, 'upload']);
     Route::post('/assembly-clip-applied', [StoreAssemblyClipRelayController::class, 'applied']);
+    Route::get('/incident-clip-targets', [IncidentClipRelayController::class, 'targets']);
+    Route::post('/incident-clips', [IncidentClipRelayController::class, 'upload']);
+    Route::post('/incident-clip-failed', [IncidentClipRelayController::class, 'failed']);
+    Route::post('/incident-clip-applied', [IncidentClipRelayController::class, 'applied']);
 });
 
 /*

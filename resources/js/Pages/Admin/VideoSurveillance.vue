@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Head, router, useForm } from '@inertiajs/vue3'
 import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
@@ -34,6 +34,8 @@ type EventRow = {
     sort: number
 }
 
+type HallPc = { id: number; name: string; nvr_channel: string | null }
+
 const props = defineProps<{
     settings: Settings
     events: EventRow[]
@@ -41,10 +43,44 @@ const props = defineProps<{
     triggers: Record<string, string>
     clubs: Club[]
     pending_jobs?: number
+    pending_clips?: number
+    hall_pcs?: HallPc[]
 }>()
 
 const { success, error } = useToast()
 const testBusy = ref(false)
+const channelsBusy = ref(false)
+const channelRows = ref<{ id: number; name: string; nvr_channel: string }[]>([])
+
+const syncChannels = () => {
+    channelRows.value = (props.hall_pcs || []).map(pc => ({
+        id: pc.id,
+        name: pc.name,
+        nvr_channel: pc.nvr_channel || '',
+    }))
+}
+syncChannels()
+watch(() => props.hall_pcs, syncChannels)
+
+const saveChannels = async () => {
+    if (channelsBusy.value) return
+    channelsBusy.value = true
+    try {
+        await axios.post('/admin/video-surveillance/channels', {
+            club_id: settingsForm.club_id,
+            channels: channelRows.value.map(pc => ({
+                id: pc.id,
+                nvr_channel: pc.nvr_channel.trim(),
+            })),
+        })
+        success('Каналы камер сохранены')
+        router.reload({ preserveScroll: true })
+    } catch (e: any) {
+        error(e?.response?.data?.message || e?.response?.data?.errors?.channels?.[0] || 'Не удалось сохранить каналы')
+    } finally {
+        channelsBusy.value = false
+    }
+}
 
 const settingsForm = useForm({
     club_id: props.settings.club_id,
@@ -200,7 +236,10 @@ const seedAssemblyDone = () => {
                         Метки на таймлайне · настройка и события
                     </p>
                     <p v-if="(pending_jobs || 0) > 0" class="text-amber-400/80 text-[10px] font-black uppercase tracking-widest mt-3">
-                        В очереди агента: {{ pending_jobs }}
+                        В очереди меток: {{ pending_jobs }}
+                    </p>
+                    <p v-if="(pending_clips || 0) > 0" class="text-amber-400/80 text-[10px] font-black uppercase tracking-widest mt-1">
+                        Эпизоды инцидентов в очереди: {{ pending_clips }}
                     </p>
                 </div>
                 <button type="button" :disabled="testBusy" @click="runTest"
@@ -231,6 +270,7 @@ const seedAssemblyDone = () => {
                         (токен <span class="text-white/80 font-mono">VIDEO_MARKER_RELAY_TOKEN</span> или
                         <span class="text-white/80 font-mono">CLUB_WOL_RELAY_TOKEN</span>).
                         Тег на таймлайне + lock интервала (длина / захват до события).
+                        Эпизод инцидента (мышь, SOS, удар) агент режет сам: 30 с до и 15 с после, без перекодирования.
                     </p>
                 </div>
 
@@ -303,6 +343,29 @@ const seedAssemblyDone = () => {
                 <button type="button" :disabled="settingsForm.processing" @click="saveSettings"
                         class="px-8 py-4 bg-cyan-500 hover:bg-cyan-400 text-black font-black uppercase text-xs tracking-widest rounded-xl transition-all cursor-pointer disabled:opacity-40">
                     Сохранить подключение
+                </button>
+            </section>
+
+            <section v-if="isHikvision" class="bg-[#0a0a0a] border border-white/5 rounded-[0.875rem] p-8 space-y-6">
+                <div>
+                    <h2 class="text-xs font-black uppercase tracking-[0.3em] text-white/40 italic">Каналы зала</h2>
+                    <p class="text-[11px] text-white/40 mt-2 leading-relaxed">
+                        Номер камеры NVR у каждого ПК. Эпизод в ленте инцидентов берётся с этого канала (8 → track 801).
+                    </p>
+                </div>
+                <div v-if="!channelRows.length" class="text-[10px] uppercase tracking-widest text-white/20 font-black">
+                    В зале нет ПК
+                </div>
+                <div v-else class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <label v-for="pc in channelRows" :key="pc.id" class="block space-y-2">
+                        <span class="text-[9px] uppercase font-black tracking-widest text-white/40 truncate block">{{ pc.name }}</span>
+                        <input v-model="pc.nvr_channel" type="text" inputmode="numeric" maxlength="3" placeholder="—"
+                               class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500/50 font-mono" />
+                    </label>
+                </div>
+                <button type="button" :disabled="channelsBusy || !channelRows.length" @click="saveChannels"
+                        class="px-8 py-4 bg-white/5 hover:bg-cyan-500 hover:text-black border border-white/10 text-white font-black uppercase text-xs tracking-widest rounded-xl transition-all cursor-pointer disabled:opacity-40">
+                    {{ channelsBusy ? 'Сохранение…' : 'Сохранить каналы' }}
                 </button>
             </section>
 

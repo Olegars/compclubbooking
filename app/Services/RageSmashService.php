@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Computer;
+use App\Models\IncidentClipJob;
 use App\Models\Product;
 use App\Models\VideoSurveillanceEvent;
 use App\Models\VideoSurveillanceSetting;
@@ -115,6 +116,22 @@ class RageSmashService
             Log::warning('RageSmash video marker failed: '.$e->getMessage(), [
                 'computer_id' => $computer->id,
             ]);
+        }
+
+        if ($recorded['created']) {
+            try {
+                app(IncidentClipService::class)->enqueue(
+                    IncidentClipJob::SUBJECT_INCIDENT,
+                    (int) $recorded['id'],
+                    $computer,
+                    now(),
+                    'hardware_abuse',
+                );
+            } catch (Throwable $e) {
+                Log::warning('RageSmash incident clip failed: '.$e->getMessage(), [
+                    'computer_id' => $computer->id,
+                ]);
+            }
         }
 
         return [

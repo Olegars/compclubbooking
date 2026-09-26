@@ -23,6 +23,7 @@ use App\Services\DisklessCommandService;
 use App\Services\ProductStockService;
 use App\Services\LanLive\PcThroneService;
 use App\Models\Computer;
+use App\Services\IncidentClipService;
 use App\Services\PreSessionOrderService;
 // Если у тебя есть модель BonusLog, раскомментируй:
 // use App\Models\BonusLog;
@@ -1298,11 +1299,21 @@ class AdminController extends Controller
                 ];
             });
 
-        $incidents = $manual
-            ->concat($sos)
-            ->concat($input)
+        $merged = $manual->concat($sos)->concat($input);
+        $clips = app(IncidentClipService::class);
+        $clipMap = $clips->feedClips($merged);
+
+        $incidents = $merged
             ->sortByDesc('sort_ts')
-            ->values();
+            ->values()
+            ->map(function (array $row) use ($clips, $clipMap) {
+                $key = $clips->feedKey((string) ($row['id'] ?? ''));
+                $row['clip'] = ($key && isset($clipMap[$key]))
+                    ? $clipMap[$key]
+                    : IncidentClipService::emptyClip();
+
+                return $row;
+            });
 
         return Inertia::render('Admin/Incidents', [
             'incidents' => $incidents,

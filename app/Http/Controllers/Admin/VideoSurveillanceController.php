@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Club;
+use App\Models\Computer;
+use App\Models\IncidentClipJob;
 use App\Models\VideoSurveillanceEvent;
 use App\Models\VideoSurveillanceSetting;
 use App\Services\VideoMarkerService;
+use Illuminate\Validation\ValidationException;
 use App\Support\AdminLocation;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -33,6 +36,23 @@ class VideoSurveillanceController extends Controller
             'triggers' => VideoSurveillanceSetting::TRIGGERS,
             'clubs' => Club::visibleToAdmin(AdminLocation::id())->select('id', 'name')->orderBy('name')->get(),
             'pending_jobs' => $markers->pendingCount($clubId),
+            'pending_clips' => IncidentClipJob::query()
+                ->where('club_id', $clubId)
+                ->where('status', IncidentClipJob::STATUS_PENDING)
+                ->count(),
+            'hall_pcs' => Computer::query()
+                ->where('club_id', $clubId)
+                ->where(function ($q) {
+                    $q->whereNull('kind')->orWhere('kind', Computer::KIND_PC);
+                })
+                ->orderBy('name')
+                ->get(['id', 'name', 'nvr_channel'])
+                ->map(fn (Computer $pc) => [
+                    'id' => (int) $pc->id,
+                    'name' => (string) $pc->name,
+                    'nvr_channel' => $pc->nvr_channel,
+                ])
+                ->values(),
         ]);
     }
 
@@ -86,6 +106,52 @@ class VideoSurveillanceController extends Controller
         }
 
         return back()->with('success', 'Настройки видеонаблюдения сохранены');
+    }
+
+    public function updateChannels(Request $request)
+    {
+        $data = $request->validate([
+            'club_id' => 'nullable|integer|exists:clubs,id',
+            'channels' => 'required|array',
+            'channels.*.id' => 'required|integer',
+            'channels.*.nvr_channel' => 'nullable|string|max:8',
+        ]);
+
+        $clubId = (int) ($data['club_id'] ?? Club::query()->value('id'));
+        $ids = collect($data['channels'])->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $owned = Computer::query()
+            ->where('club_id', $clubId)
+            ->whereIn('id', $ids)
+            ->pluck('id')
+            ->all();
+        $owned = array_fill_keys($owned, true);
+
+        foreach ($data['channels'] as $row) {
+            $id = (int) $row['id'];
+            if (! isset($owned[$id])) {
+                continue;
+            }
+            $raw = trim((string) ($row['nvr_channel'] ?? ''));
+            if ($raw === '') {
+                Computer::query()->whereKey($id)->update(['nvr_channel' => null]);
+
+                continue;
+            }
+            if (! preg_match('/^\d{1,3}$/', $raw)) {
+                throw ValidationException::withMessages([
+                    'channels' => 'Канал NVR — число от 1 до 256',
+                ]);
+            }
+            $n = (int) $raw;
+            if ($n < 1 || $n > 256) {
+                throw ValidationException::withMessages([
+                    'channels' => 'Канал NVR — число от 1 до 256',
+                ]);
+            }
+            Computer::query()->whereKey($id)->update(['nvr_channel' => (string) $n]);
+        }
+
+        return back()->with('success', 'Каналы камер сохранены');
     }
 
     public function storeEvent(Request $request)

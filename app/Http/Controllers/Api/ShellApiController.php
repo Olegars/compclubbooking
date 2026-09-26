@@ -41,6 +41,8 @@ use App\Services\PreSessionOrderService;
 use App\Services\ProductStockService;
 use App\Services\TournamentService;
 use App\Services\UserCloudSettingsService;
+use App\Models\IncidentClipJob;
+use App\Services\IncidentClipService;
 use App\Services\VideoMarkerService;
 use App\Services\ShellQrLoginService;
 use Illuminate\Http\JsonResponse;
@@ -775,6 +777,7 @@ class ShellApiController extends Controller
             ]);
 
             // Метка на видеосервер (если в админке создано событие с этим триггером)
+            $pc = Computer::query()->find($alert->computer_id);
             $trigger = match ($alert->type) {
                 ComputerInputAlert::TYPE_DISCONNECTED => 'hid.disconnected',
                 ComputerInputAlert::TYPE_DEVICE_CHANGED => 'hid.device_changed',
@@ -783,7 +786,6 @@ class ShellApiController extends Controller
             };
             if ($trigger) {
                 try {
-                    $pc = Computer::query()->find($alert->computer_id);
                     app(VideoMarkerService::class)->placeMarkerForTrigger($trigger, [
                         'title' => ($trigger === 'hid.disconnected' ? 'Отключение периферии' : 'HID').' · '.($pc?->name ?: 'PC#'.$alert->computer_id),
                         'meta' => [
@@ -796,6 +798,20 @@ class ShellApiController extends Controller
                 } catch (\Throwable $markerError) {
                     Log::warning('Video marker after HID alert failed: '.$markerError->getMessage());
                 }
+            }
+
+            try {
+                if ($pc) {
+                    app(IncidentClipService::class)->enqueue(
+                        IncidentClipJob::SUBJECT_HID,
+                        (int) $alert->id,
+                        $pc,
+                        $alert->created_at ?? now(),
+                        'hid_'.$alert->type,
+                    );
+                }
+            } catch (\Throwable $clipError) {
+                Log::warning('Incident clip after HID alert failed: '.$clipError->getMessage());
             }
 
             return response()->json([
@@ -879,6 +895,20 @@ class ShellApiController extends Controller
                 ], $pc?->club_id ? (int) $pc->club_id : null);
             } catch (\Throwable $markerError) {
                 Log::warning('Video marker after SOS failed: '.$markerError->getMessage());
+            }
+
+            try {
+                if ($pc) {
+                    app(IncidentClipService::class)->enqueue(
+                        IncidentClipJob::SUBJECT_SOS,
+                        (int) $alert->id,
+                        $pc,
+                        $reportedAt,
+                        'sos',
+                    );
+                }
+            } catch (\Throwable $clipError) {
+                Log::warning('Incident clip after SOS failed: '.$clipError->getMessage());
             }
 
             if ($booking?->user_id) {
