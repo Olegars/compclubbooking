@@ -78,7 +78,7 @@ class Club extends Model
                 $inner->whereNull('source')->orWhere('source', self::SOURCE_LOCATION);
             });
             if ($currentClubId) {
-                $q->orWhereKey($currentClubId);
+                $q->orWhere($q->getModel()->getQualifiedKeyName(), $currentClubId);
             }
         });
     }
