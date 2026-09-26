@@ -7,6 +7,7 @@ use App\Models\Admin;
 use App\Models\ShiftSlot;
 use App\Models\ShiftSlotBooking;
 use App\Services\ShiftSlotService;
+use App\Services\StaffBonusService;
 use App\Services\StaffEdoService;
 use App\Services\StaffEmploymentService;
 use App\Services\StaffPayrollService;
@@ -23,6 +24,7 @@ class StaffPayrollController extends Controller
         private readonly StaffEmploymentService $employment,
         private readonly StaffEdoService $edo,
         private readonly StoreStaffCabinetService $storeDesk,
+        private readonly StaffBonusService $bonus,
     ) {
     }
 
@@ -276,6 +278,12 @@ class StaffPayrollController extends Controller
         } catch (\Throwable $e) {
             report($e);
             $payload['edo'] = $this->edo->emptyCabinet();
+        }
+        try {
+            $payload['bonus'] = $this->bonus->cabinet($admin);
+        } catch (\Throwable $e) {
+            report($e);
+            $payload['bonus'] = null;
         }
         if ($withStoreDesk) {
             $payload['store_desk'] = $this->storeDesk->desk($admin);

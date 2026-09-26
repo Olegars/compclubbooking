@@ -700,6 +700,10 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
     // УРОВЕНЬ: SUPERVISOR / OWNER — штат и проверка анкет
     Route::middleware(['role:supervisor,owner'])->group(function () {
         Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
+        Route::post('/staff/bonus/settings', [StaffController::class, 'updateBonusSettings'])->name('admin.staff.bonus.settings');
+        Route::post('/staff/bonus/adjust', [StaffController::class, 'adjustBonus'])->name('admin.staff.bonus.adjust');
+        Route::post('/staff/bonus/close-month', [StaffController::class, 'closeBonusMonth'])->name('admin.staff.bonus.close-month');
+        Route::post('/staff/bonus/close-quarter', [StaffController::class, 'closeBonusQuarter'])->name('admin.staff.bonus.close-quarter');
         Route::post('/staff/incidents/{incident}/sign', [StaffEdoController::class, 'signAct'])->name('admin.staff.incidents.sign');
         Route::post('/staff/incidents/{incident}/resolve', [StaffEdoController::class, 'resolve'])->name('admin.staff.incidents.resolve');
         Route::post('/staff/incidents/{incident}/deliver', [StaffEdoController::class, 'deliver'])->name('admin.staff.incidents.deliver');

@@ -127,6 +127,20 @@ const props = withDefaults(defineProps<{
         }
         documents?: Array<{ id: number; title: string; type: string }>
     }
+    bonus?: null | {
+        level: number
+        open_xp: number
+        rate: number
+        month_label: string
+        month_rub: number
+        month_xp: number
+        safe_rub: number
+        safe_preview_rub: number
+        days_until_open: number
+        quarter_label: string
+        burned: boolean
+        history: Array<{ id: number; amount_xp: number; description: string; created_at: string | null }>
+    }
 }>(), {
     calendar: () => ({
         month: '',
@@ -165,6 +179,7 @@ const props = withDefaults(defineProps<{
         incident: null,
         documents: [],
     }),
+    bonus: null,
 })
 
 const clubName = useClubName()
@@ -453,6 +468,43 @@ const kindLabel = (kind: string | null | undefined) => {
                     <div class="text-[10px] uppercase font-black tracking-widest text-white/30">Статус</div>
                     <div class="text-sm font-black uppercase text-white mt-1">{{ shiftState?.duty_label || payTypeLabel }}</div>
                     <div class="text-[11px] text-white/40 mt-1">ставка {{ formatMoney(base_rate) }}</div>
+                </div>
+            </div>
+
+            <div v-if="bonus" class="bg-[#050505] border border-[#22c55e]/20 rounded-[1.125rem] p-8 shadow-xl space-y-6">
+                <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+                    <div>
+                        <div class="text-[10px] text-[#22c55e] uppercase font-black tracking-widest">Баллы эффективности</div>
+                        <div class="text-4xl font-black text-white tracking-tighter mt-2">Уровень {{ bonus.level }}</div>
+                        <div class="text-white/40 text-xs mt-1">{{ bonus.open_xp }} XP за {{ bonus.month_label }} · 1 XP = {{ formatMoney(bonus.rate) }}</div>
+                    </div>
+                    <div class="text-[10px] uppercase font-black tracking-widest text-white/30">
+                        {{ bonus.quarter_label }} · до вскрытия фонда {{ bonus.days_until_open }} дн.
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-black/40 border border-white/10 rounded-2xl p-5">
+                        <div class="text-[10px] uppercase font-black tracking-widest text-white/40">К премии этого месяца (70%)</div>
+                        <div class="text-2xl font-black text-white mt-2">{{ bonus.month_xp }} XP</div>
+                        <div class="text-[#22c55e] text-sm font-black mt-1">{{ formatMoney(bonus.month_rub) }}</div>
+                    </div>
+                    <div class="bg-black/40 border border-white/10 rounded-2xl p-5">
+                        <div class="text-[10px] uppercase font-black tracking-widest text-white/40">Квартальный фонд надёжности (30%)</div>
+                        <div class="text-2xl font-black mt-2" :class="bonus.burned ? 'text-white/30' : 'text-white'">
+                            {{ bonus.burned ? 'Аннулирован по ЛНА' : formatMoney(bonus.safe_rub) }}
+                        </div>
+                        <div v-if="!bonus.burned && bonus.safe_preview_rub > 0" class="text-white/40 text-xs mt-1">
+                            ещё {{ formatMoney(bonus.safe_preview_rub) }} после закрытия месяца
+                        </div>
+                    </div>
+                </div>
+                <div v-if="bonus.history.length" class="border-t border-white/10 pt-4 space-y-2">
+                    <div v-for="row in bonus.history" :key="row.id" class="flex justify-between gap-4 text-xs">
+                        <span class="text-white/60">{{ row.created_at }} · {{ row.description }}</span>
+                        <span class="font-black shrink-0" :class="row.amount_xp < 0 ? 'text-amber-300' : 'text-[#22c55e]'">
+                            {{ row.amount_xp > 0 ? '+' : '' }}{{ row.amount_xp }} XP
+                        </span>
+                    </div>
                 </div>
             </div>
 

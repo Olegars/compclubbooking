@@ -7,6 +7,7 @@ use App\Models\Admin;
 use App\Models\Club;
 use App\Models\ShiftIntern;
 use App\Models\StaffLedger;
+use App\Services\StaffBonusService;
 use App\Services\StaffEdoService;
 use App\Services\StaffEmploymentService;
 use App\Services\StaffPayrollService;
@@ -25,6 +26,7 @@ class StaffController extends Controller
         private readonly StaffPayrollService $payroll,
         private readonly StaffEmploymentService $employment,
         private readonly StaffEdoService $edo,
+        private readonly StaffBonusService $bonus,
     ) {
     }
 
@@ -97,7 +99,84 @@ class StaffController extends Controller
                 ? AdminLocation::id($actor)
                 : $actor->club_id,
             'edo_incidents' => $this->edo->journal($actor),
+            'bonus_board' => $this->bonus->summary(),
         ]);
+    }
+
+    public function updateBonusSettings(Request $request)
+    {
+        $data = $request->validate([
+            'xp_to_rub_rate' => ['required', 'numeric', 'min:0.01', 'max:1000'],
+            'bar_target_rub' => ['required', 'numeric', 'min:0', 'max:10000000'],
+        ]);
+
+        try {
+            $this->bonus->updateSettings((float) $data['xp_to_rub_rate'], (float) $data['bar_target_rub']);
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['xp_to_rub_rate' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Курс баллов сохранён');
+    }
+
+    public function adjustBonus(Request $request)
+    {
+        $data = $request->validate([
+            'admin_id' => ['required', 'integer', 'exists:admins,id'],
+            'amount_xp' => ['required', 'integer', 'min:-500', 'max:500', 'not_in:0'],
+            'reason' => ['required', 'string', 'min:3', 'max:255'],
+        ]);
+
+        try {
+            $target = Admin::query()->findOrFail((int) $data['admin_id']);
+            $this->bonus->manualAdjust(
+                auth('admin')->user(),
+                $target,
+                (int) $data['amount_xp'],
+                (string) $data['reason']
+            );
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['reason' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Баллы эффективности обновлены');
+    }
+
+    public function closeBonusMonth(Request $request)
+    {
+        $data = $request->validate([
+            'period' => ['required', 'date_format:Y-m'],
+        ]);
+
+        try {
+            $count = $this->bonus->closeMonth(
+                \Carbon\Carbon::createFromFormat('Y-m', $data['period'])->startOfMonth(),
+                auth('admin')->user()
+            );
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['period' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Месяц баллов закрыт, сотрудников: '.$count);
+    }
+
+    public function closeBonusQuarter(Request $request)
+    {
+        $data = $request->validate([
+            'period' => ['required', 'regex:/^\d{4}-Q[1-4]$/'],
+        ]);
+
+        if (! preg_match('/^(\d{4})-Q([1-4])$/', $data['period'], $match)) {
+            return back()->withErrors(['period' => 'Неизвестный квартал.']);
+        }
+
+        try {
+            $count = $this->bonus->closeQuarter((int) $match[1], (int) $match[2], auth('admin')->user());
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['period' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Квартальный фонд закрыт, сотрудников: '.$count);
     }
 
     public function storeFine(Request $request, Admin $admin)

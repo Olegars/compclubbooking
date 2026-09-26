@@ -4,6 +4,7 @@ import { Head, router, useForm, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AdminConfirm from '@/Components/AdminConfirm.vue'
 import StaffEdoJournal from '@/Components/StaffEdoJournal.vue'
+import StaffBonusBoard from '@/Components/StaffBonusBoard.vue'
 import { useClubName } from '@/Composables/useClubName'
 import { useToast } from '@/Composables/useToast'
 
@@ -18,12 +19,23 @@ const props = withDefaults(defineProps<{
     clubs?: Array<{ id: number; name: string }>
     default_club_id?: number | null
     edo_incidents?: any[]
+    bonus_board?: {
+        rate: number
+        bar_target_rub: number
+        month_label: string
+        quarter_label: string
+        days_until_open: number
+        previous_month: string
+        previous_quarter: string
+        rows: Array<{ id: number; name: string; role: string; open_xp: number; month_rub: number; safe_rub: number; burned: boolean }>
+    } | null
 }>(), {
     can_hire: false,
     hire_roles: () => [],
     clubs: () => [],
     default_club_id: null,
     edo_incidents: () => [],
+    bonus_board: null,
 })
 
 const flashSuccess = computed(() => (page.props as any).flash?.success as string | undefined)
@@ -482,6 +494,8 @@ const inputClass = 'mt-2 w-full bg-black/40 border border-white/10 focus:border-
             </div>
 
             <StaffEdoJournal :incidents="edo_incidents" />
+
+            <StaffBonusBoard v-if="bonus_board" :board="bonus_board" />
 
             <div class="flex flex-wrap gap-2">
                 <button type="button"

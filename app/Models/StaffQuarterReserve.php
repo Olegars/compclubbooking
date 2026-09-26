@@ -12,10 +12,12 @@ class StaffQuarterReserve extends Model
         'year',
         'quarter',
         'points',
+        'burned_at',
     ];
 
     protected $casts = [
         'points' => 'decimal:2',
+        'burned_at' => 'datetime',
     ];
 
     public function admin(): BelongsTo

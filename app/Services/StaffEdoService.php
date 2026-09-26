@@ -11,7 +11,6 @@ use App\Models\StaffEdoAgreement;
 use App\Models\StaffEdoDocument;
 use App\Models\StaffEdoOtp;
 use App\Models\StaffPresencePing;
-use App\Models\StaffQuarterReserve;
 use App\Models\StaffSfrEvent;
 use App\Support\WorkingDaysCalculator;
 use Illuminate\Http\Request;
@@ -27,6 +26,7 @@ class StaffEdoService
     public function __construct(
         private readonly WorkingDaysCalculator $calendar,
         private readonly StaffEdoDocumentRenderer $docs,
+        private readonly StaffBonusService $bonus,
     ) {
     }
 
@@ -765,17 +765,7 @@ class StaffEdoService
 
     private function forfeitReserve(int $adminId): float
     {
-        $year = (int) now()->year;
-        $quarter = (int) ceil(now()->month / 3);
-        $reserve = StaffQuarterReserve::query()->firstOrCreate(
-            ['admin_id' => $adminId, 'year' => $year, 'quarter' => $quarter],
-            ['points' => 0]
-        );
-        $points = (float) $reserve->points;
-        $reserve->points = 0;
-        $reserve->save();
-
-        return $points;
+        return $this->bonus->forfeitQuarter($adminId);
     }
 
     private function registerSfr(StaffDisciplinaryIncident $incident): void

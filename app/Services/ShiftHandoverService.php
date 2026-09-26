@@ -18,6 +18,7 @@ class ShiftHandoverService
     public function __construct(
         private readonly ProductStockService $stock,
         private readonly StaffPayrollService $payroll,
+        private readonly StaffBonusService $bonus,
     ) {
     }
 
@@ -182,6 +183,7 @@ class ShiftHandoverService
 
             $outgoing = $current->admin;
             $isFirstShift = $outgoing === null;
+            $closingIds = collect();
 
             if ($isFirstShift) {
                 $current->update([
@@ -293,7 +295,12 @@ class ShiftHandoverService
             }
 
             if ($outgoing) {
-                $this->payroll->chargeHandoverShortage($outgoing, $incoming, $current->fresh(), $shortageLines);
+                $closedShift = $current->fresh();
+                $this->payroll->chargeHandoverShortage($outgoing, $incoming, $closedShift, $shortageLines);
+                Shift::query()->whereIn('id', $closingIds)->get()->each(function (Shift $closed) use ($shortageLines, $current) {
+                    $lines = (int) $closed->id === (int) $current->id ? $shortageLines : [];
+                    $this->bonus->awardClosedShift($closed, $lines);
+                });
                 $outgoing->forceFill(['shift_handed_over_at' => now()])->save();
             }
 
