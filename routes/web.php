@@ -413,6 +413,9 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::post('/api/shifts/scan', [ShiftController::class, 'scan']);
         Route::post('/api/shifts/count', [ShiftController::class, 'countItem']);
         Route::post('/api/shifts/complete', [ShiftController::class, 'completeTransfer']);
+        Route::post('/shifts/transfer/confirm', [ShiftController::class, 'completeTransfer']);
+        Route::post('/api/shifts/transfer/wake-all', [ShiftController::class, 'wakeAll']);
+        Route::get('/api/shifts/transfer/hardware-status', [ShiftController::class, 'hardwareStatus']);
         Route::get('/shifts/history', [ShiftController::class, 'history'])->name('admin.shift.history');
 
         Route::get('/inventory', [AdminController::class, 'inventory'])->name('admin.inventory');

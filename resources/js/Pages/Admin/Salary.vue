@@ -113,6 +113,7 @@ const props = withDefaults(defineProps<{
     fines: LedgerRow[]
     payouts: LedgerRow[]
     monthly_accruals: LedgerRow[]
+    hardware_notes?: { id: number; description: string; created_at: string | null; pc_name: string | null }[]
     calendar?: Calendar
     employment?: Employment
     edo?: {
@@ -766,6 +767,23 @@ const kindLabel = (kind: string | null | undefined) => {
                             <div class="text-white/30 text-[10px] uppercase tracking-widest">
                                 Смены появятся после пересменки
                             </div>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div v-if="hardware_notes && hardware_notes.length" class="bg-[#050505] border border-amber-500/20 rounded-[0.875rem] overflow-hidden shadow-xl">
+                <div class="p-6 border-b border-white/10">
+                    <h2 class="text-sm font-black uppercase italic tracking-widest text-amber-200/80">Железо смены</h2>
+                </div>
+                <table class="w-full text-left border-collapse">
+                    <tbody>
+                    <tr v-for="note in hardware_notes" :key="note.id" class="border-b border-white/5">
+                        <td class="p-6 text-xs text-white/50 whitespace-nowrap">{{ formatDate(note.created_at) }}</td>
+                        <td class="p-6 text-sm text-white font-bold">
+                            <span v-if="note.pc_name" class="text-amber-200/80 mr-2">{{ note.pc_name }}</span>
+                            {{ note.description }}
                         </td>
                     </tr>
                     </tbody>

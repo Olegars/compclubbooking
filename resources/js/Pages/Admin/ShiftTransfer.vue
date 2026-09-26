@@ -32,7 +32,29 @@ const props = defineProps<{
     all_required_counted: boolean
     can_complete: boolean
     discrepancies: ProductRow[]
+    hardware: HardwareAudit | null
 }>()
+
+type HardwareBadge = { level: 'critical' | 'warning' | 'ok'; code: string; label: string }
+type HardwareStation = {
+    pc_id: number
+    pc_name: string
+    status: 'pending' | 'ok' | 'warning' | 'critical'
+    responded: boolean
+    booted?: boolean
+    session_active?: boolean
+    badges?: HardwareBadge[]
+    missing_devices?: string[]
+}
+type HardwareAudit = {
+    status: string | null
+    polled: number
+    total: number
+    seconds_left: number
+    timeout_seconds: number
+    counts: { critical: number; warning: number; ok: number; pending: number }
+    stations: HardwareStation[]
+}
 
 const page = usePage()
 const { success, error, info } = useToast()
@@ -55,8 +77,10 @@ const dialog = ref<ProductRow | null>(null)
 const qtyInput = ref<number>(0)
 const qtyField = ref<HTMLInputElement | null>(null)
 const videoEl = ref<HTMLVideoElement | null>(null)
+const hardware = ref<HardwareAudit | null>(props.hardware)
 let mediaStream: MediaStream | null = null
 let detectTimer: number | null = null
+let hardwareTimer: number | null = null
 
 const formError = computed(() => {
     const errs = (page.props as any)?.errors
@@ -79,6 +103,7 @@ const applyPayload = (data: any) => {
     allRequiredCounted.value = Boolean(data.all_required_counted)
     canComplete.value = Boolean(data.can_complete)
     outgoingName.value = data.outgoing_name ?? outgoingName.value
+    if (data.hardware) hardware.value = data.hardware
 }
 
 const stopCamera = () => {
@@ -195,6 +220,38 @@ const handleScan = async (code: string) => {
     }
 }
 
+const pollHardware = async () => {
+    if (phase.value !== 'counting') return
+    try {
+        const { data } = await axios.get('/admin/api/shifts/transfer/hardware-status')
+        if (data && typeof data.total === 'number') hardware.value = data
+    } catch {
+        /* следующий опрос через 3 с */
+    }
+}
+
+const stopHardwarePoll = () => {
+    if (hardwareTimer) {
+        window.clearInterval(hardwareTimer)
+        hardwareTimer = null
+    }
+}
+
+const stationTone = (station: HardwareStation) => {
+    if (station.status === 'critical') return 'border-red-500/50 bg-red-500/10 text-red-300'
+    if (station.status === 'warning') return 'border-amber-400/40 bg-amber-500/10 text-amber-200'
+    if (station.status === 'ok') return 'border-[#22c55e]/30 bg-[#22c55e]/10 text-[#22c55e]'
+    return 'border-white/10 bg-black/40 text-white/50'
+}
+
+const stationCaption = (station: HardwareStation) => {
+    if (station.session_active) return 'Сессия гостя, без перезагрузки'
+    if (!station.responded && station.booted) return 'На связи, самотест'
+    if (!station.responded) return 'Ждём включение'
+    if (station.badges && station.badges.length) return station.badges.map(b => b.label).join(' · ')
+    return 'Норма'
+}
+
 const submitShift = () => {
     if (!canComplete.value) {
         alert('Сначала отсканируйте все товары с остатком.')
@@ -205,8 +262,14 @@ const submitShift = () => {
         return
     }
     const mismatches = products.value.filter(p => p.counted && Number(p.actual) !== Number(p.stock))
-    const msg = mismatches.length
-        ? `Есть расхождения (${mismatches.length}). Недостача уйдёт уходящему админу. Принять смену?`
+    const critical = hardware.value?.counts.critical ?? 0
+    const pending = hardware.value?.counts.pending ?? 0
+    const parts = []
+    if (mismatches.length) parts.push(`расхождения по складу: ${mismatches.length}`)
+    if (critical) parts.push(`критичных ПК: ${critical}`)
+    if (pending) parts.push(`ещё не ответили: ${pending}`)
+    const msg = parts.length
+        ? `${parts.join(', ')}. Недостача и пропажа периферии уйдут уходящему. Принять смену?`
         : 'Принять смену и стать активным админом?'
     if (!confirm(msg)) return
     router.post('/admin/api/shifts/complete', { cash_counted: cashCounted.value })
@@ -216,6 +279,10 @@ watch(phase, (next) => {
     if (next === 'counting') {
         stopCamera()
         enableReceiveMode(handleScan)
+        void pollHardware()
+        if (!hardwareTimer) hardwareTimer = window.setInterval(pollHardware, 3000)
+    } else {
+        stopHardwarePoll()
     }
 }, { immediate: true })
 
@@ -225,6 +292,7 @@ onMounted(() => {
 
 onUnmounted(() => {
     stopCamera()
+    stopHardwarePoll()
     disableReceiveMode()
 })
 </script>
@@ -232,7 +300,7 @@ onUnmounted(() => {
 <template>
     <Head title="Приём смены" />
     <AdminLayout>
-        <div class="max-w-3xl mx-auto space-y-6 font-mono pb-24 px-4">
+        <div class="max-w-5xl mx-auto space-y-6 font-mono pb-24 px-4">
             <div class="bg-[#0a0a0a] border border-white/5 p-8 rounded-[1rem]">
                 <div class="text-[10px] uppercase tracking-[0.3em] font-black text-white/30">Приём смены</div>
                 <h1 class="text-3xl font-black text-white uppercase italic tracking-tighter mt-2">
@@ -243,7 +311,7 @@ onUnmounted(() => {
                         Посмотрите в камеру. Когда система увидит, что вы на месте, начнётся передача смены.
                     </template>
                     <template v-else>
-                        Сканируйте товар, введите количество, затем следующий.
+                        Сканируйте товар и смотрите аудит зала. Неответившие ПК к моменту приёма станут критическими.
                         <span v-if="outgoingName"> Сдаёт: {{ outgoingName }}.</span>
                     </template>
                 </p>
@@ -274,6 +342,38 @@ onUnmounted(() => {
             </div>
 
             <template v-else>
+                <div v-if="hardware" class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-6 space-y-4">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <div class="text-[10px] uppercase tracking-widest font-black text-white/30">Аудит зала</div>
+                            <div class="text-2xl font-black text-white mt-1">Опрошено {{ hardware.polled }} / {{ hardware.total }}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-[10px] uppercase tracking-widest font-black text-white/30">Холодная загрузка</div>
+                            <div class="text-2xl font-black text-white mt-1">{{ hardware.seconds_left }} с</div>
+                        </div>
+                    </div>
+                    <div class="h-2 rounded-full bg-white/5 overflow-hidden">
+                        <div class="h-full bg-[#22c55e] transition-all"
+                             :style="{ width: hardware.total ? `${Math.round(hardware.polled / hardware.total * 100)}%` : '0%' }"></div>
+                    </div>
+                    <div class="flex flex-wrap gap-2 text-[10px] uppercase font-black tracking-widest">
+                        <span class="px-3 py-1 rounded-full bg-red-500/15 text-red-300">Критично {{ hardware.counts.critical }}</span>
+                        <span class="px-3 py-1 rounded-full bg-amber-500/15 text-amber-200">Внимание {{ hardware.counts.warning }}</span>
+                        <span class="px-3 py-1 rounded-full bg-[#22c55e]/15 text-[#22c55e]">Норма {{ hardware.counts.ok }}</span>
+                        <span class="px-3 py-1 rounded-full bg-white/5 text-white/40">Ждём {{ hardware.counts.pending }}</span>
+                    </div>
+                    <div v-if="hardware.total === 0" class="text-sm text-white/40 font-bold">Нет зарегистрированных ПК.</div>
+                    <div v-else class="grid sm:grid-cols-2 gap-2">
+                        <div v-for="station in hardware.stations" :key="station.pc_id"
+                             class="px-4 py-3 rounded-2xl border"
+                             :class="stationTone(station)">
+                            <div class="font-black uppercase italic text-sm text-white">{{ station.pc_name }}</div>
+                            <div class="text-[10px] uppercase font-black mt-1">{{ stationCaption(station) }}</div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-6 flex items-center justify-between gap-4">
                     <div>
                         <div class="text-[10px] uppercase tracking-widest font-black text-white/30">Посчитано</div>

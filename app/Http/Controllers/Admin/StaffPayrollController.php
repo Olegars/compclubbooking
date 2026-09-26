@@ -219,6 +219,7 @@ class StaffPayrollController extends Controller
                 'fines' => [],
                 'payouts' => [],
                 'monthly_accruals' => [],
+                'hardware_notes' => [],
             ];
         }
         try {

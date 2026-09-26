@@ -93,7 +93,8 @@ class ComputerPowerService
         $rows = DB::table('computers')->whereIn('id', $ids)->get();
         foreach ($rows as $row) {
             $id = (int) $row->id;
-            $desired = $this->rowInMaintenance($row, $now)
+            $heldForAudit = ! empty($row->shift_audit_hold);
+            $desired = ($this->rowInMaintenance($row, $now) || $heldForAudit)
                 ? self::DESIRED_ON
                 : (in_array($id, $needOn, true) ? self::DESIRED_ON : self::DESIRED_OFF);
             $alive = isset($aliveIds[$id]);
@@ -390,15 +391,33 @@ class ComputerPowerService
             $desired = (string) (DB::table('computers')->where('id', $id)->value('power_desired') ?: self::DESIRED_OFF);
         }
 
+        $heldForAudit = (bool) DB::table('computers')->where('id', $id)->value('shift_audit_hold');
+        if ($heldForAudit) {
+            $desired = self::DESIRED_ON;
+            DB::table('computers')->where('id', $id)->update(['power_desired' => $desired]);
+        }
+
         $sessionActive = $this->hasActiveSession($id);
         $pendingDiskless = $diskless->pendingFor($computer);
         $pendingResync = $resync->pendingFor($computer);
         $pendingRollback = $rollback->pendingFor($computer);
         $action = 'none';
-        if (! $inMaintenance && ! $sessionActive && $pendingDiskless === null
+        if ($heldForAudit) {
+            $action = 'none';
+        } elseif (! $inMaintenance && ! $sessionActive && $pendingDiskless === null
             && $pendingResync === null && $pendingRollback === null && ! $computer->super_client
             && $patchPull === null && ! $keepPatchPower) {
             $action = $this->actionForDesired($desired);
+        }
+
+        $shiftAudit = false;
+        try {
+            $shiftAudit = app(ShiftHardwareAuditService::class)->ingestHeartbeat($computer, $extras);
+        } catch (\Throwable $e) {
+            Log::warning('Shift hardware audit ingest failed', [
+                'computer_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
         }
 
         return [
@@ -415,6 +434,7 @@ class ComputerPowerService
             'patch_pull' => $patchPull,
             'patch_ingest' => $patchIngest,
             'nic_flap_acked' => $flapAcked,
+            'shift_audit' => $shiftAudit,
         ];
     }
 

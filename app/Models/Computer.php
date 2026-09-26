@@ -11,7 +11,7 @@ class Computer extends Model
     protected $fillable = [
         'club_id', 'name', 'nvr_channel', 'x', 'y', 'type', 'seat_class_id', 'space_id',
         'kind', 'booth_id', 'status', 'hwid',
-        'mac_address', 'lan_ip', 'patch_seed_port', 'patch_seed_role', 'power_desired', 'power_state',
+        'mac_address', 'lan_ip', 'patch_seed_port', 'patch_seed_role', 'power_desired', 'shift_audit_hold', 'power_state',
         'power_state_updated_at', 'last_seen_at', 'wol_sent_at',
         'maintenance', 'maintenance_until',
         'cache_ok', 'cache_free_gb', 'data_root', 'volume_letter', 'cache_media', 'ssd_temp_c',
@@ -39,6 +39,7 @@ class Computer extends Model
         'last_seen_at' => 'immutable_datetime',
         'wol_sent_at' => 'immutable_datetime',
         'maintenance_until' => 'immutable_datetime',
+        'shift_audit_hold' => 'boolean',
         'maintenance' => 'boolean',
         'cache_ok' => 'boolean',
         'cache_free_gb' => 'float',

@@ -110,6 +110,9 @@ class RestrictOffDutyAdmin
             '/admin/api/shifts/scan',
             '/admin/api/shifts/count',
             '/admin/api/shifts/complete',
+            '/admin/shifts/transfer/confirm',
+            '/admin/api/shifts/transfer/wake-all',
+            '/admin/api/shifts/transfer/hardware-status',
             '/admin/api/shifts/status',
         ]);
     }

@@ -320,6 +320,7 @@ class StaffPayrollService
             'fines' => $fines,
             'payouts' => $payouts,
             'monthly_accruals' => $monthly,
+            'hardware_notes' => app(ShiftHardwareAuditService::class)->salaryNotes($admin),
         ];
     }
 

@@ -39,6 +39,9 @@ class ShiftHandoverService
             if ($open && $open->status === 'transferring') {
                 if ((int) $open->incoming_admin_id === (int) $incoming->id) {
                     $this->seedInventory($open);
+                    if ($open->hardware_audit_status === null) {
+                        app(ShiftHardwareAuditService::class)->start($open->fresh());
+                    }
 
                     return $open->fresh(['admin', 'incomingAdmin', 'inventoryItems']);
                 }
@@ -79,6 +82,7 @@ class ShiftHandoverService
             }
 
             $this->seedInventory($open);
+            app(ShiftHardwareAuditService::class)->start($open->fresh());
 
             return $open->fresh(['admin', 'incomingAdmin', 'inventoryItems']);
         });
@@ -294,6 +298,8 @@ class ShiftHandoverService
                 ]);
             }
 
+            app(ShiftHardwareAuditService::class)->finalize($current->fresh(), $outgoing, $incoming);
+
             if ($outgoing) {
                 $closedShift = $current->fresh();
                 $this->payroll->chargeHandoverShortage($outgoing, $incoming, $closedShift, $shortageLines);
@@ -339,6 +345,9 @@ class ShiftHandoverService
             'all_required_counted' => $allRequiredCounted,
             'can_complete' => $phase === 'counting' && $allRequiredCounted,
             'discrepancies' => $discrepancies,
+            'hardware' => ($phase === 'counting' && $shift)
+                ? app(ShiftHardwareAuditService::class)->status($shift)
+                : null,
         ];
     }
 

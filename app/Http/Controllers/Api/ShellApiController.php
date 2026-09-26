@@ -3133,6 +3133,12 @@ class ShellApiController extends Controller
                 'patch_ingest_active' => 'nullable|boolean',
                 'patch_ingest_result' => 'nullable|string|max:32',
                 'patch_ingest_message' => 'nullable|string|max:240',
+                'audit_complete' => 'nullable|boolean',
+                'hid_present' => 'nullable|array|max:8',
+                'hid_present.*' => 'nullable|string|max:32',
+                'missing_devices' => 'nullable|array|max:8',
+                'missing_devices.*' => 'nullable|string|max:32',
+                'hardware_switch_fault' => 'nullable|boolean',
             ]);
 
             $computer = null;
@@ -3208,6 +3214,11 @@ class ShellApiController extends Controller
                         ? $request->boolean('patch_ingest_active') : null,
                     'patch_ingest_result' => $request->input('patch_ingest_result'),
                     'patch_ingest_message' => $request->input('patch_ingest_message'),
+                    'audit_complete' => $request->has('audit_complete') ? $request->boolean('audit_complete') : null,
+                    'hid_present' => $request->input('hid_present'),
+                    'missing_devices' => $request->input('missing_devices'),
+                    'hardware_switch_fault' => $request->has('hardware_switch_fault')
+                        ? $request->boolean('hardware_switch_fault') : null,
                 ]
             );
 

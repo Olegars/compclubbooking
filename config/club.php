@@ -74,6 +74,9 @@ return [
         'warmup_minutes' => (int) env('CLUB_POWER_WARMUP_MINUTES', 30),
         'heartbeat_stale_seconds' => (int) env('CLUB_POWER_HEARTBEAT_STALE_SECONDS', 180),
         'wol_timeout_seconds' => (int) env('CLUB_POWER_WOL_TIMEOUT_SECONDS', 180),
+        // Аудит зала на пересменке: сколько ждать холодную загрузку после WOL.
+        'shift_audit_timeout_seconds' => (int) env('CLUB_SHIFT_AUDIT_TIMEOUT_SECONDS', 120),
+        'shift_audit_ssd_wear_warn_pct' => (int) env('CLUB_SHIFT_AUDIT_SSD_WEAR_WARN_PCT', 80),
         // Токен для MikroTik pull: GET /api/power/wol-targets?token=...
         'wol_relay_token' => (string) env('CLUB_WOL_RELAY_TOKEN', ''),
     ],

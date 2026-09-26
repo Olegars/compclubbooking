@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Shift;
 use App\Models\ShiftIntern;
 use App\Services\ShiftHandoverService;
+use App\Services\ShiftHardwareAuditService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use RuntimeException;
@@ -91,6 +92,22 @@ class ShiftController extends Controller
         }
 
         return redirect()->route('admin.dashboard');
+    }
+
+    public function wakeAll(ShiftHardwareAuditService $audit)
+    {
+        try {
+            $payload = $audit->wakeAll(auth('admin')->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json($payload);
+    }
+
+    public function hardwareStatus(ShiftHardwareAuditService $audit)
+    {
+        return response()->json($audit->statusFor(auth('admin')->user()));
     }
 
     public function history()
