@@ -14,12 +14,9 @@ return [
     'session_hours' => (int) env('WIFI_SESSION_HOURS', 12),
 
     /**
-     * Токен для MikroTik pull (можно = CLUB_WOL_RELAY_TOKEN).
+     * Свой токен MikroTik pull. Не подставлять CLUB_WOL_RELAY_TOKEN.
      * GET  /api/wifi/grant-targets?token=
      * POST /api/wifi/grant-applied
      */
-    'relay_token' => (string) (
-        env('WIFI_RELAY_TOKEN')
-        ?: env('CLUB_WOL_RELAY_TOKEN', '')
-    ),
+    'relay_token' => (string) env('WIFI_RELAY_TOKEN', ''),
 ];

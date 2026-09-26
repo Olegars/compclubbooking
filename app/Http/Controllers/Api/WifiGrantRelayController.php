@@ -77,7 +77,7 @@ class WifiGrantRelayController extends Controller
     {
         $expected = (string) config('wifi_access.relay_token', '');
         if ($expected === '') {
-            Log::warning('WiFi relay: WIFI_RELAY_TOKEN / CLUB_WOL_RELAY_TOKEN empty — rejecting');
+            Log::warning('WiFi relay: WIFI_RELAY_TOKEN empty — rejecting');
 
             return false;
         }

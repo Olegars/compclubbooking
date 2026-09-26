@@ -793,7 +793,7 @@ class OwnerSystemTestService
             return $this->skip('Общих вентиляторов нет.', $details);
         }
         if ($token === '') {
-            return $this->fail('Есть shared-вентиляторы, но нет FAN_SHARED / CLUB_WOL токена.', $details);
+            return $this->fail('Есть shared-вентиляторы, но не задан FAN_SHARED_RELAY_TOKEN.', $details);
         }
 
         return $this->pass('Общая вентиляция и токен на месте.', $details);
@@ -850,7 +850,7 @@ class OwnerSystemTestService
             return $this->skip('Автопечать кухни выключена.', $details);
         }
         if ($token === '') {
-            return $this->fail('Печать включена, но нет токена агента.', $details);
+            return $this->fail('Печать включена, но не задан KITCHEN_PRINT_RELAY_TOKEN.', $details);
         }
         if ($pending > 8) {
             return $this->warn('Большая очередь слипов — агент, похоже, не забирает.', $details);
@@ -897,7 +897,7 @@ class OwnerSystemTestService
             return $this->skip('Гостевой Wi-Fi выключен.', $details);
         }
         if ($token === '') {
-            return $this->fail('Wi-Fi включён, но нет WIFI_RELAY / CLUB_WOL токена.', $details);
+            return $this->fail('Wi-Fi включён, но не задан WIFI_RELAY_TOKEN.', $details);
         }
 
         return $this->pass('Гостевой Wi-Fi настроен.', $details);

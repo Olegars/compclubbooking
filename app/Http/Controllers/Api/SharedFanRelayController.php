@@ -73,7 +73,7 @@ class SharedFanRelayController extends Controller
     {
         $expected = (string) config('fan.shared_relay_token', '');
         if ($expected === '') {
-            Log::warning('Shared fan relay: FAN_SHARED_RELAY_TOKEN / CLUB_WOL_RELAY_TOKEN empty — rejecting');
+            Log::warning('Shared fan relay: FAN_SHARED_RELAY_TOKEN empty — rejecting');
 
             return false;
         }
@@ -81,7 +81,6 @@ class SharedFanRelayController extends Controller
         $given = (string) (
             $request->query('token')
             ?? $request->header('X-Fan-Token')
-            ?? $request->header('X-Wol-Token')
             ?? $request->input('token')
             ?? ''
         );

@@ -89,7 +89,7 @@ class KitchenPrintRelayController extends Controller
     {
         $expected = (string) config('kitchen_print.relay_token', '');
         if ($expected === '') {
-            Log::warning('Kitchen print relay: token empty — rejecting');
+            Log::warning('Kitchen print relay: KITCHEN_PRINT_RELAY_TOKEN empty — rejecting');
 
             return false;
         }

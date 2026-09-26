@@ -34,9 +34,6 @@ return [
     'max_per_space' => (int) env('FAN_MAX_PER_SPACE', 2),
     // Cascade K1/K2 must be odd+next: 1+2, 3+4, … 15+16 (enforced in bind/admin).
 
-    // MikroTik pull token for shared supply/exhaust fans (falls back to WOL token).
-    'shared_relay_token' => (string) (
-        env('FAN_SHARED_RELAY_TOKEN')
-        ?: env('CLUB_WOL_RELAY_TOKEN', '')
-    ),
+    // Own pull token. Do not reuse CLUB_WOL_RELAY_TOKEN (least privilege).
+    'shared_relay_token' => (string) env('FAN_SHARED_RELAY_TOKEN', ''),
 ];

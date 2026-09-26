@@ -3,7 +3,7 @@
 #
 # Usage (PowerShell):
 #   $env:KITCHEN_API_BASE = "https://your-club.example"
-#   $env:KITCHEN_PRINT_TOKEN = "same-as-KITCHEN_PRINT_RELAY_TOKEN-or-CLUB_WOL_RELAY_TOKEN"
+#   $env:KITCHEN_PRINT_TOKEN = "same-as-KITCHEN_PRINT_RELAY_TOKEN"
 #   $env:KITCHEN_PRINTER_HOST = "192.168.1.50"
 #   $env:KITCHEN_PRINTER_PORT = "9100"
 #   $env:KITCHEN_POLL_SECONDS = "3"

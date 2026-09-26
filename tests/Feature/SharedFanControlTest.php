@@ -174,6 +174,12 @@ class SharedFanControlTest extends TestCase
         $this->getJson('/api/fans/shared-targets')
             ->assertUnauthorized();
 
+        config(['club.power.wol_relay_token' => 'wol-only-token']);
+        $this->getJson('/api/fans/shared-targets?token=wol-only-token')
+            ->assertUnauthorized();
+        $this->getJson('/api/fans/shared-targets', ['X-Wol-Token' => 'test-shared-token'])
+            ->assertUnauthorized();
+
         $res = $this->getJson('/api/fans/shared-targets?token=test-shared-token')
             ->assertOk()
             ->assertJsonPath('status', 'success')

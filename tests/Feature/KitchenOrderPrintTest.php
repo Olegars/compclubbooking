@@ -110,7 +110,11 @@ class KitchenOrderPrintTest extends TestCase
 
     public function test_relay_rejects_bad_token(): void
     {
+        config(['club.power.wol_relay_token' => 'wol-only-token']);
+
         $this->getJson('/api/kitchen/print-targets?token=wrong')
+            ->assertStatus(401);
+        $this->getJson('/api/kitchen/print-targets?token=wol-only-token')
             ->assertStatus(401);
     }
 

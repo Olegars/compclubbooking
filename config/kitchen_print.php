@@ -10,7 +10,8 @@ return [
     */
     'enabled' => (bool) env('KITCHEN_PRINT_ENABLED', false),
 
-    'relay_token' => env('KITCHEN_PRINT_RELAY_TOKEN') ?: env('CLUB_WOL_RELAY_TOKEN', ''),
+    /** Own agent token. Do not reuse CLUB_WOL_RELAY_TOKEN. */
+    'relay_token' => (string) env('KITCHEN_PRINT_RELAY_TOKEN', ''),
 
     /** Hint for the club agent (.env on the agent host), not used by cloud. */
     'printer_host' => env('KITCHEN_PRINTER_HOST', '192.168.1.50'),
