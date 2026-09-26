@@ -81,6 +81,16 @@ Schedule::command('store:generate-avito-ads --sync --force')
         return ($data['status'] ?? '') === 'running' && ! empty($data['queued']);
     })
     ->appendOutputTo(storage_path('logs/avito-ads.log'));
+Schedule::command('telemetry:aggregate')
+    ->dailyAt('03:40')
+    ->timezone('Europe/Moscow')
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/feature-telemetry.log'));
+Schedule::command('telemetry:prune')
+    ->dailyAt('03:50')
+    ->timezone('Europe/Moscow')
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/feature-telemetry.log'));
 Schedule::command('store:sync-avito-chats')
     ->everyFiveMinutes()
     ->timezone('Europe/Moscow')

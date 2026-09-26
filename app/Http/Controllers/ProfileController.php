@@ -478,6 +478,14 @@ class ProfileController extends Controller
 
         try {
             $result = $transfers->transfer($booking, (int) $data['target_computer_id'], $user);
+            app(\App\Services\UserFeatureTelemetry::class)->record(
+                'seat_transfer_request',
+                $user,
+                \App\Support\UserFeatureCatalog::SOURCE_WEB,
+                ['target_computer_id' => (int) $data['target_computer_id']],
+                (int) $booking->id,
+                (int) $booking->computer_id,
+            );
 
             return response()->json([
                 'status' => 'success',
@@ -513,6 +521,15 @@ class ProfileController extends Controller
         if (! $clips->postTelegram($clip, true)) {
             return back()->withErrors(['clip' => $clip->fresh()->telegram_error ?: 'Telegram не принял клип']);
         }
+
+        app(\App\Services\UserFeatureTelemetry::class)->record(
+            'clip_share_telegram',
+            Auth::user(),
+            \App\Support\UserFeatureCatalog::SOURCE_WEB,
+            ['clip_id' => (int) $clip->id],
+            $clip->booking_id ? (int) $clip->booking_id : null,
+            $clip->computer_id ? (int) $clip->computer_id : null,
+        );
 
         return back();
     }
@@ -560,6 +577,15 @@ class ProfileController extends Controller
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
         }
 
+        app(\App\Services\UserFeatureTelemetry::class)->record(
+            'lan_arena_challenge',
+            $user,
+            \App\Support\UserFeatureCatalog::SOURCE_WEB,
+            ['action' => 'create', 'mode' => $data['mode']],
+            $booking?->id ? (int) $booking->id : null,
+            $computer?->id ? (int) $computer->id : null,
+        );
+
         return response()->json([
             'status' => 'success',
             'message' => 'Вызов брошен',
@@ -577,6 +603,15 @@ class ProfileController extends Controller
         } catch (\RuntimeException $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
         }
+
+        app(\App\Services\UserFeatureTelemetry::class)->record(
+            'lan_arena_challenge',
+            $user,
+            \App\Support\UserFeatureCatalog::SOURCE_WEB,
+            ['action' => 'accept', 'uuid' => $uuid],
+            $booking?->id ? (int) $booking->id : null,
+            $computer?->id ? (int) $computer->id : null,
+        );
 
         return response()->json([
             'status' => 'success',

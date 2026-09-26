@@ -881,6 +881,12 @@ class ShellApiController extends Controller
                 Log::warning('Video marker after SOS failed: '.$markerError->getMessage());
             }
 
+            if ($booking?->user_id) {
+                $this->noteFeature('sos_call', User::find($booking->user_id), $pc, $booking, [
+                    'reason' => $reasonCode,
+                ]);
+            }
+
             return response()->json([
                 'status' => 'success',
                 'alert_id' => $alert->id,
@@ -1128,6 +1134,17 @@ class ShellApiController extends Controller
                 (string) $request->action
             );
 
+            if (! $result['locked'] && in_array((string) $request->action, ['50', '75', '100'], true)) {
+                $terminalId = (int) $request->terminal_id;
+                $this->noteFeature(
+                    'fan_speed_manual',
+                    $this->resolveShellSessionUser($terminalId),
+                    Computer::find($terminalId),
+                    null,
+                    ['target_speed' => (string) $request->action],
+                );
+            }
+
             $status = $result['locked'] ? 'locked' : 'success';
             $code = $result['locked'] ? 423 : 200;
 
@@ -1305,6 +1322,21 @@ class ShellApiController extends Controller
                 $request->has('effect') ? (string) $request->input('effect') : null,
             );
 
+            if (! $result['locked']) {
+                $terminalId = (int) $request->terminal_id;
+                $this->noteFeature(
+                    'light_color_manual',
+                    $this->resolveShellSessionUser($terminalId),
+                    Computer::find($terminalId),
+                    null,
+                    array_filter([
+                        'color' => $request->input('color'),
+                        'brightness' => $request->has('brightness') ? (int) $request->input('brightness') : null,
+                        'effect' => $request->input('effect'),
+                    ], fn ($value) => $value !== null && $value !== ''),
+                );
+            }
+
             $status = $result['locked'] ? 'locked' : 'success';
             $code = $result['locked'] ? 423 : 200;
 
@@ -1391,6 +1423,9 @@ class ShellApiController extends Controller
 
         $enabled = $request->boolean('enabled');
         $user->saveLightInteractive($enabled);
+        $this->noteFeature('light_interactive_toggle', $user, Computer::find($terminalId), null, [
+            'enabled' => $enabled,
+        ]);
 
         return response()->json([
             'status' => 'success',
@@ -1475,6 +1510,14 @@ class ShellApiController extends Controller
                 $request->filled('game_id') ? (int) $request->game_id : null,
                 $request->input('game_title'),
                 $request->input('tts_voice')
+            );
+
+            $this->noteFeature(
+                'voice_ai_f1',
+                $this->resolveShellSessionUser($terminalId),
+                Computer::find($terminalId),
+                null,
+                ['game_title' => $request->input('game_title')],
             );
 
             return response()->json([
@@ -2091,6 +2134,11 @@ class ShellApiController extends Controller
                     }
                 }
             }
+
+            $this->noteFeature('shop_order_shell', $user, Computer::find($terminalId), $booking, [
+                'order_id' => $orderId,
+                'items' => count($lineItems),
+            ]);
 
             Log::info('Shell shop checkout OK', [
                 'user_id' => $user->id,
@@ -2717,6 +2765,9 @@ class ShellApiController extends Controller
             }
 
             $result = $transfers->transfer($booking, (int) $data['target_computer_id'], $user);
+            $this->noteFeature('seat_transfer_request', $user, Computer::find((int) $data['terminal_id']), $booking, [
+                'target_computer_id' => (int) $data['target_computer_id'],
+            ]);
 
             return response()->json([
                 'status' => 'success',
@@ -3340,6 +3391,12 @@ class ShellApiController extends Controller
             ]
         );
 
+        if ((string) $request->input('source', 'manual') === 'manual') {
+            $this->noteFeature('instant_replay_hotkey', $user, $computer, $booking, [
+                'duration_sec' => (int) $request->input('duration_sec', 60),
+            ]);
+        }
+
         return response()->json([
             'status' => 'success',
             'clip' => $clips->serialize($clip),
@@ -3504,6 +3561,58 @@ class ShellApiController extends Controller
         }
     }
 
+    public function recordUserAction(Request $request)
+    {
+        $data = $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'feature_key' => 'required|string|max:64',
+            'payload' => 'nullable|array',
+        ]);
+
+        if (! in_array($data['feature_key'], \App\Support\UserFeatureCatalog::clientMayReport(), true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Это действие фиксируется на сервере',
+            ], 422);
+        }
+
+        $terminalId = (int) $data['terminal_id'];
+        $computer = Computer::query()->find($terminalId);
+        if ($data['feature_key'] === 'tv_app_launch' && ! $computer?->isTvBoothSeat()) {
+            return response()->json(['status' => 'ignored']);
+        }
+
+        $user = $this->resolveShellSessionUser($terminalId);
+        if (! $user) {
+            return response()->json(['status' => 'error', 'message' => 'Активная сессия не найдена'], 403);
+        }
+
+        $this->noteFeature(
+            (string) $data['feature_key'],
+            $user,
+            $computer,
+            null,
+            is_array($data['payload'] ?? null) ? $data['payload'] : [],
+        );
+
+        return response()->json(['status' => 'success']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function noteFeature(string $key, ?User $user, ?Computer $computer, ?Booking $booking, array $payload = []): void
+    {
+        app(\App\Services\UserFeatureTelemetry::class)->record(
+            $key,
+            $user,
+            null,
+            $payload,
+            $booking?->id ? (int) $booking->id : null,
+            $computer?->id ? (int) $computer->id : null,
+        );
+    }
+
     /**
      * Resolve player from active booking on terminal; optional user_id must match.
      */
@@ -3571,6 +3680,9 @@ class ShellApiController extends Controller
                 $data['comment'] ?? null,
                 \App\Models\GameRequest::SOURCE_SHELL
             );
+            $this->noteFeature('game_request', $user, Computer::find((int) $data['terminal_id']), $booking, [
+                'title' => $data['title'],
+            ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             $msg = collect($e->errors())->flatten()->first() ?: 'Не удалось создать заявку';
 

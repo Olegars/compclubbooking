@@ -70,6 +70,11 @@ class ShellLanLiveController extends Controller
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
         }
 
+        $this->noteFeature('bounty_create', $user, $computer, $booking, [
+            'target_computer_id' => (int) ($data['target_computer_id'] ?? 0),
+            'stake_type' => $data['stake_type'] ?? 'deposit',
+        ]);
+
         return response()->json(array_merge(
             $this->livePayload($computer, $booking, $user->fresh()),
             [
@@ -137,6 +142,12 @@ class ShellLanLiveController extends Controller
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
         }
 
+        $this->noteFeature('lan_arena_challenge', $user, $computer, $booking, [
+            'action' => 'create',
+            'kind' => $data['kind'] ?? 'duel',
+            'mode' => $data['mode'],
+        ]);
+
         return response()->json(array_merge(
             $this->livePayload($computer, $booking, $user->fresh()),
             [
@@ -155,6 +166,11 @@ class ShellLanLiveController extends Controller
         } catch (RuntimeException $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
         }
+
+        $this->noteFeature('lan_arena_challenge', $user, $computer, $booking, [
+            'action' => 'accept',
+            'uuid' => $uuid,
+        ]);
 
         return response()->json(array_merge(
             $this->livePayload($computer, $booking, $user->fresh()),
@@ -295,6 +311,11 @@ class ShellLanLiveController extends Controller
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
         }
 
+        $this->noteFeature('party_energy_contribute', $user, $computer, $booking, [
+            'minutes' => (int) $data['minutes'],
+            'source' => $data['source'] ?? 'deposit',
+        ]);
+
         return response()->json(array_merge(
             $this->livePayload($computer, $booking, $user->fresh()),
             ['status' => 'success', 'message' => 'Минуты в котле']
@@ -306,6 +327,9 @@ class ShellLanLiveController extends Controller
         [$computer, $booking, $user] = $this->session($request);
         $on = $request->boolean('enabled', true);
         $this->coach->setEnabled($user, $on);
+        $this->noteFeature('ghost_coach_toggle', $user, $computer, $booking, [
+            'enabled' => $on,
+        ]);
 
         return response()->json(array_merge(
             $this->livePayload($computer, $booking, $user->fresh()),
@@ -451,6 +475,10 @@ class ShellLanLiveController extends Controller
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
         }
 
+        $this->noteFeature('lucky_seat_claim', $user, $computer, $booking, [
+            'drop_id' => $id,
+        ]);
+
         $user = $user->fresh() ?? $user;
 
         return response()->json(array_merge(
@@ -476,6 +504,10 @@ class ShellLanLiveController extends Controller
         } catch (RuntimeException $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
         }
+
+        $this->noteFeature('lfg_party_search', $user, $computer, $booking, [
+            'game' => $data['game'],
+        ]);
 
         $extra = [
             'status' => 'success',
@@ -567,6 +599,21 @@ class ShellLanLiveController extends Controller
 
             return null;
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function noteFeature(string $key, User $user, Computer $computer, Booking $booking, array $payload = []): void
+    {
+        app(\App\Services\UserFeatureTelemetry::class)->record(
+            $key,
+            $user,
+            null,
+            $payload,
+            (int) $booking->id,
+            (int) $computer->id,
+        );
     }
 
     /**

@@ -662,6 +662,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::post('/game-requests/bulk-status', [GameRequestAdminController::class, 'bulkStatus']);
 
         Route::get('/analytics', [AnalyticsController::class, 'index'])->name('admin.analytics.index');
+        Route::get('/analytics/features', [\App\Http\Controllers\Admin\FeatureEngagementController::class, 'index'])->name('admin.analytics.features');
 
         Route::get('/fans', [FanAdminController::class, 'index'])->name('admin.fans');
         Route::post('/fans/boards', [FanAdminController::class, 'storeBoard']);
@@ -810,6 +811,7 @@ Route::prefix('api/shell')->group(function () {
 
     // --- SOS вызов администратора с причиной ---
     Route::post('/sos', [ShellApiController::class, 'reportSos']);
+    Route::post('/telemetry/user-action', [ShellApiController::class, 'recordUserAction']);
     Route::post('/incidents', [ShellApiController::class, 'reportIncident']);
     Route::post('/golden-image/revision', [ShellApiController::class, 'postGoldenRevision']);
     Route::get('/golden-image/revisions/{id}', [ShellApiController::class, 'goldenRevision']);

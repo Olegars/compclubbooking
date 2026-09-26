@@ -42,6 +42,13 @@ class GameRequestController extends Controller
             GameRequest::SOURCE_CABINET
         );
 
+        app(\App\Services\UserFeatureTelemetry::class)->record(
+            'game_request',
+            $request->user(),
+            \App\Support\UserFeatureCatalog::SOURCE_WEB,
+            ['title' => $data['title']],
+        );
+
         return response()->json([
             'status' => 'success',
             'message' => 'Заявка принята. Если наберётся спрос — поставим на диски.',

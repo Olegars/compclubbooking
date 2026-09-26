@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Head, router } from '@inertiajs/vue3'
+import { Head, Link, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { useClubName } from '@/Composables/useClubName'
 
@@ -183,6 +183,10 @@ const money = (n: number) =>
                         :class="tab === 'inventory' ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300' : 'bg-black border-white/10 text-white/40'">
                     Склад ABC/XYZ
                 </button>
+                <Link href="/admin/analytics/features"
+                      class="px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all bg-black border-white/10 text-white/40 hover:border-white/30">
+                    Использование фич
+                </Link>
             </div>
 
             <!-- UTILIZATION -->
