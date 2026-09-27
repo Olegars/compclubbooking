@@ -14,7 +14,7 @@ type DocumentDraft = {
     id: number | null
     key: string
     title: string
-    kind: 'employment' | 'fire_safety'
+    kind: 'employment' | 'fire_safety' | 'reactor_ac'
     is_system: boolean
     sections: SectionDraft[]
 }
@@ -22,7 +22,7 @@ type DocumentDraft = {
 type DocumentRow = {
     id: number
     title: string
-    kind: 'employment' | 'fire_safety'
+    kind: 'employment' | 'fire_safety' | 'reactor_ac'
     slug: string
     is_system: boolean
     sort_order: number
@@ -63,9 +63,11 @@ watch(() => props.documents, (rows) => {
     drafts.value = toDrafts(rows)
 }, { deep: true })
 
-const kindLabel = (kind: DocumentDraft['kind']) => kind === 'fire_safety'
-    ? 'После биометрии'
-    : 'При устройстве'
+const kindLabel = (kind: DocumentDraft['kind']) => {
+    if (kind === 'fire_safety') return 'После биометрии'
+    if (kind === 'reactor_ac') return 'Оферта REACTOR AC'
+    return 'При устройстве'
+}
 
 const addSection = (doc: DocumentDraft) => {
     doc.sections.push({
@@ -162,6 +164,7 @@ const canAdd = computed(() => !busyKey.value)
                     <select v-model="doc.kind" :disabled="doc.is_system" :class="inputClass">
                         <option value="employment">При устройстве</option>
                         <option value="fire_safety">После биометрии</option>
+                        <option value="reactor_ac">Оферта REACTOR AC</option>
                     </select>
                     <div class="mt-2 text-[10px] uppercase font-black tracking-widest text-white/25">
                         {{ kindLabel(doc.kind) }}

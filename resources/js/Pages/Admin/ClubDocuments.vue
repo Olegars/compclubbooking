@@ -13,7 +13,7 @@ const { success, error } = useToast()
 type DocumentRow = {
     id: number
     title: string
-    kind: 'employment' | 'fire_safety'
+    kind: 'employment' | 'fire_safety' | 'reactor_ac'
     slug: string
     is_system: boolean
     sort_order: number

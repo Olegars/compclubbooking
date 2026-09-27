@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\StaffDocument;
 use App\Models\StaffDocumentSection;
+use App\Support\ReactorAcOffer;
 use App\Support\StaffEmploymentRules;
 use App\Support\StaffFireSafetyRules;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,13 @@ class StaffDocumentService
             'Техника пожарной безопасности',
             2,
             StaffFireSafetyRules::defaults(),
+        );
+        $this->seedSystem(
+            StaffDocument::SLUG_REACTOR_AC,
+            StaffDocument::KIND_REACTOR_AC,
+            'Оферта REACTOR AC',
+            3,
+            ReactorAcOffer::defaults(),
         );
     }
 

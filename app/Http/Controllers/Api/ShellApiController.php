@@ -2004,6 +2004,10 @@ class ShellApiController extends Controller
             if (!$user) {
                 return response()->json(['message' => 'Пользователь не найден'], 404);
             }
+            $ban = app(\App\Services\ReactorAc\AcGate::class)->fullBanMessage($user);
+            if ($ban) {
+                return response()->json(['message' => $ban], 422);
+            }
 
             $products = Product::whereIn('id', array_keys($qtyByProduct))->get()->keyBy('id');
             if ($products->count() !== count($qtyByProduct)) {

@@ -71,7 +71,7 @@ class ClubConfigController extends Controller
     {
         $data = $request->validate([
             'title' => ['required', 'string', 'max:180'],
-            'kind' => ['required', 'string', 'in:employment,fire_safety'],
+            'kind' => ['required', 'string', 'in:employment,fire_safety,reactor_ac'],
             'sections' => ['required', 'array', 'min:1'],
             'sections.*.id' => ['nullable', 'integer'],
             'sections.*.title' => ['required', 'string', 'max:180'],

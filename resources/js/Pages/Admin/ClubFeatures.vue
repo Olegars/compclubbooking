@@ -8,13 +8,14 @@ import { useToast } from '@/Composables/useToast'
 type Field = {
     key: string
     label: string
-    type: 'int' | 'number' | 'bool'
-    default: number | boolean
+    type: 'int' | 'number' | 'bool' | 'select' | 'string'
+    default: number | boolean | string
     min?: number
     max?: number
     step?: number
     suffix?: string
     hint?: string
+    options?: Array<{ value: string; label: string }>
 }
 
 type Feature = {
@@ -26,7 +27,7 @@ type Feature = {
     icon: string
     admin_path: string | null
     enabled: boolean
-    settings: Record<string, number | boolean>
+    settings: Record<string, number | boolean | string>
     fields: Field[]
 }
 
@@ -43,7 +44,7 @@ const flashSuccess = computed(() => (page.props as any).flash?.success as string
 watch(flashSuccess, (msg) => { if (msg) success(msg) }, { immediate: true })
 watch(() => (page.props as any).errors?.message as string | undefined, (msg) => { if (msg) error(msg) })
 
-const drafts = reactive<Record<string, Record<string, number | boolean>>>({})
+const drafts = reactive<Record<string, Record<string, number | boolean | string>>>({})
 const busy = reactive<Record<string, boolean>>({})
 
 const syncDrafts = (list: Feature[]) => {
@@ -105,6 +106,7 @@ const dirty = (feature: Feature) => {
                 <p class="text-white/50 text-xs font-bold mt-4 leading-relaxed">
                     Выключенная фича пропадает из шелла и перестаёт писать события.
                     Значения по умолчанию совпадают с тем, как контур работал до этой страницы.
+                    REACTOR AC по умолчанию выключен: пустой список фич его не включает.
                 </p>
             </div>
 
@@ -183,6 +185,26 @@ const dirty = (feature: Feature) => {
                                 />
                                 <span class="text-[11px] text-white/45 italic">{{ field.hint || 'Вкл / выкл' }}</span>
                             </div>
+                            <select
+                                v-else-if="field.type === 'select'"
+                                class="w-full bg-black/40 border border-white/10 focus:border-cyan-500/50 rounded-xl px-4 py-3 text-white font-black outline-none disabled:opacity-40"
+                                :disabled="!feature.enabled || busy[feature.key]"
+                                :value="String(drafts[feature.key]?.[field.key] ?? '')"
+                                @change="drafts[feature.key][field.key] = ($event.target as HTMLSelectElement).value"
+                            >
+                                <option v-for="opt in field.options || []" :key="opt.value" :value="opt.value">
+                                    {{ opt.label }}
+                                </option>
+                            </select>
+                            <input
+                                v-else-if="field.type === 'string'"
+                                type="text"
+                                class="w-full bg-black/40 border border-white/10 focus:border-cyan-500/50 rounded-xl px-4 py-3 text-white font-black outline-none disabled:opacity-40"
+                                :maxlength="field.max"
+                                :disabled="!feature.enabled || busy[feature.key]"
+                                :value="String(drafts[feature.key]?.[field.key] ?? '')"
+                                @input="drafts[feature.key][field.key] = ($event.target as HTMLInputElement).value"
+                            />
                             <div v-else class="flex items-center gap-3">
                                 <input
                                     :type="'number'"

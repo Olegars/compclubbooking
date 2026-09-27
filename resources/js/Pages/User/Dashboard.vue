@@ -168,7 +168,7 @@ const cancelBooking = async (b: any) => {
 
 const fetchDashboardData = () => {
     router.reload({
-        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'clips', 'clips_telegram', 'telegram', 'clan_wars', 'arena', 'server_time'],
+        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'clips', 'clips_telegram', 'telegram', 'clan_wars', 'arena', 'reactor_ac', 'server_time'],
         preserveScroll: true
     })
 }
@@ -184,6 +184,7 @@ const clipsTelegram = computed(() => !!(page.props as any).clips_telegram)
 const telegramLink = computed(() => (page.props as any).telegram || {})
 const clanWars = computed(() => (page.props as any).clan_wars || { live: null, mine: [], board: [] })
 const arena = computed(() => (page.props as any).arena || { enabled: false, incoming: null, open: [], live: [], highlight_computer_ids: [] })
+const reactorAc = computed(() => (page.props as any).reactor_ac || { mode: 'off', status: 'off', notice: '' })
 const arenaLive = ref<any>(null)
 const arenaBusy = ref(false)
 const arenaError = ref('')
@@ -700,6 +701,19 @@ onMounted(() => {
             <div class="grid grid-cols-1 md:grid-cols-3 md:gap-6 lg:gap-8 md:px-0">
 
             <div class="md:col-span-2 min-w-0 flex flex-col gap-3 md:gap-6 px-4 md:px-0 bg-transparent">
+
+                <Link
+                    v-if="reactorAc.mode && reactorAc.mode !== 'off'"
+                    href="/ac/download"
+                    class="block border border-cyan-400/30 bg-cyan-500/10 rounded-xl px-4 py-3 text-left"
+                >
+                    <div class="text-[10px] uppercase tracking-[0.28em] font-black text-cyan-300">REACTOR AC</div>
+                    <div class="mt-1 text-[12px] text-white/80">{{ reactorAc.notice }}</div>
+                    <div class="mt-1 text-[10px] uppercase tracking-widest text-white/45">
+                        {{ reactorAc.status === 'online' ? 'клиент на связи' : reactorAc.status === 'banned' ? `бан ${reactorAc.scope || ''}` : 'клиент не запущен' }}
+                        · скачать
+                    </div>
+                </Link>
 
                 <div class="cabinet-block min-w-0 bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-[#22c55e]/20 rounded-xl md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 relative md:shadow-2xl md:shadow-[#22c55e]/5">
 

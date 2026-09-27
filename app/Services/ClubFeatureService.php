@@ -218,7 +218,7 @@ class ClubFeatureService
         $pack = [];
         foreach (ClubFeatureCatalog::all() as $def) {
             $pack[$def['key']] = [
-                'enabled' => true,
+                'enabled' => array_key_exists('default_enabled', $def) ? (bool) $def['default_enabled'] : true,
                 'settings' => ClubFeatureCatalog::defaultSettings($def['key']),
             ];
         }

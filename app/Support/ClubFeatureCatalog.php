@@ -277,6 +277,32 @@ class ClubFeatureCatalog
                 'fields' => [],
             ],
             [
+                'key' => 'reactor_ac',
+                'title' => 'REACTOR AC',
+                'description' => 'Домашний вход на дедик CS2. По умолчанию выключено: пустой club_features античит не включает, арена остаётся с общим паролем. telemetry — сессии без кика. gate — одноразовый connect_token. Установщик и плагин CounterStrikeSharp живут отдельно.',
+                'group' => self::GROUP_ESPORTS,
+                'icon' => '🛡',
+                'admin_path' => '/admin/fair-play',
+                'default_enabled' => false,
+                'fields' => [
+                    self::selectField('mode', 'Режим', 'off', [
+                        ['value' => 'off', 'label' => 'off — как сейчас'],
+                        ['value' => 'telemetry', 'label' => 'telemetry — сессии без кика'],
+                        ['value' => 'gate', 'label' => 'gate — только connect_token'],
+                    ], 'Тумблер включает контур. off не забирает общий пароль арены.'),
+                    self::intField('token_connect_ttl', 'Жизнь connect_token, секунды', 120, 30, 300, 10, 'с'),
+                    self::intField('heartbeat_interval', 'Пульс клиента, секунды', 10, 5, 60, 1, 'с'),
+                    self::intField('heartbeat_stale_sec', 'Тишина службы до кика, секунды', 25, 10, 120, 1, 'с'),
+                    self::intField('css_keepalive_interval', 'Keep-alive плагина, секунды', 30, 10, 120, 5, 'с'),
+                    self::intField('ban_days_temp', 'Первый бан match_making, дни', 7, 1, 90, 1, 'дн'),
+                    self::intField('evidence_retention_days', 'Хранение evidence, дни', 90, 7, 365, 1, 'дн'),
+                    self::intField('disconnect_grace_sec', 'Grace после дисконнекта, секунды', 60, 15, 180, 5, 'с'),
+                    self::intField('keepalive_http_grace_cycles', 'Штрафных циклов HTTP до кика', 1, 0, 3, 1),
+                    self::intField('keepalive_http_retry_sec', 'Повтор keep-alive после сбоя, секунды', 10, 5, 60, 1, 'с'),
+                    self::stringField('club_subnet', 'Подсеть зала', '192.168.20.0/24', 64, 'Фактор A на дедике. Облако само по префиксу не пускает.'),
+                ],
+            ],
+            [
                 'key' => 'achievements',
                 'title' => 'Достижения',
                 'description' => 'Квесты за часы, визиты и ночные сессии. Награда после закрытия брони. План хаба: рамки, статусы, боевой пропуск, внешние ачивки — /admin/docs раздел «Профиль, ачивки и боевой пропуск».',
@@ -400,6 +426,21 @@ class ClubFeatureCatalog
 
             return filter_var($raw, FILTER_VALIDATE_BOOLEAN);
         }
+        if ($type === 'select') {
+            $value = is_scalar($raw) ? (string) $raw : (string) $field['default'];
+            $allowed = array_column($field['options'] ?? [], 'value');
+
+            return in_array($value, $allowed, true) ? $value : (string) $field['default'];
+        }
+        if ($type === 'string') {
+            $value = trim((string) $raw);
+            $max = (int) ($field['max'] ?? 64);
+            if ($value === '') {
+                return (string) $field['default'];
+            }
+
+            return mb_substr($value, 0, $max);
+        }
         if ($type === 'number') {
             $value = is_numeric($raw) ? (float) $raw : (float) $field['default'];
             $min = (float) ($field['min'] ?? $value);
@@ -467,8 +508,36 @@ class ClubFeatureCatalog
     }
 
     /**
+     * @param  list<array{value:string,label:string}>  $options
      * @return array<string, mixed>
      */
+    private static function selectField(string $key, string $label, string $default, array $options, string $hint = ''): array
+    {
+        return [
+            'key' => $key,
+            'label' => $label,
+            'type' => 'select',
+            'default' => $default,
+            'options' => $options,
+            'hint' => $hint,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function stringField(string $key, string $label, string $default, int $max = 64, string $hint = ''): array
+    {
+        return [
+            'key' => $key,
+            'label' => $label,
+            'type' => 'string',
+            'default' => $default,
+            'max' => $max,
+            'hint' => $hint,
+        ];
+    }
+
     private static function boolField(string $key, string $label, bool $default, string $hint = ''): array
     {
         return [

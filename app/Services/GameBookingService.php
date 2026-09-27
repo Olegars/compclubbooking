@@ -197,6 +197,11 @@ class GameBookingService
         ?int $tariffId = null,
         array $addonIds = [],
     ): BookingGroup {
+        $ban = app(ReactorAc\AcGate::class)->fullBanMessage($user);
+        if ($ban) {
+            throw ValidationException::withMessages(['ban' => $ban]);
+        }
+
         return DB::transaction(function () use (
             $user,
             $clubId,

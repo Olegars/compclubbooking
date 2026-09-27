@@ -68,6 +68,10 @@ use App\Http\Controllers\Admin\IncidentClipController;
 use App\Http\Controllers\Admin\BookingSettingsController;
 use App\Http\Controllers\Admin\ClubConfigController;
 use App\Http\Controllers\Admin\ClubFeatureController;
+use App\Http\Controllers\Admin\FairPlayController;
+use App\Http\Controllers\AcDownloadController;
+use App\Http\Controllers\Api\AcClientController;
+use App\Http\Controllers\Api\AcServerController;
 use App\Http\Controllers\Admin\ArenaDuelAdminController;
 use App\Http\Controllers\Admin\AiAssistantSettingsController;
 use App\Http\Controllers\Admin\SystemDocsController;
@@ -93,6 +97,8 @@ use App\Http\Controllers\GameRequestController;
 |--------------------------------------------------------------------------
 */
 Route::get('/', [HomeController::class, 'index'])->name('home');
+Route::get('/play-from-home', [AcDownloadController::class, 'about'])->name('ac.about');
+Route::get('/ac.json', [AcDownloadController::class, 'manifest'])->name('ac.manifest');
 Route::get('/clubs/join', [ClubOpenRegisterController::class, 'create'])->name('clubs.join');
 Route::post('/clubs/join', [ClubOpenRegisterController::class, 'store'])
     ->middleware('throttle:8,60')
@@ -289,6 +295,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/auth/nickname', [SmsAuthController::class, 'saveNickname'])->name('auth.nickname.store');
 
     Route::redirect('/auth/profile', '/account/dashboard');
+    Route::get('/ac/download', [AcDownloadController::class, 'download'])->name('ac.download');
 
     Route::prefix('account')->group(function () {
         Route::get('/dashboard', [ProfileController::class, 'dashboard'])->name('dashboard');
@@ -659,6 +666,10 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::patch('/tournaments/{tournament}/matches/{match}', [TournamentController::class, 'reportMatch']);
         Route::post('/tournaments/{tournament}/payout', [TournamentController::class, 'payout']);
 
+        Route::get('/fair-play', [FairPlayController::class, 'index'])->name('admin.fair-play');
+        Route::post('/fair-play/bans', [FairPlayController::class, 'ban'])->name('admin.fair-play.ban');
+        Route::post('/fair-play/bans/{ban}/pardon', [FairPlayController::class, 'pardon'])->name('admin.fair-play.pardon');
+
         Route::get('/clan-wars', [ClanWarController::class, 'index'])->name('admin.clan-wars.index');
         Route::post('/clan-wars', [ClanWarController::class, 'store']);
         Route::patch('/clan-wars/{clanWar}/status', [ClanWarController::class, 'updateStatus']);
@@ -788,6 +799,21 @@ Route::prefix('api/fans')->group(function () {
 Route::prefix('api/kitchen')->group(function () {
     Route::get('/print-targets', [KitchenPrintRelayController::class, 'targets']);
     Route::post('/print-applied', [KitchenPrintRelayController::class, 'applied']);
+});
+
+Route::prefix('api/ac')->group(function () {
+    Route::post('/login', [AcClientController::class, 'login'])->middleware('throttle:20,1');
+    Route::get('/policy', [AcClientController::class, 'policy']);
+    Route::post('/heartbeat', [AcClientController::class, 'heartbeat']);
+    Route::post('/connect-token', [AcClientController::class, 'connectToken']);
+    Route::post('/events', [AcClientController::class, 'events']);
+    Route::post('/evidence', [AcClientController::class, 'evidence']);
+    Route::post('/server/validate', [AcServerController::class, 'validateToken']);
+    Route::post('/server/validate-station', [AcServerController::class, 'validateStation']);
+    Route::post('/server/heartbeat-check', [AcServerController::class, 'heartbeatCheck']);
+    Route::post('/server/active-sessions', [AcServerController::class, 'activeSessions']);
+    Route::post('/server/validate-session', [AcServerController::class, 'validateSession']);
+    Route::post('/server/kick-ack', [AcServerController::class, 'kickAck']);
 });
 
 Route::prefix('api/video')->group(function () {

@@ -348,6 +348,7 @@ class ProfileController extends Controller
             'telegram' => $telegram->payload($user),
             'clan_wars' => $clanWars,
             'arena' => $this->arenaCabinet($user),
+            'reactor_ac' => app(\App\Services\ReactorAc\AcGate::class)->cabinet($user),
             'server_time' => $now->toIso8601String(),
         ]);
     }

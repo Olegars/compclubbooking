@@ -251,6 +251,10 @@ class ShopController extends Controller
             if (! $user) {
                 return response()->json(['message' => 'Пользователь с таким номером телефона не найден в клубе'], 422);
             }
+            $ban = app(\App\Services\ReactorAc\AcGate::class)->fullBanMessage($user);
+            if ($ban) {
+                return response()->json(['message' => $ban], 422);
+            }
 
             $balance = method_exists($user, 'syncBalanceToWallet')
                 ? $user->syncBalanceToWallet()
