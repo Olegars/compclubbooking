@@ -133,7 +133,12 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('CounterStrikeSharp', $blob);
         $this->assertStringContainsString('Protocol Gate', $blob);
         $this->assertStringContainsString('match_making', $blob);
-        $this->assertStringContainsString('R&D / Conditional', $blob);
+        $this->assertStringContainsString('решение финальное', $blob);
+        $this->assertStringContainsString('Сводная таблица сетевых портов', $blob);
+        $this->assertStringContainsString(':6742 — OpenRGB SDK', $blob);
+        $this->assertStringContainsString('Глоссарий ролей и экранов', $blob);
+        $this->assertStringNotContainsString('R&D / Conditional', $blob);
+        $this->assertStringNotContainsString('Старт фазы 4', $blob);
         $this->assertStringContainsString('ReactorAcGatePlugin', $blob);
         $this->assertStringContainsString('OnClientAuthorized', $blob);
         $this->assertStringContainsString('heartbeat-check', $blob);
