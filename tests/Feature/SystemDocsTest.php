@@ -274,6 +274,16 @@ class SystemDocsTest extends TestCase
         $this->assertStringNotContainsString('htmlspecialchars_decode', $blob);
     }
 
+    public function test_docs_split_store_warehouse_operations(): void
+    {
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
+
+        $this->assertStringContainsString('Менеджер (приход, цены) / Сборщик (used, repair)', $blob);
+        $this->assertStringContainsString('На складе не оприходует и не меняет закупочные цены', $blob);
+        $this->assertStringContainsString('В used переводит деталь при сборке', $blob);
+        $this->assertStringContainsString('сборщик только по своей сборке (assembled_by) или своему заказу (assignee)', $blob);
+    }
+
     private function makeAdmin(string $role): Admin
     {
         return Admin::query()->create([

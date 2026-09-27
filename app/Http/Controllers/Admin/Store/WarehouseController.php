@@ -72,8 +72,7 @@ class WarehouseController extends StoreController
             'canManage' => $admin->canManageStoreCatalog() || $admin->role === 'owner',
             'canReceive' => $admin->canManageStoreInventory()
                 || $admin->canManageStoreCatalog()
-                || $admin->role === 'owner'
-                || $admin->role === 'assembler',
+                || $admin->role === 'owner',
         ]);
     }
 

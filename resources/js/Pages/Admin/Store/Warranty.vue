@@ -13,6 +13,7 @@ const props = defineProps<{
     statuses: string[]
     filters: { status?: string | null }
     canManage: boolean
+    canSendToRepair: boolean
     canClose: boolean
     posPrintEnabled?: boolean
 }>()
@@ -265,7 +266,7 @@ const filterStatus = computed({
                             </div>
                             <div class="flex flex-col items-end gap-2 shrink-0">
                                 <div class="flex flex-wrap justify-end gap-2">
-                                    <button v-if="canManage && item.can_send_to_repair && item.store_component_id"
+                                    <button v-if="canSendToRepair && item.can_send_to_repair && item.store_component_id"
                                             type="button"
                                             class="px-3 py-2 rounded-xl border border-amber-500/40 text-[10px] uppercase font-black text-amber-400 hover:bg-amber-500/10"
                                             @click="sendToRepair(detail.id, item.store_component_id)">

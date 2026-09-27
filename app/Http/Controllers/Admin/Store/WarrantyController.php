@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin\Store;
 
+use App\Models\Admin;
 use App\Models\StoreBuiltPc;
 use App\Models\StoreBuiltPcComponent;
 use App\Models\StoreClient;
@@ -59,6 +60,9 @@ class WarrantyController extends StoreController
             'statuses' => StoreWarranty::STATUSES,
             'filters' => ['status' => $status ?: null],
             'canManage' => $admin->canManageStoreCatalog() || $admin->role === 'owner',
+            'canSendToRepair' => $admin->canManageStoreCatalog()
+                || $admin->role === 'owner'
+                || $admin->role === 'assembler',
             'canClose' => $admin->canCloseWarranties(),
             'posPrintEnabled' => (bool) config('kitchen_print.enabled', false),
         ]);
@@ -149,7 +153,14 @@ class WarrantyController extends StoreController
     public function sendToRepair(Request $request, StoreWarranty $storeWarranty)
     {
         abort_unless($storeWarranty->club_id === $this->locationId(), 404);
-        abort_unless($this->admin()->canManageStoreCatalog() || $this->admin()->role === 'owner', 403);
+        $admin = $this->admin();
+        abort_unless(
+            $admin->canManageStoreCatalog() || $admin->role === 'owner' || $admin->role === 'assembler',
+            403
+        );
+        if ($admin->role === 'assembler') {
+            abort_unless($this->assemblerOwnsWarranty($storeWarranty, $admin), 403);
+        }
 
         $data = $request->validate([
             'store_component_id' => 'required|integer',
@@ -366,6 +377,14 @@ class WarrantyController extends StoreController
         }
 
         return back()->with('success', 'Старая деталь списана, в сборку поставлена замена.');
+    }
+
+    private function assemblerOwnsWarranty(StoreWarranty $storeWarranty, Admin $admin): bool
+    {
+        $storeWarranty->loadMissing(['order:id,assignee_id', 'builtPc:id,assembled_by']);
+
+        return (int) ($storeWarranty->order?->assignee_id ?? 0) === (int) $admin->id
+            || (int) ($storeWarranty->builtPc?->assembled_by ?? 0) === (int) $admin->id;
     }
 
     private function resolveWarrantyComponent(StoreWarranty $storeWarranty, int $componentId): StoreComponent
