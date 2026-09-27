@@ -195,6 +195,9 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('публичного queue API нет', $blob);
         $this->assertStringContainsString('Cyber Cafe IP Whitelist', $blob);
         $this->assertStringContainsString('Source NAT', $blob);
+        $this->assertStringContainsString('per-connection-classifier=src-address', $blob);
+        $this->assertStringContainsString('faceit-seats', $blob);
+        $this->assertStringContainsString('режим pool', $blob);
         $this->assertStringContainsString('TPM 2.0', $blob);
         $this->assertStringContainsString('Secure Boot', $blob);
         $this->assertStringContainsString('FACEIT.sys', $blob);
