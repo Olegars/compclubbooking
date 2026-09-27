@@ -37,7 +37,7 @@ class StoreAssemblyClipRelayController extends Controller
             ]);
         }
 
-        $limit = (int) $request->query('limit', 3);
+        $limit = (int) $request->query('limit', (int) config('video_surveillance.assembly_clip_claim_limit', 1));
         $jobs = $capture->claimPending($limit, $s->club_id ? (int) $s->club_id : $clubId);
 
         return response()->json([

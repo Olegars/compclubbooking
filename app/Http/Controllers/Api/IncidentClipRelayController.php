@@ -38,7 +38,7 @@ class IncidentClipRelayController extends Controller
             ]);
         }
 
-        $limit = (int) $request->query('limit', (int) config('video_surveillance.incident_clip_claim_limit', 2));
+        $limit = (int) $request->query('limit', (int) config('video_surveillance.incident_clip_claim_limit', 1));
         $jobs = $clips->claimPending($limit, $s->club_id ? (int) $s->club_id : $clubId);
 
         return response()->json([

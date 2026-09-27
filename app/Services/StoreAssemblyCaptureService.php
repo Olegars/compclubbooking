@@ -16,7 +16,10 @@ class StoreAssemblyCaptureService
 {
     public const MAX_BYTES = 96 * 1024 * 1024;
 
-    public function __construct(private VideoMarkerService $markers) {}
+    public function __construct(
+        private VideoMarkerService $markers,
+        private ClipExportSlot $exportSlot,
+    ) {}
 
     public function onAssemblyStarted(StoreBuiltPc $pc): void
     {
@@ -167,44 +170,51 @@ class StoreAssemblyCaptureService
     /**
      * @return list<array<string, mixed>>
      */
-    public function claimPending(int $limit = 5, ?int $clubId = null): array
+    public function claimPending(int $limit = 1, ?int $clubId = null): array
     {
-        $limit = max(1, min(20, $limit));
-        $this->releaseStaleClaims((int) config('video_surveillance.stale_claim_minutes', 2));
+        $limit = min(1, max(1, $limit));
 
-        return DB::transaction(function () use ($limit, $clubId) {
-            $q = StoreAssemblyClipJob::query()
-                ->with('builtPc.warranty:id,store_built_pc_id,public_token,serial')
-                ->where('status', StoreAssemblyClipJob::STATUS_PENDING)
-                ->orderBy('id')
-                ->limit($limit)
-                ->lockForUpdate();
-            if ($clubId) {
-                $q->where('club_id', $clubId);
-            }
+        return $this->exportSlot->exclusive(function () use ($limit, $clubId) {
+            $this->exportSlot->releaseStale();
 
-            /** @var Collection<int, StoreAssemblyClipJob> $jobs */
-            $jobs = $q->get();
-            $out = [];
-            foreach ($jobs as $job) {
-                $payload = $this->agentJobPayload($job);
-                if ($payload === null) {
-                    $job->status = StoreAssemblyClipJob::STATUS_FAILED;
-                    $job->last_error = 'NVR api_base_url пуст';
-                    $job->attempts = (int) $job->attempts + 1;
-                    $job->save();
-
-                    continue;
+            return DB::transaction(function () use ($limit, $clubId) {
+                if ($this->exportSlot->held()) {
+                    return [];
                 }
 
-                $job->status = StoreAssemblyClipJob::STATUS_CLAIMED;
-                $job->claimed_at = now();
-                $job->attempts = (int) $job->attempts + 1;
-                $job->save();
-                $out[] = $payload;
-            }
+                $q = StoreAssemblyClipJob::query()
+                    ->with('builtPc.warranty:id,store_built_pc_id,public_token,serial')
+                    ->where('status', StoreAssemblyClipJob::STATUS_PENDING)
+                    ->orderBy('id')
+                    ->limit($limit)
+                    ->lockForUpdate();
+                if ($clubId) {
+                    $q->where('club_id', $clubId);
+                }
 
-            return $out;
+                /** @var Collection<int, StoreAssemblyClipJob> $jobs */
+                $jobs = $q->get();
+                $out = [];
+                foreach ($jobs as $job) {
+                    $payload = $this->agentJobPayload($job);
+                    if ($payload === null) {
+                        $job->status = StoreAssemblyClipJob::STATUS_FAILED;
+                        $job->last_error = 'NVR api_base_url пуст';
+                        $job->attempts = (int) $job->attempts + 1;
+                        $job->save();
+
+                        continue;
+                    }
+
+                    $job->status = StoreAssemblyClipJob::STATUS_CLAIMED;
+                    $job->claimed_at = now();
+                    $job->attempts = (int) $job->attempts + 1;
+                    $job->save();
+                    $out[] = $payload;
+                }
+
+                return $out;
+            });
         });
     }
 

@@ -1,4 +1,4 @@
-# Hikvision NVR marker agent (club LAN) — DS-7764NI-M4 / DS-77xxNI-M4
+﻿# Hikvision NVR marker agent (club LAN) — DS-7764NI-M4 / DS-77xxNI-M4
 # Polls cloud queue and PUTs ISAPI record tags (HTTP Digest) to the NVR.
 #
 # Usage (PowerShell):
@@ -9,7 +9,8 @@
 #
 # NVR IP / login / password come from admin /admin/video-surveillance (in the pull payload).
 # Requires curl.exe (Windows 10+). Run as Scheduled Task on a PC in the club LAN.
-# ffmpeg also pulls assembly clips and hall incident episodes (RTSP playback, -c copy).
+# ffmpeg pulls one clip per cycle: assembly bench OR a hall incident episode, never both.
+# FACE-01 also decodes 2–3 RTSP substreams; a second ffmpeg spikes RAM and drops frames.
 
 $ErrorActionPreference = "Stop"
 
@@ -113,6 +114,150 @@ function Invoke-Isapi([string]$Method, [string]$Url, [string]$Body, [string]$Log
     }
 }
 
+function Test-ClipJob([object]$Resp) {
+    if ($null -eq $Resp -or -not $Resp.enabled) { return $false }
+    $jobs = @($Resp.jobs)
+    if ($jobs.Count -lt 1 -or $null -eq $jobs[0] -or $null -eq $jobs[0].id) { return $false }
+    return $true
+}
+
+# One bench clip. Returns $true when a job was taken (ffmpeg ran), even if encode/upload failed.
+function Invoke-AssemblyClipPass {
+    $clipUrl = "$ApiBase/api/video/assembly-clip-targets?token=$([uri]::EscapeDataString($Token))&limit=1"
+    $clipResp = Invoke-RestMethod -Method Get -Uri $clipUrl -TimeoutSec 20
+    if (-not (Test-ClipJob $clipResp)) { return $false }
+
+    $login = [string]$clipResp.nvr.login
+    $password = [string]$clipResp.nvr.password
+    $sent = New-Object System.Collections.Generic.List[int]
+    $failed = New-Object System.Collections.Generic.List[object]
+    $job = @($clipResp.jobs)[0]
+    $id = [int]$job.id
+    $tmpMp4 = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "assembly-$id.mp4")
+    try {
+        $rtsp = [string]$job.rtsp
+        if (-not $rtsp) { throw "no rtsp in job $id" }
+        $rtsp = $rtsp.Replace("{login}", [uri]::EscapeDataString($login)).Replace("{password}", [uri]::EscapeDataString($password))
+        $seconds = 60
+        if ($null -ne $job.max_seconds) { $seconds = [Math]::Max(30, [int]$job.max_seconds) }
+        $ffBin = $ffmpeg.Source
+        $ffArgs = @(
+            "-y", "-hide_banner", "-loglevel", "error",
+            "-rtsp_transport", "tcp",
+            "-i", $rtsp,
+            "-t", "$seconds",
+            "-vf", "scale=-2:720",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
+            "-an", "-movflags", "+faststart",
+            $tmpMp4
+        )
+        & $ffBin @ffArgs | Out-Null
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $tmpMp4)) {
+            throw "ffmpeg exit $LASTEXITCODE"
+        }
+        $uploadUrl = [string]$job.upload.url
+        $curlArgs = @(
+            "-sS", "-k",
+            "-X", "POST",
+            "-F", "token=$Token",
+            "-F", "job_id=$id",
+            "-F", "clip=@$tmpMp4;type=video/mp4",
+            "--max-time", "180",
+            "-w", "`nHTTPSTATUS:%{http_code}",
+            $uploadUrl
+        )
+        $up = & curl.exe @curlArgs 2>&1 | Out-String
+        if ($up -notmatch "HTTPSTATUS:(2\d\d)") {
+            throw "upload rejected: $up"
+        }
+        $sent.Add($id) | Out-Null
+        Write-Host "$(Get-Date -Format o) assembly clip job $id uploaded"
+    }
+    catch {
+        $msg = $_.Exception.Message
+        $failed.Add([pscustomobject]@{ id = $id; error = $msg }) | Out-Null
+        Write-Warning "assembly job $id failed: $msg"
+    }
+    finally {
+        if (Test-Path $tmpMp4) { Remove-Item $tmpMp4 -Force -ErrorAction SilentlyContinue }
+    }
+
+    $clipBody = @{
+        token    = $Token
+        sent_ids = @($sent)
+        failed   = @($failed)
+    } | ConvertTo-Json -Depth 5
+
+    Invoke-RestMethod -Method Post -Uri "$ApiBase/api/video/assembly-clip-applied" `
+        -ContentType "application/json; charset=utf-8" `
+        -Body $clipBody -TimeoutSec 20 | Out-Null
+    return $true
+}
+
+# One hall episode (-c copy). Returns $true when a job was taken.
+function Invoke-IncidentClipPass {
+    $incUrl = "$ApiBase/api/video/incident-clip-targets?token=$([uri]::EscapeDataString($Token))&limit=1"
+    $incResp = Invoke-RestMethod -Method Get -Uri $incUrl -TimeoutSec 20
+    if (-not (Test-ClipJob $incResp)) { return $false }
+
+    $login = [string]$incResp.nvr.login
+    $password = [string]$incResp.nvr.password
+    $sent = New-Object System.Collections.Generic.List[int]
+    $failed = New-Object System.Collections.Generic.List[object]
+    $job = @($incResp.jobs)[0]
+    $id = [int]$job.id
+    $name = if ($job.file_name_target) { [string]$job.file_name_target } else { "incident-$id.mp4" }
+    $name = [System.IO.Path]::GetFileName($name)
+    $tmpMp4 = [System.IO.Path]::Combine($clipDir, $name)
+    try {
+        $rtsp = [string]$job.rtsp
+        if (-not $rtsp) { throw "no rtsp in job $id" }
+        $rtsp = $rtsp.Replace("{login}", [uri]::EscapeDataString($login)).Replace("{password}", [uri]::EscapeDataString($password))
+        $seconds = 45
+        if ($null -ne $job.max_seconds) { $seconds = [Math]::Max(5, [int]$job.max_seconds) }
+        Invoke-IncidentFfmpeg -Rtsp $rtsp -OutFile $tmpMp4 -Seconds $seconds
+        $uploadUrl = [string]$job.upload.url
+        $curlArgs = @(
+            "-sS", "-k",
+            "-X", "POST",
+            "-F", "token=$Token",
+            "-F", "job_id=$id",
+            "-F", "clip=@$tmpMp4;type=video/mp4",
+            "--max-time", "120",
+            "-w", "`nHTTPSTATUS:%{http_code}",
+            $uploadUrl
+        )
+        $up = & curl.exe @curlArgs 2>&1 | Out-String
+        if ($up -notmatch "HTTPSTATUS:(2\d\d)") {
+            throw "upload rejected: $up"
+        }
+        $sent.Add($id) | Out-Null
+        Write-Host "$(Get-Date -Format o) incident clip job $id uploaded"
+    }
+    catch {
+        $msg = $_.Exception.Message
+        $failed.Add([pscustomobject]@{ id = $id; error = $msg }) | Out-Null
+        Write-Warning "incident job $id failed: $msg"
+    }
+    finally {
+        if (Test-Path $tmpMp4) { Remove-Item $tmpMp4 -Force -ErrorAction SilentlyContinue }
+    }
+
+    $incBody = @{
+        token    = $Token
+        sent_ids = @($sent)
+        failed   = @($failed)
+    } | ConvertTo-Json -Depth 5
+
+    Invoke-RestMethod -Method Post -Uri "$ApiBase/api/video/incident-clip-applied" `
+        -ContentType "application/json; charset=utf-8" `
+        -Body $incBody -TimeoutSec 20 | Out-Null
+    return $true
+}
+
+# After a hall episode, the next cycle looks at the bench first, and the other way around.
+$script:preferIncidentClip = $true
+
 while ($true) {
     try {
         $url = "$ApiBase/api/video/marker-targets?token=$([uri]::EscapeDataString($Token))"
@@ -182,154 +327,31 @@ while ($true) {
         continue
     }
 
-    try {
-        $clipUrl = "$ApiBase/api/video/assembly-clip-targets?token=$([uri]::EscapeDataString($Token))"
-        $clipResp = Invoke-RestMethod -Method Get -Uri $clipUrl -TimeoutSec 20
-        if (-not $clipResp.enabled) {
-            Start-Sleep -Seconds $PollSeconds
-            continue
-        }
-
-        $clipJobs = @($clipResp.jobs)
-        if ($clipJobs.Count -eq 0) {
-            Start-Sleep -Seconds $PollSeconds
-            continue
-        }
-
-        $login = [string]$clipResp.nvr.login
-        $password = [string]$clipResp.nvr.password
-        $sent = New-Object System.Collections.Generic.List[int]
-        $failed = New-Object System.Collections.Generic.List[object]
-
-        foreach ($job in $clipJobs) {
-            $id = [int]$job.id
-            $tmpMp4 = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "assembly-$id.mp4")
-            try {
-                $rtsp = [string]$job.rtsp
-                if (-not $rtsp) { throw "no rtsp in job $id" }
-                $rtsp = $rtsp.Replace("{login}", [uri]::EscapeDataString($login)).Replace("{password}", [uri]::EscapeDataString($password))
-                $seconds = 60
-                if ($null -ne $job.max_seconds) { $seconds = [Math]::Max(30, [int]$job.max_seconds) }
-                $ffBin = $ffmpeg.Source
-                $ffArgs = @(
-                    "-y", "-hide_banner", "-loglevel", "error",
-                    "-rtsp_transport", "tcp",
-                    "-i", $rtsp,
-                    "-t", "$seconds",
-                    "-vf", "scale=-2:720",
-                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
-                    "-an", "-movflags", "+faststart",
-                    $tmpMp4
-                )
-                & $ffBin @ffArgs
-                if ($LASTEXITCODE -ne 0 -or -not (Test-Path $tmpMp4)) {
-                    throw "ffmpeg exit $LASTEXITCODE"
-                }
-                $uploadUrl = [string]$job.upload.url
-                $curlArgs = @(
-                    "-sS", "-k",
-                    "-X", "POST",
-                    "-F", "token=$Token",
-                    "-F", "job_id=$id",
-                    "-F", "clip=@$tmpMp4;type=video/mp4",
-                    "--max-time", "180",
-                    "-w", "`nHTTPSTATUS:%{http_code}",
-                    $uploadUrl
-                )
-                $up = & curl.exe @curlArgs 2>&1 | Out-String
-                if ($up -notmatch "HTTPSTATUS:(2\d\d)") {
-                    throw "upload rejected: $up"
-                }
-                $sent.Add($id) | Out-Null
-                Write-Host "$(Get-Date -Format o) assembly clip job $id uploaded"
+    # One ffmpeg this cycle. Prefer the queue we did not cut last time.
+    # An empty queue falls through to the other; a taken job does not.
+    $phases = if ($script:preferIncidentClip) { @("incident", "assembly") } else { @("assembly", "incident") }
+    $cutKind = $null
+    foreach ($phase in $phases) {
+        try {
+            $took = $false
+            if ($phase -eq "incident") {
+                $took = Invoke-IncidentClipPass
+            } else {
+                $took = Invoke-AssemblyClipPass
             }
-            catch {
-                $msg = $_.Exception.Message
-                $failed.Add([pscustomobject]@{ id = $id; error = $msg }) | Out-Null
-                Write-Warning "assembly job $id failed: $msg"
-            }
-            finally {
-                if (Test-Path $tmpMp4) { Remove-Item $tmpMp4 -Force -ErrorAction SilentlyContinue }
+            if ($took) {
+                $cutKind = $phase
+                break
             }
         }
-
-        $clipBody = @{
-            token    = $Token
-            sent_ids = @($sent)
-            failed   = @($failed)
-        } | ConvertTo-Json -Depth 5
-
-        Invoke-RestMethod -Method Post -Uri "$ApiBase/api/video/assembly-clip-applied" `
-            -ContentType "application/json; charset=utf-8" `
-            -Body $clipBody -TimeoutSec 20 | Out-Null
-    }
-    catch {
-        Write-Warning "$(Get-Date -Format o) assembly clip poll error: $($_.Exception.Message)"
-    }
-
-    try {
-        $incUrl = "$ApiBase/api/video/incident-clip-targets?token=$([uri]::EscapeDataString($Token))&limit=1"
-        $incResp = Invoke-RestMethod -Method Get -Uri $incUrl -TimeoutSec 20
-        if ($incResp.enabled -and $null -ne $incResp.jobs) {
-            $incJobs = @($incResp.jobs)
-            if ($incJobs.Count -gt 0 -and $null -ne $incJobs[0].id) {
-                $login = [string]$incResp.nvr.login
-                $password = [string]$incResp.nvr.password
-                $sent = New-Object System.Collections.Generic.List[int]
-                $failed = New-Object System.Collections.Generic.List[object]
-                $job = $incJobs[0]
-                $id = [int]$job.id
-                $name = if ($job.file_name_target) { [string]$job.file_name_target } else { "incident-$id.mp4" }
-                $name = [System.IO.Path]::GetFileName($name)
-                $tmpMp4 = [System.IO.Path]::Combine($clipDir, $name)
-                try {
-                    $rtsp = [string]$job.rtsp
-                    if (-not $rtsp) { throw "no rtsp in job $id" }
-                    $rtsp = $rtsp.Replace("{login}", [uri]::EscapeDataString($login)).Replace("{password}", [uri]::EscapeDataString($password))
-                    $seconds = 45
-                    if ($null -ne $job.max_seconds) { $seconds = [Math]::Max(5, [int]$job.max_seconds) }
-                    Invoke-IncidentFfmpeg -Rtsp $rtsp -OutFile $tmpMp4 -Seconds $seconds
-                    $uploadUrl = [string]$job.upload.url
-                    $curlArgs = @(
-                        "-sS", "-k",
-                        "-X", "POST",
-                        "-F", "token=$Token",
-                        "-F", "job_id=$id",
-                        "-F", "clip=@$tmpMp4;type=video/mp4",
-                        "--max-time", "120",
-                        "-w", "`nHTTPSTATUS:%{http_code}",
-                        $uploadUrl
-                    )
-                    $up = & curl.exe @curlArgs 2>&1 | Out-String
-                    if ($up -notmatch "HTTPSTATUS:(2\d\d)") {
-                        throw "upload rejected: $up"
-                    }
-                    $sent.Add($id) | Out-Null
-                    Write-Host "$(Get-Date -Format o) incident clip job $id uploaded"
-                }
-                catch {
-                    $msg = $_.Exception.Message
-                    $failed.Add([pscustomobject]@{ id = $id; error = $msg }) | Out-Null
-                    Write-Warning "incident job $id failed: $msg"
-                }
-                finally {
-                    if (Test-Path $tmpMp4) { Remove-Item $tmpMp4 -Force -ErrorAction SilentlyContinue }
-                }
-
-                $incBody = @{
-                    token    = $Token
-                    sent_ids = @($sent)
-                    failed   = @($failed)
-                } | ConvertTo-Json -Depth 5
-
-                Invoke-RestMethod -Method Post -Uri "$ApiBase/api/video/incident-clip-applied" `
-                    -ContentType "application/json; charset=utf-8" `
-                    -Body $incBody -TimeoutSec 20 | Out-Null
-            }
+        catch {
+            Write-Warning "$(Get-Date -Format o) $phase clip poll error: $($_.Exception.Message)"
         }
     }
-    catch {
-        Write-Warning "$(Get-Date -Format o) incident clip poll error: $($_.Exception.Message)"
+    if ($cutKind -eq "incident") {
+        $script:preferIncidentClip = $false
+    } elseif ($cutKind -eq "assembly") {
+        $script:preferIncidentClip = $true
     }
 
     Start-Sleep -Seconds $PollSeconds

@@ -21,7 +21,10 @@ class IncidentClipService
 {
     public const MAX_BYTES = 96 * 1024 * 1024;
 
-    public function __construct(private VideoMarkerService $markers) {}
+    public function __construct(
+        private VideoMarkerService $markers,
+        private ClipExportSlot $exportSlot,
+    ) {}
 
     /**
      * @return array{status:string,job_id:?int,file_name:?string,error:?string,play_url:?string}
@@ -150,45 +153,52 @@ class IncidentClipService
     /**
      * @return list<array<string, mixed>>
      */
-    public function claimPending(int $limit = 2, ?int $clubId = null): array
+    public function claimPending(int $limit = 1, ?int $clubId = null): array
     {
-        $limit = max(1, min(3, $limit));
-        $this->releaseStaleClaims((int) config('video_surveillance.incident_clip_stale_minutes', 4));
+        $limit = min(1, max(1, $limit));
 
-        return DB::transaction(function () use ($limit, $clubId) {
-            $q = IncidentClipJob::query()
-                ->where('status', IncidentClipJob::STATUS_PENDING)
-                ->orderBy('id')
-                ->limit($limit)
-                ->lockForUpdate();
-            if ($clubId) {
-                $q->where('club_id', $clubId);
-            }
+        return $this->exportSlot->exclusive(function () use ($limit, $clubId) {
+            $this->exportSlot->releaseStale();
 
-            /** @var Collection<int, IncidentClipJob> $jobs */
-            $jobs = $q->get();
-            $out = [];
-            foreach ($jobs as $job) {
-                $payload = $this->agentJobPayload($job);
-                if ($payload === null) {
-                    $job->status = IncidentClipJob::STATUS_FAILED;
-                    $job->last_error = $job->last_error ?: 'NVR api_base_url пуст';
+            return DB::transaction(function () use ($limit, $clubId) {
+                if ($this->exportSlot->held()) {
+                    return [];
+                }
+
+                $q = IncidentClipJob::query()
+                    ->where('status', IncidentClipJob::STATUS_PENDING)
+                    ->orderBy('id')
+                    ->limit($limit)
+                    ->lockForUpdate();
+                if ($clubId) {
+                    $q->where('club_id', $clubId);
+                }
+
+                /** @var Collection<int, IncidentClipJob> $jobs */
+                $jobs = $q->get();
+                $out = [];
+                foreach ($jobs as $job) {
+                    $payload = $this->agentJobPayload($job);
+                    if ($payload === null) {
+                        $job->status = IncidentClipJob::STATUS_FAILED;
+                        $job->last_error = $job->last_error ?: 'NVR api_base_url пуст';
+                        $job->attempts = (int) $job->attempts + 1;
+                        $job->save();
+                        $this->syncIncidentRow($job);
+
+                        continue;
+                    }
+
+                    $job->status = IncidentClipJob::STATUS_CLAIMED;
+                    $job->claimed_at = now();
                     $job->attempts = (int) $job->attempts + 1;
                     $job->save();
                     $this->syncIncidentRow($job);
-
-                    continue;
+                    $out[] = $payload;
                 }
 
-                $job->status = IncidentClipJob::STATUS_CLAIMED;
-                $job->claimed_at = now();
-                $job->attempts = (int) $job->attempts + 1;
-                $job->save();
-                $this->syncIncidentRow($job);
-                $out[] = $payload;
-            }
-
-            return $out;
+                return $out;
+            });
         });
     }
 

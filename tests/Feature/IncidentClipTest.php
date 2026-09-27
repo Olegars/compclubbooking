@@ -6,9 +6,12 @@ use App\Models\Admin;
 use App\Models\Club;
 use App\Models\Computer;
 use App\Models\IncidentClipJob;
+use App\Models\StoreAssemblyClipJob;
+use App\Models\StoreBuiltPc;
 use App\Models\VideoSurveillanceSetting;
 use App\Services\Hikvision\HikvisionIsapiMarker;
 use App\Services\IncidentClipService;
+use App\Services\StoreAssemblyCaptureService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -204,5 +207,126 @@ class IncidentClipTest extends TestCase
             ->get('/admin/incidents/clips/'.$job->id)
             ->assertOk()
             ->assertHeader('content-type', 'video/mp4');
+    }
+
+    public function test_assembly_and_incident_clips_share_one_ffmpeg_slot(): void
+    {
+        $this->enableHikvision();
+
+        $first = $this->pendingIncident(1, Carbon::parse('2026-09-23 12:00:00'));
+        $second = $this->pendingIncident(2, Carbon::parse('2026-09-23 18:00:00'));
+        $assembly = $this->pendingAssembly();
+
+        $this->get('/api/video/incident-clip-targets?token='.$this->token.'&limit=3')
+            ->assertOk()
+            ->assertJsonPath('count', 1)
+            ->assertJsonPath('jobs.0.id', $first->id);
+
+        $this->assertSame(IncidentClipJob::STATUS_CLAIMED, $first->fresh()->status);
+        $this->assertSame(IncidentClipJob::STATUS_PENDING, $second->fresh()->status);
+
+        $this->get('/api/video/assembly-clip-targets?token='.$this->token.'&limit=3')
+            ->assertOk()
+            ->assertJsonPath('count', 0);
+        $this->assertSame(StoreAssemblyClipJob::STATUS_PENDING, $assembly->fresh()->status);
+
+        $this->get('/api/video/incident-clip-targets?token='.$this->token)
+            ->assertOk()
+            ->assertJsonPath('count', 0);
+
+        app(IncidentClipService::class)->markFailed([
+            ['id' => $first->id, 'error' => 'slot test'],
+        ]);
+
+        $this->get('/api/video/assembly-clip-targets?token='.$this->token)
+            ->assertOk()
+            ->assertJsonPath('count', 1)
+            ->assertJsonPath('jobs.0.id', $assembly->id);
+        $this->assertSame(IncidentClipJob::STATUS_PENDING, $second->fresh()->status);
+
+        $this->get('/api/video/incident-clip-targets?token='.$this->token)
+            ->assertOk()
+            ->assertJsonPath('count', 0);
+
+        app(StoreAssemblyCaptureService::class)->markFailed([
+            ['id' => $assembly->id, 'error' => 'slot test'],
+        ]);
+
+        $this->get('/api/video/incident-clip-targets?token='.$this->token)
+            ->assertOk()
+            ->assertJsonPath('count', 1)
+            ->assertJsonPath('jobs.0.id', $second->id);
+    }
+
+    public function test_stale_assembly_claim_does_not_block_an_incident_clip(): void
+    {
+        $this->enableHikvision();
+        $incident = $this->pendingIncident(9, Carbon::parse('2026-09-23 15:00:00'));
+        $assembly = $this->pendingAssembly();
+        $assembly->update([
+            'status' => StoreAssemblyClipJob::STATUS_CLAIMED,
+            'claimed_at' => now()->subMinutes(45),
+        ]);
+
+        $this->get('/api/video/incident-clip-targets?token='.$this->token)
+            ->assertOk()
+            ->assertJsonPath('count', 1)
+            ->assertJsonPath('jobs.0.id', $incident->id);
+
+        $this->assertSame(StoreAssemblyClipJob::STATUS_PENDING, $assembly->fresh()->status);
+    }
+
+    public function test_assembly_claim_still_blocks_incident_while_the_bench_clip_encodes(): void
+    {
+        $this->enableHikvision();
+        $incident = $this->pendingIncident(11, Carbon::parse('2026-09-23 16:00:00'));
+        $assembly = $this->pendingAssembly();
+        $assembly->update([
+            'status' => StoreAssemblyClipJob::STATUS_CLAIMED,
+            'claimed_at' => now()->subMinutes(10),
+        ]);
+
+        $this->get('/api/video/incident-clip-targets?token='.$this->token)
+            ->assertOk()
+            ->assertJsonPath('count', 0);
+
+        $this->assertSame(IncidentClipJob::STATUS_PENDING, $incident->fresh()->status);
+        $this->assertSame(StoreAssemblyClipJob::STATUS_CLAIMED, $assembly->fresh()->status);
+    }
+
+    private function pendingIncident(int $subjectId, Carbon $event): IncidentClipJob
+    {
+        return IncidentClipJob::query()->create([
+            'club_id' => $this->club->id,
+            'subject_type' => IncidentClipJob::SUBJECT_HID,
+            'subject_id' => $subjectId,
+            'computer_id' => $this->pc->id,
+            'status' => IncidentClipJob::STATUS_PENDING,
+            'channel' => '8',
+            'track_id' => 801,
+            'event_at' => $event,
+            'starts_at' => $event->copy()->subSeconds(30),
+            'ends_at' => $event->copy()->addSeconds(15),
+            'file_name' => 'inc_'.$subjectId.'_pc08_hid.mp4',
+        ]);
+    }
+
+    private function pendingAssembly(): StoreAssemblyClipJob
+    {
+        $pc = StoreBuiltPc::query()->create([
+            'club_id' => $this->club->id,
+            'title' => 'Стол',
+            'status' => 'assembling',
+        ]);
+
+        return StoreAssemblyClipJob::query()->create([
+            'club_id' => $this->club->id,
+            'store_built_pc_id' => $pc->id,
+            'status' => StoreAssemblyClipJob::STATUS_PENDING,
+            'channel' => '4',
+            'track_id' => 401,
+            'starts_at' => now()->subHour(),
+            'ends_at' => now(),
+        ]);
     }
 }
