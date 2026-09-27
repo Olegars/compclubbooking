@@ -36,6 +36,7 @@ class StaffEdoDocumentRenderer
             .'<p>Зафиксировано: '.$this->e((string) $when).'</p>'
             .'<p>Слот: '.$this->e((string) ($meta['slot_label'] ?? '—')).'</p>'
             .'<p>Основание: '.$this->e((string) ($meta['note'] ?? '')).'</p>'
+            .'<p>Это автоматическая фиксация. Она не закрывает доступ, не списывает оплату и сама по себе не является основанием увольнения.</p>'
             .$this->stamp('Метаданные', json_encode($meta, JSON_UNESCAPED_UNICODE))
         );
     }
@@ -79,6 +80,54 @@ class StaffEdoDocumentRenderer
             '<p>Сотрудник '.$this->e($incident->admin?->name).' не предоставил письменные объяснения '
             .'в срок до '.$this->e((string) $deadline).'.</p>'
             .'<p>Акт составлен на следующий календарный день после истечения срока, установленного статьёй 193 ТК РФ.</p>'
+            .'<p>Акт не увольняет работника и не списывает оплату.</p>'
+        );
+    }
+
+    public function dismissalMemoDraft(StaffDisciplinaryIncident $incident): string
+    {
+        $incident->loadMissing('admin');
+        $meta = $incident->evidence_meta ?? [];
+        $when = $incident->detected_at?->timezone(config('app.timezone'))->format('d.m.Y H:i');
+
+        return $this->page(
+            'Докладная записка (проект)',
+            '<p><strong>Проект. Без подписи ответственного лица силы не имеет.</strong></p>'
+            .'<p>Кому: управляющему.</p>'
+            .'<p>Сигнал системы (слот или камера ресепшена), не акт комиссии и не приказ.</p>'
+            .'<p>Сотрудник: '.$this->e($incident->admin?->name).'</p>'
+            .'<p>Вид: '.$this->e(StaffDisciplinaryIncident::typeLabel($incident->incident_type)).'</p>'
+            .'<p>Зафиксировано: '.$this->e((string) $when).'</p>'
+            .'<p>Слот: '.$this->e((string) ($meta['slot_label'] ?? '—')).'</p>'
+            .'<p>Что увидела система: '.$this->e((string) ($meta['note'] ?? '')).'</p>'
+            .'<p>Доступ сотрудника не блокируется. Начисления и квартальный фонд не списываются.</p>'
+            .'<p>Старший администратор в разделе «Штат» может нажать «Подтвердить увольнение» — тогда готовится докладная на его подпись.</p>'
+        );
+    }
+
+    public function dismissalMemo(StaffDisciplinaryIncident $incident, Admin $author): string
+    {
+        $incident->loadMissing('admin');
+        $meta = $incident->evidence_meta ?? [];
+        $when = $incident->detected_at?->timezone(config('app.timezone'))->format('d.m.Y H:i');
+        $date = now()->timezone(config('app.timezone'))->format('d.m.Y');
+
+        return $this->page(
+            'Докладная записка',
+            '<p>Кому: управляющему.</p>'
+            .'<p>От: '.$this->e($author->name).', '.$this->e($author->roleLabel()).'.</p>'
+            .'<p>Дата подготовки: '.$this->e($date).'.</p>'
+            .'<p>Прошу рассмотреть вопрос о дисциплинарном взыскании в отношении '
+            .$this->e($incident->admin?->name).' по сигналу от '.$this->e((string) $when).'.</p>'
+            .'<p>Вид сигнала: '.$this->e(StaffDisciplinaryIncident::typeLabel($incident->incident_type)).'.</p>'
+            .'<p>Слот: '.$this->e((string) ($meta['slot_label'] ?? '—')).'.</p>'
+            .'<p>Содержание сигнала: '.$this->e((string) ($meta['note'] ?? '')).'</p>'
+            .'<p>Данные компьютерного зрения и автоматическая фиксация сами по себе прогул не доказывают. '
+            .'Перед приказом нужны объяснения работника по статье 193 ТК РФ.</p>'
+            .'<p>Эта записка не прекращает трудовой договор, не закрывает кабинет и не списывает оплату. '
+            .'Увольнение по подпункту «а» пункта 6 части 1 статьи 81 ТК РФ оформляется бумажным приказом работодателя.</p>'
+            .'<p>Подпись старшего администратора: _____________ &nbsp;&nbsp; Дата: _____________</p>'
+            .'<p>Электронная подпись в кабинете ставится отдельно и хранится в штампе этого документа.</p>'
         );
     }
 

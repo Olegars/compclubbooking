@@ -107,13 +107,13 @@ class StaffEdoController extends Controller
             return back()->withErrors(['message' => $e->getMessage()]);
         }
 
-        return back()->with('success', $count > 0 ? 'Акт подписан.' : 'Новых актов для подписи нет.');
+        return back()->with('success', $count > 0 ? 'Подпись поставлена.' : 'Новых документов для подписи нет.');
     }
 
     public function resolve(Request $request, StaffDisciplinaryIncident $incident)
     {
         $data = $request->validate([
-            'decision' => ['required', 'in:excuse,dismiss'],
+            'decision' => ['required', 'in:excuse,confirm_dismissal,dismiss'],
         ]);
 
         try {
@@ -123,8 +123,8 @@ class StaffEdoController extends Controller
         }
 
         $text = $data['decision'] === 'excuse'
-            ? 'Причина признана уважительной, кабинет открыт.'
-            : 'Инцидент передан на взыскание. Можно скачать архив.';
+            ? 'Причина признана уважительной.'
+            : 'Докладная записка подготовлена на подпись. Доступ не закрыт, начисления не списаны.';
 
         return back()->with('success', $text);
     }

@@ -41,7 +41,7 @@ const when = (iso) => {
         <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
                 <h2 class="text-sm font-black uppercase italic tracking-widest text-white">Кадровые инциденты</h2>
-                <p class="text-white/40 text-xs mt-1">Акты отсутствия, объяснительные и пакет на прогул</p>
+                <p class="text-white/40 text-xs mt-1">Проект докладной для управляющего. Доступ не закрывается и оплата не списывается</p>
             </div>
             <div class="flex gap-2">
                 <button type="button" class="px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest"
@@ -73,6 +73,12 @@ const when = (iso) => {
 
             <p v-if="row.explanation_text" class="text-sm text-white/70 whitespace-pre-wrap">{{ row.explanation_text }}</p>
             <p v-if="!row.demand_delivered_at" class="text-xs text-white/40">Сотрудник ещё не открыл требование в кабинете.</p>
+            <p v-if="row.status === 'memo_for_signature'" class="text-xs text-amber-200/80">
+                Докладная на подписи старшего администратора. Это не приказ: кабинет открыт, баллы на месте.
+            </p>
+            <p v-else-if="row.status !== 'resolved_excused'" class="text-xs text-white/40">
+                Автоматика подготовила проект. «Подтвердить увольнение» сразу собирает докладную на подпись.
+            </p>
             <p class="text-[11px] text-white/30">Подписей комиссии: {{ row.signatures }} / {{ row.signatures_required }}</p>
 
             <div class="flex flex-wrap gap-2">
@@ -93,10 +99,14 @@ const when = (iso) => {
                         class="px-3 py-2 bg-[#22c55e] text-black rounded-xl text-[10px] uppercase font-black tracking-widest">
                     Причина уважительная
                 </button>
-                <button v-if="row.can_dismiss" type="button" :disabled="busy"
-                        @click="busy = true; router.post(`/admin/staff/incidents/${row.id}/resolve`, { decision: 'dismiss' }, { preserveScroll: true, onFinish: () => busy = false })"
+                <button v-if="row.can_confirm_dismissal" type="button" :disabled="busy"
+                        @click="busy = true; router.post(`/admin/staff/incidents/${row.id}/resolve`, { decision: 'confirm_dismissal' }, { preserveScroll: true, onFinish: () => busy = false })"
                         class="px-3 py-2 bg-red-500 text-black rounded-xl text-[10px] uppercase font-black tracking-widest">
-                    На взыскание
+                    Подтвердить увольнение
+                </button>
+                <button v-if="row.can_sign_memo" type="button" :disabled="busy" @click="post(`/admin/staff/incidents/${row.id}/sign`)"
+                        class="px-3 py-2 bg-white text-black rounded-xl text-[10px] uppercase font-black tracking-widest">
+                    Подписать докладную
                 </button>
                 <a v-if="row.can_export" :href="`/admin/staff/incidents/${row.id}/dossier`"
                    class="px-3 py-2 border border-white/15 rounded-xl text-[10px] uppercase font-black tracking-widest text-white">

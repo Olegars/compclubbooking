@@ -9,7 +9,6 @@ use App\Models\Shift;
 use App\Models\ShiftSlotBooking;
 use App\Models\StaffBonusSetting;
 use App\Models\StaffBonusSettlement;
-use App\Models\StaffDisciplinaryIncident;
 use App\Models\StaffLedger;
 use App\Models\StaffQuarterReserve;
 use App\Models\StaffXpTransaction;
@@ -561,21 +560,6 @@ class StaffBonusService
             ->where('period_label', $label)
             ->exists();
         if ($exists) {
-            return false;
-        }
-
-        $start = Carbon::create((int) $reserve->year, ((int) $reserve->quarter - 1) * 3 + 1, 1)->startOfMonth();
-        $end = Carbon::create((int) $reserve->year, (int) $reserve->quarter * 3, 1)->endOfMonth();
-        $openIncident = StaffDisciplinaryIncident::query()
-            ->where('admin_id', $reserve->admin_id)
-            ->whereIn('status', [
-                StaffDisciplinaryIncident::STATUS_DEMAND,
-                StaffDisciplinaryIncident::STATUS_EXPLAINED,
-                StaffDisciplinaryIncident::STATUS_EXPIRED,
-            ])
-            ->whereBetween('detected_at', [$start, $end])
-            ->exists();
-        if ($openIncident) {
             return false;
         }
 

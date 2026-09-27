@@ -108,15 +108,15 @@ const waiting = () => props.edo.incident?.status !== 'demand_sent'
 
         <div v-else class="text-sm text-white/70">
             <p v-if="edo.incident?.status === 'explanation_submitted'">
-                Объяснительная у управляющего. Касса и слоты закрыты, пока он не признает причину уважительной.
+                Объяснительная у управляющего. Кабинет остаётся открытым, оплата не списывается.
             </p>
             <p v-else-if="edo.incident?.status === 'expired_no_response'">
-                Срок вышел, объяснений нет. Дальше решает комиссия.
+                Срок вышел, объяснений нет. Старший администратор может подготовить докладную на подпись. Кабинет не закрыт.
             </p>
             <p v-else-if="edo.incident?.explanation_text" class="whitespace-pre-wrap text-white/50 mt-3">
                 {{ edo.incident.explanation_text }}
             </p>
-            <p v-else>Материалы переданы на взыскание. Бумажный приказ подписывает работодатель.</p>
+            <p v-else>Докладная ждёт подписи старшего администратора. Это не приказ об увольнении.</p>
         </div>
     </div>
 </template>

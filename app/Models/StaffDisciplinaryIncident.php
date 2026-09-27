@@ -22,11 +22,18 @@ class StaffDisciplinaryIncident extends Model
 
     public const STATUS_PUNISHED = 'punished';
 
-    public const BLOCKING = [
+    /** Докладная подготовлена кнопкой старшего администратора и ждёт его подписи. */
+    public const STATUS_MEMO = 'memo_for_signature';
+
+    /**
+     * Открытые статусы для журнала и бейджа. Кабинет по ним не закрывается:
+     * данные камеры и автоматический акт не блокируют доступ.
+     */
+    public const OPEN = [
         self::STATUS_DEMAND,
         self::STATUS_EXPLAINED,
         self::STATUS_EXPIRED,
-        self::STATUS_PUNISHED,
+        self::STATUS_MEMO,
     ];
 
     protected $fillable = [
@@ -97,6 +104,7 @@ class StaffDisciplinaryIncident extends Model
             self::STATUS_EXPIRED => 'Срок объяснений истёк',
             self::STATUS_EXCUSED => 'Причина уважительная',
             self::STATUS_PUNISHED => 'На взыскание',
+            self::STATUS_MEMO => 'Докладная на подписи',
             default => $status,
         };
     }

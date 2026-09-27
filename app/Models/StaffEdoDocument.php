@@ -17,6 +17,10 @@ class StaffEdoDocument extends Model
 
     public const TYPE_NO_EXPLANATION = 'no_explanation_act';
 
+    public const TYPE_REPORT_DRAFT = 'report_memo_draft';
+
+    public const TYPE_REPORT_MEMO = 'report_memo';
+
     public const COMMISSION_TYPES = [
         self::TYPE_ABSENCE,
         self::TYPE_NO_EXPLANATION,

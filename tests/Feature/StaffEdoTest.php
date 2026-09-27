@@ -67,7 +67,7 @@ class StaffEdoTest extends TestCase
         ]);
     }
 
-    public function test_missed_slot_blocks_cabinet_until_excuse(): void
+    public function test_missed_slot_keeps_cabinet_open_until_excuse(): void
     {
         $admin = $this->makeAdmin('supervisor');
         $admin->update(['hired_at' => now()]);
@@ -86,15 +86,22 @@ class StaffEdoTest extends TestCase
 
         $this->actingAs($admin, 'admin')
             ->get('/admin/dashboard')
-            ->assertRedirect('/admin/salary');
+            ->assertOk();
 
         $this->actingAs($admin, 'admin')
             ->get('/admin/salary')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->where('edo.blocking', true)
+                ->where('edo.blocking', false)
                 ->where('edo.incident.type', 'shift_absence')
             );
+
+        $incident = StaffDisciplinaryIncident::query()->first();
+        $this->assertDatabaseHas('staff_edo_documents', [
+            'incident_id' => $incident->id,
+            'doc_type' => 'report_memo_draft',
+        ]);
+        $this->assertNotNull($incident->evidence_meta['manager_notified_at'] ?? null);
 
         $incident = StaffDisciplinaryIncident::query()->first();
         $this->assertNotNull($incident->demand_delivered_at);
@@ -153,36 +160,45 @@ class StaffEdoTest extends TestCase
         $this->assertSame(StaffDisciplinaryIncident::STATUS_EXPIRED, $incident->fresh()->status);
 
         $owner = $this->makeAdmin('owner');
-        $supervisor = $this->makeAdmin('supervisor');
-        foreach ([$owner, $supervisor] as $signer) {
-            $this->actingAs($signer, 'admin')
-                ->withoutMiddleware(ValidateCsrfToken::class)
-                ->post('/admin/staff/incidents/'.$incident->id.'/sign')
-                ->assertRedirect()
-                ->assertSessionHas('success');
-        }
+        $this->actingAs($owner, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/admin/staff/incidents/'.$incident->id.'/resolve', ['decision' => 'confirm_dismissal'])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $incident->refresh();
+        $this->assertSame(StaffDisciplinaryIncident::STATUS_MEMO, $incident->status);
+        $this->assertEquals(0.0, (float) $incident->xp_forfeited);
+        $this->assertDatabaseMissing('staff_sfr_events', [
+            'incident_id' => $incident->id,
+        ]);
+        $this->assertSame(40.0, (float) StaffQuarterReserve::query()->where('admin_id', $admin->id)->value('points'));
+        $this->assertDatabaseHas('staff_edo_documents', [
+            'incident_id' => $incident->id,
+            'doc_type' => 'report_memo',
+            'doc_title' => 'Докладная записка',
+        ]);
 
         $this->actingAs($owner, 'admin')
             ->withoutMiddleware(ValidateCsrfToken::class)
-            ->post('/admin/staff/incidents/'.$incident->id.'/resolve', ['decision' => 'dismiss'])
-            ->assertRedirect();
+            ->post('/admin/staff/incidents/'.$incident->id.'/sign')
+            ->assertRedirect()
+            ->assertSessionHas('success');
 
-        $incident->refresh();
-        $this->assertSame(StaffDisciplinaryIncident::STATUS_PUNISHED, $incident->status);
-        $this->assertEquals(40.0, (float) $incident->xp_forfeited);
-        $this->assertDatabaseHas('staff_sfr_events', [
-            'incident_id' => $incident->id,
-            'event_code' => 'UVOLNENIE',
-            'reason_code' => 'п6ч1с81',
-        ]);
-        $this->assertSame(0.0, (float) StaffQuarterReserve::query()->where('admin_id', $admin->id)->value('points'));
+        $memo = \App\Models\StaffEdoDocument::query()
+            ->where('incident_id', $incident->id)
+            ->where('doc_type', 'report_memo')
+            ->first();
+        $this->assertSame($owner->id, $memo->signatures[0]['admin_id'] ?? null);
+        $this->assertSame(40.0, (float) StaffQuarterReserve::query()->where('admin_id', $admin->id)->value('points'));
+        $this->assertFalse(app(StaffEdoService::class)->isBlocked($admin));
 
         $path = app(StaffEdoService::class)->exportDossier($incident->fresh());
         $this->assertFileExists($path);
         $zip = new \ZipArchive();
         $this->assertTrue($zip->open($path) === true);
-        $this->assertNotFalse($zip->locateName('t8-order.html'));
-        $this->assertNotFalse($zip->locateName('efs-1.json'));
+        $this->assertFalse($zip->locateName('t8-order.html'));
+        $this->assertFalse($zip->locateName('efs-1.json'));
         $zip->close();
         @unlink($path);
     }

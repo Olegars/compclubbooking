@@ -461,9 +461,9 @@ const kindLabel = (kind: string | null | undefined) => {
             />
 
             <StaffEdoAgreement v-else-if="edo.needs_agreement" :edo="edo" />
-            <StaffEdoIncident v-else-if="edo.blocking && edo.incident" :edo="edo" />
 
             <template v-else>
+            <StaffEdoIncident v-if="edo.incident && edo.incident.status === 'demand_sent'" :edo="edo" />
             <div class="flex justify-between items-end mb-4 border-b border-white/10 pb-6">
                 <div>
                     <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">

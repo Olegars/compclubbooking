@@ -11,7 +11,6 @@ use App\Models\StaffEdoAgreement;
 use App\Models\StaffEdoDocument;
 use App\Models\StaffEdoOtp;
 use App\Models\StaffPresencePing;
-use App\Models\StaffSfrEvent;
 use App\Support\WorkingDaysCalculator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -26,7 +25,6 @@ class StaffEdoService
     public function __construct(
         private readonly WorkingDaysCalculator $calendar,
         private readonly StaffEdoDocumentRenderer $docs,
-        private readonly StaffBonusService $bonus,
     ) {
     }
 
@@ -53,7 +51,9 @@ class StaffEdoService
 
     public function isBlocked(Admin $admin): bool
     {
-        return $this->blockingIncident($admin) !== null;
+        // Камера и автоматический акт не закрывают кабинет. Блокировка доступа —
+        // только ручное увольнение в карточке сотрудника.
+        return false;
     }
 
     public function assertOperable(Admin $admin): void
@@ -74,7 +74,7 @@ class StaffEdoService
 
         return StaffDisciplinaryIncident::query()
             ->where('admin_id', $admin->id)
-            ->whereIn('status', StaffDisciplinaryIncident::BLOCKING)
+            ->where('status', StaffDisciplinaryIncident::STATUS_DEMAND)
             ->orderByDesc('id')
             ->first();
     }
@@ -115,7 +115,7 @@ class StaffEdoService
 
         return [
             'needs_agreement' => $this->needsAgreement($admin),
-            'blocking' => $incident !== null,
+            'blocking' => false,
             'texts' => $this->texts(),
             'version' => (string) config('staff_edo.agreement_version'),
             'incident' => $incident ? $this->incidentCard($incident) : null,
@@ -477,15 +477,15 @@ class StaffEdoService
 
     public function signActs(Admin $actor, StaffDisciplinaryIncident $incident, Request $request): int
     {
-        if (! $this->canSign($actor, $incident)) {
-            throw new RuntimeException('Подписать этот акт нельзя.');
+        if (! $this->canSign($actor, $incident) && ! $this->canSignMemo($actor, $incident)) {
+            throw new RuntimeException('Подписать этот документ нельзя.');
         }
         if (! StaffEdoAgreement::query()->where('admin_id', $actor->id)->exists() && $actor->hired_at) {
             throw new RuntimeException('Сначала подпишите своё соглашение о КЭДО в личном кабинете.');
         }
 
         $signed = 0;
-        foreach ($this->pendingCommissionDocs($incident, $actor) as $doc) {
+        foreach ($this->pendingSignableDocs($incident, $actor) as $doc) {
             $signatures = $doc->signatures ?? [];
             $stamp = hash('sha256', $doc->doc_hash_sha256.'|'.$actor->id.'|'.now()->toIso8601String());
             $signatures[] = [
@@ -519,35 +519,93 @@ class StaffEdoService
             }
             $incident->status = StaffDisciplinaryIncident::STATUS_EXCUSED;
             $incident->resolution = 'excuse';
-        } elseif ($decision === 'dismiss') {
-            if (! in_array($incident->status, [
-                StaffDisciplinaryIncident::STATUS_EXPLAINED,
-                StaffDisciplinaryIncident::STATUS_EXPIRED,
-            ], true)) {
-                throw new RuntimeException('Пакет на увольнение сейчас собрать нельзя.');
-            }
-            $incident->status = StaffDisciplinaryIncident::STATUS_PUNISHED;
-            $incident->resolution = 'dismiss';
-            $this->assertCommission($incident);
-            $incident->xp_forfeited = $this->forfeitReserve($incident->admin_id);
-            $this->registerSfr($incident);
-        } else {
+            $incident->resolved_by = $actor->id;
+            $incident->resolved_at = now();
+            $incident->save();
+
+            return;
+        }
+
+        if (! in_array($decision, ['confirm_dismissal', 'dismiss'], true)) {
             throw new RuntimeException('Неизвестное решение.');
         }
 
-        $incident->resolved_by = $actor->id;
-        $incident->resolved_at = now();
-        $incident->save();
+        $this->prepareDismissalMemo($actor, $incident);
     }
 
-    private function assertCommission(StaffDisciplinaryIncident $incident): void
+    /**
+     * Кнопка старшего администратора: докладная на подпись.
+     * Не увольняет, не закрывает кабинет и не списывает баллы.
+     */
+    public function prepareDismissalMemo(Admin $actor, StaffDisciplinaryIncident $incident): StaffEdoDocument
     {
-        $required = (int) config('staff_edo.commission_signatures', 2);
-        $act = $incident->documents()->where('doc_type', StaffEdoDocument::TYPE_ABSENCE)->first();
-        $count = count($act->signatures ?? []);
-        if ($count < $required) {
-            throw new RuntimeException('Сначала акт должны подписать '.$required.' человека комиссии.');
+        if (! in_array($incident->status, [
+            StaffDisciplinaryIncident::STATUS_DEMAND,
+            StaffDisciplinaryIncident::STATUS_EXPLAINED,
+            StaffDisciplinaryIncident::STATUS_EXPIRED,
+        ], true)) {
+            throw new RuntimeException('Докладная по этому случаю уже подготовлена или случай закрыт.');
         }
+
+        $exists = $incident->documents()
+            ->where('doc_type', StaffEdoDocument::TYPE_REPORT_MEMO)
+            ->exists();
+        if ($exists) {
+            throw new RuntimeException('Докладная уже подготовлена на подпись.');
+        }
+
+        $document = $this->storeDocument(
+            $incident,
+            StaffEdoDocument::TYPE_REPORT_MEMO,
+            'Докладная записка',
+            $this->docs->dismissalMemo($incident, $actor),
+            []
+        );
+
+        $incident->status = StaffDisciplinaryIncident::STATUS_MEMO;
+        $incident->resolution = 'memo_for_signature';
+        $incident->save();
+
+        return $document;
+    }
+
+    public function canConfirmDismissal(Admin $actor, StaffDisciplinaryIncident $incident): bool
+    {
+        if ((int) $actor->id === (int) $incident->admin_id || $actor->isFired()) {
+            return false;
+        }
+        if (! in_array($actor->role, [Admin::ROLE_SUPERVISOR, Admin::ROLE_OWNER], true)) {
+            return false;
+        }
+
+        return in_array($incident->status, [
+            StaffDisciplinaryIncident::STATUS_DEMAND,
+            StaffDisciplinaryIncident::STATUS_EXPLAINED,
+            StaffDisciplinaryIncident::STATUS_EXPIRED,
+        ], true);
+    }
+
+    public function canSignMemo(Admin $actor, StaffDisciplinaryIncident $incident): bool
+    {
+        if ((int) $actor->id === (int) $incident->admin_id || $actor->isFired()) {
+            return false;
+        }
+        if (! in_array($actor->role, [Admin::ROLE_SUPERVISOR, Admin::ROLE_OWNER], true)) {
+            return false;
+        }
+        if ($incident->status !== StaffDisciplinaryIncident::STATUS_MEMO) {
+            return false;
+        }
+
+        $memo = $incident->documents->firstWhere('doc_type', StaffEdoDocument::TYPE_REPORT_MEMO)
+            ?? $incident->documents()->where('doc_type', StaffEdoDocument::TYPE_REPORT_MEMO)->first();
+        if (! $memo) {
+            return false;
+        }
+
+        $ids = collect($memo->signatures ?? [])->pluck('admin_id')->map(fn ($id) => (int) $id);
+
+        return ! $ids->contains((int) $actor->id);
     }
 
     public function exportDossier(StaffDisciplinaryIncident $incident): string
@@ -556,6 +614,7 @@ class StaffEdoService
             StaffDisciplinaryIncident::STATUS_EXPIRED,
             StaffDisciplinaryIncident::STATUS_PUNISHED,
             StaffDisciplinaryIncident::STATUS_EXPLAINED,
+            StaffDisciplinaryIncident::STATUS_MEMO,
         ], true)) {
             throw new RuntimeException('Архив доступен после объяснительной или истечения срока.');
         }
@@ -587,7 +646,6 @@ class StaffEdoService
             }
         }
 
-        $zip->addFromString('t8-order.html', $this->docs->dismissalOrder($incident));
         $zip->addFromString('evidence.json', json_encode([
             'incident_id' => $incident->id,
             'type' => $incident->incident_type,
@@ -597,13 +655,8 @@ class StaffEdoService
             'deadline_at' => $incident->deadline_at?->toIso8601String(),
             'evidence' => $incident->evidence_meta,
             'xp_forfeited' => (float) $incident->xp_forfeited,
+            'note' => 'Архив не содержит приказа Т-8 и события ЕФС-1. Увольнение оформляется вручную.',
         ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
-
-        $sfr = StaffSfrEvent::query()->where('incident_id', $incident->id)->first();
-        $zip->addFromString('efs-1.json', json_encode(
-            $sfr?->payload ?? $this->sfrPayload($incident),
-            JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT
-        ));
         $zip->close();
 
         return $zipPath;
@@ -628,15 +681,14 @@ class StaffEdoService
                 $card['admin_name'] = $incident->admin?->name;
                 $card['can_sign'] = $this->canSign($actor, $incident);
                 $card['can_excuse'] = $incident->status === StaffDisciplinaryIncident::STATUS_EXPLAINED;
-                $card['can_dismiss'] = in_array($incident->status, [
-                    StaffDisciplinaryIncident::STATUS_EXPLAINED,
-                    StaffDisciplinaryIncident::STATUS_EXPIRED,
-                ], true);
+                $card['can_confirm_dismissal'] = $this->canConfirmDismissal($actor, $incident);
+                $card['can_sign_memo'] = $this->canSignMemo($actor, $incident);
                 $card['can_deliver'] = $incident->demand_delivered_at === null
                     && $incident->status === StaffDisciplinaryIncident::STATUS_DEMAND;
                 $card['can_export'] = in_array($incident->status, [
                     StaffDisciplinaryIncident::STATUS_EXPLAINED,
                     StaffDisciplinaryIncident::STATUS_EXPIRED,
+                    StaffDisciplinaryIncident::STATUS_MEMO,
                     StaffDisciplinaryIncident::STATUS_PUNISHED,
                 ], true);
                 $card['signatures'] = $incident->documents
@@ -660,11 +712,7 @@ class StaffEdoService
         }
 
         return (int) StaffDisciplinaryIncident::query()
-            ->whereIn('status', [
-                StaffDisciplinaryIncident::STATUS_DEMAND,
-                StaffDisciplinaryIncident::STATUS_EXPLAINED,
-                StaffDisciplinaryIncident::STATUS_EXPIRED,
-            ])
+            ->whereIn('status', StaffDisciplinaryIncident::OPEN)
             ->count();
     }
 
@@ -696,8 +744,39 @@ class StaffEdoService
 
         $this->storeDocument($incident, StaffEdoDocument::TYPE_ABSENCE, 'Акт об отсутствии', $this->docs->absenceAct($incident), []);
         $this->storeDocument($incident, StaffEdoDocument::TYPE_DEMAND, 'Требование объяснений', $this->docs->demandNotice($incident), []);
+        $this->storeDocument(
+            $incident,
+            StaffEdoDocument::TYPE_REPORT_DRAFT,
+            'Проект докладной записки',
+            $this->docs->dismissalMemoDraft($incident),
+            []
+        );
+        $this->notifyManagers($incident);
 
         return $incident;
+    }
+
+    private function notifyManagers(StaffDisciplinaryIncident $incident): void
+    {
+        $ids = Admin::query()
+            ->whereIn('role', [Admin::ROLE_SUPERVISOR, Admin::ROLE_OWNER])
+            ->whereNull('fired_at')
+            ->where('id', '!=', $incident->admin_id)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $meta = $incident->evidence_meta ?? [];
+        $meta['manager_notified_at'] = now()->toIso8601String();
+        $meta['notified_manager_ids'] = $ids;
+        $incident->evidence_meta = $meta;
+        $incident->save();
+
+        Log::info('Staff EDO: проект докладной для управляющего', [
+            'incident_id' => $incident->id,
+            'employee_id' => $incident->admin_id,
+            'managers' => $ids,
+        ]);
     }
 
     /**
@@ -752,8 +831,28 @@ class StaffEdoService
      */
     private function pendingCommissionDocs(StaffDisciplinaryIncident $incident, Admin $actor)
     {
+        return $this->unsignedDocs($incident, $actor, StaffEdoDocument::COMMISSION_TYPES);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, StaffEdoDocument>
+     */
+    private function pendingSignableDocs(StaffDisciplinaryIncident $incident, Admin $actor)
+    {
+        return $this->unsignedDocs($incident, $actor, [
+            ...StaffEdoDocument::COMMISSION_TYPES,
+            StaffEdoDocument::TYPE_REPORT_MEMO,
+        ]);
+    }
+
+    /**
+     * @param  list<string>  $types
+     * @return \Illuminate\Support\Collection<int, StaffEdoDocument>
+     */
+    private function unsignedDocs(StaffDisciplinaryIncident $incident, Admin $actor, array $types)
+    {
         return $incident->documents()
-            ->whereIn('doc_type', StaffEdoDocument::COMMISSION_TYPES)
+            ->whereIn('doc_type', $types)
             ->get()
             ->filter(function (StaffEdoDocument $doc) use ($actor) {
                 $ids = collect($doc->signatures ?? [])->pluck('admin_id')->map(fn ($id) => (int) $id);
@@ -761,41 +860,6 @@ class StaffEdoService
                 return ! $ids->contains((int) $actor->id);
             })
             ->values();
-    }
-
-    private function forfeitReserve(int $adminId): float
-    {
-        return $this->bonus->forfeitQuarter($adminId);
-    }
-
-    private function registerSfr(StaffDisciplinaryIncident $incident): void
-    {
-        $payload = $this->sfrPayload($incident);
-        StaffSfrEvent::query()->create([
-            'incident_id' => $incident->id,
-            'admin_id' => $incident->admin_id,
-            'event_code' => 'UVOLNENIE',
-            'reason_code' => 'п6ч1с81',
-            'payload' => $payload,
-        ]);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function sfrPayload(StaffDisciplinaryIncident $incident): array
-    {
-        $incident->loadMissing('admin');
-
-        return [
-            'subsection' => '1.1',
-            'event' => 'UVOLNENIE',
-            'reason_code' => 'п6ч1с81',
-            'reason_text' => 'Прогул, подпункт «а» пункта 6 части 1 статьи 81 ТК РФ',
-            'employee_name' => $incident->admin?->name,
-            'incident_id' => $incident->id,
-            'event_date' => now()->toDateString(),
-        ];
     }
 
     /**

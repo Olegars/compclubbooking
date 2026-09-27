@@ -31,7 +31,7 @@ class AdminAlerts
             $edoOpen = 0;
             if (Schema::hasTable('staff_disciplinary_incidents')) {
                 $edoOpen = (int) DB::table('staff_disciplinary_incidents')
-                    ->whereIn('status', ['demand_sent', 'explanation_submitted', 'expired_no_response'])
+                    ->whereIn('status', ['demand_sent', 'explanation_submitted', 'expired_no_response', 'memo_for_signature'])
                     ->count();
             }
 
