@@ -179,7 +179,7 @@ class FaceitIdentityService
         }
         $steam = (string) ($profile['steam_id_64'] ?? $cs2['game_player_id'] ?? '');
 
-        return FaceitIdentity::query()->updateOrCreate(
+        $row = FaceitIdentity::query()->updateOrCreate(
             ['user_id' => $user->id],
             [
                 'faceit_player_id' => $playerId,
@@ -196,6 +196,20 @@ class FaceitIdentityService
                 'rate_limited_at' => null,
             ],
         );
+        if ($steam !== '') {
+            \App\Models\UserIdentity::query()->updateOrCreate(
+                ['user_id' => $user->id, 'provider' => 'steam'],
+                ['external_id' => $steam, 'unlinked_at' => null, 'purge_after' => null],
+            );
+        }
+        if ($skill !== null && $skill >= 10) {
+            try {
+                app(\App\Services\BattlePassService::class)->completeByCode($user, 'faceit_10', $this->clubIdForUser($user));
+            } catch (\Throwable) {
+            }
+        }
+
+        return $row;
     }
 
     public function unlink(User $user): void

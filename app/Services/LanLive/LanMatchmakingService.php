@@ -271,7 +271,12 @@ class LanMatchmakingService
                 $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
             })
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->sortBy([
+                fn (LanLfgQueue $cand) => app(\App\Services\BattlePassService::class)->lfgVip((int) $cand->user_id) ? 0 : 1,
+                fn (LanLfgQueue $cand) => $cand->id,
+            ])
+            ->values();
 
         $myGroup = (int) ($booking->booking_group_id ?? 0);
         $delta = max(0, app(\App\Services\ClubFeatureService::class)->int(

@@ -7,6 +7,11 @@ import AvatarEditor from '@/Components/AvatarEditor.vue'
 const page = usePage()
 const user = page.props.auth.user
 const faceit = computed(() => (page.props as any).faceit || { mode: 'off' })
+const profileCard = computed(() => (page.props as any).profile_card || {})
+const identities = computed(() => (page.props as any).identities || [])
+const identityForm = useForm({ provider: 'tracker', external_id: '' })
+const linkIdentity = () => identityForm.post('/account/profile/identities', { preserveScroll: true, onSuccess: () => identityForm.reset('external_id') })
+const unlinkIdentity = (provider: string) => router.delete('/account/profile/identities', { data: { provider }, preserveScroll: true })
 const flash = computed(() => (page.props as any).flash || {})
 
 const showSuccess = ref(false)
@@ -61,6 +66,26 @@ const unlinkFaceit = () => {
                     <a v-if="!faceit.linked" href="/account/faceit/redirect" class="inline-block px-4 py-2 rounded-xl bg-orange-500 text-black text-[10px] font-black uppercase tracking-widest">Привязать FACEIT</a>
                     <button v-else type="button" class="text-[10px] uppercase tracking-widest text-red-400" @click="unlinkFaceit">Отвязать</button>
                 </div>
+            </div>
+
+            <div class="mb-10 pb-8 border-b border-white/5">
+                <span class="text-[10px] uppercase text-white/30 tracking-[0.2em] ml-1 font-black block mb-4">Игровые аккаунты</span>
+                <p v-if="profileCard.status_label" class="text-xs text-white/50 mb-3">Статус: {{ profileCard.status_label }}</p>
+                <div v-for="row in identities" :key="row.provider" class="flex items-center justify-between text-sm mb-2">
+                    <span>{{ row.provider }} · {{ row.external_id }}</span>
+                    <button type="button" class="text-[10px] uppercase text-red-400" @click="unlinkIdentity(row.provider)">Отвязать</button>
+                </div>
+                <form class="flex gap-2 mt-3" @submit.prevent="linkIdentity">
+                    <select v-model="identityForm.provider" class="bg-black border border-white/10 rounded-xl px-3 text-xs">
+                        <option value="steam">Steam</option>
+                        <option value="riot">Riot</option>
+                        <option value="pubg">PUBG</option>
+                        <option value="tracker">Tracker</option>
+                        <option value="opendota">OpenDota</option>
+                    </select>
+                    <input v-model="identityForm.external_id" placeholder="ID или тег" class="flex-1 bg-black border border-white/10 rounded-xl px-3 text-sm" />
+                    <button class="px-3 rounded-xl bg-white text-black text-[10px] font-black uppercase">Привязать</button>
+                </form>
             </div>
 
             <div class="mb-10 pb-8 border-b border-white/5">

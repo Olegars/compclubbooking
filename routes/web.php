@@ -310,6 +310,11 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar'])
             ->middleware('throttle:8,1')
             ->name('profile.avatar');
+        Route::patch('/profile/showcase', [ProfileController::class, 'updateShowcase']);
+        Route::patch('/profile/frame', [ProfileController::class, 'updateFrame']);
+        Route::post('/profile/identities', [ProfileController::class, 'linkIdentity']);
+        Route::delete('/profile/identities', [ProfileController::class, 'unlinkIdentity']);
+        Route::post('/battle-pass/claim', [ProfileController::class, 'claimBattlePass']);
         Route::post('/clips/{clip}/telegram', [ProfileController::class, 'shareClipTelegram']);
         Route::post('/telegram/unlink', [ProfileController::class, 'unlinkTelegram']);
         Route::get('/faceit/redirect', [FaceitConnectController::class, 'redirect'])->name('faceit.redirect');
@@ -697,6 +702,12 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::put('/achievements/{achievement}', [AchievementAdminController::class, 'update']);
         Route::patch('/achievements/{achievement}/toggle', [AchievementAdminController::class, 'toggle']);
         Route::delete('/achievements/{achievement}', [AchievementAdminController::class, 'destroy']);
+        Route::post('/achievement-templates/seed', [AchievementAdminController::class, 'seedCatalog']);
+        Route::post('/battle-pass/season', [AchievementAdminController::class, 'saveSeason']);
+        Route::post('/battle-pass/season/close', [AchievementAdminController::class, 'closeSeason']);
+        Route::post('/battle-pass/levels', [AchievementAdminController::class, 'saveLevel']);
+        Route::post('/achievement-sources', [AchievementAdminController::class, 'saveSources']);
+        Route::post('/achievement-sources/sync', [AchievementAdminController::class, 'syncNow']);
 
         Route::get('/game-requests', [GameRequestAdminController::class, 'index'])->name('admin.game-requests.index');
         Route::patch('/game-requests/{gameRequest}/status', [GameRequestAdminController::class, 'updateStatus']);

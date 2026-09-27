@@ -125,6 +125,7 @@ class AchievementService
                 'completed' => (bool) $completed,
                 'rewarded' => (bool) ($row?->isRewarded()),
                 'completed_at' => $row?->completed_at?->toIso8601String(),
+                'xp' => (int) ($achievement->xp ?? 0),
             ];
         }
 
@@ -233,6 +234,23 @@ class AchievementService
                 'completed_at' => $locked->completed_at ?? now(),
             ]);
 
+            $clubId = \App\Models\Computer::query()
+                ->whereIn('id', Booking::query()->where('user_id', $user->id)->select('computer_id'))
+                ->value('club_id');
+            app(BattlePassService::class)->payAchievement(
+                $user,
+                $achievement,
+                (string) $locked->period_key,
+                $clubId ? (int) $clubId : null,
+            );
+            if ($achievement->badge_id) {
+                \App\Models\UserCosmetic::query()->firstOrCreate([
+                    'user_id' => $user->id,
+                    'kind' => 'badge',
+                    'ref_id' => $achievement->badge_id,
+                ]);
+            }
+
             return [
                 'achievement_id' => $achievement->id,
                 'title' => $achievement->title,
@@ -302,12 +320,25 @@ class AchievementService
             })
             ->get();
 
+        $pass = app(BattlePassService::class);
+
         return match ($achievement->type) {
             Achievement::TYPE_PLAY_HOURS => round($bookings->sum(fn (Booking $b) => $this->playedHours($b)), 2),
             Achievement::TYPE_VISIT_COUNT => (float) $bookings->count(),
             Achievement::TYPE_NIGHT_VISITS => (float) $bookings
                 ->filter(fn (Booking $b) => $this->isNightVisit($b, $achievement))
                 ->count(),
+            'marathon' => round((float) ($bookings->max(fn (Booking $b) => $this->playedHours($b)) ?? 0), 2),
+            'distinct_computers' => (float) $bookings->pluck('computer_id')->unique()->count(),
+            'arena_wins' => $pass->arenaWins($user),
+            'bar_count' => $pass->barProgress($user, $achievement, $start, $end),
+            'bootcamp_seats' => (float) Booking::query()
+                ->where('user_id', $user->id)
+                ->whereNotNull('booking_group_id')
+                ->get()
+                ->groupBy('booking_group_id')
+                ->map->count()
+                ->max(),
             default => 0.0,
         };
     }

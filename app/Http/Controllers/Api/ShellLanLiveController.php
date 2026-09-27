@@ -364,6 +364,8 @@ class ShellLanLiveController extends Controller
             'game_time' => 'nullable|integer',
             'player_name' => 'nullable|string|max:48',
             'clock' => 'nullable|integer',
+            'achievement_code' => 'nullable|string|max:64',
+            'match_round_key' => 'nullable|string|max:96',
         ]);
 
         $snap = array_merge($data, [
@@ -442,6 +444,20 @@ class ShellLanLiveController extends Controller
             }
         }
 
+        $achievement = null;
+        if ($event === 'achievement') {
+            try {
+                $achievement = app(\App\Services\GsiAchievementService::class)->award(
+                    $user,
+                    $booking,
+                    (string) ($request->input('achievement_code', '')),
+                    (string) ($request->input('match_round_key', '')),
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
         $booking = $booking->fresh() ?? $booking;
 
         $viewer = $user->fresh() ?? $user;
@@ -469,6 +485,8 @@ class ShellLanLiveController extends Controller
                 'throne_crowned' => $crowned && ($crowned['mine'] ?? false) ? $crowned : null,
                 'lootbox_dropped' => $dropped ? $this->loot->payload($dropped, false) : null,
                 'arena_settled' => $arenaSettled ?: null,
+                'achievement' => $achievement,
+                'light_hint' => $achievement['light_hint'] ?? null,
             ]
         ));
     }
@@ -597,7 +615,22 @@ class ShellLanLiveController extends Controller
                 $computer->club_id ? (int) $computer->club_id : null,
                 $booking,
             ),
+            ...$this->guestCard($user, $computer->club_id ? (int) $computer->club_id : null),
         ];
+    }
+
+    /**
+     * @return array{profile:array<string,mixed>|null,battle_pass:array<string,mixed>|null,granted:list<string>}
+     */
+    private function guestCard(User $user, ?int $clubId): array
+    {
+        try {
+            return app(\App\Services\BattlePassService::class)->shellBlock($user, $clubId);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return ['profile' => null, 'battle_pass' => null, 'granted' => []];
+        }
     }
 
     /**

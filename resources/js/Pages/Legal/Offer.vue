@@ -53,6 +53,12 @@ const clubName = computed(() => (page.props as any).club?.name || (page.props as
                     Клуб не хранит пароль FACEIT и не выдаёт общий аккаунт на смену.
                 </p>
 
+                <h2 class="text-[#22c55e] text-xs font-black uppercase tracking-[0.25em] pt-4">Ачивки и пропуск</h2>
+                <p>
+                    Ачивки и боевой пропуск — программа лояльности клуба. Внешние ранги
+                    показываются по правилам платформ, к которым гость привязал аккаунт.
+                </p>
+
                 <h2 class="text-[#22c55e] text-xs font-black uppercase tracking-[0.25em] pt-4">Кошелёк и фискализация</h2>
                 <p>
                     Пополнение баланса фиксируется как аванс. Списание за бронь или товары магазина —

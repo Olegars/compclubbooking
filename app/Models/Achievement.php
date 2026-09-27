@@ -21,11 +21,18 @@ class Achievement extends Model
     protected $fillable = [
         'title',
         'description',
+        'source_kind',
+        'code',
         'type',
+        'metric',
         'target_value',
         'period',
         'reward_type',
         'reward_value',
+        'xp',
+        'badge_id',
+        'reward_kind',
+        'reward_payload',
         'night_start',
         'night_end',
         'is_active',
@@ -37,10 +44,12 @@ class Achievement extends Model
         return [
             'target_value' => 'float',
             'reward_value' => 'float',
+            'xp' => 'integer',
             'night_start' => 'integer',
             'night_end' => 'integer',
             'is_active' => 'boolean',
             'sort_order' => 'integer',
+            'reward_payload' => 'array',
         ];
     }
 

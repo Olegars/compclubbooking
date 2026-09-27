@@ -343,6 +343,8 @@ class ProfileController extends Controller
             'latest_review' => $latestReview,
             'review_meta' => $reviewMeta,
             'achievements' => $achievements,
+            'battle_pass' => app(\App\Services\BattlePassService::class)->progress($user, app(\App\Services\ClubFeatureService::class)->clubIdForUser($user)),
+            'profile_card' => app(\App\Services\BattlePassService::class)->profile($user, app(\App\Services\ClubFeatureService::class)->clubIdForUser($user)),
             'clips' => $clips,
             'clips_telegram' => $clipService->telegramConfigured(),
             'telegram' => $telegram->payload($user),
@@ -358,6 +360,9 @@ class ProfileController extends Controller
     {
         return Inertia::render('User/Profile', [
             'faceit' => app(\App\Services\Faceit\FaceitIdentityService::class)->cabinet(Auth::user()),
+            'profile_card' => app(\App\Services\BattlePassService::class)->profile(Auth::user(), app(\App\Services\ClubFeatureService::class)->clubIdForUser(Auth::user())),
+            'battle_pass' => app(\App\Services\BattlePassService::class)->progress(Auth::user(), app(\App\Services\ClubFeatureService::class)->clubIdForUser(Auth::user())),
+            'identities' => \App\Models\UserIdentity::query()->where('user_id', Auth::id())->whereNull('unlinked_at')->get(['provider', 'external_id', 'synced_at']),
         ]);
     }
 
@@ -747,6 +752,87 @@ class ProfileController extends Controller
         $computer = $booking ? Computer::query()->find((int) $booking->computer_id) : null;
 
         return [$computer, $booking, $user];
+    }
+
+    public function claimBattlePass(Request $request, \App\Services\BattlePassService $pass)
+    {
+        $data = $request->validate(['level' => 'required|integer|min:1']);
+        try {
+            $pass->claim($request->user(), (int) $data['level']);
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back();
+    }
+
+    public function updateShowcase(Request $request, \App\Services\BattlePassService $pass)
+    {
+        $data = $request->validate([
+            'badge_ids' => 'array|max:6',
+            'badge_ids.*' => 'integer',
+        ]);
+        try {
+            $pass->pinShowcase($request->user(), $data['badge_ids'] ?? [], app(\App\Services\ClubFeatureService::class)->clubIdForUser($request->user()));
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back();
+    }
+
+    public function updateFrame(Request $request, \App\Services\BattlePassService $pass)
+    {
+        $data = $request->validate(['frame_id' => 'required|integer']);
+        try {
+            $pass->equipFrame($request->user(), (int) $data['frame_id']);
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back();
+    }
+
+    public function linkIdentity(Request $request)
+    {
+        $data = $request->validate([
+            'provider' => 'required|in:steam,riot,pubg,tracker,opendota',
+            'external_id' => 'required|string|max:128',
+        ]);
+        $taken = \App\Models\UserIdentity::query()
+            ->where('provider', $data['provider'])
+            ->where('external_id', $data['external_id'])
+            ->where('user_id', '!=', $request->user()->id)
+            ->whereNull('unlinked_at')
+            ->exists();
+        if ($taken) {
+            return back()->with('error', 'Этот аккаунт уже привязан к другому гостю');
+        }
+        \App\Models\UserIdentity::query()->updateOrCreate(
+            ['user_id' => $request->user()->id, 'provider' => $data['provider']],
+            [
+                'external_id' => $data['external_id'],
+                'unlinked_at' => null,
+                'purge_after' => null,
+            ],
+        );
+        \App\Jobs\SyncIdentityJob::dispatch($request->user()->id, $data['provider'])->onQueue('identities-high');
+
+        return back();
+    }
+
+    public function unlinkIdentity(Request $request)
+    {
+        $data = $request->validate(['provider' => 'required|string|max:32']);
+        \App\Models\UserIdentity::query()
+            ->where('user_id', $request->user()->id)
+            ->where('provider', $data['provider'])
+            ->update([
+                'unlinked_at' => now(),
+                'purge_after' => now()->addDays(30),
+            ]);
+
+        return back();
     }
 
     private function assertSeatTransfer(Booking $booking): void

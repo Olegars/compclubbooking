@@ -63,4 +63,16 @@ return [
         'data_url' => env('FACEIT_DATA_URL', 'https://open.faceit.com/data/v4'),
     ],
 
+    'steam' => [
+        'web_api_key' => env('STEAM_WEB_API_KEY'),
+    ],
+
+    'loyalty' => [
+        'opendota' => env('OPENDOTA_SYNC', false),
+        'stratz_token' => env('STRATZ_TOKEN'),
+        'riot_api_key' => env('RIOT_API_KEY'),
+        'pubg_api_key' => env('PUBG_API_KEY'),
+        'tracker_api_key' => env('TRACKER_API_KEY'),
+    ],
+
 ];

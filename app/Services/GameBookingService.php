@@ -218,6 +218,7 @@ class GameBookingService
             $this->closeExpiredBookings();
 
             $quote = $this->quote($clubId, $computerIds, $gameIds, $startsAt, $endsAt, $mode, $tariffId, $addonIds);
+            $quote = app(\App\Services\BattlePassService::class)->applyToQuote($user, $quote, $startsAt, true);
 
             $user->syncBalanceToWallet();
             $wallet = Wallet::query()->where('user_id', $user->id)->lockForUpdate()->firstOrFail();

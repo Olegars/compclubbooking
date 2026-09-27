@@ -351,6 +351,7 @@ class ShellApiController extends Controller
                     'total_balance' => $balance,
                     'time_remaining' => $formattedTime,
                     'tts_voice' => AiAssistantSetting::forClub($loginComputer?->club_id)->resolveVoiceForPlayer($user),
+                    'profile' => app(\App\Services\BattlePassService::class)->profile($user, $loginComputer?->club_id ? (int) $loginComputer->club_id : null),
                 ],
                 'settings_pack' => $cloud['payload'],
                 'settings_updated_at' => $cloud['updated_at'],
@@ -605,9 +606,7 @@ class ShellApiController extends Controller
                 'party' => $sessionActive && $booking
                     ? app(PartyBookingService::class)->payloadForBooking($booking)
                     : ['count' => 0, 'names' => [], 'computer_ids' => []],
-                ...($sessionActive && $booking
-                    ? $this->lanLiveExtras($booking, $user)
-                    : []),
+                ...$this->balanceGuestCard($user, $sessionActive && $booking ? $booking : null),
             ]);
         } catch (\Throwable $e) {
             Log::error('Shell API getBalance: '.$e->getMessage());
@@ -3579,7 +3578,29 @@ class ShellApiController extends Controller
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    private function balanceGuestCard(User $user, ?Booking $booking): array
+    {
+        if ($booking) {
+            return $this->lanLiveExtras($booking, $user);
+        }
+        try {
+            return app(\App\Services\BattlePassService::class)->shellBlock(
+                $user,
+                app(\App\Services\ClubFeatureService::class)->clubIdForUser($user),
+            );
+        } catch (\Throwable $e) {
+            report($e);
+
+            return [];
+        }
+    }
+
+    /**
      * Resolve player from active booking on terminal; optional user_id must match.
+     *
+     * @return array<string, mixed>
      */
     private function lanLiveExtras(Booking $booking, User $user): array
     {
@@ -3612,6 +3633,9 @@ class ShellApiController extends Controller
                     ? app(\App\Services\LanLive\LuckySeatLootService::class)->payload($dropped, false)
                     : null,
                 'features' => $pack['features'] ?? app(\App\Services\ClubFeatureService::class)->shellPayloadForComputer($computer),
+                'profile' => $pack['profile'] ?? null,
+                'battle_pass' => $pack['battle_pass'] ?? null,
+                'granted' => $pack['granted'] ?? [],
             ];
         } catch (\Throwable $e) {
             Log::warning('lan-live extras: '.$e->getMessage());

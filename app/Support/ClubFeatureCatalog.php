@@ -325,7 +325,7 @@ class ClubFeatureCatalog
             [
                 'key' => 'achievements',
                 'title' => 'Достижения',
-                'description' => 'Квесты за часы, визиты и ночные сессии. Награда после закрытия брони. План хаба: рамки, статусы, боевой пропуск, внешние ачивки — /admin/docs раздел «Профиль, ачивки и боевой пропуск».',
+                'description' => 'Квесты за часы, визиты и ночные сессии, XP боевого пропуска, рамки и значки. Награда квеста после закрытия брони. Хаб /admin/achievements.',
                 'group' => self::GROUP_MARKETING,
                 'icon' => '⭐',
                 'admin_path' => '/admin/achievements',

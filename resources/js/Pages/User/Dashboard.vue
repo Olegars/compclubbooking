@@ -168,7 +168,7 @@ const cancelBooking = async (b: any) => {
 
 const fetchDashboardData = () => {
     router.reload({
-        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'clips', 'clips_telegram', 'telegram', 'clan_wars', 'arena', 'reactor_ac', 'faceit', 'server_time'],
+        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'battle_pass', 'profile_card', 'clips', 'clips_telegram', 'telegram', 'clan_wars', 'arena', 'reactor_ac', 'faceit', 'server_time'],
         preserveScroll: true
     })
 }
@@ -179,6 +179,8 @@ const achievements = computed(() => {
     if (raw && Array.isArray(raw.data)) return raw.data
     return []
 })
+const battlePass = computed(() => (page.props as any).battle_pass || null)
+const profileCard = computed(() => (page.props as any).profile_card || null)
 const clips = computed(() => (page.props.clips as any[]) || [])
 const clipsTelegram = computed(() => !!(page.props as any).clips_telegram)
 const telegramLink = computed(() => (page.props as any).telegram || {})
@@ -1072,7 +1074,19 @@ onMounted(() => {
                     <AvatarEditor compact class="w-full" />
                     <div class="min-w-0 w-full text-center overflow-visible">
                         <h3 class="text-xl md:text-3xl font-black uppercase italic tracking-tight text-white break-words leading-[1.2] px-[0.35em]">{{ page.props.user?.name }}</h3>
-                        <div class="mt-2 md:mt-4 inline-flex px-4 md:px-6 py-1.5 md:py-2 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[9px] md:text-[10px] text-[#22c55e] font-black uppercase italic tracking-widest">СТАЛКЕР</div>
+                        <div class="mt-2 md:mt-4 inline-flex px-4 md:px-6 py-1.5 md:py-2 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-full text-[9px] md:text-[10px] text-[#22c55e] font-black uppercase italic tracking-widest">
+                            {{ profileCard?.status_label || 'СТАЛКЕР' }}
+                        </div>
+                        <div v-if="battlePass?.season" class="mt-3 text-[10px] uppercase tracking-widest text-purple-300">
+                            Пропуск {{ battlePass.level }} · {{ battlePass.xp }} XP
+                            <span v-if="battlePass.xp_to_next"> · до уровня {{ battlePass.xp_to_next }}</span>
+                        </div>
+                        <div v-if="battlePass?.ladder_hint" class="mt-1 text-[10px] text-white/40">{{ battlePass.ladder_hint }}</div>
+                        <button v-for="lvl in (battlePass?.claimable || [])" :key="lvl.id" type="button"
+                                class="mt-2 mr-2 text-[10px] uppercase tracking-widest text-purple-300"
+                                @click="router.post('/account/battle-pass/claim', { level: lvl.level }, { preserveScroll: true })">
+                            Забрать {{ lvl.level }}
+                        </button>
                     </div>
                 </div>
 
@@ -1088,6 +1102,7 @@ onMounted(() => {
                                     <div v-if="a.description" class="text-[10px] text-white/30 mt-1 leading-snug">{{ a.description }}</div>
                                     <div class="text-[8px] uppercase font-black tracking-widest text-white/25 mt-2">
                                         {{ a.period_label }} · +{{ Math.floor(a.reward_value) }} {{ rewardSuffix(a.reward_type) }}
+                                        <span v-if="a.xp"> · XP +{{ a.xp }}</span>
                                     </div>
                                 </div>
                                 <div class="text-right shrink-0">

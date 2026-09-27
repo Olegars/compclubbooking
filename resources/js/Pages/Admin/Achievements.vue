@@ -5,7 +5,25 @@ import AdminLayout from '@/Layouts/AdminLayout.vue'
 
 const props = defineProps<{
     achievements: any[]
+    tab?: string
+    can_manage?: boolean
+    season?: any
+    levels?: any[]
+    templates?: any[]
+    histogram?: any[]
+    frames?: any[]
+    statuses?: any[]
+    badges?: any[]
+    ladder?: any[]
+    sources?: any
+    source_keys?: Record<string, boolean>
+    products?: any[]
 }>()
+
+const tab = computed(() => props.tab || 'quests')
+const openTab = (name: string) => {
+    router.get('/admin/achievements', { tab: name }, { preserveScroll: true, preserveState: true })
+}
 
 const editingId = ref<number | null>(null)
 
@@ -17,6 +35,8 @@ const form = useForm({
     period: 'weekly',
     reward_type: 'deposit_balance',
     reward_value: 100,
+    xp: 0,
+    badge_id: null as number | null,
     night_start: 22,
     night_end: 6,
     is_active: true,
@@ -43,6 +63,8 @@ const resetForm = () => {
     form.period = 'weekly'
     form.reward_type = 'deposit_balance'
     form.reward_value = 100
+    form.xp = 0
+    form.badge_id = null
     form.night_start = 22
     form.night_end = 6
     form.is_active = true
@@ -58,6 +80,8 @@ const editAchievement = (a: any) => {
     form.period = a.period
     form.reward_type = a.reward_type
     form.reward_value = a.reward_value
+    form.xp = a.xp || 0
+    form.badge_id = a.badge_id || null
     form.night_start = a.night_start ?? 22
     form.night_end = a.night_end ?? 6
     form.is_active = !!a.is_active
@@ -99,7 +123,32 @@ const periodLabel = (period: string) => ({
     monthly: 'Ежемесячно',
 }[period] || period)
 
+const seasonForm = useForm({
+    title: 'Сезон 1',
+    starts_on: '',
+    ends_on: '',
+    claim_grace_days: 14,
+    is_active: true,
+})
+const levelForm = useForm({
+    season_id: 0,
+    level: 1,
+    xp_required: 50,
+    reward_kind: 'session_minutes',
+    reward_payload: { minutes: 60 },
+})
 const rewardLabel = (type: string) => type === 'bonus_balance' ? 'Фантики' : 'Депозит ₽'
+const saveSeason = () => seasonForm.post('/admin/battle-pass/season', { preserveScroll: true })
+const closeSeason = () => {
+    if (!confirm('Закрыть сезон? XP остановится, забрать награды можно в льготный срок.')) return
+    router.post('/admin/battle-pass/season/close', {}, { preserveScroll: true })
+}
+const saveLevel = () => {
+    levelForm.season_id = props.season?.id || 0
+    levelForm.post('/admin/battle-pass/levels', { preserveScroll: true })
+}
+const seedCatalog = () => router.post('/admin/achievement-templates/seed', {}, { preserveScroll: true })
+const syncNow = () => router.post('/admin/achievement-sources/sync', {}, { preserveScroll: true })
 </script>
 
 <template>
@@ -118,7 +167,83 @@ const rewardLabel = (type: string) => type === 'bonus_balance' ? 'Фантики
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+            <div v-if="can_manage" class="flex flex-wrap gap-2 mb-6">
+                <button v-for="item in [
+                    ['quests', 'Квесты'],
+                    ['catalog', 'Каталог'],
+                    ['pass', 'Боевой пропуск'],
+                    ['cosmetics', 'Косметика'],
+                    ['ladder', 'Лестница'],
+                    ['sources', 'Источники'],
+                ]" :key="item[0]" type="button" @click="openTab(item[0])"
+                        class="px-4 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest"
+                        :class="tab === item[0] ? 'border-purple-500 text-purple-300 bg-purple-500/10' : 'border-white/10 text-white/40'">
+                    {{ item[1] }}
+                </button>
+            </div>
+
+            <div v-if="tab === 'catalog' && can_manage" class="mb-8 space-y-3">
+                <button type="button" @click="seedCatalog" class="px-4 py-3 rounded-xl bg-purple-600 text-[10px] font-black uppercase tracking-widest">Сид сезона</button>
+                <div v-for="a in (templates || [])" :key="a.id" class="border border-white/10 rounded-xl p-4 text-xs">
+                    <span class="text-purple-300 font-black">{{ a.code }}</span>
+                    {{ a.title }} · {{ a.source_kind }} · XP {{ a.xp || 0 }}
+                </div>
+            </div>
+
+            <div v-if="tab === 'pass' && can_manage" class="mb-8 border border-white/10 rounded-2xl p-6 space-y-4">
+                <div v-if="!season" class="text-white/50 text-sm">Сезона нет. Создайте пустой сезон — страница не должна падать.</div>
+                <div v-else>
+                    <div class="text-xl font-black">{{ season.title }} · {{ season.status }}</div>
+                    <div class="text-[10px] text-white/40">Льгота {{ season.claim_grace_days }} дн.</div>
+                    <div v-for="row in (histogram || [])" :key="row.level" class="text-xs text-white/50">Уровень {{ row.level }}: {{ row.guests }} гостей</div>
+                    <button type="button" @click="closeSeason" class="mt-3 px-4 py-2 border border-red-500/40 text-red-300 text-[10px] uppercase font-black rounded-xl">Закрыть сезон</button>
+                </div>
+                <form @submit.prevent="saveSeason" class="grid grid-cols-2 gap-3">
+                    <input v-model="seasonForm.title" class="bg-black border border-white/10 rounded-xl p-3" placeholder="Название" />
+                    <input v-model.number="seasonForm.claim_grace_days" type="number" min="7" max="14" class="bg-black border border-white/10 rounded-xl p-3" />
+                    <input v-model="seasonForm.starts_on" type="date" class="bg-black border border-white/10 rounded-xl p-3" />
+                    <input v-model="seasonForm.ends_on" type="date" class="bg-black border border-white/10 rounded-xl p-3" />
+                    <button class="col-span-2 py-3 bg-purple-600 rounded-xl text-[10px] font-black uppercase">Сохранить сезон</button>
+                </form>
+                <form v-if="season" @submit.prevent="saveLevel" class="grid grid-cols-4 gap-3">
+                    <input v-model.number="levelForm.level" type="number" min="1" class="bg-black border border-white/10 rounded-xl p-3" />
+                    <input v-model.number="levelForm.xp_required" type="number" min="1" class="bg-black border border-white/10 rounded-xl p-3" />
+                    <select v-model="levelForm.reward_kind" class="bg-black border border-white/10 rounded-xl p-3">
+                        <option value="session_minutes">минуты</option>
+                        <option value="cosmetic_frame">рамка</option>
+                        <option value="tariff_discount">скидка</option>
+                        <option value="bar_item">напиток</option>
+                        <option value="lfg_vip">VIP LFG</option>
+                        <option value="partner_promo">код партнёра</option>
+                        <option value="bonus_balance">фантики</option>
+                    </select>
+                    <button class="bg-white/10 rounded-xl text-[10px] font-black uppercase">Уровень</button>
+                </form>
+                <div v-for="lvl in (levels || [])" :key="lvl.id" class="text-xs text-white/50">
+                    {{ lvl.level }} · {{ lvl.xp_required }} XP · {{ lvl.reward_kind }}
+                </div>
+            </div>
+
+            <div v-if="tab === 'cosmetics' && can_manage" class="mb-8 text-sm text-white/50 space-y-1">
+                <div v-for="f in (frames || [])" :key="'f'+f.id">Рамка {{ f.name }}</div>
+                <div v-for="s in (statuses || [])" :key="'s'+s.id">Статус {{ s.label }} · {{ s.priority }}</div>
+                <div v-for="b in (badges || [])" :key="'b'+b.id">Значок {{ b.name }}</div>
+                <div v-if="!(frames || []).length && !(badges || []).length">Косметика появится после сида сезона.</div>
+            </div>
+
+            <div v-if="tab === 'ladder' && can_manage" class="mb-8 text-sm text-white/50">
+                <div v-for="t in (ladder || [])" :key="t.id">{{ t.metric }} ≥ {{ t.threshold }} → {{ t.reward_kind }}</div>
+                <div v-if="!(ladder || []).length">Порогов нет.</div>
+            </div>
+
+            <div v-if="tab === 'sources' && can_manage" class="mb-8 text-sm space-y-2">
+                <div v-for="(on, key) in (source_keys || {})" :key="key" class="text-white/60">
+                    {{ key }}: {{ on ? 'ключ есть' : 'не настроено' }}
+                </div>
+                <button type="button" @click="syncNow" class="px-4 py-2 rounded-xl bg-white/10 text-[10px] font-black uppercase">Синхронизировать сейчас</button>
+            </div>
+
+            <div v-show="tab === 'quests'" class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
                 <div class="xl:col-span-4 bg-[#0a0a0a] border border-purple-500/30 rounded-[1rem] p-8 shadow-[0_0_50px_rgba(168,85,247,0.05)] sticky top-8">
                     <h2 class="text-xl font-black uppercase italic text-purple-400 mb-6 border-b border-purple-500/20 pb-4">
                         {{ editingId ? 'Редактировать' : 'Новая ачивка' }}
@@ -197,6 +322,9 @@ const rewardLabel = (type: string) => type === 'bonus_balance' ? 'Фантики
                             </div>
                             <input v-model="form.reward_value" type="number" min="1" step="1"
                                    class="w-full bg-black border border-white/10 rounded-xl p-4 text-white font-bold focus:border-purple-500 outline-none" required />
+                            <label class="text-[10px] uppercase text-white/40 font-black tracking-widest mb-2 mt-4 block">XP пропуска (0–500)</label>
+                            <input v-model.number="form.xp" type="number" min="0" max="500"
+                                   class="w-full bg-black border border-white/10 rounded-xl p-4 text-white font-bold focus:border-purple-500 outline-none" />
                         </div>
 
                         <div class="flex gap-3">
@@ -237,6 +365,7 @@ const rewardLabel = (type: string) => type === 'bonus_balance' ? 'Фантики
                             <div class="mt-3 text-[10px] uppercase font-black tracking-widest text-white/40 flex flex-wrap gap-4">
                                 <span>Цель: {{ a.target_value }}{{ a.type === 'play_hours' ? ' ч' : ' визит.' }}</span>
                                 <span>Награда: +{{ Math.floor(a.reward_value) }} {{ rewardLabel(a.reward_type) }}</span>
+                                <span v-if="a.xp">XP +{{ a.xp }}</span>
                                 <span v-if="a.type === 'night_visits'">Окно: {{ a.night_start }}:00–{{ a.night_end }}:00</span>
                                 <span>Выдано: {{ a.completions_count || 0 }}</span>
                             </div>
