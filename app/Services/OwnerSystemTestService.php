@@ -1052,7 +1052,7 @@ class OwnerSystemTestService
         if ($php === '' || $args === []) {
             return $this->fail('Не собран запуск PHPUnit.');
         }
-        $timeout = $id === 'phpunit:all' ? 600 : 120;
+        $timeout = $id === 'phpunit:all' ? 600 : 300;
 
         $lock = Cache::lock('owner-system-tests-phpunit', $timeout + 30);
         if (! $lock->get()) {
@@ -1064,7 +1064,10 @@ class OwnerSystemTestService
             $process->run();
             $output = trim($process->getOutput()."\n".$process->getErrorOutput());
             $lines = array_values(array_filter(array_map('trim', preg_split('/\R/', $output) ?: [])));
-            $tail = array_merge(['php: '.$php], array_slice($lines, -12));
+            $tail = array_merge(['php: '.$php], array_map(
+                fn ($line) => mb_substr($line, 0, 400),
+                array_slice($lines, -12),
+            ));
             if ($process->isSuccessful()) {
                 return $this->pass('Автотесты прошли.', $tail);
             }

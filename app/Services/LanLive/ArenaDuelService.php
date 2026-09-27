@@ -1223,6 +1223,13 @@ class ArenaDuelService
         }
     }
 
+    private function participantSilentSince(mixed $seenAt, ArenaDuel $duel, \DateTimeInterface $cutoff): bool
+    {
+        $mark = $seenAt ?: ($duel->started_at ?: $duel->created_at);
+
+        return $mark !== null && $mark->lt($cutoff);
+    }
+
     private function opponentGsiFresh(ArenaDuel $duel, ArenaDuelParticipant $winnerRow): bool
     {
         $settings = $this->settings((int) $duel->club_id);
@@ -1263,17 +1270,17 @@ class ArenaDuelService
                 continue;
             }
             $opps = $parts->where('team_slot', '!=', $mine->team_slot);
-            $oppStale = $opps->every(function (ArenaDuelParticipant $p) use ($stale) {
-                $gsiDead = ! $p->last_gsi_at || $p->last_gsi_at->lt($stale);
+            $oppStale = $opps->every(function (ArenaDuelParticipant $p) use ($stale, $duel) {
+                // Нет last_gsi_at — игрок ещё не отметился, это не дисконнект.
+                // Иначе первый heartbeat соперника закрывает дуэль фолом до match_win.
+                $gsiDead = $this->participantSilentSince($p->last_gsi_at, $duel, $stale);
                 $pc = Computer::query()->find($p->computer_id);
-                // Пустой last_seen_at — power-heartbeat ещё не приходил, это не «ПК выключен».
-                // Иначе свежий GSI соперника закрывает дуэль фолом до match_win.
                 $powerDead = $pc && $pc->last_seen_at && $pc->last_seen_at->lt($stale);
 
                 return $gsiDead || $powerDead;
             });
-            $oppPause = $opps->every(function (ArenaDuelParticipant $p) use ($pauseAfter) {
-                return ! $p->last_gsi_at || $p->last_gsi_at->lt($pauseAfter);
+            $oppPause = $opps->every(function (ArenaDuelParticipant $p) use ($pauseAfter, $duel) {
+                return $this->participantSilentSince($p->last_gsi_at, $duel, $pauseAfter);
             });
             $mineFresh = $mine->last_gsi_at && $mine->last_gsi_at->gte($stale);
             if ($oppStale && $mineFresh && $duel->status !== ArenaDuel::STATUS_PENDING) {

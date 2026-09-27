@@ -24,7 +24,25 @@ class RunOwnerPhpunit extends Command
         $started = microtime(true);
         $outcome = $tests->runPhpunitSync($id);
         $outcome['duration_ms'] = (int) round((microtime(true) - $started) * 1000);
-        Cache::put($tests->phpunitResultCacheKey($id), $outcome, 1800);
+        $outcome['details'] = array_map(
+            fn ($line) => mb_substr((string) $line, 0, 400),
+            array_values(array_filter(
+                is_array($outcome['details'] ?? null) ? $outcome['details'] : [],
+                fn ($line) => is_string($line) || is_numeric($line),
+            )),
+        );
+        try {
+            Cache::put($tests->phpunitResultCacheKey($id), $outcome, 1800);
+        } catch (\Throwable $e) {
+            $outcome['details'] = array_merge(array_slice($outcome['details'], 0, 6), [
+                'cache: '.mb_substr($e->getMessage(), 0, 240),
+            ]);
+            try {
+                Cache::put($tests->phpunitResultCacheKey($id), $outcome, 1800);
+            } catch (\Throwable) {
+                $this->error($e->getMessage());
+            }
+        }
 
         return ($outcome['status'] ?? '') === 'pass' ? self::SUCCESS : self::FAILURE;
     }

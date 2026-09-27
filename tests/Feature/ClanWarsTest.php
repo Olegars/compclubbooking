@@ -177,7 +177,7 @@ class ClanWarsTest extends TestCase
         $this->assertGreaterThan(1000, (int) ClanRating::query()->where('faction_key', (string) $this->club->id)->value('rating'));
         $this->assertSame(1, (int) ClanPlayerRating::query()->where('user_id', $aUser->id)->value('wars_played'));
 
-        $this->actingAs($aUser)
+        $this->actingAs($aUser, 'web')
             ->get('/account/dashboard')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
