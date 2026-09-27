@@ -285,6 +285,9 @@ Route::post('/api/terminal/shop/checkout', [ShopController::class, 'terminalChec
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth'])->group(function () {
+    Route::get('/auth/nickname', [SmsAuthController::class, 'showNickname'])->name('auth.nickname');
+    Route::post('/auth/nickname', [SmsAuthController::class, 'saveNickname'])->name('auth.nickname.store');
+
     Route::redirect('/auth/profile', '/account/dashboard');
 
     Route::prefix('account')->group(function () {

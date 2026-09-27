@@ -33,11 +33,12 @@ class SmsAuthNicknameTest extends TestCase
         $this->post('/auth/verify-code', [
             'phone' => '+79991112233',
             'code' => '0451',
-        ])->assertRedirect();
+        ])->assertRedirect(route('auth.nickname'));
 
         $user = User::query()->where('phone', '+79991112233')->first();
         $this->assertNotNull($user);
         $this->assertSame('FrostFox', $user->name);
+        $this->assertTrue($user->nickname_pending);
         $this->assertDoesNotMatchRegularExpression('/[_-]/', $user->name);
 
         Http::assertSent(function ($request) {
@@ -101,9 +102,83 @@ class SmsAuthNicknameTest extends TestCase
         $this->post('/auth/verify-code', [
             'phone' => $user->phone,
             'code' => '0451',
-        ])->assertRedirect();
+        ])->assertRedirect(route('dashboard'));
 
         $this->assertSame('OldNick', $user->fresh()->name);
+        $this->assertFalse($user->fresh()->nickname_pending);
         Http::assertNothingSent();
+    }
+
+    public function test_first_login_can_replace_suggested_nick_in_one_step(): void
+    {
+        Http::fake([
+            'api.deepseek.com/chat/completions' => Http::response([
+                'choices' => [['message' => ['content' => 'FrostFox']]],
+            ], 200),
+        ]);
+
+        $this->post('/auth/verify-code', [
+            'phone' => '+79991112240',
+            'code' => '0451',
+            'redirect_to' => '/booking?zone=1',
+        ])->assertRedirect(route('auth.nickname'));
+
+        $this->get(route('auth.nickname'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Auth/ClaimNickname')
+                ->where('nickname', 'FrostFox'));
+
+        $this->post('/auth/nickname', ['name' => '  My_Old-Nick  '])
+            ->assertRedirect('/booking?zone=1');
+
+        $user = User::query()->where('phone', '+79991112240')->first();
+        $this->assertSame('My_Old-Nick', $user->name);
+        $this->assertFalse($user->nickname_pending);
+        $this->assertAuthenticatedAs($user);
+    }
+
+    public function test_keeping_suggestion_clears_pending_and_opens_dashboard(): void
+    {
+        Http::fake([
+            'api.deepseek.com/chat/completions' => Http::response([
+                'choices' => [['message' => ['content' => 'FrostFox']]],
+            ], 200),
+        ]);
+
+        $this->post('/auth/verify-code', [
+            'phone' => '+79991112241',
+            'code' => '0451',
+            'redirect_to' => '//evil.test',
+        ]);
+
+        $this->post('/auth/nickname', ['name' => 'FrostFox'])
+            ->assertRedirect(route('dashboard'));
+
+        $user = User::query()->where('phone', '+79991112241')->first();
+        $this->assertSame('FrostFox', $user->name);
+        $this->assertFalse($user->nickname_pending);
+    }
+
+    public function test_invalid_nick_stays_on_claim_screen(): void
+    {
+        Http::fake([
+            'api.deepseek.com/chat/completions' => Http::response([
+                'choices' => [['message' => ['content' => 'FrostFox']]],
+            ], 200),
+        ]);
+
+        $this->post('/auth/verify-code', [
+            'phone' => '+79991112242',
+            'code' => '0451',
+        ]);
+
+        $this->post('/auth/nickname', ['name' => '!!!'])
+            ->assertSessionHasErrors('name');
+
+        $user = User::query()->where('phone', '+79991112242')->first();
+        $this->assertSame('FrostFox', $user->name);
+        $this->assertTrue($user->nickname_pending);
+        $this->get('/account/dashboard')->assertRedirect(route('auth.nickname'));
     }
 }

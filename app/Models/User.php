@@ -20,6 +20,7 @@ class User extends Authenticatable
         'avatar',
         'balance',
         'offer_accepted_at',
+        'nickname_pending',
     ];
 
     protected $hidden = [
@@ -33,6 +34,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'offer_accepted_at' => 'datetime',
+            'nickname_pending' => 'boolean',
         ];
     }
 

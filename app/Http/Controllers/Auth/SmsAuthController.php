@@ -8,6 +8,7 @@ use App\Models\Wallet;
 use App\Services\PlayerNicknameService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
 
 class SmsAuthController extends Controller
 {
@@ -52,6 +53,7 @@ class SmsAuthController extends Controller
             $user = new User();
             $user->phone = $request->phone;
             $user->name = $nicks->assignForNewUser();
+            $user->nickname_pending = true;
             $user->email = $request->phone . '@reactor.club';
             $user->password = bcrypt(\Illuminate\Support\Str::random(16));
             $user->avatar = 'avatar_' . rand(1, 10) . '.png';
@@ -77,11 +79,77 @@ class SmsAuthController extends Controller
 
         // Вход из бронирования возвращает на ту же страницу с сохранённым выбором,
         // остальные случаи ведут в личный кабинет. Принимаем только локальные пути.
-        $redirectTo = (string) $request->input('redirect_to', '');
-        $isLocalPath = $redirectTo !== ''
-            && str_starts_with($redirectTo, '/')
-            && ! str_starts_with($redirectTo, '//');
+        $returnTo = $this->safeReturn($request->input('redirect_to'));
 
-        return inertia()->location($isLocalPath ? $redirectTo : route('dashboard'));
+        // Подсказка DeepSeek уже в users.name. Свой ник гость правит здесь же,
+        // до кабинета — не в /account/profile.
+        if ($user->nickname_pending) {
+            if (is_string($returnTo)) {
+                $request->session()->put('nickname_return', $returnTo);
+            } else {
+                $request->session()->forget('nickname_return');
+            }
+
+            return redirect()->route('auth.nickname');
+        }
+
+        return inertia()->location($returnTo ?: route('dashboard'));
+    }
+
+    public function showNickname(Request $request)
+    {
+        $user = $request->user();
+        if (! $user || ! $user->nickname_pending) {
+            return redirect()->to($this->pullReturnPath($request) ?: route('dashboard'));
+        }
+
+        return Inertia::render('Auth/ClaimNickname', [
+            'nickname' => $user->name,
+        ]);
+    }
+
+    public function saveNickname(Request $request, PlayerNicknameService $nicks)
+    {
+        $user = $request->user();
+        if (! $user || ! $user->nickname_pending) {
+            return redirect()->route('dashboard');
+        }
+
+        $name = $nicks->normalizeGuestChoice((string) $request->input('name', ''));
+        if ($name === null) {
+            return back()->withErrors([
+                'name' => 'От 2 до 50 символов, нужна хотя бы одна буква или цифра.',
+            ])->withInput();
+        }
+
+        $user->name = $name;
+        $user->nickname_pending = false;
+        $user->save();
+
+        $returnTo = $this->pullReturnPath($request);
+
+        return redirect()->to($returnTo ?: route('dashboard'));
+    }
+
+    private function safeReturn(mixed $redirectTo): ?string
+    {
+        if (! is_string($redirectTo) || $redirectTo === '') {
+            return null;
+        }
+        if (
+            ! str_starts_with($redirectTo, '/')
+            || str_starts_with($redirectTo, '//')
+            || str_starts_with($redirectTo, '/\\')
+            || str_starts_with($redirectTo, '/auth/nickname')
+        ) {
+            return null;
+        }
+
+        return $redirectTo;
+    }
+
+    private function pullReturnPath(Request $request): ?string
+    {
+        return $this->safeReturn($request->session()->pull('nickname_return'));
     }
 }

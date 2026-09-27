@@ -13,6 +13,7 @@ const isStoreApp = /CompClubStore/i.test(navigator.userAgent || '');
 const clientPages = import.meta.glob([
     './Pages/Home/**/*.vue',
     './Pages/Auth/Login.vue',
+    './Pages/Auth/ClaimNickname.vue',
     './Pages/Auth/RegisterView.vue',
     './Pages/Booking/**/*.vue',
     './Pages/User/**/*.vue',

@@ -45,6 +45,26 @@ class PlayerNicknameService
         return $this->fallbackNick();
     }
 
+    /**
+     * Свой постоянный псевдоним гостя. Подсказка DeepSeek — только буквы,
+     * здесь можно оставить привычный тег с цифрами и знаками.
+     */
+    public function normalizeGuestChoice(string $raw): ?string
+    {
+        $name = preg_replace('/[\x00-\x1F\x7F]/u', '', $raw) ?? '';
+        $name = trim(preg_replace('/\s+/u', ' ', $name) ?? '');
+        $len = mb_strlen($name);
+        if ($len < 2 || $len > 50) {
+            return null;
+        }
+
+        if (! preg_match('/[\p{L}\p{N}]/u', $name)) {
+            return null;
+        }
+
+        return $name;
+    }
+
     public function sanitize(string $raw): ?string
     {
         $normalized = str_replace(["\r\n", "\r"], "\n", $raw);

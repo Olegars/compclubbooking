@@ -19,4 +19,17 @@ class PlayerNicknameServiceTest extends TestCase
         $this->assertNull($service->sanitize('ab'));
         $this->assertNull($service->sanitize('___---'));
     }
+
+    public function test_guest_choice_keeps_digits_and_separators(): void
+    {
+        $service = app(PlayerNicknameService::class);
+
+        $this->assertSame('My_Old-Nick', $service->normalizeGuestChoice('  My_Old-Nick  '));
+        $this->assertSame('Кибер Кот', $service->normalizeGuestChoice("Кибер   Кот\n"));
+        $this->assertSame('Nova7', $service->normalizeGuestChoice('Nova7'));
+        $this->assertSame('Player#1234', $service->normalizeGuestChoice('Player#1234'));
+        $this->assertSame('-=Neo=-', $service->normalizeGuestChoice('-=Neo=-'));
+        $this->assertNull($service->normalizeGuestChoice('A'));
+        $this->assertNull($service->normalizeGuestChoice('!!!'));
+    }
 }
