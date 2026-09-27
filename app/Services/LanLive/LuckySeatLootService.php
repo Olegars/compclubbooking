@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\KitchenOrderPrintService;
 use App\Services\ProductStockService;
 use App\Services\ClubFeatureService;
+use App\Support\GsiStreakEligibility;
 use App\Support\OrderChannel;
 use App\Support\OrderDeliveryTarget;
 use Illuminate\Support\Facades\Cache;
@@ -66,29 +67,32 @@ class LuckySeatLootService
         }
         $event = strtolower((string) ($snap['event'] ?? 'heartbeat'));
         $stats = $this->sessionStats((int) $booking->id);
+        $streakEvent = in_array($event, ['match_win', 'match_loss', 'round_win', 'round_loss'], true);
 
-        if ($event === 'match_win') {
-            $stats['match_streak']++;
-        } elseif ($event === 'match_loss') {
-            $stats['match_streak'] = 0;
-        } elseif ($event === 'round_win') {
-            $stats['round_streak']++;
-        } elseif ($event === 'round_loss') {
-            $stats['round_streak'] = 0;
-        }
-        $this->putSession((int) $booking->id, $stats);
-
-        $clubId = $this->clubId($computer);
-        $streakHit = $stats['match_streak'] >= $this->matchStreak($clubId)
-            || $stats['round_streak'] >= $this->roundStreak($clubId);
-        if ($streakHit && in_array($event, ['match_win', 'round_win'], true)) {
-            $drop = $this->tryGrant($computer, $user, $booking, LuckySeatDrop::TRIGGER_WIN_STREAK);
-            if ($drop) {
+        if ($streakEvent && GsiStreakEligibility::countsForStreak($snap)) {
+            if ($event === 'match_win') {
+                $stats['match_streak']++;
+            } elseif ($event === 'match_loss') {
                 $stats['match_streak'] = 0;
+            } elseif ($event === 'round_win') {
+                $stats['round_streak']++;
+            } else {
                 $stats['round_streak'] = 0;
-                $this->putSession((int) $booking->id, $stats);
+            }
+            $this->putSession((int) $booking->id, $stats);
 
-                return $drop;
+            $clubId = $this->clubId($computer);
+            $streakHit = $stats['match_streak'] >= $this->matchStreak($clubId)
+                || $stats['round_streak'] >= $this->roundStreak($clubId);
+            if ($streakHit && in_array($event, ['match_win', 'round_win'], true)) {
+                $drop = $this->tryGrant($computer, $user, $booking, LuckySeatDrop::TRIGGER_WIN_STREAK);
+                if ($drop) {
+                    $stats['match_streak'] = 0;
+                    $stats['round_streak'] = 0;
+                    $this->putSession((int) $booking->id, $stats);
+
+                    return $drop;
+                }
             }
         }
 

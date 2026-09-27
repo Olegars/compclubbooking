@@ -364,6 +364,10 @@ class ClubFeaturesTest extends TestCase
             'event' => $event,
             'game' => 'cs2',
             'in_match' => true,
+            'map' => 'de_mirage',
+            'map_mode' => 'competitive',
+            'map_phase' => 'live',
+            'has_bots' => false,
         ]);
     }
 }

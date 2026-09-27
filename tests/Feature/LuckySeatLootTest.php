@@ -246,15 +246,95 @@ class LuckySeatLootTest extends TestCase
         return [$user, $pc, $booking];
     }
 
-    private function gsi(Computer $pc, Booking $booking, string $event)
+    public function test_farm_lobbies_do_not_advance_streak(): void
     {
-        return $this->postJson('/api/shell/gsi', [
+        [$user, $pc, $booking] = $this->seat();
+        $farms = [
+            ['map' => 'aim_botz', 'map_mode' => 'competitive'],
+            ['map' => 'workshop/243702660/aim_botz', 'map_mode' => 'custom'],
+            ['map' => 'awp_lego_2', 'map_mode' => 'competitive'],
+            ['map' => 'de_dust2', 'map_mode' => 'casual'],
+            ['map' => 'de_dust2', 'map_mode' => 'deathmatch'],
+            ['map' => 'de_mirage', 'map_mode' => 'custom'],
+            ['map' => 'de_mirage', 'map_mode' => 'competitive', 'map_phase' => 'warmup'],
+            ['map' => 'de_mirage', 'map_mode' => 'competitive', 'has_bots' => true],
+        ];
+
+        foreach ($farms as $extra) {
+            for ($i = 0; $i < 6; $i++) {
+                $this->gsi($pc, $booking, 'round_win', $extra)
+                    ->assertOk()
+                    ->assertJsonPath('lootbox_dropped', null);
+            }
+        }
+
+        $this->assertSame(0, LuckySeatDrop::query()->count());
+    }
+
+    public function test_farm_loss_does_not_reset_official_streak(): void
+    {
+        [$user, $pc, $booking] = $this->seat();
+
+        for ($i = 0; $i < 4; $i++) {
+            $this->gsi($pc, $booking, 'round_win')->assertOk();
+        }
+        $this->gsi($pc, $booking, 'round_loss', [
+            'map' => 'aim_botz',
+            'map_mode' => 'custom',
+            'has_bots' => true,
+        ])->assertOk();
+        $this->gsi($pc, $booking, 'round_win')
+            ->assertOk()
+            ->assertJsonPath('lootbox_dropped.status', 'pending')
+            ->assertJsonPath('lootbox_dropped.trigger', LuckySeatDrop::TRIGGER_WIN_STREAK);
+    }
+
+    public function test_dota_custom_lobby_does_not_count_match_streak(): void
+    {
+        [$user, $pc, $booking] = $this->seat();
+
+        for ($i = 0; $i < 3; $i++) {
+            $this->gsi($pc, $booking, 'match_win', [
+                'game' => 'dota',
+                'map' => 'dota',
+                'match_id' => '0',
+                'custom_game' => 'Overthrow',
+            ])->assertOk()->assertJsonPath('lootbox_dropped', null);
+        }
+
+        $this->gsi($pc, $booking, 'match_win', [
+            'game' => 'dota',
+            'map' => 'dota',
+            'match_id' => '7123456789',
+            'custom_game' => '',
+        ])->assertOk()->assertJsonPath('lootbox_dropped', null);
+
+        $this->gsi($pc, $booking, 'match_win', [
+            'game' => 'dota',
+            'map' => 'dota',
+            'match_id' => '7123456789',
+            'custom_game' => '',
+        ])->assertOk()
+            ->assertJsonPath('lootbox_dropped.status', 'pending')
+            ->assertJsonPath('lootbox_dropped.trigger', LuckySeatDrop::TRIGGER_WIN_STREAK);
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     */
+    private function gsi(Computer $pc, Booking $booking, string $event, array $extra = [])
+    {
+        return $this->postJson('/api/shell/gsi', array_merge([
             'terminal_id' => $pc->id,
             'booking_id' => $booking->id,
             'event' => $event,
             'game' => 'cs2',
             'in_match' => true,
-        ]);
+            'map' => 'de_mirage',
+            'map_mode' => 'competitive',
+            'map_phase' => 'live',
+            'has_bots' => false,
+        ], $extra));
     }
 
     private function forceDrop(Computer $pc, Booking $booking): LuckySeatDrop
