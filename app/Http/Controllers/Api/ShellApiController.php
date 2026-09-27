@@ -522,11 +522,8 @@ class ShellApiController extends Controller
     public function getBalance(Request $request)
     {
         try {
-            // Пока шелл поллит баланс — закрываем просроченные сессии сразу,
-            // не дожидаясь минуты scheduler'а.
-            app(BookingSessionTimingService::class)->completeExpiredSessions();
-            app(BookingSeatTransferService::class)->reclaimAbandonedTransfers();
-
+            // Закрытие просроченных сессий, откат пересадок и сифон котла —
+            // один проход reactor:update-statuses, не на каждом poll зала.
             $bookingId = (int) $request->query('booking_id', 0);
             $terminalId = (int) $request->query('terminal_id', 0);
             $userId = (int) $request->query('user_id', 0);
@@ -577,11 +574,6 @@ class ShellApiController extends Controller
                     $sessionActive = true;
                     $timing = app(BookingSessionTimingService::class);
                     $booking = $timing->healSkewedWindow($booking);
-                    try {
-                        app(\App\Services\LanLive\PartyEnergyPoolService::class)->maybeSiphon($booking, true);
-                        $booking = $booking->fresh() ?? $booking;
-                    } catch (\Throwable) {
-                    }
                     $timeRemaining = $timing->formatRemainingHms($booking);
                 }
             }

@@ -135,6 +135,30 @@ class PartyEnergyPoolService
     }
 
     /**
+     * One club-wide pass (scheduler), not once per shell balance poll.
+     */
+    public function siphonDueSessions(): int
+    {
+        $rows = Booking::query()
+            ->where('status', 'active')
+            ->whereNotNull('booking_group_id')
+            ->whereNotNull('actual_started_at')
+            ->get();
+
+        $siphoned = 0;
+        foreach ($rows as $booking) {
+            try {
+                if ($this->maybeSiphon($booking, true)) {
+                    $siphoned++;
+                }
+            } catch (\Throwable) {
+            }
+        }
+
+        return $siphoned;
+    }
+
+    /**
      * Last-chance siphon when the session is already at/past ends_at.
      */
     public function trySiphonExpired(Booking $booking): bool

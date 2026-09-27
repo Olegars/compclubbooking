@@ -8,6 +8,7 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 use App\Models\User;
 use App\Models\Order;
@@ -596,8 +597,38 @@ class AdminController extends Controller
     // ==========================================
     public function orders(ProductStockService $stock)
     {
-        // Активная очередь: новые (pending) и в работе (cooking)
-        $orders = DB::table('orders')
+        return Inertia::render('Admin/Orders', [
+            'orders' => $this->queuePayload($stock),
+        ]);
+    }
+
+    /**
+     * Короткий JSON очереди бара. Без смены состава — 304, без сборки карточек.
+     */
+    public function ordersQueue(Request $request, ProductStockService $stock)
+    {
+        $hash = $this->ordersQueueFingerprint();
+        $etag = '"'.$hash.'"';
+        $headers = [
+            'ETag' => $etag,
+            'Cache-Control' => 'private, no-cache',
+        ];
+
+        if ($this->ifNoneMatch($request, $hash)) {
+            return response('', 304, $headers);
+        }
+
+        return response()->json([
+            'orders' => $this->queuePayload($stock),
+        ], 200, $headers);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function queuePayload(ProductStockService $stock): array
+    {
+        return DB::table('orders')
             ->join('users', 'orders.user_id', '=', 'users.id')
             ->select(
                 'orders.*',
@@ -641,11 +672,45 @@ class AdminController extends Controller
                         'phone' => $order->user_phone,
                     ],
                 ];
-            });
+            })
+            ->values()
+            ->all();
+    }
 
-        return Inertia::render('Admin/Orders', [
-            'orders' => $orders,
-        ]);
+    private function ordersQueueFingerprint(): string
+    {
+        $rows = DB::table('orders')
+            ->whereIn('status', ['pending', 'cooking'])
+            ->orderBy('id')
+            ->get(['id', 'status', 'updated_at']);
+
+        $marks = 0;
+        if ($rows->isNotEmpty() && Schema::hasTable('product_units')) {
+            $marks = (int) DB::table('product_units')
+                ->where('status', ProductUnit::STATUS_SOLD)
+                ->whereIn('sold_order_id', $rows->pluck('id'))
+                ->count();
+        }
+
+        $body = $rows->map(fn ($row) => $row->id.':'.$row->status.':'.(string) $row->updated_at)->implode('|');
+
+        return sha1($body.'#'.$marks);
+    }
+
+    private function ifNoneMatch(Request $request, string $hash): bool
+    {
+        $incoming = $request->headers->get('If-None-Match');
+        if (! is_string($incoming) || $incoming === '') {
+            return false;
+        }
+
+        $incoming = trim($incoming);
+        if (str_starts_with($incoming, 'W/')) {
+            $incoming = trim(substr($incoming, 2));
+        }
+        $incoming = trim($incoming, " \t\"");
+
+        return hash_equals($hash, $incoming);
     }
 
     public function updateOrderStatus(Request $request, $id, ProductStockService $stock)

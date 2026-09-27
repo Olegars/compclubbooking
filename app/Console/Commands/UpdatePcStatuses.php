@@ -26,6 +26,15 @@ class UpdatePcStatuses extends Command
             $this->info('No-show отменено: '.$noShows);
         }
 
+        try {
+            $siphoned = app(\App\Services\LanLive\PartyEnergyPoolService::class)->siphonDueSessions();
+            if ($siphoned > 0) {
+                $this->info('Сифон котла пати: '.$siphoned);
+            }
+        } catch (\Throwable $e) {
+            $this->warn('Сифон котла: '.$e->getMessage());
+        }
+
         $closed = $timing->completeExpiredSessions();
         if ($closed > 0) {
             $this->info('Закрыто просроченных сессий: '.$closed);

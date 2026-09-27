@@ -450,6 +450,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
             Route::post('/computers/rollback', [AdminController::class, 'enqueueImageRollback']);
             Route::post('/golden-image/verify', [AdminController::class, 'verifyGoldenRevision']);
             Route::get('/check-orders', [AdminController::class, 'checkNewOrders']);
+            Route::get('/orders-queue', [AdminController::class, 'ordersQueue']);
             Route::get('/sos-alerts', [AdminController::class, 'sosAlerts']);
             Route::post('/sos-alerts/{id}/ack', [AdminController::class, 'ackSosAlert']);
             Route::post('/input-alerts/{id}/ack', [AdminController::class, 'ackInputAlert']);

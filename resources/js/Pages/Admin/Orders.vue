@@ -1,5 +1,6 @@
 <script setup>
 import { router } from '@inertiajs/vue3'
+import axios from 'axios'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AdminConfirm from '@/Components/AdminConfirm.vue'
@@ -16,12 +17,14 @@ const { onFulfillScan } = useAdminBarcodeScanner()
 
 const POLL_INTERVAL = 7000
 const pollTimer = ref(null)
+const queue = ref([...(props.orders || [])])
+let queueEtag = ''
 const seenOrderIds = ref(new Set((props.orders || []).map(o => o.id)))
 
 const localProgress = ref({})
 const lastScannedOrderId = ref(null)
 const hasOpenMarking = computed(() =>
-    (props.orders || []).some(o => needsMarking(o) && !isMarkingComplete(o) && ['pending', 'cooking'].includes(o.status))
+    (queue.value || []).some(o => needsMarking(o) && !isMarkingComplete(o) && ['pending', 'cooking'].includes(o.status))
 )
 
 const preorderGroupKey = (order) => {
@@ -61,7 +64,7 @@ const mergeBlockItems = (orders) => {
 }
 
 const orderBlocks = computed(() => {
-    const list = props.orders || []
+    const list = queue.value || []
     const blocks = []
     const preIndex = new Map()
 
@@ -148,7 +151,7 @@ const blockMarkingComplete = (block) => progressForBlock(block).every(r => r.rem
 
 const setStatus = (ids, status) => {
     const idList = Array.isArray(ids) ? ids : [ids]
-    const group = (props.orders || []).filter(o => idList.includes(o.id))
+    const group = (queue.value || []).filter(o => idList.includes(o.id))
     if (status === 'delivered' && group.some(o => needsMarking(o) && !isMarkingComplete(o))) {
         error('Отсканируйте коды маркировки перед выдачей')
         return
@@ -189,15 +192,7 @@ const confirmCancel = () => {
     setStatus(ids, 'cancelled')
 }
 
-const refreshQueue = () => {
-    router.reload({
-        only: ['orders', 'admin_alerts'],
-        preserveScroll: true,
-        preserveState: true,
-    })
-}
-
-watch(() => props.orders, (list) => {
+const noteQueue = (list) => {
     const ids = (list || []).map(o => o.id)
     const hasNew = ids.some(id => !seenOrderIds.value.has(id))
     seenOrderIds.value = new Set(ids)
@@ -205,12 +200,48 @@ watch(() => props.orders, (list) => {
         new Audio('/sounds/notification.mp3').play().catch(() => {})
         info('Новый заказ в очереди')
     }
+}
+
+const refreshQueue = async () => {
+    if (typeof document !== 'undefined' && document.hidden) return
+    try {
+        const response = await axios.get('/admin/api/orders-queue', {
+            headers: queueEtag ? { 'If-None-Match': queueEtag } : {},
+            validateStatus: (status) => status === 200 || status === 304,
+        })
+        const etag = response.headers?.etag
+        if (etag) queueEtag = etag
+        if (response.status === 304) return
+        queue.value = response.data?.orders || []
+    } catch {
+        /* сеть */
+    }
+}
+
+const armPoll = (immediate = false) => {
+    if (pollTimer.value) {
+        clearInterval(pollTimer.value)
+        pollTimer.value = null
+    }
+    if (typeof document !== 'undefined' && document.hidden) return
+    if (immediate) void refreshQueue()
+    pollTimer.value = setInterval(() => { void refreshQueue() }, POLL_INTERVAL)
+}
+
+const onVisibility = () => armPoll(!document.hidden)
+
+watch(() => props.orders, (list) => {
+    queueEtag = ''
+    queue.value = list || []
 })
+
+watch(queue, (list) => noteQueue(list))
 
 let unsubscribeFulfill = null
 
 onMounted(() => {
-    pollTimer.value = setInterval(refreshQueue, POLL_INTERVAL)
+    document.addEventListener('visibilitychange', onVisibility)
+    armPoll(false)
     unsubscribeFulfill = onFulfillScan((data) => {
         const orderId = data.order_id
         lastScannedOrderId.value = orderId
@@ -222,6 +253,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+    document.removeEventListener('visibilitychange', onVisibility)
     if (pollTimer.value) clearInterval(pollTimer.value)
     if (unsubscribeFulfill) unsubscribeFulfill()
 })
@@ -241,7 +273,7 @@ onUnmounted(() => {
                 </div>
             </div>
 
-            <div v-if="orders && orders.length > 0" class="space-y-4">
+            <div v-if="queue && queue.length > 0" class="space-y-4">
                 <div v-for="block in orderBlocks" :key="block.key"
                      class="bg-[#050505] border rounded-[0.875rem] p-6 flex flex-col gap-4 group hover:border-[#22c55e]/40 transition-all shadow-lg relative overflow-hidden"
                      :class="block.ids.includes(lastScannedOrderId) ? 'border-cyan-500 ring-1 ring-cyan-500/40' : 'border-white/5'">

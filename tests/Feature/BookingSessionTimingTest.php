@@ -342,6 +342,32 @@ class BookingSessionTimingTest extends TestCase
         $this->assertSame('confirmed', $booking->status);
     }
 
+    public function test_balance_poll_does_not_close_expired_sessions(): void
+    {
+        $now = CarbonImmutable::parse('2026-07-31 00:30:00', 'Europe/Moscow');
+        CarbonImmutable::setTestNow($now);
+        $this->travelTo($now);
+
+        $booking = $this->makeBooking(
+            $now->subHour(),
+            $now->subMinutes(10),
+            '1111'
+        );
+        $booking->update([
+            'status' => 'active',
+            'actual_started_at' => $now->subHour(),
+        ]);
+
+        $this->getJson('/api/shell/balance?terminal_id='.$this->computer->id.'&booking_id='.$booking->id)
+            ->assertOk()
+            ->assertJsonPath('session_active', true);
+
+        $booking->refresh();
+        $this->assertSame('active', $booking->status);
+
+        CarbonImmutable::setTestNow();
+    }
+
     private function makeBooking(
         CarbonImmutable $startsAt,
         CarbonImmutable $endsAt,
