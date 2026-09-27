@@ -1263,10 +1263,12 @@ class ArenaDuelService
                 continue;
             }
             $opps = $parts->where('team_slot', '!=', $mine->team_slot);
-            $oppStale = $opps->every(function (ArenaDuelParticipant $p) use ($stale, $pauseAfter, $duel) {
+            $oppStale = $opps->every(function (ArenaDuelParticipant $p) use ($stale) {
                 $gsiDead = ! $p->last_gsi_at || $p->last_gsi_at->lt($stale);
                 $pc = Computer::query()->find($p->computer_id);
-                $powerDead = $pc && (! $pc->last_seen_at || $pc->last_seen_at->lt($stale));
+                // Пустой last_seen_at — power-heartbeat ещё не приходил, это не «ПК выключен».
+                // Иначе свежий GSI соперника закрывает дуэль фолом до match_win.
+                $powerDead = $pc && $pc->last_seen_at && $pc->last_seen_at->lt($stale);
 
                 return $gsiDead || $powerDead;
             });

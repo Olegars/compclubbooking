@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class StaffCadreController extends Controller
 {
@@ -77,7 +77,7 @@ class StaffCadreController extends Controller
         return back()->with('success', 'Персонифицированные сведения собраны, файл '.$report->id.'.');
     }
 
-    public function download(CadreReport $report): BinaryFileResponse
+    public function download(CadreReport $report): StreamedResponse
     {
         if (! Storage::disk('local')->exists($report->file_path)) {
             abort(404, 'Файл выгрузки не найден.');

@@ -422,13 +422,15 @@ class LuckySeatLootService
                 $q->whereNull('requires_marking')->orWhere('requires_marking', false);
             })
             ->where(function ($q) {
-                $q->where('category', 'like', '%напит%')
-                    ->orWhere('category', 'like', '%drink%')
-                    ->orWhere('category', 'like', '%бар%')
-                    ->orWhere('name', 'like', '%red bull%')
-                    ->orWhere('name', 'like', '%энерг%')
-                    ->orWhere('name', 'like', '%кола%')
-                    ->orWhere('name', 'like', '%адреналин%');
+                foreach ([
+                    '%напит%', '%Напит%', '%drink%', '%Drink%', '%бар%', '%Бар%',
+                    '%red bull%', '%Red Bull%', '%энерг%', '%Энерг%',
+                    '%кола%', '%Кола%', '%адреналин%', '%Адреналин%',
+                    '%adrenaline%', '%Adrenaline%',
+                ] as $needle) {
+                    $q->orWhere('category', 'like', $needle)
+                        ->orWhere('name', 'like', $needle);
+                }
             })
             ->orderBy('price')
             ->orderBy('id')

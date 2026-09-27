@@ -17,8 +17,8 @@ class MapPresentationServiceTest extends TestCase
     public function test_rooms_without_bound_pc_or_tv_are_marked_service(): void
     {
         $club = Club::create(['name' => 'Map Club', 'slug' => 'map-club']);
-        $duo = Zone::create(['name' => 'Дуо', 'slug' => 'duo', 'color' => '#22c55e']);
-        $tv = Zone::create(['name' => 'ТВ', 'slug' => 'tv', 'color' => '#a855f7']);
+        $duo = Zone::query()->where('slug', 'duo')->firstOrFail();
+        $tv = Zone::query()->where('slug', 'tv')->firstOrFail();
 
         $withPc = Space::create([
             'club_id' => $club->id,
@@ -97,7 +97,7 @@ class MapPresentationServiceTest extends TestCase
     public function test_tv_inside_room_without_space_id_still_counts_as_bound(): void
     {
         $club = Club::create(['name' => 'Geo Club', 'slug' => 'geo-club']);
-        $tv = Zone::create(['name' => 'ТВ', 'slug' => 'tv', 'color' => '#a855f7']);
+        $tv = Zone::query()->where('slug', 'tv')->firstOrFail();
         Space::create([
             'club_id' => $club->id,
             'zone_id' => $tv->id,

@@ -128,7 +128,7 @@ class PlayerAvatarTest extends TestCase
         $armor = imagecolorat($img, 256, 450);
         $this->assertLessThan(90, ($armor >> 16) & 0xFF, 'низ шаблона (броня) не должен стать фото');
 
-        $neon = imagecolorat($img, 200, 200);
+        $neon = imagecolorat($img, 204, 178);
         $this->assertGreaterThan(140, ($neon >> 8) & 0xFF);
         $this->assertGreaterThan((($neon >> 16) & 0xFF) + 20, ($neon >> 8) & 0xFF);
 

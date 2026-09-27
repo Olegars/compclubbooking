@@ -1134,10 +1134,10 @@ class OwnerSystemTestService
             }
 
             if ($jobId === $id) {
-                return $this->fail('PHPUnit оборвался без отчёта.', [
+                return $this->fail('PHPUnit оборвался без отчёта.', array_merge([
                     'pid: '.$pid,
                     'лог: storage/logs/owner-phpunit.log',
-                ]);
+                ], $this->phpunitLogTail()));
             }
         }
 
@@ -1250,6 +1250,21 @@ class OwnerSystemTestService
     public function phpunitResultCacheKey(string $id): string
     {
         return 'owner-system-tests-phpunit-result:'.$id;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function phpunitLogTail(): array
+    {
+        $log = storage_path('logs/owner-phpunit.log');
+        if (! is_file($log)) {
+            return [];
+        }
+        $lines = preg_split('/\R/', (string) file_get_contents($log)) ?: [];
+        $lines = array_values(array_filter(array_map('trim', $lines), fn ($line) => $line !== ''));
+
+        return array_slice($lines, -8);
     }
 
     public function phpunitPidIsAlive(int $pid): bool

@@ -179,7 +179,7 @@ class ShiftHardwareAuditTest extends TestCase
             ->assertRedirect('/admin/dashboard');
 
         $this->assertDatabaseHas('incidents', [
-            'type' => 'hid_disconnected',
+            'type' => 'hid.disconnected',
             'computer_id' => $pc->id,
             'responsible_admin_id' => $outgoing->id,
         ]);

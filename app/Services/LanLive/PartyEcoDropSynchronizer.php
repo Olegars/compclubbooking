@@ -105,7 +105,12 @@ class PartyEcoDropSynchronizer
         $features = app(\App\Services\ClubFeatureService::class);
         $clubId = $features->clubIdForComputer($computer);
         $ecoPer = max(500, $features->int($clubId, 'coach_whisper', 'eco_per_player', self::ECO_BANK_PER_PLAYER));
-        if ($sum < count($wallets) * $ecoPer) {
+        $floor = count($wallets) * $ecoPer;
+        if ($sum < $floor) {
+            return self::ECO_LINE;
+        }
+        // Покупка AWP уронила бы общий банк ниже эко-порога — дроп не предлагаем.
+        if ($sum - self::AWP_COST < $floor) {
             return self::ECO_LINE;
         }
 

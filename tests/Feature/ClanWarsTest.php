@@ -42,8 +42,8 @@ class ClanWarsTest extends TestCase
         parent::setUp();
         $this->club = Club::create(['name' => 'Alpha', 'slug' => 'alpha-cw', 'type' => 'club']);
         $this->other = Club::create(['name' => 'Beta', 'slug' => 'beta-cw', 'type' => 'club']);
-        $this->bootcamp = Zone::create(['name' => 'Bootcamp', 'slug' => 'bootcamp', 'color' => '#a855f7']);
-        $this->singl = Zone::create(['name' => 'Singl', 'slug' => 'singl', 'color' => '#22c55e']);
+        $this->bootcamp = Zone::query()->where('slug', 'bootcamp')->firstOrFail();
+        $this->singl = Zone::query()->where('slug', 'singl')->firstOrFail();
         $bootSpace = Space::create([
             'club_id' => $this->club->id,
             'zone_id' => $this->bootcamp->id,

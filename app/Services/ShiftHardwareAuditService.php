@@ -439,7 +439,7 @@ class ShiftHardwareAuditService
             ->whereIn('computer_id', $ids)
             ->whereNull('resolved_at')
             ->where('created_at', '>=', $since)
-            ->whereIn('type', ['hardware_switch_fault', 'hardware_abuse', 'nic_link_flap', 'hid_disconnected'])
+            ->whereIn('type', ['hardware_switch_fault', 'hardware_abuse', 'nic_link_flap', 'hid.disconnected'])
             ->get(['computer_id', 'type'])
             ->each(function ($row) use (&$incidents) {
                 $incidents[(int) $row->computer_id][] = (string) $row->type;
