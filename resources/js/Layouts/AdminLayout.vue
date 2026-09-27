@@ -384,6 +384,11 @@ onUnmounted(() => {
                           :class="isActive('/admin/fair-play') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
                         <span>🛡</span> Fair Play
                     </Link>
+                    <Link v-if="featureOn('faceit')" href="/admin/faceit"
+                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
+                          :class="isActive('/admin/faceit') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🎯</span> FACEIT
+                    </Link>
                     <Link v-if="featureOn('clan_wars')" href="/admin/clan-wars"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/clan-wars') ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">

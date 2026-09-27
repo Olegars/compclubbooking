@@ -349,13 +349,16 @@ class ProfileController extends Controller
             'clan_wars' => $clanWars,
             'arena' => $this->arenaCabinet($user),
             'reactor_ac' => app(\App\Services\ReactorAc\AcGate::class)->cabinet($user),
+            'faceit' => app(\App\Services\Faceit\FaceitIdentityService::class)->cabinet($user),
             'server_time' => $now->toIso8601String(),
         ]);
     }
 
     public function edit()
     {
-        return Inertia::render('User/Profile');
+        return Inertia::render('User/Profile', [
+            'faceit' => app(\App\Services\Faceit\FaceitIdentityService::class)->cabinet(Auth::user()),
+        ]);
     }
 
     public function update(Request $request)

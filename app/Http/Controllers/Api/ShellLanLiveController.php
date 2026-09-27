@@ -592,6 +592,11 @@ class ShellLanLiveController extends Controller
             'balance' => $user->availableBalance(),
             'deposit_balance' => $user->availableBalance(),
             'features' => app(\App\Services\ClubFeatureService::class)->shellPayloadForComputer($computer),
+            'faceit' => app(\App\Services\Faceit\FaceitIdentityService::class)->shellBlock(
+                $user,
+                $computer->club_id ? (int) $computer->club_id : null,
+                $booking,
+            ),
         ];
     }
 

@@ -51,7 +51,15 @@ class LanMatchmakingService
         $this->expireStale();
         $game = $this->normalizeGame($game);
         $rank = $this->normalizeRank($rank);
-        $tier = $this->rankTier($game, $rank);
+        $bridged = $game === 'cs2'
+            ? app(\App\Services\Faceit\FaceitRankBridge::class)->tierFor($user, $clubId)
+            : null;
+        if ($bridged !== null) {
+            $rank = 'faceit-'.$bridged;
+            $tier = $bridged;
+        } else {
+            $tier = $this->rankTier($game, $rank);
+        }
 
         $existing = $this->activeFor($user, $booking);
         if ($existing && in_array($existing->status, [
@@ -225,6 +233,7 @@ class LanMatchmakingService
             'status' => $row->status,
             'game' => $row->game,
             'rank' => $row->rank,
+            'rank_tier' => (int) $row->rank_tier,
             'mate_pc' => $matePc?->name,
             'mate_name' => $mate?->name,
             'adjacent_computer_id' => $adjacent['id'] ?? null,

@@ -14,6 +14,8 @@ use App\Http\Controllers\ShopController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\TelegramWebhookController;
+use App\Http\Controllers\FaceitConnectController;
+use App\Http\Controllers\FaceitWebhookController;
 use App\Http\Controllers\Api\PromoCodeController;
 use App\Http\Controllers\Api\QueueController;
 
@@ -69,6 +71,7 @@ use App\Http\Controllers\Admin\BookingSettingsController;
 use App\Http\Controllers\Admin\ClubConfigController;
 use App\Http\Controllers\Admin\ClubFeatureController;
 use App\Http\Controllers\Admin\FairPlayController;
+use App\Http\Controllers\Admin\FaceitAdminController;
 use App\Http\Controllers\AcDownloadController;
 use App\Http\Controllers\Api\AcClientController;
 use App\Http\Controllers\Api\AcServerController;
@@ -253,8 +256,11 @@ Route::prefix('api/wifi')->group(function () {
 });
 
 Route::post('/api/telegram/webhook', TelegramWebhookController::class)
-    ->middleware('throttle:60,1')
+    ->middleware('throttle:120,1')
     ->name('telegram.webhook');
+Route::post('/api/faceit/webhook', FaceitWebhookController::class)
+    ->middleware('throttle:120,1')
+    ->name('faceit.webhook');
 
 // ЮKassa HTTP-уведомления (без сессии / CSRF)
 Route::post('/api/billing/yookassa/webhook', [BillingController::class, 'webhook'])
@@ -306,6 +312,9 @@ Route::middleware(['auth'])->group(function () {
             ->name('profile.avatar');
         Route::post('/clips/{clip}/telegram', [ProfileController::class, 'shareClipTelegram']);
         Route::post('/telegram/unlink', [ProfileController::class, 'unlinkTelegram']);
+        Route::get('/faceit/redirect', [FaceitConnectController::class, 'redirect'])->name('faceit.redirect');
+        Route::get('/faceit/callback', [FaceitConnectController::class, 'callback'])->name('faceit.callback');
+        Route::post('/faceit/unlink', [FaceitConnectController::class, 'unlink'])->name('faceit.unlink');
         Route::delete('/clips/{clip}', [ProfileController::class, 'destroyClip']);
         Route::get('/transfer/targets', [ProfileController::class, 'transferTargets']);
         Route::post('/transfer/preview', [ProfileController::class, 'transferPreview']);
@@ -669,6 +678,9 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::get('/fair-play', [FairPlayController::class, 'index'])->name('admin.fair-play');
         Route::post('/fair-play/bans', [FairPlayController::class, 'ban'])->name('admin.fair-play.ban');
         Route::post('/fair-play/bans/{ban}/pardon', [FairPlayController::class, 'pardon'])->name('admin.fair-play.pardon');
+
+        Route::get('/faceit', [FaceitAdminController::class, 'index'])->name('admin.faceit');
+        Route::post('/faceit/championship', [FaceitAdminController::class, 'championship'])->name('admin.faceit.championship');
 
         Route::get('/clan-wars', [ClanWarController::class, 'index'])->name('admin.clan-wars.index');
         Route::post('/clan-wars', [ClanWarController::class, 'store']);

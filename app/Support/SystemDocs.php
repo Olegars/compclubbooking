@@ -305,8 +305,8 @@ class SystemDocs
                         'audience' => 'Управляющий+ / Игрок / Система',
                     ],
                     [
-                        'title' => 'FACEIT в клубе (план)',
-                        'description' => "Гость с ПК зала играет свой FACEIT (CS2): личный Steam + личный FACEIT, клиент и AC в золотом образе, Elo в ЛК/LFG, хаб клуба. Не пул лицензий клуба и не дедик ARENA_CS2_CONNECT. Полное ТЗ — раздел «FACEIT в клубе».",
+                        'title' => 'FACEIT в клубе',
+                        'description' => "Гость с ПК зала играет свой FACEIT (CS2): личный Steam + личный FACEIT, клиент и AC в золотом образе, Elo в ЛК/LFG, хаб клуба. Не пул лицензий клуба и не дедик ARENA_CS2_CONNECT. Код фаз 1–2 в проде, фаза 0 (образ и egress) включает техник. Полное ТЗ — раздел «FACEIT в клубе».",
                         'path' => '/admin/docs',
                         'audience' => 'Управляющий+ / Игрок / Shell',
                     ],
@@ -420,7 +420,7 @@ class SystemDocs
                 'items' => [
                     [
                         'title' => 'Назначение: свой FACEIT с ПК зала',
-                        'description' => "Зачем. Гость приходит в клуб играть свой FACEIT CS2: очередь, хаб, чемпионат. Клуб даёт железо, образ с клиентом и AC, привязку аккаунта к ЛК, Elo в пати зала и (фаза 2) хаб с live на TV. Матч идёт на серверах FACEIT, античит — их. Это не замена арены клуба и не REACTOR AC.\n\nКоммерческий смысл. FACEIT уже привычный рейтинг; клуб не строит второй MM. Привязка даёт честный ранг в LFG вместо заглушки faceit→7. Хаб — регулярка зала без ручного счёта в Event Manager.\n\nЧто не цель. Хостить официальные серверы FACEIT (Game Server SDK / Facebot). Ставить гостей в очередь MM через API (публичного queue API нет). Пускать FACEIT под клубным Steam из /admin/licenses. Патчить FACEIT AC. Подменять REACTOR AC. Ставки, FACEIT Points, Premium за счёт клуба.\n\nСтатус. ТЗ / план. В проде: ярлык FACEIT.exe в /admin/quick-apps (учётка user, Local\\FACEIT). Нет OAuth, нет faceit_identities, нет /api/faceit/*, нет тумблера faceit, нет persist AppData на D:.",
+                        'description' => "Зачем. Гость приходит в клуб играть свой FACEIT CS2: очередь, хаб, чемпионат. Клуб даёт железо, образ с клиентом и AC, привязку аккаунта к ЛК, Elo в пати зала и (фаза 2) хаб с live на TV. Матч идёт на серверах FACEIT, античит — их. Это не замена арены клуба и не REACTOR AC.\n\nКоммерческий смысл. FACEIT уже привычный рейтинг; клуб не строит второй MM. Привязка даёт честный ранг в LFG вместо заглушки faceit→7. Хаб — регулярка зала без ручного счёта в Event Manager.\n\nЧто не цель. Хостить официальные серверы FACEIT (Game Server SDK / Facebot). Ставить гостей в очередь MM через API (публичного queue API нет). Пускать FACEIT под клубным Steam из /admin/licenses. Патчить FACEIT AC. Подменять REACTOR AC. Ставки, FACEIT Points, Premium за счёт клуба.\n\nСтатус. В коде: тумблер faceit (off|identity|hub, по умолчанию off), OAuth /account/faceit/*, faceit_identities без токенов, reactor:sync-faceit, блок login/balance, LFG skill_level, POST /api/faceit/webhook, оверлей faceit_match. Ярлык quick-apps — C:\\Program Files\\FACEIT\\FACEIT.exe, профиль гостя на D: через junction шелла. Фаза 0 (TPM, egress) — scripts/mikrotik-faceit-egress.rsc, на полу включает техник. Пока режим off, блока в ЛК нет.",
                         'path' => '/account/profile',
                         'audience' => 'Владелец / Игрок / Shell',
                     ],

@@ -47,6 +47,12 @@ const clubName = computed(() => (page.props as any).club?.name || (page.props as
                     с условиями настоящей оферты.
                 </p>
 
+                <h2 class="text-[#22c55e] text-xs font-black uppercase tracking-[0.25em] pt-4">FACEIT</h2>
+                <p>
+                    Привязка FACEIT добровольная. Матчи FACEIT идут по правилам и античиту FACEIT.
+                    Клуб не хранит пароль FACEIT и не выдаёт общий аккаунт на смену.
+                </p>
+
                 <h2 class="text-[#22c55e] text-xs font-black uppercase tracking-[0.25em] pt-4">Кошелёк и фискализация</h2>
                 <p>
                     Пополнение баланса фиксируется как аванс. Списание за бронь или товары магазина —

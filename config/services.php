@@ -49,4 +49,18 @@ return [
         'clips_auto' => env('TELEGRAM_CLIPS_AUTO', false),
     ],
 
+    'faceit' => [
+        'api_key' => env('FACEIT_API_KEY'),
+        'client_id' => env('FACEIT_CLIENT_ID'),
+        'client_secret' => env('FACEIT_CLIENT_SECRET'),
+        'redirect' => env('FACEIT_REDIRECT_URI'),
+        'webhook_secret' => env('FACEIT_WEBHOOK_SECRET'),
+        'hub_id' => env('FACEIT_HUB_ID'),
+        'organizer_id' => env('FACEIT_ORGANIZER_ID'),
+        'authorize_url' => env('FACEIT_AUTHORIZE_URL', 'https://accounts.faceit.com/oauth/authorize'),
+        'token_url' => env('FACEIT_TOKEN_URL', 'https://api.faceit.com/auth/v1/oauth/token'),
+        'userinfo_url' => env('FACEIT_USERINFO_URL', 'https://api.faceit.com/auth/v1/userinfo'),
+        'data_url' => env('FACEIT_DATA_URL', 'https://open.faceit.com/data/v4'),
+    ],
+
 ];

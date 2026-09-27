@@ -292,6 +292,9 @@ class TournamentController extends Controller
     public function payout(Tournament $tournament, TournamentService $service)
     {
         $this->assertVisibleTournament($tournament);
+        if (filled($tournament->faceit_championship_id)) {
+            return back()->with('error', 'Призы этого ивента на FACEIT. Касса клуба их не платит.');
+        }
         $service->finishAndPay($tournament);
 
         return back();

@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useForm, usePage } from '@inertiajs/vue3'
+import { computed, ref } from 'vue'
+import { router, useForm, usePage } from '@inertiajs/vue3'
 import MainLayout from '@/Layouts/MainLayout.vue'
 import AvatarEditor from '@/Components/AvatarEditor.vue'
 
 const page = usePage()
 const user = page.props.auth.user
+const faceit = computed(() => (page.props as any).faceit || { mode: 'off' })
+const flash = computed(() => (page.props as any).flash || {})
 
 const showSuccess = ref(false)
 
@@ -25,6 +27,10 @@ const updateProfile = () => {
         },
     })
 }
+
+const unlinkFaceit = () => {
+    router.post('/account/faceit/unlink', {}, { preserveScroll: true })
+}
 </script>
 
 <template>
@@ -36,6 +42,26 @@ const updateProfile = () => {
             </div>
 
             <h2 class="text-[#22c55e] text-2xl font-black mb-8 tracking-widest uppercase italic">Настройки аккаунта</h2>
+
+            <div v-if="faceit.mode && faceit.mode !== 'off'" class="mb-10 pb-8 border-b border-white/5">
+                <span class="text-[10px] uppercase text-white/30 tracking-[0.2em] ml-1 font-black block mb-4">FACEIT</span>
+                <p v-if="flash.error" class="text-red-400 text-xs mb-3">{{ flash.error }}</p>
+                <p v-if="flash.success" class="text-[#22c55e] text-xs mb-3">{{ flash.success }}</p>
+                <div v-if="faceit.linked" class="flex items-center gap-4">
+                    <img v-if="faceit.avatar_url" :src="faceit.avatar_url" alt="" class="w-12 h-12 rounded-full object-cover" />
+                    <div>
+                        <div class="font-black">{{ faceit.nickname }}</div>
+                        <div class="text-[11px] text-white/50">уровень {{ faceit.skill_level }} · Elo {{ faceit.elo }}<span v-if="faceit.banned"> · бан</span></div>
+                        <div v-if="faceit.stale_label" class="text-[10px] text-white/30">{{ faceit.stale_label }}</div>
+                    </div>
+                </div>
+                <p v-else class="text-sm text-white/50 mb-3">Привяжи FACEIT, чтобы в зале подставился уровень, а не заглушка.</p>
+                <a v-if="faceit.hub_url" :href="faceit.hub_url" target="_blank" rel="noopener" class="inline-block mt-3 text-[10px] uppercase tracking-widest text-orange-300">Вступить в хаб клуба</a>
+                <div class="mt-4">
+                    <a v-if="!faceit.linked" href="/account/faceit/redirect" class="inline-block px-4 py-2 rounded-xl bg-orange-500 text-black text-[10px] font-black uppercase tracking-widest">Привязать FACEIT</a>
+                    <button v-else type="button" class="text-[10px] uppercase tracking-widest text-red-400" @click="unlinkFaceit">Отвязать</button>
+                </div>
+            </div>
 
             <div class="mb-10 pb-8 border-b border-white/5">
                 <span class="text-[10px] uppercase text-white/30 tracking-[0.2em] ml-1 font-black block mb-5">Фото профиля</span>

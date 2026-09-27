@@ -303,6 +303,26 @@ class ClubFeatureCatalog
                 ],
             ],
             [
+                'key' => 'faceit',
+                'title' => 'FACEIT в клубе',
+                'description' => 'Свой FACEIT гостя с ПК зала: OAuth, Elo в пати, хаб. По умолчанию выключено. identity — привязка и LFG. hub — ещё webhook и оверлей. Клубный Steam на этот запуск не берётся.',
+                'group' => self::GROUP_ESPORTS,
+                'icon' => '🎯',
+                'admin_path' => '/admin/faceit',
+                'default_enabled' => false,
+                'fields' => [
+                    self::selectField('mode', 'Режим', 'off', [
+                        ['value' => 'off', 'label' => 'off — блок скрыт'],
+                        ['value' => 'identity', 'label' => 'identity — OAuth, Elo, LFG, шелл'],
+                        ['value' => 'hub', 'label' => 'hub — identity + хаб и оверлей'],
+                    ], 'Пустой club_features FACEIT не включает. off не рисует карточку.'),
+                    self::stringField('hub_id', 'UUID хаба', '', 64, 'С faceit.com. Дубль FACEIT_HUB_ID.'),
+                    self::stringField('organizer_id', 'UUID организатора', '', 64, 'Дубль FACEIT_ORGANIZER_ID.'),
+                    self::stringField('game_id', 'Игра', 'cs2', 16),
+                    self::intField('sync_seated_minutes', 'Синк сидящих, минуты', 15, 5, 60, 1, 'мин'),
+                ],
+            ],
+            [
                 'key' => 'achievements',
                 'title' => 'Достижения',
                 'description' => 'Квесты за часы, визиты и ночные сессии. Награда после закрытия брони. План хаба: рамки, статусы, боевой пропуск, внешние ачивки — /admin/docs раздел «Профиль, ачивки и боевой пропуск».',

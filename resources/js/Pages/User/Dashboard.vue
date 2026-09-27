@@ -168,7 +168,7 @@ const cancelBooking = async (b: any) => {
 
 const fetchDashboardData = () => {
     router.reload({
-        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'clips', 'clips_telegram', 'telegram', 'clan_wars', 'arena', 'reactor_ac', 'server_time'],
+        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'clips', 'clips_telegram', 'telegram', 'clan_wars', 'arena', 'reactor_ac', 'faceit', 'server_time'],
         preserveScroll: true
     })
 }
@@ -185,6 +185,7 @@ const telegramLink = computed(() => (page.props as any).telegram || {})
 const clanWars = computed(() => (page.props as any).clan_wars || { live: null, mine: [], board: [] })
 const arena = computed(() => (page.props as any).arena || { enabled: false, incoming: null, open: [], live: [], highlight_computer_ids: [] })
 const reactorAc = computed(() => (page.props as any).reactor_ac || { mode: 'off', status: 'off', notice: '' })
+const faceitCard = computed(() => (page.props as any).faceit || { mode: 'off' })
 const arenaLive = ref<any>(null)
 const arenaBusy = ref(false)
 const arenaError = ref('')
@@ -714,6 +715,19 @@ onMounted(() => {
                         · скачать
                     </div>
                 </Link>
+
+                <div
+                    v-if="faceitCard.mode && faceitCard.mode !== 'off'"
+                    class="block border border-orange-400/30 bg-orange-500/10 rounded-xl px-4 py-3 text-left"
+                >
+                    <div class="text-[10px] uppercase tracking-[0.28em] font-black text-orange-300">FACEIT</div>
+                    <div v-if="faceitCard.linked" class="mt-1 text-[12px] text-white/80">
+                        {{ faceitCard.nickname }} · уровень {{ faceitCard.skill_level }} · Elo {{ faceitCard.elo }}
+                        <span v-if="faceitCard.banned"> · бан</span>
+                    </div>
+                    <a v-else href="/account/profile" class="mt-1 block text-[12px] text-white/80">Привяжи FACEIT в профиле</a>
+                    <a v-if="faceitCard.hub_url" :href="faceitCard.hub_url" target="_blank" rel="noopener" class="mt-1 block text-[10px] uppercase tracking-widest text-orange-200">Вступить в хаб клуба</a>
+                </div>
 
                 <div class="cabinet-block min-w-0 bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-[#22c55e]/20 rounded-xl md:rounded-[1.125rem] p-4 sm:p-8 md:p-10 relative md:shadow-2xl md:shadow-[#22c55e]/5">
 

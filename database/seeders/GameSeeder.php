@@ -167,7 +167,7 @@ class GameSeeder extends Seeder
             ['title' => 'Telegram', 'exe' => 'C:\\Users\\user\\AppData\\Roaming\\Telegram Desktop\\Telegram.exe'],
             ['title' => 'Google Chrome', 'exe' => 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'],
             ['title' => 'Яндекс Браузер', 'exe' => 'C:\\Users\\user\\AppData\\Local\\Yandex\\YandexBrowser\\Application\\browser.exe'],
-            ['title' => 'FACEIT', 'exe' => 'C:\\Users\\user\\AppData\\Local\\FACEIT\\FACEIT.exe'],
+            ['title' => 'FACEIT', 'exe' => 'C:\\Program Files\\FACEIT\\FACEIT.exe'],
             ['title' => 'Spotify', 'exe' => 'C:\\Users\\user\\AppData\\Roaming\\Spotify\\Spotify.exe'],
             ['title' => 'OBS Studio', 'exe' => 'C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe'],
             ['title' => 'TeamSpeak 3', 'exe' => 'C:\\Program Files\\TeamSpeak 3 Client\\ts3client_win64.exe'],

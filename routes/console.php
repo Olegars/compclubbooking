@@ -20,6 +20,7 @@ Schedule::command('staff:bonus-close')
 Schedule::command('reactor:update-statuses')->everyMinute()->withoutOverlapping();
 Schedule::command('reactor:check-reviews')->dailyAt('10:00')->withoutOverlapping();
 Schedule::command('reactor:sync-payments')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('reactor:sync-faceit')->everyFifteenMinutes()->withoutOverlapping();
 Schedule::command('store:sync-supplier-catalog')
     ->dailyAt('09:00')
     ->timezone('Europe/Moscow')

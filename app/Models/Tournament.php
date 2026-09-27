@@ -29,6 +29,7 @@ class Tournament extends Model
         'venue',
         'prize_funding',
         'rules',
+        'faceit_championship_id',
     ];
 
     protected $casts = [

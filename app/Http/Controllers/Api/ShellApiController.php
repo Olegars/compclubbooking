@@ -124,11 +124,25 @@ class ShellApiController extends Controller
             Log::warning('arena overlay: '.$e->getMessage());
         }
 
+        $faceitMatch = null;
+        try {
+            $faceitMatch = app(\App\Services\Faceit\FaceitIdentityService::class)
+                ->overlayUnlessClanWar($computer, $clanWar !== null);
+            if ($faceitMatch) {
+                $data['faceit_match'] = $faceitMatch;
+                $arenaDuel = null;
+                unset($data['arena_duel']);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('faceit overlay: '.$e->getMessage());
+        }
+
         return response()->json([
             'status' => 'success',
             'data' => $data,
             'clan_war' => $clanWar,
             'arena_duel' => $arenaDuel,
+            'faceit_match' => $faceitMatch,
             'features' => $features->shellPayloadForComputer($computer),
         ]);
     }
@@ -662,6 +676,7 @@ class ShellApiController extends Controller
                         'title' => $app->title,
                         'exe_path' => $app->exe_path,
                         'args' => $app->launch_args ?? '',
+                        'skip_club_steam' => str_contains(mb_strtolower($app->title.' '.$app->exe_path), 'faceit'),
                     ])
                     ->values(),
             ]);
@@ -2238,6 +2253,13 @@ class ShellApiController extends Controller
         $game = Game::find($request->game_id);
         if (!$game) {
             return response()->json(['status' => 'error', 'message' => 'Игра не найдена'], 404);
+        }
+        if (app(\App\Services\Faceit\FaceitIdentityService::class)->forbidsClubSteam($game)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'FACEIT запускается с личного Steam гостя, клубный аккаунт не берём',
+                'skip_club_steam' => true,
+            ]);
         }
 
         $computer = Computer::find($request->terminal_id);
