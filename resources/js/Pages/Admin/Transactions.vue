@@ -30,6 +30,9 @@ type TxRow = {
     user: TxUser | null
     is_stub_receipt?: boolean
     can_print: boolean
+    can_paper?: boolean
+    can_retry?: boolean
+    paper_status?: string | null
 }
 
 const props = defineProps<{
@@ -51,6 +54,7 @@ const type = ref(props.filters.type || '')
 const fiscalStatus = ref(props.filters.fiscal_status || '')
 const printBusyId = ref<number | null>(null)
 const printError = ref('')
+const actionNote = ref('')
 
 watch(() => props.filters, (f) => {
     phone.value = f.phone || ''
@@ -80,7 +84,7 @@ const typeLabel = (t: string) => ({
 const statusClass = (s: string | null) => {
     if (s === 'success') return 'text-[#22c55e]'
     if (s === 'error') return 'text-red-400'
-    if (s === 'pending' || s === 'deferred') return 'text-amber-400'
+    if (s === 'pending' || s === 'deferred' || s === 'uncertain') return 'text-amber-400'
     if (s === 'void') return 'text-white/25'
     return 'text-white/30'
 }
@@ -117,6 +121,7 @@ const printCopy = async (tx: TxRow) => {
   <div class="row"><span>Описание</span><strong>${data.description || '—'}</strong></div>
   <div class="row"><span>Сумма</span><strong>${amountText}</strong></div>
   <div class="row"><span>Режим</span><strong>${data.fiscal_mode || '—'}</strong></div>
+  ${data.fd ? `<div class="row"><span>ФД / ФП</span><strong>${data.fd} / ${data.fp || '—'}</strong></div>` : ''}
 </div>
 <img class="qr" src="${data.qr_image_url}" alt="QR чека" />
 <div class="muted" style="word-break:break-all;margin-top:8px">${data.fiscal_receipt_url}</div>
@@ -126,6 +131,38 @@ const printCopy = async (tx: TxRow) => {
         w.document.close()
     } catch (e: any) {
         printError.value = e?.response?.data?.message || 'Не удалось подготовить копию чека'
+    } finally {
+        printBusyId.value = null
+    }
+}
+
+const queuePaper = async (tx: TxRow) => {
+    if (!tx.can_paper || printBusyId.value) return
+    printBusyId.value = tx.id
+    printError.value = ''
+    actionNote.value = ''
+    try {
+        await axios.post(`/admin/transactions/${tx.id}/paper`)
+        actionNote.value = `Чек #${tx.id}: задание на ленту в очереди шлюза`
+        router.reload({ preserveScroll: true })
+    } catch (e: any) {
+        printError.value = e?.response?.data?.message || 'Не удалось поставить печать на ленту'
+    } finally {
+        printBusyId.value = null
+    }
+}
+
+const retryFiscal = async (tx: TxRow) => {
+    if (!tx.can_retry || printBusyId.value) return
+    printBusyId.value = tx.id
+    printError.value = ''
+    actionNote.value = ''
+    try {
+        await axios.post(`/admin/transactions/${tx.id}/fiscal-retry`)
+        actionNote.value = `Чек #${tx.id}: то же задание снова в очереди`
+        router.reload({ preserveScroll: true })
+    } catch (e: any) {
+        printError.value = e?.response?.data?.message || 'Не удалось повторить проведение'
     } finally {
         printBusyId.value = null
     }
@@ -169,6 +206,7 @@ const rows = computed(() => props.transactions?.data || [])
                         <option value="deferred">deferred</option>
                         <option value="void">void</option>
                         <option value="error">error</option>
+                        <option value="uncertain">uncertain</option>
                         <option value="skipped">skipped</option>
                     </select>
                 </div>
@@ -180,6 +218,7 @@ const rows = computed(() => props.transactions?.data || [])
                     Найти
                 </button>
                 <div v-if="printError" class="text-red-400 text-[11px] font-black uppercase tracking-widest">{{ printError }}</div>
+                <div v-if="actionNote" class="text-[#22c55e] text-[11px] font-black uppercase tracking-widest">{{ actionNote }}</div>
             </div>
 
             <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-6 shadow-xl overflow-x-auto">
@@ -222,6 +261,7 @@ const rows = computed(() => props.transactions?.data || [])
                                 :class="statusClass(tx.fiscal_status)">
                                 {{ tx.fiscal_status || '—' }}
                                 <div v-if="tx.send_receipt" class="text-[9px] text-white/25 normal-case tracking-normal mt-1">+Email/SMS</div>
+                                <div v-if="tx.paper_status" class="text-[9px] text-white/35 normal-case tracking-normal mt-1">лента: {{ tx.paper_status }}</div>
                             </td>
                             <td class="py-4 px-3">
                                 <a
@@ -244,7 +284,25 @@ const rows = computed(() => props.transactions?.data || [])
                                     :disabled="!tx.can_print || printBusyId === tx.id"
                                     @click="printCopy(tx)"
                                 >
-                                    {{ printBusyId === tx.id ? '…' : 'Напечатать' }}
+                                    {{ printBusyId === tx.id ? '…' : 'Копия' }}
+                                </button>
+                                <button
+                                    v-if="tx.can_paper"
+                                    type="button"
+                                    class="ml-2 px-4 py-2 rounded-xl border border-white/15 text-[10px] font-black uppercase tracking-widest text-white/70 hover:bg-white/5 disabled:opacity-30"
+                                    :disabled="printBusyId === tx.id"
+                                    @click="queuePaper(tx)"
+                                >
+                                    На ленту
+                                </button>
+                                <button
+                                    v-if="tx.can_retry"
+                                    type="button"
+                                    class="ml-2 px-4 py-2 rounded-xl border border-amber-400/40 text-[10px] font-black uppercase tracking-widest text-amber-300 hover:bg-amber-400/10 disabled:opacity-30"
+                                    :disabled="printBusyId === tx.id"
+                                    @click="retryFiscal(tx)"
+                                >
+                                    Повторить
                                 </button>
                             </td>
                         </tr>

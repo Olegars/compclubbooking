@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\FiscalJob;
 use App\Models\Transaction;
 use App\Services\FiscalService;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -57,16 +58,43 @@ class ProcessFiscalReceipt implements ShouldQueue
             return;
         }
 
-        $transaction->update([
-            'fiscal_mode' => $mode,
-            'fiscal_status' => 'pending',
-            'fiscal_error' => null,
-        ]);
-
         $result = $fiscal->registerForTransaction($transaction->fresh(['user']));
 
         if (! empty($result['skipped'])) {
             $fiscal->markSkippedWithStub($transaction, $mode);
+
+            return;
+        }
+
+        if (! empty($result['queued'])) {
+            $job = FiscalJob::query()->find((int) ($result['job_id'] ?? 0));
+            $jobStatus = (string) ($job->status ?? FiscalJob::STATUS_PENDING);
+            if ($jobStatus === FiscalJob::STATUS_SUCCESS) {
+                $stored = is_array($job?->result) ? $job->result : [];
+                $url = $stored['receipt_url'] ?? null;
+                if ($transaction->fiscal_status !== 'success') {
+                    $transaction->update([
+                        'fiscal_mode' => $mode,
+                        'fiscal_status' => 'success',
+                        'fiscal_receipt_url' => $url,
+                        'receipt_id' => ($stored['fd'] ?? null) ?: $url ?: $transaction->receipt_id,
+                        'fiscal_error' => null,
+                        'fiscal_at' => $transaction->fiscal_at ?? now(),
+                    ]);
+                }
+
+                return;
+            }
+
+            $fiscalStatus = in_array($jobStatus, [FiscalJob::STATUS_ERROR, FiscalJob::STATUS_UNCERTAIN], true)
+                ? $jobStatus
+                : 'pending';
+
+            $transaction->update([
+                'fiscal_mode' => $mode,
+                'fiscal_status' => $fiscalStatus,
+                'fiscal_error' => $fiscalStatus === 'pending' ? null : $job?->last_error,
+            ]);
 
             return;
         }

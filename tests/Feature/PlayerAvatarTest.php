@@ -26,6 +26,7 @@ class PlayerAvatarTest extends TestCase
         parent::setUp();
 
         Storage::fake('public');
+        Storage::fake('local');
         RateLimiter::clear('avatar-stylize:1');
 
         $this->avatarDir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'club-avatars-'.uniqid();
@@ -184,39 +185,10 @@ class PlayerAvatarTest extends TestCase
         Http::assertNotSent(fn ($request) => str_contains($request->url(), 'deepseek'));
     }
 
-    public function test_stylize_uses_comfyui_when_url_set(): void
+    public function test_stylize_queues_gpu_job_and_does_not_call_comfyui(): void
     {
         config(['ai_assistant.avatar.comfyui.url' => 'http://127.0.0.1:8188']);
-        $styled = $this->tinyPngBytes();
-
-        $this->fakeHttp(function ($request) use ($styled) {
-            $url = $request->url();
-            if (str_contains($url, '/upload/image')) {
-                return Http::response(['name' => 'club_avatar.png', 'subfolder' => '', 'type' => 'input']);
-            }
-            if (str_contains($url, '/prompt')) {
-                return Http::response(['prompt_id' => 'abc']);
-            }
-            if (str_contains($url, '/history/')) {
-                return Http::response([
-                    'abc' => [
-                        'status' => ['completed' => true],
-                        'outputs' => [
-                            '9' => ['images' => [[
-                                'filename' => 'out.png',
-                                'subfolder' => '',
-                                'type' => 'output',
-                            ]]],
-                        ],
-                    ],
-                ]);
-            }
-            if (str_contains($url, '/view')) {
-                return Http::response($styled, 200, ['Content-Type' => 'image/png']);
-            }
-
-            return Http::response('unexpected '.$url, 599);
-        });
+        Http::fake();
 
         $this->actingAs($this->user)
             ->withoutMiddleware(ValidateCsrfToken::class)
@@ -229,9 +201,13 @@ class PlayerAvatarTest extends TestCase
 
         $this->user->refresh();
         $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
-        Http::assertSent(fn ($request) => str_contains($request->url(), '127.0.0.1:8188/upload/image'));
-        Http::assertSent(fn ($request) => str_contains($request->url(), '127.0.0.1:8188/prompt'));
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'deepseek'));
+        $this->assertDatabaseHas('avatar_stylize_jobs', [
+            'user_id' => $this->user->id,
+            'status' => 'pending',
+            'baseline_avatar' => $this->user->avatar,
+            'sample_name' => 'avatar_1.png',
+        ]);
+        Http::assertNothingSent();
     }
 
     public function test_rejects_non_image_upload(): void

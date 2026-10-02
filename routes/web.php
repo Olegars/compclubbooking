@@ -26,8 +26,10 @@ use App\Http\Controllers\Api\WolRelayController;
 use App\Http\Controllers\Api\SharedFanRelayController;
 use App\Http\Controllers\Api\ShellIsolateRelayController;
 use App\Http\Controllers\Api\WifiGrantRelayController;
+use App\Http\Controllers\Api\FiscalRelayController;
 use App\Http\Controllers\Api\KitchenPrintRelayController;
 use App\Http\Controllers\Api\VideoMarkerRelayController;
+use App\Http\Controllers\Api\AvatarStylizeRelayController;
 use App\Http\Controllers\Api\StoreAssemblyClipRelayController;
 use App\Http\Controllers\Api\IncidentClipRelayController;
 use App\Http\Controllers\Api\StaffPresenceRelayController;
@@ -432,6 +434,10 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::get('/transactions', [TransactionAdminController::class, 'index'])->name('admin.transactions');
         Route::get('/transactions/{transaction}/print-copy', [TransactionAdminController::class, 'printCopy'])
             ->name('admin.transactions.print-copy');
+        Route::post('/transactions/{transaction}/paper', [TransactionAdminController::class, 'queuePaper'])
+            ->name('admin.transactions.paper');
+        Route::post('/transactions/{transaction}/fiscal-retry', [TransactionAdminController::class, 'retryFiscal'])
+            ->name('admin.transactions.fiscal-retry');
         Route::get('/shifts/transfer', [ShiftController::class, 'transferPage'])->name('admin.shift.transfer');
         Route::post('/api/shifts/begin', [ShiftController::class, 'begin']);
         Route::post('/api/shifts/scan', [ShiftController::class, 'scan']);
@@ -824,6 +830,11 @@ Route::prefix('api/kitchen')->group(function () {
     Route::post('/print-applied', [KitchenPrintRelayController::class, 'applied']);
 });
 
+Route::prefix('api/fiscal')->group(function () {
+    Route::get('/targets', [FiscalRelayController::class, 'targets']);
+    Route::post('/applied', [FiscalRelayController::class, 'applied']);
+});
+
 Route::prefix('api/ac')->group(function () {
     Route::post('/login', [AcClientController::class, 'login'])->middleware('throttle:20,1');
     Route::get('/policy', [AcClientController::class, 'policy']);
@@ -837,6 +848,12 @@ Route::prefix('api/ac')->group(function () {
     Route::post('/server/active-sessions', [AcServerController::class, 'activeSessions']);
     Route::post('/server/validate-session', [AcServerController::class, 'validateSession']);
     Route::post('/server/kick-ack', [AcServerController::class, 'kickAck']);
+});
+
+Route::prefix('api/avatar')->group(function () {
+    Route::get('/stylize-targets', [AvatarStylizeRelayController::class, 'targets']);
+    Route::get('/stylize-sources/{id}', [AvatarStylizeRelayController::class, 'source'])->whereNumber('id');
+    Route::post('/stylize-applied', [AvatarStylizeRelayController::class, 'applied']);
 });
 
 Route::prefix('api/video')->group(function () {

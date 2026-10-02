@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\FiscalJob;
 use App\Models\Transaction;
+use App\Services\FiscalGatewayService;
 use App\Services\FiscalService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use InvalidArgumentException;
 
 class TransactionAdminController extends Controller
 {
@@ -34,16 +37,20 @@ class TransactionAdminController extends Controller
             $query->where('type', $type);
         }
 
-        if ($status !== '' && in_array($status, ['success', 'pending', 'error', 'skipped'], true)) {
+        if ($status !== '' && in_array($status, ['success', 'pending', 'deferred', 'void', 'error', 'uncertain', 'skipped'], true)) {
             $query->where('fiscal_status', $status);
         }
 
         $transactions = $query
+            ->with(['fiscalJobs' => fn ($q) => $q->orderByDesc('id')])
             ->paginate(40)
             ->withQueryString()
             ->through(function (Transaction $t) use ($fiscal) {
                 $url = $fiscal->displayReceiptUrl($t);
                 $isStub = $fiscal->isStubReceiptUrl($url);
+                $paper = $t->fiscalJobs->first(fn (FiscalJob $job) => $job->kind === FiscalJob::KIND_PRINT_COPY);
+                $fiscalize = $t->fiscalJobs->first(fn (FiscalJob $job) => $job->kind === FiscalJob::KIND_FISCALIZE
+                    && $job->status === FiscalJob::STATUS_SUCCESS);
 
                 return [
                     'id' => $t->id,
@@ -66,6 +73,9 @@ class TransactionAdminController extends Controller
                     ] : null,
                     'is_stub_receipt' => $isStub,
                     'can_print' => filled($url) && ! $isStub,
+                    'can_paper' => $fiscalize !== null && ! $isStub,
+                    'can_retry' => in_array((string) $t->fiscal_status, ['error', 'uncertain'], true),
+                    'paper_status' => $paper?->status,
                 ];
             });
 
@@ -99,6 +109,13 @@ class TransactionAdminController extends Controller
             ], 422);
         }
 
+        $fiscalize = FiscalJob::query()
+            ->where('transaction_id', $transaction->id)
+            ->where('kind', FiscalJob::KIND_FISCALIZE)
+            ->where('status', FiscalJob::STATUS_SUCCESS)
+            ->first();
+        $result = is_array($fiscalize?->result) ? $fiscalize->result : [];
+
         return response()->json([
             'id' => $transaction->id,
             'title' => 'КОПИЯ ЧЕКА',
@@ -116,6 +133,39 @@ class TransactionAdminController extends Controller
             ] : null,
             'qr_image_url' => 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&data='
                 .urlencode((string) $url),
+            'fn' => $result['fn'] ?? null,
+            'fd' => $result['fd'] ?? null,
+            'fp' => $result['fp'] ?? null,
+        ]);
+    }
+
+    public function queuePaper(Transaction $transaction, FiscalGatewayService $gateway)
+    {
+        try {
+            $job = $gateway->enqueuePrintCopy($transaction);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'job_id' => (int) $job->id,
+            'job_status' => $job->status,
+        ]);
+    }
+
+    public function retryFiscal(Transaction $transaction, FiscalGatewayService $gateway)
+    {
+        try {
+            $job = $gateway->requeueFiscalize($transaction);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'job_id' => (int) $job->id,
+            'external_id' => (string) $job->external_id,
         ]);
     }
 }

@@ -42,10 +42,17 @@ return [
 
     /*
      * Стилизация аватара. DeepSeek (chat) картинки не рисует.
-     * huggingface — облако, токен hf_…, лимиты/кредиты Inference Providers.
-     * comfyui — своё GPU (PuLID / IP-Adapter FaceID), URL должен быть доступен с сервера booking.
+     * Запрос гостя сразу кладёт овал и job. ComfyUI крутится на FACE-01 (127.0.0.1:8188),
+     * агент scripts/club-comfy-worker.py pull’ит очередь. Облако на :8188 не ходит.
+     * huggingface / OpenAI — необязательная дорисовка композита в том же запросе.
      */
     'avatar' => [
+        'relay_token' => (string) (
+            env('AVATAR_RELAY_TOKEN')
+            ?: env('VIDEO_MARKER_RELAY_TOKEN')
+            ?: env('CLUB_WOL_RELAY_TOKEN', '')
+        ),
+        'stale_seconds' => (int) env('AVATAR_STYLIZE_STALE_SECONDS', 120),
         'huggingface' => [
             'token' => env('HF_TOKEN', env('HUGGINGFACE_API_TOKEN')),
             'provider' => env('HF_AVATAR_PROVIDER', 'hf-inference'),

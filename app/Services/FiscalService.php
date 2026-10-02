@@ -4,9 +4,7 @@ namespace App\Services;
 
 use App\Jobs\ProcessFiscalReceipt;
 use App\Models\Transaction;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 class FiscalService
 {
@@ -510,95 +508,91 @@ class FiscalService
         $amount = round($amount, 2);
 
         $payload = [
-            'Command' => 'RegisterCheck',
-            'NumDevice' => (int) ($kkm['num_device'] ?? 0),
-            'InnKassa' => (string) ($kkm['inn_kassa'] ?? ''),
-            'IsFiscalCheck' => true,
-            'TypeCheck' => $typeCheck,
-            'NotPrint' => (bool) ($kkm['not_print'] ?? false),
-            'NumberCopies' => 0,
-            'CashierName' => (string) (filled($kkm['cashier_name'] ?? null) ? $kkm['cashier_name'] : \App\Support\ClubBrand::name()),
-            'CheckStrings' => [
+            'kind' => 'fiscalize',
+            'electronically' => true,
+            'type_check' => $typeCheck,
+            'tax' => (int) ($kkm['tax'] ?? -1),
+            'cashier_name' => (string) (filled($kkm['cashier_name'] ?? null) ? $kkm['cashier_name'] : \App\Support\ClubBrand::name()),
+            'inn' => (string) ($kkm['inn_kassa'] ?? ''),
+            'items' => [
                 [
-                    'Register' => [
-                        'Name' => mb_substr($itemName, 0, 128),
-                        'Quantity' => 1,
-                        'Price' => $amount,
-                        'Amount' => $amount,
-                        'Tax' => (int) ($kkm['tax'] ?? -1),
-                        'SignMethodCalculation' => $signMethod,
-                        'SignCalculationObject' => $signObject,
-                        'MeasureOfQuantity' => 0,
-                    ],
+                    'name' => mb_substr($itemName, 0, 128),
+                    'quantity' => 1,
+                    'price' => $amount,
+                    'amount' => $amount,
+                    'tax' => (int) ($kkm['tax'] ?? -1),
+                    'payment_method' => $signMethod,
+                    'payment_object' => $signObject,
                 ],
             ],
-            'Cash' => round($cash, 2),
-            'ElectronicPayment' => round($electronic, 2),
-            'AdvancePayment' => round($advancePayment, 2),
-            'Credit' => 0,
-            'CashProvision' => 0,
-            'IdCommand' => (string) Str::uuid(),
-            'Timeout' => (int) ($kkm['timeout'] ?? 15),
-            'User' => (string) ($kkm['user'] ?? 'Admin'),
-            'Password' => (string) ($kkm['password'] ?? ''),
+            'payments' => [
+                'cash' => round($cash, 2),
+                'electronic' => round($electronic, 2),
+                'prepaid' => round($advancePayment, 2),
+            ],
         ];
 
         if ($clientAddress) {
-            $payload['ClientAddress'] = $clientAddress;
+            $payload['client_address'] = $clientAddress;
         }
 
         return $payload;
     }
 
     /**
+     * Кладёт нейтральное задание в очередь шлюза. На регистратор отсюда не ходим.
+     *
      * @param  array<string, mixed>  $payload
-     * @return array{success: bool, url?: ?string, error?: string}
+     * @return array{success: bool, queued?: bool, job_id?: int, external_id?: string, url?: ?string, error?: string}
      */
     protected function execute(array $payload, Transaction $transaction, string $mode): array
     {
-        $url = (string) config('fiscal.kkm.url');
-        $timeout = (int) config('fiscal.kkm.timeout', 15);
+        $payload['mode'] = $mode;
 
-        try {
-            $response = Http::timeout($timeout)->post($url, $payload);
-            $result = $response->json();
+        $job = app(FiscalGatewayService::class)->enqueueFiscalize($transaction, $payload);
 
-            if (! is_array($result)) {
-                Log::warning('Fiscal KKM non-JSON response', [
-                    'transaction_id' => $transaction->id,
-                    'mode' => $mode,
-                    'status' => $response->status(),
-                    'body' => mb_substr($response->body(), 0, 500),
-                ]);
+        return [
+            'success' => false,
+            'queued' => true,
+            'job_id' => (int) $job->id,
+            'external_id' => (string) $job->external_id,
+        ];
+    }
 
-                return ['success' => false, 'error' => 'KKM returned non-JSON response'];
-            }
-
-            if ((int) ($result['Status'] ?? -1) === 0) {
-                return [
-                    'success' => true,
-                    'url' => $result['URL'] ?? $result['Url'] ?? null,
-                ];
-            }
-
-            $error = (string) ($result['Error'] ?? $result['Message'] ?? 'Unknown KKM Error');
-            Log::warning('Fiscal KKM error', [
-                'transaction_id' => $transaction->id,
-                'mode' => $mode,
-                'error' => $error,
-                'result' => $result,
-            ]);
-
-            return ['success' => false, 'error' => $error];
-        } catch (\Throwable $e) {
-            Log::error('Fiscal KKM exception', [
-                'transaction_id' => $transaction->id,
-                'mode' => $mode,
-                'error' => $e->getMessage(),
-            ]);
-
-            return ['success' => false, 'error' => $e->getMessage()];
+    /**
+     * Чеки, которые шелл может показать QR-ом после ответа шлюза.
+     *
+     * @return list<array{transaction_id:int,amount:float,description:?string,fiscal_status:?string,fiscal_receipt_url:?string,is_stub:bool}>
+     */
+    public function recentShellReceipts(int $userId): array
+    {
+        if ($userId < 1) {
+            return [];
         }
+
+        return Transaction::query()
+            ->where('user_id', $userId)
+            ->where('fiscal_status', 'success')
+            ->where('fiscal_at', '>=', now()->subMinutes(30))
+            ->whereNotNull('fiscal_receipt_url')
+            ->orderByDesc('id')
+            ->limit(5)
+            ->get()
+            ->map(function (Transaction $tx) {
+                $url = $this->displayReceiptUrl($tx);
+
+                return [
+                    'transaction_id' => (int) $tx->id,
+                    'amount' => (float) $tx->amount,
+                    'description' => $tx->description,
+                    'fiscal_status' => $tx->fiscal_status,
+                    'fiscal_receipt_url' => $url,
+                    'is_stub' => $this->isStubReceiptUrl($url),
+                ];
+            })
+            ->filter(fn (array $row) => filled($row['fiscal_receipt_url']))
+            ->values()
+            ->all();
     }
 
     protected function itemName(Transaction $transaction, string $fallback): string

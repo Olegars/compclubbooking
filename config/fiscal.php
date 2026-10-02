@@ -4,24 +4,28 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Фискализация (KkmServer)
+    | Фискализация
     |--------------------------------------------------------------------------
-    | Пополнение кошелька → чек «АВАНС».
-    | Списание на бронь / магазин → чек «ПОЛНЫЙ РАСЧЁТ» с зачётом аванса.
-    | Пока FISCAL_ENABLED=false — только учёт в transactions, без вызова ККТ.
+    | Облако на кассу не ходит. При FISCAL_ENABLED задание лежит в fiscal_jobs,
+    | шлюз в клубе забирает его сам (GET /api/fiscal/targets).
+    | Проведение — электронное. Бумага — отдельное задание print_copy.
+    | Пока FISCAL_ENABLED=false — заглушка /receipt/stub, очередь пустая.
     */
     'enabled' => (bool) env('FISCAL_ENABLED', false),
 
+    /** Свой токен шлюза. Не переиспользовать кухонный и WOL. */
+    'relay_token' => (string) env('FISCAL_RELAY_TOKEN', ''),
+
+    'claim_limit' => (int) env('FISCAL_CLAIM_LIMIT', 5),
+    'stale_claim_minutes' => (int) env('FISCAL_STALE_CLAIM_MINUTES', 5),
+    'gateway_stale_seconds' => (int) env('FISCAL_GATEWAY_STALE_SECONDS', 90),
+
+    /*
+    | Реквизиты чека в нейтральном задании. URL/логин/пароль KkmServer облаку не нужны.
+    */
     'kkm' => [
-        'url' => env('KKM_SERVER_URL', 'http://127.0.0.1:5893/Execute'),
-        'user' => env('KKM_SERVER_USER', 'Admin'),
-        'password' => env('KKM_SERVER_PASS', ''),
-        'num_device' => (int) env('KKM_NUM_DEVICE', 0),
         'inn_kassa' => env('KKM_INN_KASSA', ''),
         'cashier_name' => env('KKM_CASHIER_NAME', ''),
-        'timeout' => (int) env('KKM_TIMEOUT', 15),
-        /** Не печатать бумагу — только ОФД / электронный чек */
-        'not_print' => (bool) env('KKM_NOT_PRINT', false),
         /** Ставка НДС: -1 без НДС (УСН/патент) */
         'tax' => (int) env('KKM_TAX', -1),
     ],

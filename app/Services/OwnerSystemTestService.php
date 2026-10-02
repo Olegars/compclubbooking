@@ -226,8 +226,8 @@ class OwnerSystemTestService
             'fiscal' => [
                 'group' => 'payments',
                 'group_title' => 'Оплата и чеки',
-                'title' => 'Касса (KkmServer)',
-                'description' => 'FISCAL_ENABLED и URL ККТ. Сам чек не бьём.',
+                'title' => 'Касса (шлюз)',
+                'description' => 'FISCAL_ENABLED, токен шлюза и свежесть исходящего опроса. Сам чек не бьём.',
             ],
             'legal' => [
                 'group' => 'payments',
@@ -507,19 +507,36 @@ class OwnerSystemTestService
     private function checkFiscal(): array
     {
         $enabled = (bool) config('fiscal.enabled');
-        $url = (string) config('fiscal.kkm.url');
+        $token = trim((string) config('fiscal.relay_token'));
+        $gateway = app(\App\Services\FiscalGatewayService::class);
+        $seen = $gateway->lastSeenAt();
+        $pending = \App\Models\FiscalJob::query()
+            ->whereIn('status', [
+                \App\Models\FiscalJob::STATUS_PENDING,
+                \App\Models\FiscalJob::STATUS_CLAIMED,
+                \App\Models\FiscalJob::STATUS_UNCERTAIN,
+            ])
+            ->count();
         $details = [
             'enabled: '.($enabled ? 'yes' : 'no'),
-            'url: '.$url,
+            'relay_token: '.($token !== '' ? 'set' : 'empty'),
+            'gateway_seen: '.($seen ?: 'never'),
+            'open_jobs: '.$pending,
         ];
         if (! $enabled) {
             return $this->warn('Касса выключена — чеки-заглушки. Для боя включите FISCAL_ENABLED.', $details);
         }
-        if (! filled($url)) {
-            return $this->fail('FISCAL_ENABLED, но нет KKM_SERVER_URL.', $details);
+        if ($token === '') {
+            return $this->fail('FISCAL_ENABLED, но пустой FISCAL_RELAY_TOKEN. Шлюз не заберёт очередь.', $details);
+        }
+        if ($seen === null) {
+            return $this->warn('Токен задан, шлюз ещё ни разу не выходил на связь.', $details);
+        }
+        if (! $gateway->gatewayFresh()) {
+            return $this->warn('Шлюз молчит дольше '.config('fiscal.gateway_stale_seconds', 90).' с. Чеки копятся в очереди.', $details);
         }
 
-        return $this->pass('Касса включена в конфиге. Чек не отправляли.', $details);
+        return $this->pass('Шлюз кассы на связи. Чек не отправляли.', $details);
     }
 
     /**

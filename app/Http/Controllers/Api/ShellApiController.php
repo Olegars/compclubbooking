@@ -602,6 +602,7 @@ class ShellApiController extends Controller
                 'total_balance' => $balance,
                 'session_active' => $sessionActive,
                 'time_remaining' => $timeRemaining,
+                'fiscal_receipts' => app(\App\Services\FiscalService::class)->recentShellReceipts((int) $user->id),
                 'relocated' => $booking && $terminalId > 0 && ! $sessionActive && $booking->status === 'active',
                 'party' => $sessionActive && $booking
                     ? app(PartyBookingService::class)->payloadForBooking($booking)

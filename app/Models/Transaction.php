@@ -44,4 +44,9 @@ class Transaction extends Model
     {
         return $this->belongsTo(BookingGroup::class);
     }
+
+    public function fiscalJobs(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(FiscalJob::class);
+    }
 }
