@@ -219,6 +219,7 @@ class GameBookingService
 
             $quote = $this->quote($clubId, $computerIds, $gameIds, $startsAt, $endsAt, $mode, $tariffId, $addonIds);
             $quote = app(\App\Services\BattlePassService::class)->applyToQuote($user, $quote, $startsAt, true);
+            $quote = app(\App\Services\ReferralService::class)->applyToQuote($user, $quote, $clubId, true);
 
             $user->syncBalanceToWallet();
             $wallet = Wallet::query()->where('user_id', $user->id)->lockForUpdate()->firstOrFail();
@@ -245,6 +246,8 @@ class GameBookingService
                 'total_minor' => $quote['total_minor'],
                 'pricing_snapshot' => $quote,
             ]);
+
+            app(\App\Services\ReferralService::class)->bindPromo($quote, $group);
 
             $durationHours = $quote['duration_minutes'] / 60;
             $seatPrices = $this->seatPriceMinorsFromQuote($quote, $computerIds);
@@ -340,7 +343,11 @@ class GameBookingService
                 'paid_at' => now(),
             ]);
 
-            return $group->fresh(['bookings', 'games.reservations']);
+            $paid = $group->fresh();
+            app(\App\Services\ReferralService::class)->rewardFirstPayment($user, $paid);
+            app(\App\Services\ReferralService::class)->flushPendingMinutes($user);
+
+            return $paid->load(['bookings', 'games.reservations']);
         }, 3);
     }
 
@@ -415,6 +422,8 @@ class GameBookingService
 
             app(\App\Services\PreSessionOrderService::class)
                 ->cancelScheduledForBookingIds($group->bookings()->pluck('id')->all());
+
+            app(\App\Services\ReferralService::class)->reverseIfRefunded($group->fresh());
 
             return $group->fresh();
         }, 3);

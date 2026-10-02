@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class Wallet extends Model {
-    protected $fillable = ['user_id', 'deposit_balance', 'bonus_balance', 'total_spent'];
+    protected $fillable = ['user_id', 'deposit_balance', 'bonus_balance', 'bonus_minutes', 'total_spent'];
 
     protected $appends = ['balance'];
 
@@ -16,6 +16,7 @@ class Wallet extends Model {
         return [
             'deposit_balance' => 'float',
             'bonus_balance' => 'float',
+            'bonus_minutes' => 'integer',
             'total_spent' => 'float',
         ];
     }

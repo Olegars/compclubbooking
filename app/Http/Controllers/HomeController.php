@@ -124,6 +124,7 @@ class HomeController extends Controller
             return [
                 ...$zone,
                 'price_per_hour' => $hasTariff ? (int) round($hourly) : null,
+                'yield' => $grid['yield'] ?? null,
                 'packages' => $packages,
             ];
         });

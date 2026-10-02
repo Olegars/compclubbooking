@@ -21,6 +21,12 @@ type LandingZone = {
     kinds: SeatKinds
     free_seat_id: number | null
     price_per_hour: number | null
+    yield?: {
+        name: string
+        kind: string
+        adjust_percent: number
+        list_rate: number
+    } | null
     packages: Array<{
         id: number
         title: string
@@ -397,6 +403,12 @@ const steps = [
                             <span class="text-white/30 text-xs pb-1.5">/ час</span>
                         </div>
                         <div v-else class="text-white/40 text-sm">Цена уточняется</div>
+                        <div v-if="zone.yield" class="mt-2 text-[10px] font-black uppercase tracking-widest"
+                             :class="zone.yield.kind === 'surge' ? 'text-amber-400' : 'text-[#22c55e]'">
+                            {{ zone.yield.name }}
+                            {{ zone.yield.adjust_percent > 0 ? '+' : '' }}{{ Math.round(zone.yield.adjust_percent) }}%
+                            <span class="text-white/30 font-normal normal-case tracking-normal line-through ml-1">{{ formatMoney(zone.yield.list_rate) }} ₽</span>
+                        </div>
 
                         <div class="mt-6 space-y-2.5 text-[12px]">
                             <div class="flex items-center justify-between">

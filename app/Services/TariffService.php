@@ -22,6 +22,10 @@ class TariffService
 {
     public const DEFAULT_HOURLY_RUB = 250.0;
 
+    public function __construct(
+        private readonly YieldPricingService $yield,
+    ) {}
+
     /** @var array<string, Collection<int, TariffPrice>> */
     private array $rulesCache = [];
 
@@ -36,8 +40,37 @@ class TariffService
 
     /**
      * Почасовая ставка зоны в момент startsAt (без доплаты комнаты).
+     * Если на этот час есть тариф и сработало правило yield, ставка уже с поправкой.
      */
     public function hourlyRateRub(int $clubId, ?int $zoneId, ?CarbonImmutable $at = null): float
+    {
+        $at ??= CarbonImmutable::now(config('app.timezone'));
+
+        return $this->hourlyQuote($clubId, $zoneId, $at)['rate'];
+    }
+
+    /**
+     * @return array{rate: float, list_rate: float, yield: array<string, mixed>|null}
+     */
+    public function hourlyQuote(int $clubId, ?int $zoneId, ?CarbonImmutable $at = null): array
+    {
+        $at ??= CarbonImmutable::now(config('app.timezone'));
+        $list = $this->listHourlyRateRub($clubId, $zoneId, $at);
+        if (! $zoneId || $this->matchRule($clubId, $zoneId, $at, hourlyOnly: true) === null) {
+            return [
+                'rate' => $list,
+                'list_rate' => $list,
+                'yield' => null,
+            ];
+        }
+
+        return $this->yield->apply($clubId, $zoneId, $at, $list);
+    }
+
+    /**
+     * Ставка из правила тарифа, до динамической поправки.
+     */
+    public function listHourlyRateRub(int $clubId, ?int $zoneId, ?CarbonImmutable $at = null): float
     {
         if (! $zoneId) {
             return $this->unzonedHourlyRub();
@@ -73,7 +106,8 @@ class TariffService
         float $surchargePerHour = 0.0
     ): array {
         $at = $startsAt ?? CarbonImmutable::now(config('app.timezone'));
-        $hourly = $this->hourlyRateRub($clubId, $zoneId, $at);
+        $applied = $this->hourlyQuote($clubId, $zoneId, $at);
+        $hourly = (float) $applied['rate'];
         $packages = [];
 
         if ($zoneId) {
@@ -122,6 +156,8 @@ class TariffService
             'surcharge_per_hour' => round($surchargePerHour, 2),
             'hourly_rate' => round($hourly + $surchargePerHour, 2),
             'base_hourly_rate' => round($hourly, 2),
+            'list_hourly_rate' => round((float) $applied['list_rate'], 2),
+            'yield' => $applied['yield'],
             'packages' => $packages,
         ];
     }
@@ -386,17 +422,20 @@ class TariffService
                 break;
             }
 
-            $rate = (float) $rule->price;
+            $applied = $this->hourlyQuote($clubId, $zoneId, $cursor);
+            $rate = (float) $applied['rate'];
             $cost = round($rate * ($minutes / 60), 4);
 
             $segments[] = [
                 'from' => $cursor->toIso8601String(),
                 'to' => $boundary->toIso8601String(),
                 'minutes' => $minutes,
+                'list_rate' => (float) $applied['list_rate'],
                 'rate' => $rate,
                 'cost_rub' => round($cost, 2),
                 'tariff_price_id' => (int) $rule->id,
                 'day_group_id' => (int) $rule->day_group_id,
+                'yield' => $applied['yield'],
             ];
 
             $cursor = $boundary;

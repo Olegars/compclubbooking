@@ -21,6 +21,8 @@ class User extends Authenticatable
         'balance',
         'offer_accepted_at',
         'nickname_pending',
+        'referral_code',
+        'referred_by_user_id',
     ];
 
     protected $hidden = [
@@ -152,6 +154,21 @@ class User extends Authenticatable
      */
     public function bookings() {
         return $this->hasMany(Booking::class);
+    }
+
+    public function referrer()
+    {
+        return $this->belongsTo(self::class, 'referred_by_user_id');
+    }
+
+    public function referralsMade()
+    {
+        return $this->hasMany(Referral::class, 'referrer_user_id');
+    }
+
+    public function referralReceived()
+    {
+        return $this->hasOne(Referral::class, 'referee_user_id');
     }
 
     public function clips()

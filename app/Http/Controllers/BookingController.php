@@ -221,7 +221,7 @@ class BookingController extends Controller
             $addonsMinor = (int) round($addonRub * 100);
             $computersMinor = (int) $seatQuote['total_minor'] + $addonsMinor;
 
-            return response()->json([
+            $preview = [
                 'total_price' => $computersMinor / 100,
                 'total_minor' => $computersMinor,
                 'computers_base_minor' => (int) $seatQuote['total_minor'],
@@ -229,17 +229,23 @@ class BookingController extends Controller
                 'addons_total_minor' => $addonsMinor,
                 'addons' => $addonLines,
                 'games_total_minor' => 0,
+                'duration_minutes' => (int) round($hours * 60),
                 'mode' => $mode,
                 'tariff_id' => $tariffId,
                 'tariff' => $seatQuote,
                 'games' => [],
-            ]);
+            ];
+            if ($request->user()) {
+                $preview = app(\App\Services\ReferralService::class)->applyToQuote($request->user(), $preview, $clubId, false);
+            }
+
+            return response()->json($preview);
         }
 
         [$startsAt, $endsAt] = $this->resolvePeriod($validated);
         $clubId = $this->resolveClubId($validated);
 
-        return response()->json($this->bookings->quote(
+        $quote = $this->bookings->quote(
             $clubId,
             $validated['pc_ids'],
             $validated['game_ids'] ?? [],
@@ -248,7 +254,12 @@ class BookingController extends Controller
             $mode,
             $tariffId,
             $addonIds
-        ));
+        );
+        if ($request->user()) {
+            $quote = app(\App\Services\ReferralService::class)->applyToQuote($request->user(), $quote, $clubId, false);
+        }
+
+        return response()->json($quote);
     }
 
     public function reserve(Request $request)

@@ -10,8 +10,12 @@ use App\Models\Club;
 use App\Models\DayGroup;
 use App\Models\Tariff;
 use App\Models\TariffPrice;
+use App\Models\YieldRule;
 use App\Models\Zone;
+use App\Services\TariffService;
+use App\Services\YieldPricingService;
 use App\Support\AdminLocation;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -20,7 +24,7 @@ use Inertia\Inertia;
 
 class TariffController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, YieldPricingService $yield, TariffService $tariffs)
     {
         $clubs = Club::visibleToAdmin(AdminLocation::id())->orderBy('name')->get(['id', 'name']);
         $clubId = (int) ($request->query('club') ?: $clubs->first()?->id);
@@ -56,12 +60,38 @@ class TariffController extends Controller
                 ])
             : collect();
 
+        $zones = Zone::query()->orderBy('sort')->orderBy('name')->get(['id', 'name', 'slug', 'color']);
+
         return Inertia::render('Admin/Tariffs', [
             'clubs' => $clubs,
             'selectedClubId' => $clubId,
             'selectedTariffId' => $tariffId,
             'tariffs' => $tariffs,
-            'zones' => Zone::query()->orderBy('sort')->orderBy('name')->get(['id', 'name', 'slug', 'color']),
+            'zones' => $zones,
+            'yieldRules' => $clubId
+                ? YieldRule::query()
+                    ->with('zone:id,name,color')
+                    ->where('club_id', $clubId)
+                    ->orderByDesc('priority')
+                    ->orderBy('id')
+                    ->get()
+                    ->map(fn (YieldRule $rule) => [
+                        'id' => (int) $rule->id,
+                        'zone_id' => $rule->zone_id ? (int) $rule->zone_id : null,
+                        'zone' => $rule->zone?->only(['id', 'name', 'color']),
+                        'name' => (string) $rule->name,
+                        'kind' => (string) $rule->kind,
+                        'is_active' => (bool) $rule->is_active,
+                        'weekdays' => array_map('intval', $rule->weekdays ?? []),
+                        'time_start' => (int) $rule->time_start,
+                        'time_end' => (int) $rule->time_end,
+                        'utilization_op' => (string) $rule->utilization_op,
+                        'utilization_percent' => (int) $rule->utilization_percent,
+                        'adjust_percent' => (float) $rule->adjust_percent,
+                        'priority' => (int) $rule->priority,
+                    ])
+                : [],
+            'yieldLive' => $clubId ? $this->yieldLive($clubId, $zones, $yield, $tariffs) : [],
             'dayGroups' => DayGroup::query()->orderBy('sort')->orderBy('id')->get(['id', 'name', 'color', 'weekdays', 'sort']),
             'rules' => $rules,
             'overrides' => CalendarDayOverride::query()
@@ -351,6 +381,128 @@ class TariffController extends Controller
         $addon->delete();
 
         return back();
+    }
+
+    public function storeYield(Request $request)
+    {
+        $data = $this->validatedYield($request);
+        YieldRule::query()->create($data);
+
+        return back();
+    }
+
+    public function updateYield(Request $request, YieldRule $yieldRule)
+    {
+        $data = $this->validatedYield($request);
+        if ((int) $data['club_id'] !== (int) $yieldRule->club_id) {
+            throw ValidationException::withMessages([
+                'club_id' => 'Правило принадлежит другому клубу.',
+            ]);
+        }
+
+        $yieldRule->update($data);
+
+        return back();
+    }
+
+    public function destroyYield(YieldRule $yieldRule)
+    {
+        $yieldRule->delete();
+
+        return back();
+    }
+
+    public function storeYieldPresets(Request $request, YieldPricingService $yield)
+    {
+        $clubId = (int) $request->validate([
+            'club_id' => 'required|integer|exists:clubs,id',
+        ])['club_id'];
+
+        $yield->installPresets($clubId);
+
+        return back();
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, Zone>  $zones
+     * @return list<array<string, mixed>>
+     */
+    private function yieldLive(int $clubId, $zones, YieldPricingService $yield, TariffService $tariffs): array
+    {
+        $now = CarbonImmutable::now(config('app.timezone'));
+
+        return $zones->map(function (Zone $zone) use ($clubId, $now, $yield, $tariffs) {
+            $inspect = $yield->inspect($clubId, (int) $zone->id, $now);
+            $applied = $tariffs->hourlyQuote($clubId, (int) $zone->id, $now);
+
+            return [
+                'zone_id' => (int) $zone->id,
+                'name' => (string) $zone->name,
+                'color' => (string) ($zone->color ?: '#22c55e'),
+                'seats' => $inspect['seats'],
+                'busy' => $inspect['busy'],
+                'utilization_percent' => $inspect['utilization_percent'],
+                'list_rate' => $applied['list_rate'],
+                'rate' => $applied['rate'],
+                'rule_name' => $applied['yield']['name'] ?? null,
+                'kind' => $applied['yield']['kind'] ?? null,
+                'adjust_percent' => $applied['yield']['adjust_percent'] ?? null,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validatedYield(Request $request): array
+    {
+        if ($request->input('zone_id') === '' || $request->input('zone_id') === 'null') {
+            $request->merge(['zone_id' => null]);
+        }
+
+        $data = $request->validate([
+            'club_id' => 'required|integer|exists:clubs,id',
+            'zone_id' => 'nullable|integer|exists:zones,id',
+            'name' => 'required|string|max:80',
+            'kind' => 'required|in:discount,surge',
+            'is_active' => 'sometimes|boolean',
+            'weekdays' => 'required|array|min:1',
+            'weekdays.*' => 'integer|min:1|max:7',
+            'time_start' => 'required|integer|min:0|max:1439',
+            'time_end' => 'required|integer|min:1|max:1440',
+            'utilization_op' => 'required|in:below,above',
+            'utilization_percent' => 'required|integer|min:1|max:100',
+            'adjust_percent' => 'required|numeric|min:1|max:200',
+            'priority' => 'nullable|integer|min:0|max:1000',
+        ]);
+
+        if ((int) $data['time_start'] === (int) $data['time_end']) {
+            throw ValidationException::withMessages([
+                'time_end' => 'Начало и конец интервала не должны совпадать.',
+            ]);
+        }
+
+        $percent = abs((float) $data['adjust_percent']);
+        if ($data['kind'] === 'discount' && $percent > 90) {
+            throw ValidationException::withMessages([
+                'adjust_percent' => 'Скидка не больше 90%.',
+            ]);
+        }
+
+        return [
+            'club_id' => (int) $data['club_id'],
+            'zone_id' => $data['zone_id'] ? (int) $data['zone_id'] : null,
+            'name' => $data['name'],
+            'kind' => $data['kind'],
+            'is_active' => array_key_exists('is_active', $data) ? (bool) $data['is_active'] : true,
+            'weekdays' => array_values(array_unique(array_map('intval', $data['weekdays']))),
+            'time_start' => (int) $data['time_start'],
+            'time_end' => (int) $data['time_end'],
+            'utilization_op' => $data['utilization_op'],
+            'utilization_percent' => (int) $data['utilization_percent'],
+            'adjust_percent' => $data['kind'] === 'discount' ? -$percent : $percent,
+            'priority' => (int) ($data['priority'] ?? ($data['kind'] === 'surge' ? 20 : 10)),
+        ];
     }
 
     private function redirectToEditor(Request $request, ?int $tariffId = null)

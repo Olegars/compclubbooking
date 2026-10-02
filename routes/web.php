@@ -5,6 +5,7 @@ use Inertia\Inertia;
 
 // Контроллеры Игроков
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\ReferralController;
 use App\Http\Controllers\ClubController;
 use App\Http\Controllers\ClubOpenRegisterController;
 use App\Http\Controllers\TerminalController;
@@ -102,6 +103,9 @@ use App\Http\Controllers\GameRequestController;
 |--------------------------------------------------------------------------
 */
 Route::get('/', [HomeController::class, 'index'])->name('home');
+Route::get('/r/{code}', [ReferralController::class, 'open'])
+    ->where('code', '[A-Za-z0-9]{4,16}')
+    ->name('referral.open');
 Route::get('/play-from-home', [AcDownloadController::class, 'about'])->name('ac.about');
 Route::get('/ac.json', [AcDownloadController::class, 'manifest'])->name('ac.manifest');
 Route::get('/clubs/join', [ClubOpenRegisterController::class, 'create'])->name('clubs.join');
@@ -616,6 +620,10 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::post('/addons', [TariffController::class, 'storeAddon']);
         Route::put('/addons/{addon}', [TariffController::class, 'updateAddon']);
         Route::delete('/addons/{addon}', [TariffController::class, 'destroyAddon']);
+        Route::post('/yield-rules/presets', [TariffController::class, 'storeYieldPresets']);
+        Route::post('/yield-rules', [TariffController::class, 'storeYield']);
+        Route::put('/yield-rules/{yieldRule}', [TariffController::class, 'updateYield'])->whereNumber('yieldRule');
+        Route::delete('/yield-rules/{yieldRule}', [TariffController::class, 'destroyYield'])->whereNumber('yieldRule');
 
         Route::get('/zones', [ZoneController::class, 'index'])->name('admin.zones');
         Route::post('/zones', [ZoneController::class, 'store']);
@@ -743,6 +751,10 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::put('/lights/{light}', [LightAdminController::class, 'updateLight']);
         Route::delete('/lights/{light}', [LightAdminController::class, 'destroyLight']);
         Route::post('/lights/events', [LightAdminController::class, 'saveEvents']);
+        Route::post('/lights/wled', [LightAdminController::class, 'storeWled']);
+        Route::put('/lights/wled/{wled}', [LightAdminController::class, 'updateWled']);
+        Route::delete('/lights/wled/{wled}', [LightAdminController::class, 'destroyWled']);
+        Route::post('/lights/wled/{wled}/test', [LightAdminController::class, 'testWled']);
     });
 
     // УРОВЕНЬ: SUPERVISOR / OWNER — штат и проверка анкет

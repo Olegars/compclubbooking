@@ -332,6 +332,25 @@ class ClubFeatureCatalog
                 'fields' => [],
             ],
             [
+                'key' => 'referrals',
+                'title' => 'Приведи друга',
+                'description' => 'Личная ссылка в кабинете. Друг получает скидку на первую оплату, обе стороны — фантики или минуты после первой брони от заданной длины. Не за SMS.',
+                'group' => self::GROUP_MARKETING,
+                'icon' => '🤝',
+                'admin_path' => '/account/dashboard',
+                'fields' => [
+                    self::selectField('reward_kind', 'Награда обеим сторонам', 'bonus_balance', [
+                        ['value' => 'bonus_balance', 'label' => 'Фантики на бонусный баланс'],
+                        ['value' => 'session_minutes', 'label' => 'Минуты сессии'],
+                    ], 'Фантики не фискалятся. Минуты пишутся в журнал бонусов, source=referral.'),
+                    self::intField('referrer_amount', 'Награда пригласившему', 100, 0, 5000, 10, '', 'Фантики или минуты — как выбран вид награды.'),
+                    self::intField('friend_amount', 'Награда другу', 100, 0, 5000, 10),
+                    self::intField('friend_discount_percent', 'Скидка другу на первую оплату, %', 10, 0, 50, 1, '%', '0 — промокод не даёт скидку, награда за бронь остаётся.'),
+                    self::intField('min_minutes', 'Минут в первой брони для награды', 60, 15, 480, 15, 'мин', 'Короче — скидка может списаться, бонус ждёт бронь длиннее порога.'),
+                    self::intField('promo_days', 'Срок промокода, дни', 30, 1, 180, 1, 'дн'),
+                ],
+            ],
+            [
                 'key' => 'promocodes',
                 'title' => 'Промокоды',
                 'description' => 'Клубные коды /admin/promocodes: бонус или скидка в кабинете. Не RX-***** Lucky Seat.',

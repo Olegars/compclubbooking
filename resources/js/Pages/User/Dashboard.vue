@@ -168,10 +168,27 @@ const cancelBooking = async (b: any) => {
 
 const fetchDashboardData = () => {
     router.reload({
-        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'battle_pass', 'profile_card', 'clips', 'clips_telegram', 'telegram', 'clan_wars', 'arena', 'reactor_ac', 'faceit', 'server_time'],
+        only: ['user', 'auth', 'transactions', 'active_bookings', 'orders', 'latest_review', 'review_meta', 'achievements', 'battle_pass', 'profile_card', 'clips', 'clips_telegram', 'telegram', 'clan_wars', 'arena', 'reactor_ac', 'faceit', 'referral', 'server_time'],
         preserveScroll: true
     })
 }
+
+const referral = computed(() => (page.props as any).referral || null)
+const referralCopied = ref(false)
+const copyReferral = async () => {
+    const url = referral.value?.url
+    if (!url) return
+    try {
+        await navigator.clipboard.writeText(String(url))
+        referralCopied.value = true
+        setTimeout(() => { referralCopied.value = false }, 1600)
+    } catch {
+        referralCopied.value = false
+    }
+}
+const referralUnit = (kind: string, amount: number) => kind === 'session_minutes'
+    ? `${amount} мин`
+    : `${amount} фантиков`
 
 const achievements = computed(() => {
     const raw = (page.props as any).achievements
@@ -1087,6 +1104,30 @@ onMounted(() => {
                                 @click="router.post('/account/battle-pass/claim', { level: lvl.level }, { preserveScroll: true })">
                             Забрать {{ lvl.level }}
                         </button>
+                    </div>
+                </div>
+
+                <div v-if="featureOn('referrals') && referral?.url" class="cabinet-block bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-[#22c55e]/25 rounded-xl md:rounded-[1.125rem] p-4 sm:p-6 md:p-8 md:shadow-xl">
+                    <span class="text-[10px] uppercase text-[#22c55e] tracking-[0.35em] font-black italic block mb-3">Приведи друга</span>
+                    <p class="text-[11px] text-white/50 leading-snug mb-4">
+                        Друг получает скидку {{ referral.friend_discount_percent }}% на первую оплату
+                        и {{ referralUnit(referral.reward_kind, referral.friend_amount) }}.
+                        Ты получаешь {{ referralUnit(referral.reward_kind, referral.referrer_amount) }},
+                        когда его бронь от {{ referral.min_minutes }} минут оплачена.
+                    </p>
+                    <div class="flex items-center gap-2">
+                        <div class="min-w-0 flex-1 px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-[11px] font-mono text-white/80 truncate">{{ referral.url }}</div>
+                        <button type="button" class="shrink-0 px-3 py-2 rounded-lg border border-[#22c55e]/40 text-[#22c55e] text-[10px] font-black uppercase tracking-widest" @click="copyReferral">
+                            {{ referralCopied ? 'Скопировано' : 'Копировать' }}
+                        </button>
+                    </div>
+                    <div class="mt-3 text-[10px] uppercase tracking-widest text-white/35">
+                        Приглашено {{ referral.invited }} · Награды {{ referral.rewarded }}
+                    </div>
+                    <div v-if="referral.promo" class="mt-4 rounded-xl border border-white/10 bg-black/30 p-3">
+                        <div class="text-[9px] uppercase tracking-widest text-white/40">Твой код на первую оплату</div>
+                        <div class="mt-1 text-lg font-black font-mono tracking-wider text-white">{{ referral.promo.code }}</div>
+                        <div class="text-[10px] text-white/45">−{{ referral.promo.percent }}%<span v-if="referral.promo.expires_at"> · до {{ referral.promo.expires_at }}</span></div>
                     </div>
                 </div>
 

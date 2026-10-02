@@ -9,9 +9,12 @@ use App\Models\DmxNode;
 use App\Models\Space;
 use App\Models\SpaceLight;
 use App\Models\ClubLightSetting;
+use App\Models\WledController;
 use App\Services\Fan\FanControlService;
 use App\Services\Light\LightControlService;
 use App\Services\Light\LightEventCatalog;
+use App\Services\Light\WledCorridorCatalog;
+use App\Services\Light\WledCueService;
 use App\Support\AdminLocation;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -61,6 +64,29 @@ class LightAdminController extends Controller
                 'space_name' => $pc->space?->name,
             ]);
 
+        $wled = WledController::query()
+            ->when($clubId, fn ($q) => $q->where('club_id', $clubId))
+            ->orderBy('name')
+            ->get()
+            ->map(fn (WledController $c) => [
+                'id' => (int) $c->id,
+                'name' => (string) $c->name,
+                'host' => (string) $c->host,
+                'http_port' => (int) $c->http_port,
+                'is_active' => (bool) $c->is_active,
+                'idle_on' => (bool) $c->idle_on,
+                'idle_color' => (string) $c->idle_color,
+                'idle_brightness' => (int) $c->idle_brightness,
+                'bindings' => WledCorridorCatalog::forAdmin(is_array($c->bindings) ? $c->bindings : []),
+                'last_error' => $c->last_error,
+                'last_played_at' => $c->last_played_at?->toIso8601String(),
+            ]);
+
+        $tab = $request->string('tab')->toString();
+        if (! in_array($tab, ['interactive', 'corridor'], true)) {
+            $tab = 'nodes';
+        }
+
         return Inertia::render('Admin/Lights', [
             'clubs' => $clubs,
             'clubId' => $clubId,
@@ -68,8 +94,9 @@ class LightAdminController extends Controller
             'lights' => $lights,
             'spaces' => $spaces,
             'computers' => $computers,
-            'tab' => $request->string('tab')->toString() === 'interactive' ? 'interactive' : 'nodes',
+            'tab' => $tab,
             'interactiveEvents' => $catalog->adminPayload($clubId ?: null),
+            'wledControllers' => $wled,
             'colorOptions' => array_merge(LightEventCatalog::EVENT_COLORS, [SpaceLight::EFFECT_RAINBOW]),
             'defaults' => [
                 'port' => (int) config('light.artnet_port', 6454),
@@ -264,5 +291,102 @@ class LightAdminController extends Controller
         $light->delete();
 
         return back()->with('success', 'Свет отвязан');
+    }
+
+    public function storeWled(Request $request)
+    {
+        $this->normalizeWledHost($request);
+        $data = $request->validate([
+            'club_id' => 'required|integer|exists:clubs,id',
+            'name' => 'required|string|max:120',
+            'host' => ['required', 'string', 'max:120', 'regex:/^[A-Za-z0-9.\-]+$/'],
+            'http_port' => 'nullable|integer|min:1|max:65535',
+            'is_active' => 'nullable|boolean',
+        ]);
+
+        $node = WledController::create([
+            'club_id' => (int) $data['club_id'],
+            'name' => $data['name'],
+            'host' => $data['host'],
+            'http_port' => (int) ($data['http_port'] ?? 80),
+            'is_active' => $data['is_active'] ?? true,
+            'idle_on' => false,
+            'idle_color' => 'white',
+            'idle_brightness' => 15,
+            'bindings' => WledCorridorCatalog::defaultMap(),
+        ]);
+
+        return redirect()
+            ->route('admin.lights', ['club_id' => (int) $data['club_id'], 'tab' => 'corridor'])
+            ->with('success', 'Контроллер GLEDOPTO добавлен #'.$node->id);
+    }
+
+    public function updateWled(Request $request, WledController $wled)
+    {
+        $this->normalizeWledHost($request);
+        $data = $request->validate([
+            'name' => 'required|string|max:120',
+            'host' => ['required', 'string', 'max:120', 'regex:/^[A-Za-z0-9.\-]+$/'],
+            'http_port' => 'nullable|integer|min:1|max:65535',
+            'is_active' => 'nullable|boolean',
+            'idle_on' => 'nullable|boolean',
+            'idle_color' => 'nullable|string|max:32',
+            'idle_brightness' => 'nullable|integer|min:1|max:100',
+            'bindings' => 'required|array',
+        ]);
+
+        $color = (string) ($data['idle_color'] ?? $wled->idle_color);
+        if (! in_array($color, LightEventCatalog::EVENT_COLORS, true)) {
+            $color = 'white';
+        }
+
+        $wled->update([
+            'name' => $data['name'],
+            'host' => $data['host'],
+            'http_port' => (int) ($data['http_port'] ?? $wled->http_port),
+            'is_active' => (bool) ($data['is_active'] ?? $wled->is_active),
+            'idle_on' => (bool) ($data['idle_on'] ?? false),
+            'idle_color' => $color,
+            'idle_brightness' => (int) ($data['idle_brightness'] ?? $wled->idle_brightness),
+            'bindings' => WledCorridorCatalog::sanitizeMap($data['bindings']),
+        ]);
+
+        return redirect()
+            ->route('admin.lights', ['club_id' => (int) $wled->club_id, 'tab' => 'corridor'])
+            ->with('success', 'Коридорный контроллер сохранён');
+    }
+
+    public function destroyWled(WledController $wled)
+    {
+        $clubId = (int) $wled->club_id;
+        $wled->delete();
+
+        return redirect()
+            ->route('admin.lights', ['club_id' => $clubId, 'tab' => 'corridor'])
+            ->with('success', 'Контроллер удалён');
+    }
+
+    public function testWled(WledController $wled, WledCueService $wledCues)
+    {
+        $wledCues->flashTest($wled);
+
+        return redirect()
+            ->route('admin.lights', ['club_id' => (int) $wled->club_id, 'tab' => 'corridor'])
+            ->with('success', 'Тест в очереди — мигнёт, когда шелл в сети');
+    }
+
+    private function normalizeWledHost(Request $request): void
+    {
+        $host = trim((string) $request->input('host'));
+        $host = preg_replace('#^https?://#i', '', $host) ?? $host;
+        $host = trim($host, "/ \t");
+        if (preg_match('#^([^/:]+):(\d+)$#', $host, $m)) {
+            $host = $m[1];
+            $port = (int) $request->input('http_port', 80);
+            if ($port === 80) {
+                $request->merge(['http_port' => (int) $m[2]]);
+            }
+        }
+        $request->merge(['host' => $host]);
     }
 }

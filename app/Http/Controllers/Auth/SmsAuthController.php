@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Services\PlayerNicknameService;
+use App\Services\ReferralService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -46,6 +47,7 @@ class SmsAuthController extends Controller
         }
 
         $user = User::where('phone', $request->phone)->first();
+        $isNew = ! $user;
 
         // --- СОЗДАНИЕ ЮЗЕРА (БРОНЕБОЙНЫЙ МЕТОД) ---
         if (!$user) {
@@ -71,6 +73,14 @@ class SmsAuthController extends Controller
             $newWallet->user_id = $user->id;
             $newWallet->deposit_balance = 0;
             $newWallet->save();
+        }
+
+        if ($isNew) {
+            app(ReferralService::class)->attachNewUser(
+                $user,
+                session('referral_code') ?: $request->input('referral_code')
+            );
+            $request->session()->forget('referral_code');
         }
 
         // --- ЛОГИКА ВХОДА ---

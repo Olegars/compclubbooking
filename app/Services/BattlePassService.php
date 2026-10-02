@@ -558,6 +558,7 @@ class BattlePassService
             'caffeine' => 'Кофеин',
             'nomad' => 'Кочевник',
             'full_stack' => 'Фулстэк',
+            'referral_soul' => 'Душа компании',
         ];
         foreach ($badges as $slug => $name) {
             AchievementBadge::query()->firstOrCreate(
@@ -588,6 +589,7 @@ class BattlePassService
             ['code' => 'caffeine', 'title' => 'Кофеин', 'source_kind' => 'club', 'type' => 'bar_count', 'metric' => 'caffeine', 'target_value' => 10, 'period' => 'monthly', 'xp' => 20],
             ['code' => 'nomad', 'title' => 'Кочевник', 'source_kind' => 'club', 'type' => 'distinct_computers', 'metric' => 'computers', 'target_value' => 10, 'period' => 'once', 'xp' => 30],
             ['code' => 'full_stack', 'title' => 'Фулстэк', 'source_kind' => 'club', 'type' => 'bootcamp_seats', 'metric' => 'bootcamp', 'target_value' => 5, 'period' => 'once', 'xp' => 40],
+            ['code' => 'referral_soul', 'title' => 'Душа компании', 'source_kind' => 'club', 'type' => 'referral', 'metric' => 'referral', 'target_value' => 1, 'period' => 'once', 'xp' => 40],
             ['code' => 'faceit_10', 'title' => 'FACEIT 10', 'source_kind' => 'faceit', 'type' => 'gsi_event', 'metric' => 'skill_level', 'target_value' => 10, 'period' => 'once', 'xp' => 50],
         ];
         $count = 0;

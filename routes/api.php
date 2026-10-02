@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\ShellApiController;
+use App\Http\Controllers\Api\WledShellController;
 use Illuminate\Support\Facades\Route;
 
 // Обрати внимание: здесь мы пишем просто 'shell',
@@ -34,6 +35,8 @@ Route::prefix('shell')->group(function () {
     Route::post('/light/applied', [ShellApiController::class, 'acknowledgeLightApplied']);
     Route::get('/light', [ShellApiController::class, 'getLightState']);
     Route::post('/light/interactive', [ShellApiController::class, 'setLightInteractive']);
+    Route::get('/wled/cues', [WledShellController::class, 'cues']);
+    Route::post('/wled/cues/{cue}/ack', [WledShellController::class, 'ack']);
     Route::post('/ai-assistant', [ShellApiController::class, 'aiAssistant']);
     Route::get('/ai-voices', [ShellApiController::class, 'aiVoices']);
     Route::post('/ai-voice', [ShellApiController::class, 'setAiVoice']);

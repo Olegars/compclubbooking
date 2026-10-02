@@ -28,6 +28,35 @@ type InteractiveEvent = {
     settings: EventSettings
 }
 
+type WledBinding = {
+    id: string
+    title: string
+    hint: string
+    settings: {
+        enabled: boolean
+        color: string
+        brightness: number
+        effect: string
+        duration_sec: number
+        fade_sec: number
+        channels: number[]
+    }
+}
+
+type WledControllerRow = {
+    id: number
+    name: string
+    host: string
+    http_port: number
+    is_active: boolean
+    idle_on: boolean
+    idle_color: string
+    idle_brightness: number
+    bindings: WledBinding[]
+    last_error?: string | null
+    last_played_at?: string | null
+}
+
 const clubName = useClubName()
 const { success, error } = useToast()
 const page = usePage()
@@ -42,11 +71,15 @@ const props = defineProps<{
     defaults: { port: number, brightness: number }
     tab?: string
     interactiveEvents?: InteractiveEvent[]
+    wledControllers?: WledControllerRow[]
     colorOptions?: string[]
 }>()
 
+const tabName = (tab?: string): 'nodes' | 'interactive' | 'corridor' =>
+    tab === 'interactive' || tab === 'corridor' ? tab : 'nodes'
+
 const selectedClubId = ref(props.clubId || props.clubs[0]?.id || 0)
-const activeTab = ref(props.tab === 'interactive' ? 'interactive' : 'nodes')
+const activeTab = ref(tabName(props.tab))
 const openEventId = ref('')
 const eventDrafts = ref<InteractiveEvent[]>([])
 
@@ -58,13 +91,14 @@ eventDrafts.value = cloneEvents(props.interactiveEvents)
 watch(selectedClubId, (id) => {
     router.get('/admin/lights', {
         club_id: id,
-        tab: activeTab.value === 'interactive' ? 'interactive' : undefined,
+        tab: activeTab.value === 'nodes' ? undefined : activeTab.value,
     }, { preserveState: true, replace: true })
 })
 
 watch(() => props.clubId, (id) => {
     nodeForm.club_id = id
     lightForm.club_id = id
+    wledForm.club_id = id
 })
 
 watch(() => props.interactiveEvents, (rows) => {
@@ -72,18 +106,18 @@ watch(() => props.interactiveEvents, (rows) => {
 }, { deep: true })
 
 watch(() => props.tab, (tab) => {
-    activeTab.value = tab === 'interactive' ? 'interactive' : 'nodes'
+    activeTab.value = tabName(tab)
 })
 
 watch(() => (page.props as any).flash?.success as string | undefined, (msg) => {
     if (msg) success(msg)
 }, { immediate: true })
 
-const goTab = (tab: 'nodes' | 'interactive') => {
+const goTab = (tab: 'nodes' | 'interactive' | 'corridor') => {
     activeTab.value = tab
     router.get('/admin/lights', {
         club_id: selectedClubId.value,
-        tab: tab === 'interactive' ? 'interactive' : undefined,
+        tab: tab === 'nodes' ? undefined : tab,
     }, { preserveState: true, replace: true, preserveScroll: true })
 }
 
@@ -110,6 +144,64 @@ const eventsForm = useForm({
     club_id: props.clubId,
     events: {} as Record<string, EventSettings>,
 })
+
+const wledForm = useForm({
+    club_id: props.clubId,
+    name: '',
+    host: '',
+    http_port: 80,
+    is_active: true,
+})
+
+const wledDrafts = ref<WledControllerRow[]>([])
+const cloneWled = (rows: WledControllerRow[] | undefined): WledControllerRow[] =>
+    JSON.parse(JSON.stringify(rows || []))
+wledDrafts.value = cloneWled(props.wledControllers)
+
+watch(() => props.wledControllers, (rows) => {
+    wledDrafts.value = cloneWled(rows)
+}, { deep: true })
+
+const submitWled = () => {
+    wledForm.club_id = selectedClubId.value
+    wledForm.post('/admin/lights/wled', {
+        preserveScroll: true,
+        onSuccess: () => wledForm.reset('name', 'host'),
+        onError: () => error('Не удалось добавить контроллер'),
+    })
+}
+
+const saveWled = (row: WledControllerRow) => {
+    const bindings: Record<string, WledBinding['settings']> = {}
+    for (const b of row.bindings) {
+        bindings[b.id] = { ...b.settings, channels: [...b.settings.channels] }
+    }
+    router.put(`/admin/lights/wled/${row.id}`, {
+        name: row.name,
+        host: row.host,
+        http_port: row.http_port,
+        is_active: row.is_active,
+        idle_on: row.idle_on,
+        idle_color: row.idle_color,
+        idle_brightness: row.idle_brightness,
+        bindings,
+    }, {
+        preserveScroll: true,
+        onError: () => error('Не удалось сохранить контроллер'),
+    })
+}
+
+const toggleWledChannel = (binding: WledBinding, channel: number) => {
+    const list = binding.settings.channels
+    const i = list.indexOf(channel)
+    if (i >= 0) {
+        if (list.length === 1) return
+        list.splice(i, 1)
+        return
+    }
+    list.push(channel)
+    list.sort((a, b) => a - b)
+}
 
 const freeSpaces = computed(() => props.spaces.filter((s: any) => !s.has_light))
 
@@ -272,6 +364,12 @@ const summary = (row: InteractiveEvent) => {
                         @click="goTab('interactive')">
                     Интерактивный свет
                 </button>
+                <button type="button"
+                        class="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border"
+                        :class="activeTab === 'corridor' ? 'bg-cyan-500 text-black border-cyan-500' : 'border-white/15 text-white/50 hover:text-white'"
+                        @click="goTab('corridor')">
+                    Коридор GLEDOPTO
+                </button>
             </div>
 
             <div v-if="activeTab === 'nodes'" class="space-y-8">
@@ -388,7 +486,7 @@ const summary = (row: InteractiveEvent) => {
             </div>
             </div>
 
-            <div v-else class="space-y-6">
+            <div v-else-if="activeTab === 'interactive'" class="space-y-6">
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-6">
                     <h2 class="text-xl font-black uppercase italic text-cyan-400">Интерактивный свет</h2>
                     <p class="text-white/40 text-xs mt-2 leading-relaxed">
@@ -539,6 +637,152 @@ const summary = (row: InteractiveEvent) => {
                         @click="saveEvents">
                     Сохранить события
                 </button>
+            </div>
+
+            <div v-else class="space-y-6">
+                <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-6">
+                    <h2 class="text-xl font-black uppercase italic text-cyan-400">Коридор · GLEDOPTO WLED</h2>
+                    <p class="text-white/40 text-xs mt-2 leading-relaxed">
+                        ESP32 WLED, 4 выхода. В прошивке — четыре сегмента, по одному на выход (id 0–3).
+                        Облако пакеты не шлёт: любой включённый шелл клуба забирает событие и делает POST /json/state по LAN.
+                        Заказ, SOS или бронь вспыхивают здесь, даже если админ не у стойки.
+                    </p>
+                </div>
+
+                <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 space-y-4">
+                    <h3 class="text-lg font-black uppercase italic">Добавить контроллер</h3>
+                    <form @submit.prevent="submitWled" class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <input v-model="wledForm.name" type="text" placeholder="Коридор у бара" required
+                               class="md:col-span-2 w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" />
+                        <input v-model="wledForm.host" type="text" placeholder="IP 192.168.20.40" required
+                               class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" />
+                        <input v-model.number="wledForm.http_port" type="number" min="1" max="65535" placeholder="HTTP 80"
+                               class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" />
+                        <button type="submit"
+                                class="md:col-span-4 py-4 bg-cyan-500 text-black font-black uppercase text-[10px] rounded-xl tracking-widest disabled:opacity-40"
+                                :disabled="wledForm.processing">
+                            Добавить GLEDOPTO
+                        </button>
+                    </form>
+                    <p v-if="wledForm.errors.host" class="text-xs text-red-400">{{ wledForm.errors.host }}</p>
+                </div>
+
+                <p v-if="!wledDrafts.length" class="text-xs text-white/30">Коридорных контроллеров пока нет.</p>
+
+                <article v-for="row in wledDrafts" :key="row.id"
+                         class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-6 space-y-5">
+                    <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
+                            <input v-model="row.name" type="text"
+                                   class="sm:col-span-2 w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500" />
+                            <label class="flex items-center gap-3 text-sm px-1">
+                                <input v-model="row.is_active" type="checkbox" class="accent-cyan-500 w-4 h-4" />
+                                в сети
+                            </label>
+                            <input v-model="row.host" type="text" placeholder="IP"
+                                   class="sm:col-span-2 w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500" />
+                            <input v-model.number="row.http_port" type="number" min="1" max="65535"
+                                   class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500" />
+                        </div>
+                        <div class="flex gap-3 shrink-0">
+                            <button type="button"
+                                    class="text-[10px] uppercase tracking-widest text-cyan-400 hover:text-cyan-300"
+                                    @click="router.post(`/admin/lights/wled/${row.id}/test`, {}, { preserveScroll: true })">
+                                Тест
+                            </button>
+                            <button type="button"
+                                    class="text-[10px] uppercase tracking-widest text-red-400 hover:text-red-300"
+                                    @click="router.delete(`/admin/lights/wled/${row.id}`)">
+                                Удалить
+                            </button>
+                        </div>
+                    </div>
+                    <p v-if="row.last_error" class="text-[11px] text-amber-400">{{ row.last_error }}</p>
+
+                    <div class="flex flex-wrap items-end gap-4 border border-white/10 rounded-xl p-4">
+                        <label class="flex items-center gap-3 text-sm">
+                            <input v-model="row.idle_on" type="checkbox" class="accent-cyan-500 w-4 h-4" />
+                            дежурный свет после вспышки
+                        </label>
+                        <div v-if="row.idle_on" class="flex flex-wrap items-center gap-2">
+                            <button v-for="c in solidColors" :key="'idle-'+row.id+'-'+c" type="button"
+                                    class="w-8 h-8 rounded-full border-2"
+                                    :class="row.idle_color === c ? 'border-cyan-400 scale-110' : 'border-white/15'"
+                                    :style="{ background: colorDot(c) }"
+                                    :title="colorLabel(c)"
+                                    @click="row.idle_color = c" />
+                            <input v-model.number="row.idle_brightness" type="number" min="1" max="100"
+                                   class="w-24 bg-black border border-white/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-cyan-500" />
+                        </div>
+                        <span v-else class="text-[10px] uppercase tracking-widest text-white/30">после вспышки гаснет</span>
+                    </div>
+
+                    <div v-for="binding in row.bindings" :key="binding.id"
+                         class="border border-white/10 rounded-xl p-4 space-y-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <div class="text-sm font-bold">{{ binding.title }}</div>
+                                <p class="text-[11px] text-white/35 mt-1 leading-relaxed">{{ binding.hint }}</p>
+                            </div>
+                            <label class="shrink-0 flex items-center gap-2 text-[10px] uppercase tracking-widest text-white/50">
+                                <input v-model="binding.settings.enabled" type="checkbox" class="accent-cyan-500 w-4 h-4" />
+                                вкл
+                            </label>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <label class="block space-y-2">
+                                <span class="text-[10px] uppercase tracking-widest text-white/40 font-black">Длительность, с</span>
+                                <input v-model.number="binding.settings.duration_sec" type="number" min="0" max="120" step="0.5"
+                                       class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500" />
+                                <span class="text-[10px] text-white/30">0 = держать до следующего</span>
+                            </label>
+                            <label class="block space-y-2">
+                                <span class="text-[10px] uppercase tracking-widest text-white/40 font-black">Яркость, %</span>
+                                <input v-model.number="binding.settings.brightness" type="number" min="1" max="100"
+                                       class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500" />
+                            </label>
+                            <label class="block space-y-2">
+                                <span class="text-[10px] uppercase tracking-widest text-white/40 font-black">Плавность, с</span>
+                                <input v-model.number="binding.settings.fade_sec" type="number" min="0" max="10" step="0.1"
+                                       class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500" />
+                            </label>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button v-for="c in solidColors" :key="binding.id+c" type="button"
+                                    class="w-8 h-8 rounded-full border-2"
+                                    :class="binding.settings.color === c ? 'border-cyan-400 scale-110' : 'border-white/15'"
+                                    :style="{ background: colorDot(c) }"
+                                    :title="colorLabel(c)"
+                                    @click="binding.settings.color = c" />
+                            <button type="button"
+                                    class="px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest"
+                                    :class="binding.settings.effect === 'solid' ? 'bg-cyan-500 text-black border-cyan-500' : 'border-white/10 text-white/50'"
+                                    @click="binding.settings.effect = 'solid'">
+                                заливка
+                            </button>
+                            <button type="button"
+                                    class="px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest"
+                                    :class="binding.settings.effect === 'blink' ? 'bg-cyan-500 text-black border-cyan-500' : 'border-white/10 text-white/50'"
+                                    @click="binding.settings.effect = 'blink'">
+                                мигание
+                            </button>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button v-for="ch in [1, 2, 3, 4]" :key="binding.id+'-ch-'+ch" type="button"
+                                    class="px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest"
+                                    :class="binding.settings.channels.includes(ch) ? 'border-cyan-500 text-white' : 'border-white/10 text-white/35'"
+                                    @click="toggleWledChannel(binding, ch)">
+                                выход {{ ch }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <button type="button"
+                            class="px-8 py-4 bg-cyan-500 text-black font-black uppercase text-[10px] rounded-xl tracking-widest"
+                            @click="saveWled(row)">
+                        Сохранить контроллер
+                    </button>
+                </article>
             </div>
         </div>
     </AdminLayout>

@@ -13,6 +13,8 @@ const props = defineProps({
     rules: Array,
     overrides: Array,
     addons: Array,
+    yieldRules: Array,
+    yieldLive: Array,
 })
 
 const WEEKDAY_LABELS = [
@@ -33,6 +35,8 @@ const editingDayGroupId = ref(null)
 const showOverrideModal = ref(false)
 const showAddonModal = ref(false)
 const editingAddonId = ref(null)
+const showYieldModal = ref(false)
+const editingYieldId = ref(null)
 
 const tariffForm = useForm({ name: '', threshold_hours: 1 })
 
@@ -67,9 +71,25 @@ const addonForm = useForm({
     price_per_hour: '',
 })
 
+const yieldForm = useForm({
+    club_id: props.selectedClubId,
+    zone_id: '',
+    name: '',
+    kind: 'discount',
+    is_active: true,
+    weekdays: [1, 2, 3, 4, 5],
+    time_start: 10 * 60,
+    time_end: 17 * 60,
+    utilization_op: 'below',
+    utilization_percent: 20,
+    adjust_percent: 25,
+    priority: 10,
+})
+
 watch(() => props.selectedClubId, (id) => {
     ruleForm.club_id = id
     addonForm.club_id = id
+    yieldForm.club_id = id
 })
 
 watch(() => props.selectedTariffId, (id) => {
@@ -285,6 +305,92 @@ const deleteAddon = (id) => {
     }
 }
 
+const openNewYield = () => {
+    editingYieldId.value = null
+    yieldForm.club_id = props.selectedClubId
+    yieldForm.zone_id = ''
+    yieldForm.name = ''
+    yieldForm.kind = 'discount'
+    yieldForm.is_active = true
+    yieldForm.weekdays = [1, 2, 3, 4, 5]
+    yieldForm.time_start = 10 * 60
+    yieldForm.time_end = 17 * 60
+    yieldForm.utilization_op = 'below'
+    yieldForm.utilization_percent = 20
+    yieldForm.adjust_percent = 25
+    yieldForm.priority = 10
+    yieldForm.clearErrors()
+    showYieldModal.value = true
+}
+
+const openEditYield = (rule) => {
+    editingYieldId.value = rule.id
+    yieldForm.club_id = props.selectedClubId
+    yieldForm.zone_id = rule.zone_id || ''
+    yieldForm.name = rule.name
+    yieldForm.kind = rule.kind
+    yieldForm.is_active = rule.is_active
+    yieldForm.weekdays = [...(rule.weekdays || [])]
+    yieldForm.time_start = rule.time_start
+    yieldForm.time_end = rule.time_end
+    yieldForm.utilization_op = rule.utilization_op
+    yieldForm.utilization_percent = rule.utilization_percent
+    yieldForm.adjust_percent = Math.abs(Number(rule.adjust_percent) || 0)
+    yieldForm.priority = rule.priority
+    yieldForm.clearErrors()
+    showYieldModal.value = true
+}
+
+const toggleYieldWeekday = (id) => {
+    const set = new Set(yieldForm.weekdays)
+    if (set.has(id)) set.delete(id)
+    else set.add(id)
+    yieldForm.weekdays = [...set].sort((a, b) => a - b)
+}
+
+const submitYield = () => {
+    yieldForm.club_id = props.selectedClubId
+    const payload = { preserveScroll: true, onSuccess: () => { showYieldModal.value = false } }
+    if (editingYieldId.value) {
+        yieldForm.put(`/admin/yield-rules/${editingYieldId.value}`, payload)
+    } else {
+        yieldForm.post('/admin/yield-rules', payload)
+    }
+}
+
+const toggleYield = (rule) => {
+    router.put(`/admin/yield-rules/${rule.id}`, {
+        club_id: props.selectedClubId,
+        zone_id: rule.zone_id,
+        name: rule.name,
+        kind: rule.kind,
+        is_active: !rule.is_active,
+        weekdays: rule.weekdays,
+        time_start: rule.time_start,
+        time_end: rule.time_end,
+        utilization_op: rule.utilization_op,
+        utilization_percent: rule.utilization_percent,
+        adjust_percent: Math.abs(Number(rule.adjust_percent) || 0),
+        priority: rule.priority,
+    }, { preserveScroll: true })
+}
+
+const deleteYield = (id) => {
+    if (confirm('Удалить правило динамической цены?')) {
+        router.delete(`/admin/yield-rules/${id}`, { preserveScroll: true })
+    }
+}
+
+const installYieldPresets = () => {
+    router.post('/admin/yield-rules/presets', { club_id: props.selectedClubId }, { preserveScroll: true })
+}
+
+const yieldCondition = (rule) => {
+    const op = rule.utilization_op === 'below' ? 'ниже' : 'от'
+    const sign = Number(rule.adjust_percent) > 0 ? '+' : ''
+    return `загрузка ${op} ${rule.utilization_percent}% → ${sign}${Number(rule.adjust_percent)}%`
+}
+
 const timeStartInput = computed({
     get: () => minutesToInput(ruleForm.time_start),
     set: (v) => { ruleForm.time_start = inputToMinutes(v) },
@@ -292,6 +398,14 @@ const timeStartInput = computed({
 const timeEndInput = computed({
     get: () => minutesToInput(ruleForm.time_end),
     set: (v) => { ruleForm.time_end = v === '24:00' ? 1440 : inputToMinutes(v) },
+})
+const yieldTimeStartInput = computed({
+    get: () => minutesToInput(yieldForm.time_start),
+    set: (v) => { yieldForm.time_start = inputToMinutes(v) },
+})
+const yieldTimeEndInput = computed({
+    get: () => minutesToInput(yieldForm.time_end),
+    set: (v) => { yieldForm.time_end = v === '24:00' ? 1440 : inputToMinutes(v) },
 })
 </script>
 
@@ -323,7 +437,7 @@ const timeEndInput = computed({
             <p class="mb-8 text-[11px] text-white/35 leading-relaxed max-w-4xl">
                 Карточка тарифа общая. Цена задаётся правилами: зона + группа дней + интервал времени.
                 Бронь, пересекающая день/ночь или будни/выходные, считается по сегментам.
-                Доплата «+» комнаты и PS настраиваются отдельно, не здесь.
+                Динамическая цена двигает только час: пакеты и доплата «+» комнаты не меняются.
             </p>
 
             <div class="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-6">
@@ -406,6 +520,62 @@ const timeEndInput = computed({
                         </div>
                         <div v-else class="p-12 text-center text-white/30 text-xs uppercase tracking-widest">
                             Нет правил — добавьте цену для зоны, дней и времени
+                        </div>
+                    </div>
+
+                    <div class="rounded-3xl border border-white/5 bg-[#0a0a0a] p-6">
+                        <div class="flex flex-wrap justify-between items-center gap-3 mb-2">
+                            <div class="text-[10px] text-white/30 uppercase font-black tracking-widest">Динамическая цена</div>
+                            <div class="flex gap-3">
+                                <button @click="installYieldPresets" class="text-[10px] uppercase font-black text-white/40 hover:text-white">Типовые</button>
+                                <button @click="openNewYield" class="text-[10px] uppercase font-black text-[#22c55e]">+ правило</button>
+                            </div>
+                        </div>
+                        <p class="text-[10px] text-white/25 mb-4 leading-relaxed max-w-3xl">
+                            Ставка часа пересчитывается в момент брони и продления. Срабатывает одно правило:
+                            день, окно и загрузка зоны на этот час. Пустой зал в будни — скидка, плотная пятница вечером — наценка.
+                            Будущий слот смотрит брони на это время, а не то, насколько зал занят прямо сейчас.
+                        </p>
+
+                        <div v-if="yieldLive?.length" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mb-4">
+                            <div v-for="row in yieldLive" :key="row.zone_id" class="px-4 py-3 rounded-xl bg-black border border-white/5">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: row.color }"></span>
+                                    <span class="text-xs font-black uppercase">{{ row.name }}</span>
+                                </div>
+                                <div class="mt-2 text-[11px] text-white/50">
+                                    <span v-if="row.utilization_percent == null">нет мест в зоне</span>
+                                    <span v-else>загрузка {{ row.utilization_percent }}% · {{ row.busy }}/{{ row.seats }}</span>
+                                </div>
+                                <div class="mt-1 text-sm font-black" :class="row.kind === 'surge' ? 'text-amber-400' : row.kind === 'discount' ? 'text-[#22c55e]' : 'text-white/70'">
+                                    {{ Number(row.rate).toFixed(0) }}₽
+                                    <span v-if="row.rule_name" class="text-[10px] font-bold uppercase tracking-widest ml-1">{{ row.rule_name }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="space-y-2">
+                            <div v-for="rule in yieldRules" :key="rule.id"
+                                 class="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-black border border-white/5"
+                                 :class="!rule.is_active && 'opacity-40'">
+                                <div class="min-w-0">
+                                    <div class="text-xs font-black uppercase truncate">
+                                        {{ rule.name }}
+                                        <span class="text-white/30 font-bold">· {{ rule.zone?.name || 'все зоны' }}</span>
+                                    </div>
+                                    <div class="text-[9px] text-white/35 mt-1">
+                                        {{ weekdayText(rule.weekdays) }} · {{ formatRange(rule.time_start, rule.time_end) }} · {{ yieldCondition(rule) }}
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 shrink-0">
+                                    <button @click="toggleYield(rule)" class="text-[#22c55e]/70 hover:text-[#22c55e] text-[9px] uppercase font-black">⏻</button>
+                                    <button @click="openEditYield(rule)" class="text-white/30 hover:text-white text-[9px] uppercase font-black">изм</button>
+                                    <button @click="deleteYield(rule.id)" class="text-red-500/40 hover:text-red-500 text-[9px] uppercase font-black">удл</button>
+                                </div>
+                            </div>
+                            <div v-if="!yieldRules?.length" class="text-[11px] text-white/25 py-6 text-center">
+                                Правил нет — «Типовые» добавит счастливый час и пятничный спрос
+                            </div>
                         </div>
                     </div>
 
@@ -588,6 +758,84 @@ const timeEndInput = computed({
                     <div class="flex gap-3 pt-4">
                         <button type="button" @click="showOverrideModal = false" class="flex-1 py-4 border border-white/10 rounded-2xl text-[10px] font-black uppercase text-white/40">Отмена</button>
                         <button type="submit" :disabled="overrideForm.processing" class="flex-[2] py-4 bg-[#22c55e] text-black rounded-2xl text-[10px] font-black uppercase">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+
+            <div v-if="showYieldModal" class="fixed inset-0 z-[9999900] flex items-center justify-center p-6 font-mono overflow-y-auto">
+                <div class="absolute inset-0 bg-black/95 backdrop-blur-xl" @click="showYieldModal = false"></div>
+                <form @submit.prevent="submitYield" class="relative w-full max-w-xl bg-[#0a0a0a] border border-[#22c55e]/30 rounded-[1rem] p-10 space-y-4 my-8">
+                    <h2 class="text-[#22c55e] text-2xl font-black uppercase italic">
+                        {{ editingYieldId ? 'Изменить yield' : 'Динамическая цена' }}
+                    </h2>
+                    <input v-model="yieldForm.name" required placeholder="Название" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold focus:border-[#22c55e] outline-none" />
+
+                    <label class="block text-[10px] uppercase text-white/40 font-black tracking-widest">Зона</label>
+                    <select v-model="yieldForm.zone_id" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-[#22c55e] appearance-none">
+                        <option value="">Все зоны</option>
+                        <option v-for="z in zones" :key="z.id" :value="z.id">{{ z.name }}</option>
+                    </select>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-[10px] uppercase text-white/40 font-black tracking-widest mb-2">Тип</label>
+                            <select v-model="yieldForm.kind" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-[#22c55e] appearance-none">
+                                <option value="discount">Скидка</option>
+                                <option value="surge">Наценка</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] uppercase text-white/40 font-black tracking-widest mb-2">Порог загрузки</label>
+                            <select v-model="yieldForm.utilization_op" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-[#22c55e] appearance-none">
+                                <option value="below">Ниже, %</option>
+                                <option value="above">От, %</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2">
+                        <button v-for="d in WEEKDAY_LABELS" :key="d.id" type="button" @click="toggleYieldWeekday(d.id)"
+                                :class="['px-3 py-2 rounded-xl text-[10px] font-black uppercase border', yieldForm.weekdays.includes(d.id) ? 'bg-[#22c55e] text-black border-[#22c55e]' : 'border-white/10 text-white/40']">
+                            {{ d.short }}
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-[10px] uppercase text-white/40 font-black tracking-widest mb-2">С</label>
+                            <input v-model="yieldTimeStartInput" type="time" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-[#22c55e]" />
+                        </div>
+                        <div>
+                            <label class="block text-[10px] uppercase text-white/40 font-black tracking-widest mb-2">До</label>
+                            <input v-model="yieldTimeEndInput" list="yield-end-times" class="w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-[#22c55e]" placeholder="24:00" />
+                            <datalist id="yield-end-times">
+                                <option value="17:00" /><option value="18:00" /><option value="23:00" /><option value="24:00" />
+                            </datalist>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-[10px] uppercase text-white/40 font-black tracking-widest mb-2">Загрузка %</label>
+                            <input v-model="yieldForm.utilization_percent" type="number" min="1" max="100" required class="no-spinners w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-[#22c55e]" />
+                        </div>
+                        <div>
+                            <label class="block text-[10px] uppercase text-white/40 font-black tracking-widest mb-2">Поправка %</label>
+                            <input v-model="yieldForm.adjust_percent" type="number" min="1" max="200" required class="no-spinners w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-[#22c55e] font-black outline-none focus:border-[#22c55e]" />
+                        </div>
+                        <div>
+                            <label class="block text-[10px] uppercase text-white/40 font-black tracking-widest mb-2">Приоритет</label>
+                            <input v-model="yieldForm.priority" type="number" min="0" max="1000" class="no-spinners w-full bg-black border-2 border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-[#22c55e]" />
+                        </div>
+                    </div>
+
+                    <p v-if="Object.values(yieldForm.errors).length" class="text-red-400 text-[10px] uppercase">
+                        {{ Object.values(yieldForm.errors)[0] }}
+                    </p>
+
+                    <div class="flex gap-3 pt-4">
+                        <button type="button" @click="showYieldModal = false" class="flex-1 py-4 border border-white/10 rounded-2xl text-[10px] font-black uppercase text-white/40">Отмена</button>
+                        <button type="submit" :disabled="yieldForm.processing" class="flex-[2] py-4 bg-[#22c55e] text-black rounded-2xl text-[10px] font-black uppercase">Сохранить</button>
                     </div>
                 </form>
             </div>

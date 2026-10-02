@@ -34,6 +34,7 @@ use App\Services\ComputerPowerService;
 use App\Services\ComputerStatusService;
 use App\Services\Fan\FanControlService;
 use App\Services\Light\LightControlService;
+use App\Services\Light\WledCueService;
 use App\Services\GameRequestService;
 use App\Services\GuestClipService;
 use App\Services\PartyBookingService;
@@ -922,6 +923,14 @@ class ShellApiController extends Controller
                 $this->noteFeature('sos_call', User::find($booking->user_id), $pc, $booking, [
                     'reason' => $reasonCode,
                 ]);
+            }
+
+            try {
+                if ($pc && (int) $pc->club_id > 0) {
+                    app(WledCueService::class)->fire((int) $pc->club_id, 'sos');
+                }
+            } catch (\Throwable $wledError) {
+                WledCueService::reportFailure($wledError, 'sos');
             }
 
             return response()->json([

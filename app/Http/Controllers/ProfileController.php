@@ -352,6 +352,7 @@ class ProfileController extends Controller
             'arena' => $this->arenaCabinet($user),
             'reactor_ac' => app(\App\Services\ReactorAc\AcGate::class)->cabinet($user),
             'faceit' => app(\App\Services\Faceit\FaceitIdentityService::class)->cabinet($user),
+            'referral' => app(\App\Services\ReferralService::class)->cabinet($user),
             'server_time' => $now->toIso8601String(),
         ]);
     }

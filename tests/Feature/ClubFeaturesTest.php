@@ -64,6 +64,7 @@ class ClubFeaturesTest extends TestCase
         $this->assertTrue($keys->contains('patch_cache'));
         $this->assertTrue($keys->contains('link_flap'));
         $this->assertTrue($keys->contains('promocodes'));
+        $this->assertTrue($keys->contains('referrals'));
         $this->assertTrue($keys->contains('game_requests'));
         $this->assertTrue($keys->contains('review_bonuses'));
         $this->assertTrue($keys->contains('arena_duels'));
