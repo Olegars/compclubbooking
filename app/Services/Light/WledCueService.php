@@ -47,6 +47,8 @@ class WledCueService
             'color' => 'white',
             'brightness' => 100,
             'effect' => WledCorridorCatalog::EFFECT_BLINK,
+            'fx' => 1,
+            'sx' => 160,
             'duration_sec' => 3,
             'fade_sec' => 0,
             'channels' => [1, 2, 3, 4],
@@ -182,6 +184,72 @@ class WledCueService
 
             return $out;
         });
+    }
+
+    /**
+     * Controllers whose effect list the admin asked to read off the device.
+     *
+     * @return list<array{id:int,host:string,port:int}>
+     */
+    public function claimEffectSync(Computer $computer): array
+    {
+        $clubId = (int) $computer->club_id;
+        if ($clubId < 1) {
+            return [];
+        }
+
+        return DB::transaction(function () use ($clubId) {
+            $rows = WledController::query()
+                ->where('club_id', $clubId)
+                ->whereNotNull('effects_sync_requested_at')
+                ->where(function ($q) {
+                    $q->whereNull('effects_sync_claimed_at')
+                        ->orWhere('effects_sync_claimed_at', '<', now()->subSeconds(20));
+                })
+                ->lockForUpdate()
+                ->get();
+
+            $out = [];
+            foreach ($rows as $row) {
+                $row->effects_sync_claimed_at = now();
+                $row->save();
+                $out[] = [
+                    'id' => (int) $row->id,
+                    'host' => (string) $row->host,
+                    'port' => (int) $row->http_port,
+                ];
+            }
+
+            return $out;
+        });
+    }
+
+    /**
+     * @param  list<mixed>  $names
+     */
+    public function storeEffects(WledController $controller, Computer $computer, bool $ok, array $names, ?string $error): bool
+    {
+        if ((int) $computer->club_id !== (int) $controller->club_id) {
+            return false;
+        }
+
+        $controller->effects_sync_requested_at = null;
+        $controller->effects_sync_claimed_at = null;
+        if ($ok) {
+            $clean = WledCorridorCatalog::sanitizeEffectNames($names);
+            if ($clean === []) {
+                $controller->effects_error = 'пустой список эффектов';
+            } else {
+                $controller->effects = $clean;
+                $controller->effects_synced_at = now();
+                $controller->effects_error = null;
+            }
+        } else {
+            $controller->effects_error = mb_substr(trim((string) $error) ?: 'не удалось прочитать эффекты', 0, 500);
+        }
+        $controller->save();
+
+        return true;
     }
 
     public function acknowledge(WledCue $cue, Computer $computer, bool $ok, ?string $error): bool

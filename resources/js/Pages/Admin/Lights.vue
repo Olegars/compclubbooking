@@ -37,6 +37,8 @@ type WledBinding = {
         color: string
         brightness: number
         effect: string
+        fx: number
+        sx: number
         duration_sec: number
         fade_sec: number
         channels: number[]
@@ -53,6 +55,9 @@ type WledControllerRow = {
     idle_color: string
     idle_brightness: number
     bindings: WledBinding[]
+    effects?: string[]
+    effects_synced_at?: string | null
+    effects_error?: string | null
     last_error?: string | null
     last_played_at?: string | null
 }
@@ -189,6 +194,11 @@ const saveWled = (row: WledControllerRow) => {
         preserveScroll: true,
         onError: () => error('Не удалось сохранить контроллер'),
     })
+}
+
+const setWledFx = (binding: WledBinding, fx: number) => {
+    binding.settings.fx = fx
+    binding.settings.effect = fx === 0 ? 'solid' : 'blink'
 }
 
 const toggleWledChannel = (binding: WledBinding, channel: number) => {
@@ -687,6 +697,11 @@ const summary = (row: InteractiveEvent) => {
                         <div class="flex gap-3 shrink-0">
                             <button type="button"
                                     class="text-[10px] uppercase tracking-widest text-cyan-400 hover:text-cyan-300"
+                                    @click="router.post(`/admin/lights/wled/${row.id}/effects`, {}, { preserveScroll: true })">
+                                Считать эффекты
+                            </button>
+                            <button type="button"
+                                    class="text-[10px] uppercase tracking-widest text-cyan-400 hover:text-cyan-300"
                                     @click="router.post(`/admin/lights/wled/${row.id}/test`, {}, { preserveScroll: true })">
                                 Тест
                             </button>
@@ -697,6 +712,13 @@ const summary = (row: InteractiveEvent) => {
                             </button>
                         </div>
                     </div>
+                    <p v-if="row.effects_error" class="text-[11px] text-amber-400">Эффекты: {{ row.effects_error }}</p>
+                    <p v-else-if="row.effects?.length" class="text-[11px] text-white/40">
+                        С контроллера снято эффектов: {{ row.effects.length }}
+                    </p>
+                    <p v-else class="text-[11px] text-white/30">
+                        Список эффектов ещё не снят. Нужен включённый шелл в сети контроллера.
+                    </p>
                     <p v-if="row.last_error" class="text-[11px] text-amber-400">{{ row.last_error }}</p>
 
                     <div class="flex flex-wrap items-end gap-4 border border-white/10 rounded-xl p-4">
@@ -754,18 +776,35 @@ const summary = (row: InteractiveEvent) => {
                                     :style="{ background: colorDot(c) }"
                                     :title="colorLabel(c)"
                                     @click="binding.settings.color = c" />
-                            <button type="button"
+                            <button v-if="!(row.effects && row.effects.length)" type="button"
                                     class="px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest"
-                                    :class="binding.settings.effect === 'solid' ? 'bg-cyan-500 text-black border-cyan-500' : 'border-white/10 text-white/50'"
-                                    @click="binding.settings.effect = 'solid'">
+                                    :class="binding.settings.fx === 0 ? 'bg-cyan-500 text-black border-cyan-500' : 'border-white/10 text-white/50'"
+                                    @click="setWledFx(binding, 0)">
                                 заливка
                             </button>
-                            <button type="button"
+                            <button v-if="!(row.effects && row.effects.length)" type="button"
                                     class="px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest"
-                                    :class="binding.settings.effect === 'blink' ? 'bg-cyan-500 text-black border-cyan-500' : 'border-white/10 text-white/50'"
-                                    @click="binding.settings.effect = 'blink'">
+                                    :class="binding.settings.fx === 1 ? 'bg-cyan-500 text-black border-cyan-500' : 'border-white/10 text-white/50'"
+                                    @click="setWledFx(binding, 1)">
                                 мигание
                             </button>
+                        </div>
+                        <div v-if="row.effects && row.effects.length" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <label class="block space-y-2">
+                                <span class="text-[10px] uppercase tracking-widest text-white/40 font-black">Эффект контроллера</span>
+                                <select v-model.number="binding.settings.fx"
+                                        class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500"
+                                        @change="setWledFx(binding, binding.settings.fx)">
+                                    <option v-for="(name, i) in row.effects" :key="binding.id+'-fx-'+i" :value="i">
+                                        {{ i }} · {{ name || 'без имени' }}
+                                    </option>
+                                </select>
+                            </label>
+                            <label class="block space-y-2">
+                                <span class="text-[10px] uppercase tracking-widest text-white/40 font-black">Скорость</span>
+                                <input v-model.number="binding.settings.sx" type="number" min="0" max="255"
+                                       class="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500" />
+                            </label>
                         </div>
                         <div class="flex flex-wrap gap-2">
                             <button v-for="ch in [1, 2, 3, 4]" :key="binding.id+'-ch-'+ch" type="button"

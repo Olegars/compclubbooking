@@ -37,6 +37,7 @@ Route::prefix('shell')->group(function () {
     Route::post('/light/interactive', [ShellApiController::class, 'setLightInteractive']);
     Route::get('/wled/cues', [WledShellController::class, 'cues']);
     Route::post('/wled/cues/{cue}/ack', [WledShellController::class, 'ack']);
+    Route::post('/wled/{wled}/effects', [WledShellController::class, 'storeEffects']);
     Route::post('/ai-assistant', [ShellApiController::class, 'aiAssistant']);
     Route::get('/ai-voices', [ShellApiController::class, 'aiVoices']);
     Route::post('/ai-voice', [ShellApiController::class, 'setAiVoice']);

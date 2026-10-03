@@ -755,6 +755,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::put('/lights/wled/{wled}', [LightAdminController::class, 'updateWled']);
         Route::delete('/lights/wled/{wled}', [LightAdminController::class, 'destroyWled']);
         Route::post('/lights/wled/{wled}/test', [LightAdminController::class, 'testWled']);
+        Route::post('/lights/wled/{wled}/effects', [LightAdminController::class, 'requestWledEffects']);
     });
 
     // УРОВЕНЬ: SUPERVISOR / OWNER — штат и проверка анкет

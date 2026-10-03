@@ -19,6 +19,11 @@ class WledController extends Model
         'idle_color',
         'idle_brightness',
         'bindings',
+        'effects',
+        'effects_error',
+        'effects_synced_at',
+        'effects_sync_requested_at',
+        'effects_sync_claimed_at',
         'last_error',
         'last_played_at',
     ];
@@ -30,6 +35,10 @@ class WledController extends Model
         'idle_on' => 'boolean',
         'idle_brightness' => 'integer',
         'bindings' => 'array',
+        'effects' => 'array',
+        'effects_synced_at' => 'datetime',
+        'effects_sync_requested_at' => 'datetime',
+        'effects_sync_claimed_at' => 'datetime',
         'last_played_at' => 'datetime',
     ];
 

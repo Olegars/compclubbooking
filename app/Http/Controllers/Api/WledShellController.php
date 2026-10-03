@@ -27,13 +27,37 @@ class WledShellController extends Controller
             ->exists();
 
         $cues = $any ? $wled->claim($computer) : [];
+        $sync = $any ? $wled->claimEffectSync($computer) : [];
 
         return response()->json([
             'status' => 'ok',
             'enabled' => $active,
-            'poll_ms' => $cues !== [] ? 1500 : ($any ? 2500 : 30000),
+            'poll_ms' => ($cues !== [] || $sync !== []) ? 1500 : ($any ? 2500 : 30000),
             'cues' => $cues,
+            'sync' => $sync,
         ]);
+    }
+
+    public function storeEffects(Request $request, WledController $wled, WledCueService $cues): JsonResponse
+    {
+        $data = $request->validate([
+            'terminal_id' => 'required|integer',
+            'ok' => 'required|boolean',
+            'effects' => 'nullable|array|max:300',
+            'effects.*' => 'nullable|string|max:80',
+            'error' => 'nullable|string|max:500',
+        ]);
+
+        $computer = Computer::query()->find((int) $data['terminal_id']);
+        if (! $computer) {
+            return response()->json(['status' => 'error', 'message' => 'terminal'], 404);
+        }
+
+        if (! $cues->storeEffects($wled, $computer, (bool) $data['ok'], $data['effects'] ?? [], $data['error'] ?? null)) {
+            return response()->json(['status' => 'error', 'message' => 'club'], 404);
+        }
+
+        return response()->json(['status' => 'ok']);
     }
 
     public function ack(Request $request, WledCue $cue, WledCueService $wled): JsonResponse

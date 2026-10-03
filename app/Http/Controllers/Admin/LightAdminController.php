@@ -78,6 +78,9 @@ class LightAdminController extends Controller
                 'idle_color' => (string) $c->idle_color,
                 'idle_brightness' => (int) $c->idle_brightness,
                 'bindings' => WledCorridorCatalog::forAdmin(is_array($c->bindings) ? $c->bindings : []),
+                'effects' => array_values(is_array($c->effects) ? $c->effects : []),
+                'effects_synced_at' => $c->effects_synced_at?->toIso8601String(),
+                'effects_error' => $c->effects_error,
                 'last_error' => $c->last_error,
                 'last_played_at' => $c->last_played_at?->toIso8601String(),
             ]);
@@ -364,6 +367,18 @@ class LightAdminController extends Controller
         return redirect()
             ->route('admin.lights', ['club_id' => $clubId, 'tab' => 'corridor'])
             ->with('success', 'Контроллер удалён');
+    }
+
+    public function requestWledEffects(WledController $wled)
+    {
+        $wled->effects_sync_requested_at = now();
+        $wled->effects_sync_claimed_at = null;
+        $wled->effects_error = null;
+        $wled->save();
+
+        return redirect()
+            ->route('admin.lights', ['club_id' => (int) $wled->club_id, 'tab' => 'corridor'])
+            ->with('success', 'Шелл снимет эффекты с контроллера, когда будет в сети. Обновите вкладку.');
     }
 
     public function testWled(WledController $wled, WledCueService $wledCues)

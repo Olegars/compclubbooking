@@ -67,6 +67,7 @@ class WledCorridorTest extends TestCase
         $this->assertCount(4, $play['seg']);
         $this->assertSame([255, 90, 0], $play['seg'][0]['col'][0]);
         $this->assertSame(1, $play['seg'][0]['fx']);
+        $this->assertSame(160, $play['seg'][0]['sx']);
         $this->assertTrue($play['seg'][3]['on']);
         $this->assertSame(8000, $cue->payload['duration_ms']);
         $this->assertFalse($cue->payload['idle']['on']);
@@ -174,6 +175,43 @@ class WledCorridorTest extends TestCase
         $this->booking();
         $this->booking();
         $this->assertSame(1, WledCue::query()->where('event_id', 'booking.new')->count());
+    }
+
+    public function test_shell_reads_effect_list_and_admin_can_play_one(): void
+    {
+        $controller = $this->controller();
+        $controller->update(['effects_sync_requested_at' => now()]);
+
+        $sync = $this->getJson('/api/shell/wled/cues?terminal_id='.$this->pc->id)
+            ->assertOk()
+            ->json('sync');
+        $this->assertSame((int) $controller->id, (int) $sync[0]['id']);
+        $this->assertSame('192.168.20.40', $sync[0]['host']);
+
+        $this->getJson('/api/shell/wled/cues?terminal_id='.$this->pc->id)
+            ->assertOk()
+            ->assertJsonPath('sync', []);
+
+        $this->postJson('/api/shell/wled/'.$controller->id.'/effects', [
+            'terminal_id' => $this->pc->id,
+            'ok' => true,
+            'effects' => ['Solid', 'Blink', 'Breathe', 'Rainbow'],
+        ])->assertOk();
+
+        $controller->refresh();
+        $this->assertSame(['Solid', 'Blink', 'Breathe', 'Rainbow'], $controller->effects);
+        $this->assertNull($controller->effects_sync_requested_at);
+        $this->assertNotNull($controller->effects_synced_at);
+
+        $map = WledCorridorCatalog::defaultMap();
+        $map['bar.order']['fx'] = 3;
+        $map['bar.order']['sx'] = 90;
+        $controller->update(['bindings' => $map]);
+        $this->makeOrder();
+
+        $play = WledCue::query()->first()->payload['play'];
+        $this->assertSame(3, $play['seg'][0]['fx']);
+        $this->assertSame(90, $play['seg'][0]['sx']);
     }
 
     public function test_admin_adds_controller_on_the_lights_page(): void
