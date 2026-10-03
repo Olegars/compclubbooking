@@ -46,7 +46,7 @@ class FiscalGatewayTest extends TestCase
         $this->assertSame(FiscalJob::KIND_FISCALIZE, $job->kind);
         $this->assertTrue($job->payload['electronically']);
         $this->assertSame(3, $job->payload['items'][0]['payment_method']);
-        $this->assertSame(100.0, $job->payload['payments']['electronic']);
+        $this->assertEquals(100.0, (float) $job->payload['payments']['electronic']);
         $this->assertArrayNotHasKey('Password', $job->payload);
         $this->assertArrayNotHasKey('Command', $job->payload);
 

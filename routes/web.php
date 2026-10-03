@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\QueueController;
 // Оверлеи Shell (API для терминалов)
 use App\Http\Controllers\Api\ShellApiController;
 use App\Http\Controllers\Api\ShellLanLiveController;
+use App\Http\Controllers\Api\WledShellController;
 use App\Http\Controllers\Api\WolRelayController;
 use App\Http\Controllers\Api\SharedFanRelayController;
 use App\Http\Controllers\Api\ShellIsolateRelayController;
@@ -948,6 +949,10 @@ Route::prefix('api/shell')->group(function () {
     Route::post('/light/applied', [ShellApiController::class, 'acknowledgeLightApplied']);
     Route::get('/light', [ShellApiController::class, 'getLightState']);
     Route::post('/light/interactive', [ShellApiController::class, 'setLightInteractive']);
+
+    Route::get('/wled/cues', [WledShellController::class, 'cues']);
+    Route::post('/wled/cues/{cue}/ack', [WledShellController::class, 'ack']);
+    Route::post('/wled/{wled}/effects', [WledShellController::class, 'storeEffects']);
 
     // --- F1 AI-компаньон (голос → ответ в наушники) ---
     Route::post('/ai-assistant', [ShellApiController::class, 'aiAssistant']);

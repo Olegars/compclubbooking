@@ -551,12 +551,17 @@ class TariffService
             });
 
         if ($candidates->isEmpty()) {
-            // Запасной вариант: правило группы «Все дни», если узкая группа не покрыта.
-            $allDays = $this->groups()->first(fn (DayGroup $g) => count($g->weekdays ?? []) === 7);
-            if ($allDays && (int) $allDays->id !== $dayGroupId) {
+            // Узкая группа (будни) без ставки — берём любую группу «все дни»,
+            // не только первую в таблице: у клуба цена может лежать на своей.
+            $allDayIds = $this->groups()
+                ->filter(fn (DayGroup $g) => count($g->weekdays ?? []) === 7 && (int) $g->id !== $dayGroupId)
+                ->map(fn (DayGroup $g) => (int) $g->id)
+                ->values()
+                ->all();
+            if ($allDayIds !== []) {
                 $candidates = $this->rulesFor($clubId, $zoneId)
-                    ->filter(function (TariffPrice $rule) use ($allDays, $minute, $hourlyOnly, $tariffId) {
-                        if ((int) $rule->day_group_id !== (int) $allDays->id) {
+                    ->filter(function (TariffPrice $rule) use ($allDayIds, $minute, $hourlyOnly, $tariffId) {
+                        if (! in_array((int) $rule->day_group_id, $allDayIds, true)) {
                             return false;
                         }
                         if ($tariffId && (int) $rule->tariff_id !== $tariffId) {

@@ -114,7 +114,7 @@ class ArenaDuelService
         $streaks = ArenaRating::query()
             ->with('user')
             ->where('club_id', $clubId)
-            ->where('week_start', $weekStart)
+            ->whereDate('week_start', $weekStart)
             ->orderByDesc('week_wins')
             ->orderByDesc('best_streak')
             ->limit(5)
@@ -130,12 +130,12 @@ class ArenaDuelService
         $koth = ArenaKothEvening::query()
             ->with('user')
             ->where('club_id', $clubId)
-            ->where('recorded_on', $today)
+            ->whereDate('recorded_on', $today)
             ->first();
         $hot = ArenaRating::query()
             ->with('user')
             ->where('club_id', $clubId)
-            ->where('evening_date', $today)
+            ->whereDate('evening_date', $today)
             ->orderByDesc('evening_streak')
             ->first();
 

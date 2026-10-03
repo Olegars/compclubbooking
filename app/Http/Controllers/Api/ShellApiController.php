@@ -3643,6 +3643,7 @@ class ShellApiController extends Controller
                     ? app(\App\Services\LanLive\LuckySeatLootService::class)->payload($dropped, false)
                     : null,
                 'features' => $pack['features'] ?? app(\App\Services\ClubFeatureService::class)->shellPayloadForComputer($computer),
+                'faceit' => $pack['faceit'] ?? null,
                 'profile' => $pack['profile'] ?? null,
                 'battle_pass' => $pack['battle_pass'] ?? null,
                 'granted' => $pack['granted'] ?? [],

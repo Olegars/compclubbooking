@@ -21,13 +21,16 @@ class StaffDocumentsTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('Admin/ClubDocuments')
-                ->has('documents', 2)
+                ->has('documents', 3)
                 ->where('documents.0.title', 'Условия работы администратора')
                 ->where('documents.0.kind', 'employment')
                 ->has('documents.0.sections', 10)
                 ->where('documents.1.title', 'Техника пожарной безопасности')
                 ->where('documents.1.kind', 'fire_safety')
                 ->has('documents.1.sections', 8)
+                ->where('documents.2.title', 'Оферта REACTOR AC')
+                ->where('documents.2.kind', 'reactor_ac')
+                ->has('documents.2.sections', 4)
             );
     }
 
