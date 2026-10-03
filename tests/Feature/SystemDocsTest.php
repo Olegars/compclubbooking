@@ -96,7 +96,7 @@ class SystemDocsTest extends TestCase
                 ->where('sections.0.id', 'network')
             );
 
-        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $this->assertStringContainsString('ПК лиц: ТЗ железа и место в сети', $blob);
         $this->assertStringContainsString('ПК лиц: софт (метки, лица, ComfyUI)', $blob);
         $this->assertStringContainsString('ПК лиц: подключение к бэкенду', $blob);
@@ -127,7 +127,7 @@ class SystemDocsTest extends TestCase
                 ->where('sections.0.items.0.title', 'Назначение: домашний ПК на сервер клуба')
             );
 
-        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $this->assertStringContainsString('Античит домашней игры (REACTOR AC)', $blob);
         $this->assertStringContainsString('/api/ac/connect-token', $blob);
         $this->assertStringContainsString('CounterStrikeSharp', $blob);
@@ -174,7 +174,7 @@ class SystemDocsTest extends TestCase
                 ->where('sections.0.items.0.title', 'Назначение: свой FACEIT с ПК зала')
             );
 
-        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $this->assertStringContainsString('FACEIT в клубе', $blob);
         $this->assertStringContainsString('open.faceit.com/data/v4', $blob);
         $this->assertStringContainsString('FACEIT Connect', $blob);
@@ -239,7 +239,7 @@ class SystemDocsTest extends TestCase
                 ->where('sections.0.items.0.title', 'Назначение: витрина гостя и реальные награды')
             );
 
-        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $this->assertStringContainsString('Профиль, ачивки и боевой пропуск', $blob);
         $this->assertStringContainsString('/admin/achievements', $blob);
         $this->assertStringContainsString('tab=quests', $blob);
@@ -279,7 +279,7 @@ class SystemDocsTest extends TestCase
 
     public function test_docs_split_store_warehouse_operations(): void
     {
-        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE);
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         $this->assertStringContainsString('Менеджер (приход, цены) / Сборщик (used, repair)', $blob);
         $this->assertStringContainsString('На складе не оприходует и не меняет закупочные цены', $blob);
