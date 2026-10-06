@@ -123,6 +123,13 @@ return [
             'handler' => NullHandler::class,
         ],
 
+        'mcp' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/mcp-actions.log'),
+            'level' => 'info',
+            'replace_placeholders' => true,
+        ],
+
         'emergency' => [
             'path' => storage_path('logs/laravel.log'),
         ],

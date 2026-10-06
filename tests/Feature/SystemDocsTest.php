@@ -287,6 +287,17 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('сборщик только по своей сборке (assembled_by) или своему заказу (assignee)', $blob);
     }
 
+    public function test_docs_describe_mcp_boundaries(): void
+    {
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $this->assertStringContainsString('mcp-actions.log', $blob);
+        $this->assertStringContainsString('php artisan mcp:token', $blob);
+        $this->assertStringContainsString('PHPUnit запрещён', $blob);
+        $this->assertStringContainsString('Магазин не читает club://', $blob);
+        $this->assertStringContainsString('restart_computer_session', $blob);
+    }
+
     private function makeAdmin(string $role): Admin
     {
         return Admin::query()->create([

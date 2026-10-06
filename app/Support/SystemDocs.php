@@ -1405,6 +1405,36 @@ class SystemDocs
                     ],
                 ],
             ],
+            [
+                'id' => 'mcp',
+                'title' => 'MCP для агентов',
+                'items' => [
+                    [
+                        'title' => 'Сервер MCP',
+                        'description' => "Model Context Protocol в этом же Laravel, не отдельная база и не сырой SQL. Агент видит только то, что позволяет роль токена, и меняет клуб только через сервисы (сессия, питание, смета, сверка сборки, живая диагностика).\n\nТранспорт. Stdio: php artisan mcp:serve, в окружении MCP_TOKEN. Ответы — построчный JSON-RPC, журнал в stdout не пишется. HTTP: POST /mcp, Authorization: Bearer, тот же JSON-RPC (streamable HTTP, без отдельной SSE-ленты). Версия протокола 2025-03-26, также принимаются 2024-11-05 и 2025-06-18.\n\nВключение. MCP_ENABLED=true. HTTP ещё и MCP_HTTP_ENABLED=true. Пока оба false, POST /mcp отвечает 404, artisan mcp:serve завершается с ошибкой. Браузерный Origin сверяется с APP_URL и MCP_ALLOWED_ORIGINS; пустой Origin (Cursor, curl) проходит.\n\nПример для Cursor, файл mcp.json рядом с проектом, токен не коммитить:\n{\n  \"mcpServers\": {\n    \"0451\": {\n      \"command\": \"php\",\n      \"args\": [\"artisan\", \"mcp:serve\"],\n      \"cwd\": \"C:/Qt/compclubbooking\",\n      \"env\": { \"MCP_TOKEN\": \"<токен>\" }\n    }\n  }\n}\nУдалённый контур: url https://<хост>/mcp и заголовок Authorization: Bearer <токен>.",
+                        'path' => null,
+                        'audience' => 'Владелец',
+                    ],
+                    [
+                        'title' => 'Токен и роли',
+                        'description' => "Токен выпускается только с сервера, в админке экрана нет. php artisan mcp:token email --name=cursor печатает секрет один раз. Игроку: --player. Срок: --days=30. Отзыв: php artisan mcp:revoke {id}. В mcp_tokens лежит sha256, не сам секрет.\n\nРоль берётся из Admin.role. «Бар» и «Техник» ролями не являются.\n\n• Владелец — оба контура, освобождение ПК, диагностика, налог.\n• Управляющий — зал, античит, синхронизация одного Elo FACEIT. Не освобождает ПК и не запускает тесты системы.\n• Админ зала — зал только после приёма смены (hasFullClubOps). Стажёр и неактивный админ получают пустой каталог.\n• Менеджер и старший менеджер — склад, сметы, сверка. Зал закрыт.\n• Сборщик — склад без закупочных цен, сметы только ready, сверка только своей сборки или своего заказа.\n• Игрок — player://me и player://club/public, без инструментов.\n\nУволенный и анкета employment_pending токен не проходят. Магазин не читает club://. Зал не читает store://. location_id в аргументах слушается только у владельца.",
+                        'path' => '/admin/staff',
+                        'audience' => 'Владелец',
+                    ],
+                    [
+                        'title' => 'Ресурсы, инструменты, промпты',
+                        'description' => "Ресурсы только читают.\nclub://status/summary — занятость, онлайн шелла, фискальные пополнения за сегодня (не вся выручка бара), смены, очередь, инциденты.\nclub://computers/health — линк, flap, SMART, кэш, Super Client, BSOD. MAC и IP нет. Пороги: flap >= 2 патч-корд, линк 1–100 Мбит, износ SSD >= 80.\nclub://orders/queue — pending и cooking, без телефона гостя.\nclub://incidents/open — открытые, текст маскируется. Инцидент без ПК общий на инсталляцию.\nstore://warehouse/stock — in_stock, reserved, repair. Цена закупки только у менеджера, старшего и владельца.\nstore://estimates/open — до конвертации; сборщик видит ready.\nac://fair-play/status — режим, число сессий и банов по скоупам. Evidence и connect_token не отдаются.\nsystem://logs/errors — хвост laravel.log, catalog-sync.log, avito-ads.log, avito-token.log.\nplayer://me, player://club/public — баланс и счётчики, без телефона и почты.\n\nИнструменты.\nrestart_computer_session — только владелец, как «Освободить компьютер».\ntrigger_wol — очередь для MikroTik. Облако magic packet не шлёт: ставится wol_hold_until, иначе syncFor сразу вернёт desired=off. Онлайн-шелл и живая сессия пропускаются. all_offline — не больше 40 ПК.\nget_rollback_markers — ревизии без тел файлов.\ncreate_store_estimate — черновик по SKU каталога. Телефон только ищет клиента, карточку не создаёт.\ncheck_build_verification — тот же StoreBuildVerifyService, что POST /api/build-verify.\nvalidate_ac_session — вердикт AcGate, токен не выдаёт.\nsync_faceit_elo — один игрок, не весь reactor:sync-faceit.\nrun_system_diagnostics — живые контуры db, cache, fiscal, hardware, all. PHPUnit запрещён.\npreview_tax_usn — черновик УСН 6% без ФИО.\n\nПромпты: analyze_pc_degradation, shift_handover_report, tax_usn_calculator. Они собирают черновик и сами смену, налог и ПК не меняют.",
+                        'path' => '/admin/system-tests',
+                        'audience' => 'Владелец / Управляющий / Админ',
+                    ],
+                    [
+                        'title' => 'Подтверждение и журнал',
+                        'description' => "Мутация сначала возвращает needs_confirmation и ничего не пишет. Второй вызов с теми же аргументами и confirm=true в течение MCP_CONFIRM_TTL (300 с) выполняет действие. fiscal и all в диагностике тоже ждут подтверждения: fiscal ходит в ЮKassa /me. Чек при этом не бьётся.\n\nЖурнал: storage/logs/mcp-actions.log. Канал mcp. Пишутся актор (admin:id или user:id), id токена, инструмент и аргументы. Телефон в аргументе режется до последних четырёх цифр. Паспорта, КЭДО, пароли, токены, HWID и тела golden image в контекст модели не кладутся.\n\nСознательно нет: сырого SQL, PHPUnit, бонусов, банов, отмены заказов, выпуска connect_token, фискального чека, прямой отправки magic packet.",
+                        'path' => null,
+                        'audience' => 'Владелец',
+                    ],
+                ],
+            ],
         ];
     }
 

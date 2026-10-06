@@ -94,7 +94,8 @@ class ComputerPowerService
         foreach ($rows as $row) {
             $id = (int) $row->id;
             $heldForAudit = ! empty($row->shift_audit_hold);
-            $desired = ($this->rowInMaintenance($row, $now) || $heldForAudit)
+            $heldForWol = $this->wolHoldActive(data_get($row, 'wol_hold_until'), $now);
+            $desired = ($this->rowInMaintenance($row, $now) || $heldForAudit || $heldForWol)
                 ? self::DESIRED_ON
                 : (in_array($id, $needOn, true) ? self::DESIRED_ON : self::DESIRED_OFF);
             $alive = isset($aliveIds[$id]);
@@ -188,6 +189,91 @@ class ComputerPowerService
                 'power_state_updated_at' => SqlTime::now(),
                 'wol_sent_at' => SqlTime::now(),
             ]);
+    }
+
+    /**
+     * Поставить ПК в очередь WOL. Пакет шлёт MikroTik, не облако.
+     * wol_hold_until не даёт syncFor сразу вернуть desired=off, если брони нет.
+     *
+     * @return array{queued:bool,already_online:bool,reason:string,hold_until:?string}
+     */
+    public function queueManualWake(Computer $computer, int $minutes): array
+    {
+        $minutes = max(5, min(30, $minutes));
+        $now = CarbonImmutable::now();
+        if (! $this->hasWolHoldColumn()) {
+            return [
+                'queued' => false,
+                'already_online' => false,
+                'reason' => 'Нет колонки wol_hold_until. Нужна миграция.',
+                'hold_until' => null,
+            ];
+        }
+        $mac = $this->wol->normalizeMac((string) $computer->mac_address);
+        $hwid = trim((string) $computer->hwid);
+        if ($mac === null || $hwid === '') {
+            return [
+                'queued' => false,
+                'already_online' => false,
+                'reason' => 'Нет MAC или HWID: MikroTik не сможет разбудить этот ПК.',
+                'hold_until' => null,
+            ];
+        }
+
+        $seen = $computer->last_seen_at;
+        if ($seen !== null && $seen->greaterThan($now->subSeconds($this->staleSeconds()))) {
+            return [
+                'queued' => false,
+                'already_online' => true,
+                'reason' => 'Шелл уже на связи, Wake-on-LAN не нужен.',
+                'hold_until' => null,
+            ];
+        }
+
+        $until = $now->addMinutes($minutes);
+        $patch = [
+            'power_desired' => self::DESIRED_ON,
+            'wol_hold_until' => $until,
+        ];
+        if ((string) ($computer->power_state ?? self::STATE_OFF) === self::STATE_ON) {
+            $patch['power_state'] = self::STATE_OFF;
+            $patch['power_state_updated_at'] = SqlTime::now();
+        }
+
+        DB::table('computers')->where('id', $computer->id)->update($patch);
+
+        return [
+            'queued' => true,
+            'already_online' => false,
+            'reason' => 'ПК поставлен в очередь. Magic packet отправит MikroTik при следующем опросе /api/power/wol-targets.',
+            'hold_until' => $until->toIso8601String(),
+        ];
+    }
+
+    private ?bool $wolHoldColumn = null;
+
+    private function hasWolHoldColumn(): bool
+    {
+        if ($this->wolHoldColumn === null) {
+            $this->wolHoldColumn = \Illuminate\Support\Facades\Schema::hasColumn('computers', 'wol_hold_until');
+        }
+
+        return $this->wolHoldColumn;
+    }
+
+    private function wolHoldActive(mixed $until, CarbonImmutable $now): bool
+    {
+        if ($until === null || $until === '') {
+            return false;
+        }
+
+        try {
+            $at = CarbonImmutable::parse($until);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $at->greaterThan($now);
     }
 
     /**
@@ -391,8 +477,14 @@ class ComputerPowerService
             $desired = (string) (DB::table('computers')->where('id', $id)->value('power_desired') ?: self::DESIRED_OFF);
         }
 
-        $heldForAudit = (bool) DB::table('computers')->where('id', $id)->value('shift_audit_hold');
-        if ($heldForAudit) {
+        $holdColumns = ['shift_audit_hold'];
+        if ($this->hasWolHoldColumn()) {
+            $holdColumns[] = 'wol_hold_until';
+        }
+        $holdRow = DB::table('computers')->where('id', $id)->first($holdColumns);
+        $heldForAudit = (bool) data_get($holdRow, 'shift_audit_hold');
+        $heldForWol = $this->wolHoldActive(data_get($holdRow, 'wol_hold_until'), $now);
+        if ($heldForAudit || $heldForWol) {
             $desired = self::DESIRED_ON;
             DB::table('computers')->where('id', $id)->update(['power_desired' => $desired]);
         }
@@ -402,7 +494,7 @@ class ComputerPowerService
         $pendingResync = $resync->pendingFor($computer);
         $pendingRollback = $rollback->pendingFor($computer);
         $action = 'none';
-        if ($heldForAudit) {
+        if ($heldForAudit || $heldForWol) {
             $action = 'none';
         } elseif (! $inMaintenance && ! $sessionActive && $pendingDiskless === null
             && $pendingResync === null && $pendingRollback === null && ! $computer->super_client
