@@ -364,7 +364,21 @@ class ProfileController extends Controller
             'profile_card' => app(\App\Services\BattlePassService::class)->profile(Auth::user(), app(\App\Services\ClubFeatureService::class)->clubIdForUser(Auth::user())),
             'battle_pass' => app(\App\Services\BattlePassService::class)->progress(Auth::user(), app(\App\Services\ClubFeatureService::class)->clubIdForUser(Auth::user())),
             'identities' => \App\Models\UserIdentity::query()->where('user_id', Auth::id())->whereNull('unlinked_at')->get(['provider', 'external_id', 'synced_at']),
+            'mcp_agents' => \App\Support\PlayerMcpKit::catalog(),
         ]);
+    }
+
+    public function issueMcp(Request $request, \App\Support\PlayerMcpKit $kit)
+    {
+        $validated = $request->validate([
+            'agent' => ['required', 'string', 'in:'.implode(',', \App\Support\PlayerMcpKit::ids())],
+        ]);
+        $user = $request->user();
+        if (! $user instanceof \App\Models\User) {
+            abort(403);
+        }
+
+        return response()->json($kit->issue($user, $validated['agent']));
     }
 
     public function update(Request $request)

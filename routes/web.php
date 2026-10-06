@@ -321,6 +321,9 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/profile/frame', [ProfileController::class, 'updateFrame']);
         Route::post('/profile/identities', [ProfileController::class, 'linkIdentity']);
         Route::delete('/profile/identities', [ProfileController::class, 'unlinkIdentity']);
+        Route::post('/profile/mcp', [ProfileController::class, 'issueMcp'])
+            ->middleware('throttle:8,1')
+            ->name('profile.mcp');
         Route::post('/battle-pass/claim', [ProfileController::class, 'claimBattlePass']);
         Route::post('/clips/{clip}/telegram', [ProfileController::class, 'shareClipTelegram']);
         Route::post('/telegram/unlink', [ProfileController::class, 'unlinkTelegram']);

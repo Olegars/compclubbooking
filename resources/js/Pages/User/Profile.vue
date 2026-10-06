@@ -36,11 +36,77 @@ const updateProfile = () => {
 const unlinkFaceit = () => {
     router.post('/account/faceit/unlink', {}, { preserveScroll: true })
 }
+
+const mcpAgents = computed(() => (page.props as any).mcp_agents || [])
+const mcpBusy = ref('')
+const mcpError = ref('')
+const mcpKit = ref<null | {
+    agent: string
+    title: string
+    filename: string
+    config: string
+    where: string[]
+    steps: string[]
+    expires_at: string | null
+    ready: boolean
+}>(null)
+const mcpCopied = ref(false)
+
+const csrfToken = () => {
+    const match = document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/)
+    return match ? decodeURIComponent(match[1]) : ''
+}
+
+const issueMcp = async (agent: string) => {
+    mcpBusy.value = agent
+    mcpError.value = ''
+    mcpCopied.value = false
+    try {
+        const response = await fetch('/account/profile/mcp', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-XSRF-TOKEN': csrfToken(),
+            },
+            body: JSON.stringify({ agent }),
+        })
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok) {
+            mcpError.value = data.message || 'Не удалось выпустить токен.'
+            return
+        }
+        mcpKit.value = data
+    } catch {
+        mcpError.value = 'Нет связи с клубом.'
+    } finally {
+        mcpBusy.value = ''
+    }
+}
+
+const copyMcp = async () => {
+    if (!mcpKit.value) return
+    await navigator.clipboard.writeText(mcpKit.value.config)
+    mcpCopied.value = true
+    setTimeout(() => { mcpCopied.value = false }, 2000)
+}
+
+const downloadMcp = () => {
+    if (!mcpKit.value) return
+    const blob = new Blob([mcpKit.value.config], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = mcpKit.value.filename
+    link.click()
+    URL.revokeObjectURL(url)
+}
 </script>
 
 <template>
     <MainLayout>
-        <div class="max-w-2xl mx-auto w-full bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-white/5 rounded-xl md:rounded-[1rem] p-4 sm:p-8 md:p-10 md:shadow-2xl relative">
+        <div class="w-full max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[minmax(0,42rem)_20rem] gap-4 items-start">
+        <div class="w-full bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-white/5 rounded-xl md:rounded-[1rem] p-4 sm:p-8 md:p-10 md:shadow-2xl relative">
 
             <div v-if="showSuccess" class="absolute top-8 right-8 bg-[#22c55e]/20 border border-[#22c55e]/50 text-[#22c55e] px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest animate-pulse">
                 Обновлено
@@ -132,6 +198,45 @@ const unlinkFaceit = () => {
                     Удалить аккаунт
                 </button>
             </div>
+        </div>
+
+        <aside class="w-full bg-white/5 md:bg-[#0a0a0a] border border-white/10 md:border-white/5 rounded-xl md:rounded-[1rem] p-4 sm:p-6 md:shadow-2xl">
+            <h2 class="text-[#22c55e] text-lg font-black mb-3 tracking-widest uppercase italic">Подключиться по MCP</h2>
+            <p class="text-xs text-white/50 leading-relaxed mb-5">
+                Агент увидит имя, баланс и свою сессию, плюс сколько мест занято в зале. Телефон, почту и чужие данные не отдаём. Клуб от твоего имени не меняется.
+            </p>
+            <div class="flex flex-col gap-2">
+                <button
+                    v-for="agent in mcpAgents"
+                    :key="agent.id"
+                    type="button"
+                    class="w-full py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[10px] tracking-[0.2em] text-white hover:bg-[#22c55e] hover:text-black hover:border-[#22c55e] transition-all disabled:opacity-30"
+                    :disabled="mcpBusy !== ''"
+                    @click="issueMcp(agent.id)"
+                >
+                    {{ mcpBusy === agent.id ? 'Готовим файл...' : agent.title }}
+                </button>
+            </div>
+            <p v-if="mcpError" class="text-red-400 text-xs mt-4">{{ mcpError }}</p>
+
+            <div v-if="mcpKit" class="mt-5 pt-5 border-t border-white/10 space-y-3">
+                <p v-if="!mcpKit.ready" class="text-xs text-amber-300">Клуб ещё не открыл удалённый MCP. Файл заработает после включения.</p>
+                <p class="text-[10px] uppercase tracking-[0.2em] text-white/40 font-black">{{ mcpKit.title }} · {{ mcpKit.filename }}</p>
+                <p v-for="line in mcpKit.where" :key="line" class="text-xs text-white/70 font-mono break-all">{{ line }}</p>
+                <ol class="list-decimal pl-4 space-y-1 text-xs text-white/60">
+                    <li v-for="step in mcpKit.steps" :key="step">{{ step }}</li>
+                </ol>
+                <pre class="max-h-64 overflow-auto bg-black border border-white/10 rounded-xl p-3 text-[10px] text-[#22c55e] whitespace-pre-wrap break-all">{{ mcpKit.config }}</pre>
+                <div class="flex gap-2">
+                    <button type="button" class="flex-1 py-2 rounded-xl bg-white text-black text-[10px] font-black uppercase" @click="copyMcp">
+                        {{ mcpCopied ? 'Скопировано' : 'Копировать' }}
+                    </button>
+                    <button type="button" class="flex-1 py-2 rounded-xl border border-white/20 text-[10px] font-black uppercase" @click="downloadMcp">
+                        Скачать
+                    </button>
+                </div>
+            </div>
+        </aside>
         </div>
     </MainLayout>
 </template>
