@@ -1219,6 +1219,9 @@ class ShellApiController extends Controller
             'applied_power' => 'required|integer|min:0|max:3',
             'last_error' => 'nullable|string|max:2000',
             'source' => 'nullable|string|in:command,status_read',
+            'relays' => 'nullable|array',
+            'relays.*.fan_id' => 'required|integer',
+            'relays.*.applied_power' => 'required|integer|min:0|max:3',
         ]);
 
         try {
@@ -1227,6 +1230,7 @@ class ShellApiController extends Controller
                 (int) $request->applied_power,
                 $request->input('last_error'),
                 (string) $request->input('source', 'command'),
+                $request->input('relays'),
             );
 
             $status = $result['locked'] ? 'locked' : 'success';

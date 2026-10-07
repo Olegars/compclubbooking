@@ -743,6 +743,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::post('/fans/shared/{sharedFan}/link', [FanAdminController::class, 'linkSharedFan']);
         Route::post('/fans/shared/{sharedFan}/unlink', [FanAdminController::class, 'unlinkSharedFan']);
         Route::delete('/fans/shared/{sharedFan}', [FanAdminController::class, 'destroySharedFan']);
+        Route::post('/fans/service', [FanAdminController::class, 'service']);
         Route::post('/fans', [FanAdminController::class, 'storeFan']);
         Route::put('/fans/{fan}', [FanAdminController::class, 'updateFan']);
         Route::delete('/fans/{fan}', [FanAdminController::class, 'destroyFan']);

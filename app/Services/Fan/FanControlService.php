@@ -118,7 +118,8 @@ class FanControlService
                 } elseif ((int) $board->club_id !== (int) $fan->club_id) {
                     $fan->last_error = 'Relay board club_id mismatch';
                 }
-                // Empty room: drop marketing/manual force_on so next boot stays quiet.
+                // Empty room: drop guest force_on so the next boot stays quiet.
+                // Service hold from the admin tab stays until it is released.
                 if ($fan->manual_mode === SpaceFan::MODE_FORCE_ON
                     && ! $this->spaceHasActiveSession($fan)) {
                     $fan->manual_mode = SpaceFan::MODE_AUTO;
@@ -181,17 +182,33 @@ class FanControlService
 
             /** @var SpaceFan $fan */
             $fan = $fans->first();
+            $controllable = $fans
+                ->filter(fn (SpaceFan $f) => $f->manual_mode !== SpaceFan::MODE_SERVICE)
+                ->values();
+
+            if ($controllable->isEmpty()) {
+                foreach ($fans as $f) {
+                    $f->desired_power = $this->computeDesiredPower($f);
+                    $f->save();
+                }
+
+                return ['fan' => $fan->fresh(), 'locked' => false, 'remaining_sec' => 0];
+            }
+
             $cooldown = max(0, (int) config('fan.manual_cooldown_sec', 10));
             $remaining = 0;
-            foreach ($fans as $f) {
+            foreach ($controllable as $f) {
                 $remaining = max($remaining, $this->manualLockRemainingSec($f, $cooldown));
             }
 
-            $sameForceSpeed = $mode === SpaceFan::MODE_FORCE_ON
-                && $forcedSpeed !== null
-                && SpaceFan::normalizeSpeed((int) $fan->default_on_power) === $forcedSpeed
-                && $fan->manual_mode === SpaceFan::MODE_FORCE_ON;
-            $unchanged = ($fan->manual_mode === $mode && ($mode !== SpaceFan::MODE_FORCE_ON || $sameForceSpeed));
+            $unchanged = $controllable->every(function (SpaceFan $f) use ($mode, $forcedSpeed) {
+                $sameForceSpeed = $mode === SpaceFan::MODE_FORCE_ON
+                    && $forcedSpeed !== null
+                    && SpaceFan::normalizeSpeed((int) $f->default_on_power) === $forcedSpeed
+                    && $f->manual_mode === SpaceFan::MODE_FORCE_ON;
+
+                return $f->manual_mode === $mode && ($mode !== SpaceFan::MODE_FORCE_ON || $sameForceSpeed);
+            });
 
             if ($remaining > 0 && ! $unchanged) {
                 foreach ($fans as $f) {
@@ -203,6 +220,12 @@ class FanControlService
             }
 
             foreach ($fans as $f) {
+                if ($f->manual_mode === SpaceFan::MODE_SERVICE) {
+                    $f->desired_power = $this->computeDesiredPower($f);
+                    $f->save();
+
+                    continue;
+                }
                 $f->manual_mode = $mode;
                 if ($forcedSpeed !== null) {
                     $f->default_on_power = $forcedSpeed;
@@ -275,6 +298,7 @@ class FanControlService
      * Shell acknowledges physical relay state after NetMod/W5100 command or /99 status read.
      *
      * @param  'command'|'status_read'  $source
+     * @param  list<array{fan_id:int,applied_power:int}>|null  $perFan
      * @return array{fan: ?SpaceFan, locked: bool, remaining_sec: int}
      */
     public function acknowledgeApplied(
@@ -282,6 +306,7 @@ class FanControlService
         int $appliedPower,
         ?string $error = null,
         string $source = 'command',
+        ?array $perFan = null,
     ): array {
         $computer = Computer::query()->find($computerId);
         if (! $computer || ! $this->ensureSpaceForComputer($computer)) {
@@ -289,8 +314,9 @@ class FanControlService
         }
 
         $appliedPower = SpaceFan::normalizeSpeed($appliedPower);
+        $perFanMap = $this->normalizePerFanApplied($perFan);
 
-        $result = DB::transaction(function () use ($computer, $appliedPower, $error, $source) {
+        $result = DB::transaction(function () use ($computer, $appliedPower, $error, $source, $perFanMap) {
             $fans = SpaceFan::query()
                 ->where('space_id', $computer->space_id)
                 ->where('club_id', $computer->club_id)
@@ -304,9 +330,10 @@ class FanControlService
 
             /** @var SpaceFan $fan */
             $fan = $fans->first();
+            $primaryNext = $perFanMap[(int) $fan->id] ?? $appliedPower;
             $cooldown = max(0, (int) config('fan.auto_apply_cooldown_sec', 20));
             if ($source === 'command'
-                && (int) $fan->applied_power !== $appliedPower
+                && (int) $fan->applied_power !== $primaryNext
                 && $fan->last_applied_by_computer_id
                 && (int) $fan->last_applied_by_computer_id !== (int) $computer->id
             ) {
@@ -317,7 +344,17 @@ class FanControlService
             }
 
             foreach ($fans as $f) {
-                $f->applied_power = SpaceFan::normalizeSpeed($appliedPower);
+                if ($perFanMap !== null) {
+                    if (! array_key_exists((int) $f->id, $perFanMap)) {
+                        $f->desired_power = $this->computeDesiredPower($f);
+                        $f->save();
+
+                        continue;
+                    }
+                    $f->applied_power = $perFanMap[(int) $f->id];
+                } else {
+                    $f->applied_power = SpaceFan::normalizeSpeed($appliedPower);
+                }
                 $f->desired_power = $this->computeDesiredPower($f);
                 $f->last_error = $error;
                 $f->last_applied_at = now();
@@ -368,6 +405,89 @@ class FanControlService
         }
 
         return $result;
+    }
+
+    /**
+     * Service tab: hold one fan or every fan of the club at 50/75/100, or release to auto.
+     * Does not HTTP the relay. Wakes one offline PC per room so the shell can apply it.
+     *
+     * @return array{count:int,power:string,wol_computer_ids:list<int>}
+     */
+    public function adminSetServicePower(int $clubId, ?int $fanId, string $power): array
+    {
+        $speed = match ($power) {
+            '50' => SpaceFan::SPEED_NIGHT,
+            '75' => SpaceFan::SPEED_MID,
+            '100' => SpaceFan::SPEED_HIGH,
+            'auto' => null,
+            default => throw new InvalidArgumentException("Unknown service power: {$power}"),
+        };
+
+        $fans = SpaceFan::query()
+            ->where('club_id', $clubId)
+            ->when($fanId, fn ($q) => $q->where('id', $fanId))
+            ->orderBy('id')
+            ->get();
+
+        $wol = [];
+        $wakeBySpace = [];
+
+        foreach ($fans as $fan) {
+            if ($speed === null) {
+                $fan->manual_mode = SpaceFan::MODE_AUTO;
+                $fan->default_on_power = SpaceFan::SPEED_HIGH;
+            } else {
+                $fan->manual_mode = SpaceFan::MODE_SERVICE;
+                $fan->default_on_power = $speed;
+            }
+            $fan->desired_power = $this->computeDesiredPower($fan);
+            $fan->last_manual_at = now();
+            $fan->last_manual_by_computer_id = null;
+            $fan->save();
+
+            if ((int) $fan->applied_power !== (int) $fan->desired_power) {
+                $wakeBySpace[(int) $fan->space_id] = $fan;
+            }
+
+            $this->touchSharedFans((int) $fan->club_id, (int) $fan->space_id);
+        }
+
+        foreach ($wakeBySpace as $fan) {
+            if (! $this->spaceAllComputersOffline($fan)) {
+                continue;
+            }
+            $woken = $this->wakeOneComputerInSpace($fan);
+            if ($woken) {
+                $wol[$woken] = $woken;
+            }
+        }
+
+        return [
+            'count' => $fans->count(),
+            'power' => $power,
+            'wol_computer_ids' => array_values($wol),
+        ];
+    }
+
+    /**
+     * @param  list<array{fan_id?:int,applied_power?:int}>|null  $perFan
+     * @return array<int,int>|null
+     */
+    private function normalizePerFanApplied(?array $perFan): ?array
+    {
+        if ($perFan === null || $perFan === []) {
+            return null;
+        }
+
+        $map = [];
+        foreach ($perFan as $row) {
+            if (! is_array($row) || ! isset($row['fan_id'])) {
+                continue;
+            }
+            $map[(int) $row['fan_id']] = SpaceFan::normalizeSpeed((int) ($row['applied_power'] ?? SpaceFan::SPEED_NIGHT));
+        }
+
+        return $map === [] ? null : $map;
     }
 
     public function stateForComputer(int $computerId): array
@@ -422,6 +542,8 @@ class FanControlService
                 'channel' => (int) $fan->channel,
                 'channel2' => (int) $fan->channel2,
                 'driver' => (string) $board->driver,
+                'desired_power' => $this->computeDesiredPower($fan),
+                'manual_mode' => (string) $fan->manual_mode,
             ];
         }
 
@@ -567,7 +689,8 @@ class FanControlService
             return SpaceFan::SPEED_NIGHT;
         }
 
-        if ($fan->manual_mode === SpaceFan::MODE_FORCE_ON) {
+        if ($fan->manual_mode === SpaceFan::MODE_FORCE_ON
+            || $fan->manual_mode === SpaceFan::MODE_SERVICE) {
             return SpaceFan::normalizeSpeed((int) ($fan->default_on_power ?: SpaceFan::SPEED_HIGH));
         }
 

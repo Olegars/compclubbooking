@@ -817,7 +817,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Вентиляция: кто крутит реле',
-                        'description' => "Облако (booking) только считает desired_power и факты (сессия / CPU°C / manual). Физический HTTP на NetMod/W5100 делает Shell по LAN — сервер в интернет до платы не ходит.\n\nPC Shell (Qt): опрос fan state, ручные 50/75/100%, thermal report, apply → ack.\nTV Shell (APK): привязка пары каналов в Setup (discover → ТЕСТ high ~2.5с → ПРИВЯЗАТЬ), те же API /api/shell/fan/*.\n\nРежимы: auto (по сессии и термопорогам), force_on, force_off(=night). Пороги thermal_on_c / thermal_off_c (дефолт 75 / 65). Пустая комната сбрасывает force_on в auto.",
+                        'description' => "Облако (booking) только считает desired_power и факты (сессия / CPU°C / manual). Физический HTTP на NetMod/W5100 делает Shell по LAN — сервер в интернет до платы не ходит.\n\nPC Shell (Qt): опрос fan state, ручные 50/75/100%, thermal report, apply → ack.\nTV Shell (APK): привязка пары каналов в Setup (discover → ТЕСТ high ~2.5с → ПРИВЯЗАТЬ), те же API /api/shell/fan/*.\n\nРежимы: auto (по сессии и термопорогам), force_on, force_off(=night), service. Пороги thermal_on_c / thermal_off_c (дефолт 75 / 65). Пустая комната сбрасывает force_on в auto. Вкладка «Сервис» на /admin/fans держит один вентилятор или все вентиляторы клуба на 50/75/100%, пока сервис не снят: пустая комната и кнопки гостя этот режим не сбрасывают. Реле по-прежнему жмёт shell по LAN, в том числе с экрана входа; если все ПК комнаты выключены, будится один.",
                         'path' => '/admin/fans',
                         'audience' => 'Управляющий+ / Shell / TV',
                     ],

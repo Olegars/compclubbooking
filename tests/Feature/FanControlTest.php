@@ -364,4 +364,70 @@ class FanControlTest extends TestCase
             SpaceFan::query()->where('space_id', $this->space->id)->where('channel', 3)->exists()
         );
     }
+
+    public function test_service_hold_survives_empty_room_and_guest_buttons(): void
+    {
+        $this->fan->update(['applied_power' => SpaceFan::SPEED_NIGHT]);
+        $this->pcA->update(['mac_address' => 'AA:BB:CC:DD:EE:01', 'power_state' => 'off', 'last_seen_at' => null]);
+        $this->pcB->update(['power_state' => 'off', 'last_seen_at' => null]);
+
+        $result = $this->fans->adminSetServicePower($this->club->id, $this->fan->id, '75');
+        $this->assertSame(1, $result['count']);
+        $this->assertSame([$this->pcA->id], $result['wol_computer_ids']);
+        $this->fan->refresh();
+        $this->assertSame(SpaceFan::MODE_SERVICE, $this->fan->manual_mode);
+        $this->assertSame(SpaceFan::SPEED_MID, $this->fan->desired_power);
+        $this->assertSame(SpaceFan::SPEED_MID, (int) $this->fan->default_on_power);
+
+        $this->fans->reconcileForSpace($this->space->id, $this->club->id);
+        $this->fan->refresh();
+        $this->assertSame(SpaceFan::MODE_SERVICE, $this->fan->manual_mode);
+        $this->assertSame(SpaceFan::SPEED_MID, $this->fan->desired_power);
+
+        $guest = $this->fans->setManualModeForComputer($this->pcA->id, '100');
+        $this->assertFalse($guest['locked']);
+        $this->fan->refresh();
+        $this->assertSame(SpaceFan::MODE_SERVICE, $this->fan->manual_mode);
+        $this->assertSame(SpaceFan::SPEED_MID, $this->fan->desired_power);
+
+        $state = $this->fans->stateForComputer($this->pcA->id);
+        $this->assertSame(SpaceFan::SPEED_MID, $state['relays'][0]['desired_power']);
+        $this->assertSame(SpaceFan::MODE_SERVICE, $state['relays'][0]['manual_mode']);
+
+        $this->fans->adminSetServicePower($this->club->id, $this->fan->id, 'auto');
+        $this->fan->refresh();
+        $this->assertSame(SpaceFan::MODE_AUTO, $this->fan->manual_mode);
+        $this->assertSame(SpaceFan::SPEED_NIGHT, $this->fan->desired_power);
+    }
+
+    public function test_service_all_fans_and_per_relay_ack(): void
+    {
+        $second = SpaceFan::create([
+            'club_id' => $this->club->id,
+            'space_id' => $this->space->id,
+            'relay_board_id' => $this->board->id,
+            'channel' => 1,
+            'channel2' => 2,
+            'manual_mode' => SpaceFan::MODE_AUTO,
+            'desired_power' => SpaceFan::SPEED_NIGHT,
+            'applied_power' => SpaceFan::SPEED_NIGHT,
+            'default_on_power' => SpaceFan::SPEED_HIGH,
+            'thermal_on_c' => 75,
+            'thermal_off_c' => 65,
+        ]);
+
+        $result = $this->fans->adminSetServicePower($this->club->id, null, '100');
+        $this->assertSame(2, $result['count']);
+        $this->assertSame(SpaceFan::MODE_SERVICE, $this->fan->fresh()->manual_mode);
+        $this->assertSame(SpaceFan::SPEED_HIGH, $second->fresh()->desired_power);
+
+        $this->fans->acknowledgeApplied($this->pcA->id, 1, null, 'command', [
+            ['fan_id' => $this->fan->id, 'applied_power' => 3],
+            ['fan_id' => $second->id, 'applied_power' => 2],
+        ]);
+
+        $this->assertSame(SpaceFan::SPEED_HIGH, $this->fan->fresh()->applied_power);
+        $this->assertSame(SpaceFan::SPEED_MID, $second->fresh()->applied_power);
+        $this->assertSame(SpaceFan::MODE_SERVICE, $second->fresh()->manual_mode);
+    }
 }

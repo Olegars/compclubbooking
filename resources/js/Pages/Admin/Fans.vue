@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { router, useForm } from '@inertiajs/vue3'
+import { router, useForm, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
 const props = defineProps<{
@@ -29,6 +29,31 @@ const props = defineProps<{
         load_steps?: number[]
     }
 }>()
+
+const page = usePage()
+const pageTab = ref<'setup' | 'service'>('setup')
+const servicePower = ref<50 | 75 | 100>(100)
+const flashSuccess = computed(() => (page.props as any).flash?.success as string | undefined)
+
+const modeLabel = (m: string) => {
+    if (m === 'service') return 'сервис'
+    if (m === 'force_on') return 'ручной'
+    if (m === 'force_off') return 'дежурный'
+    return 'авто'
+}
+
+const pickServicePower = (p: number) => {
+    if (p === 50 || p === 75 || p === 100)
+        servicePower.value = p
+}
+
+const postService = (fanId: number | null, power: string) => {
+    router.post('/admin/fans/service', {
+        club_id: selectedClubId.value,
+        fan_id: fanId,
+        power,
+    }, { preserveScroll: true })
+}
 
 const maxPerSpace = computed(() => props.defaults.max_per_space ?? 2)
 const loadSteps = computed(() => props.defaults.load_steps ?? [50, 60, 70, 80, 90, 100])
@@ -338,6 +363,81 @@ const spaceStroke = (s: any) => {
                 </select>
             </div>
 
+            <p v-if="flashSuccess" class="text-emerald-300 text-sm">{{ flashSuccess }}</p>
+
+            <div class="flex gap-2">
+                <button type="button" @click="pageTab = 'setup'"
+                        class="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                        :class="pageTab === 'setup' ? 'bg-cyan-500 text-black' : 'border border-white/10 text-white/50'">
+                    Настройка
+                </button>
+                <button type="button" @click="pageTab = 'service'"
+                        class="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                        :class="pageTab === 'service' ? 'bg-amber-400 text-black' : 'border border-white/10 text-white/50'">
+                    Сервис
+                </button>
+            </div>
+
+            <div v-show="pageTab === 'service'" class="bg-[#0a0a0a] border border-amber-400/20 rounded-[1rem] p-8 space-y-6">
+                <div>
+                    <h3 class="text-lg font-black uppercase italic">Ручная мощность</h3>
+                    <p class="text-[10px] text-white/40 uppercase tracking-wider mt-2 max-w-3xl">
+                        50% = 120 В, 75% = 170 В, 100% = 220 В. Держится, пока не нажать «Авто»:
+                        пустая комната и кнопки гостя сервис не сбрасывают. Реле переключает shell по LAN,
+                        в том числе с экрана входа. Если все ПК комнаты выключены, один будится.
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <button v-for="p in [50, 75, 100]" :key="p" type="button"
+                            @click="pickServicePower(p)"
+                            class="px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                            :class="servicePower === p ? 'bg-amber-400 text-black' : 'border border-white/10 text-white/60'">
+                        {{ p }}%
+                    </button>
+                    <button type="button" @click="postService(null, String(servicePower))"
+                            :disabled="!fans.length"
+                            class="px-4 py-3 rounded-xl bg-cyan-500 text-black text-[10px] font-black uppercase tracking-widest disabled:opacity-30">
+                        Все на {{ servicePower }}%
+                    </button>
+                    <button type="button" @click="postService(null, 'auto')"
+                            :disabled="!fans.length"
+                            class="px-4 py-3 rounded-xl border border-white/15 text-[10px] font-black uppercase tracking-widest text-white/70 disabled:opacity-30">
+                        Снять сервис со всех
+                    </button>
+                </div>
+                <div class="space-y-3">
+                    <div v-for="f in fans" :key="'svc'+f.id"
+                         class="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl border border-white/5 bg-black/40">
+                        <div>
+                            <div class="text-sm font-black uppercase italic">
+                                Space #{{ f.space_id }} · {{ f.space?.name || 'room' }}
+                            </div>
+                            <div class="text-[10px] text-white/40 font-mono mt-1">
+                                K{{ f.channel }}+K{{ f.channel2 }}
+                                · {{ modeLabel(f.manual_mode) }}
+                                · задано {{ speedLabel(f.desired_power) }}
+                                · на реле {{ speedLabel(f.applied_power) }}
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button type="button" @click="postService(f.id, String(servicePower))"
+                                    class="px-4 py-3 rounded-xl bg-amber-400 text-black text-[10px] font-black uppercase tracking-widest">
+                                {{ servicePower }}%
+                            </button>
+                            <button v-if="f.manual_mode === 'service'" type="button"
+                                    @click="postService(f.id, 'auto')"
+                                    class="px-4 py-3 rounded-xl border border-white/15 text-[10px] font-black uppercase tracking-widest text-white/70">
+                                Авто
+                            </button>
+                        </div>
+                    </div>
+                    <div v-if="!fans.length" class="py-10 text-center text-white/20 text-[10px] uppercase tracking-widest italic border border-dashed border-white/5 rounded-2xl">
+                        Вентиляторы не заведены
+                    </div>
+                </div>
+            </div>
+
+            <div v-show="pageTab === 'setup'" class="space-y-8">
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 space-y-4">
                     <h3 class="text-lg font-black uppercase italic">Новая плата реле</h3>
@@ -685,6 +785,7 @@ const spaceStroke = (s: any) => {
                         Общие вентиляторы не заведены
                     </div>
                 </div>
+            </div>
             </div>
         </div>
     </AdminLayout>

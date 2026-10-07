@@ -450,6 +450,41 @@ class FanAdminController extends Controller
         return back()->with('success', 'Общий вентилятор удалён');
     }
 
+    public function service(Request $request, FanControlService $fans)
+    {
+        $data = $request->validate([
+            'club_id' => 'required|integer|exists:clubs,id',
+            'fan_id' => 'nullable|integer',
+            'power' => 'required|string|in:50,75,100,auto',
+        ]);
+
+        $fanId = isset($data['fan_id']) ? (int) $data['fan_id'] : null;
+        if ($fanId) {
+            $exists = SpaceFan::query()
+                ->where('id', $fanId)
+                ->where('club_id', (int) $data['club_id'])
+                ->exists();
+            if (! $exists) {
+                return back()->withErrors(['fan_id' => 'Вентилятор не найден в этом клубе']);
+            }
+        }
+
+        $result = $fans->adminSetServicePower((int) $data['club_id'], $fanId, (string) $data['power']);
+        if ($result['count'] === 0) {
+            return back()->withErrors(['fan_id' => 'В этом клубе нет вентиляторов']);
+        }
+
+        $who = $fanId ? 'вентилятор' : 'все вентиляторы';
+        $message = $data['power'] === 'auto'
+            ? 'Сервис снят: '.$who.' снова в авто'
+            : 'Сервис: '.$who.' на '.$data['power'].'%';
+        if ($result['wol_computer_ids'] !== []) {
+            $message .= '. Будим ПК '.implode(', ', $result['wol_computer_ids']);
+        }
+
+        return back()->with('success', $message);
+    }
+
     public function forceOff(SpaceFan $fan, FanControlService $fans)
     {
         $result = $fans->adminForceOff((int) $fan->id);

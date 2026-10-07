@@ -14,6 +14,9 @@ class SpaceFan extends Model
 
     public const MODE_FORCE_OFF = 'force_off';
 
+    /** Technician hold from /admin/fans. Not cleared by an empty room or guest buttons. */
+    public const MODE_SERVICE = 'service';
+
     /** Cascade stages (desired_power / applied_power). */
     public const SPEED_NIGHT = 1; // 120V — K1 OFF, K2 OFF
 
