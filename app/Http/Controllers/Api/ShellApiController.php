@@ -356,6 +356,7 @@ class ShellApiController extends Controller
                 ],
                 'settings_pack' => $cloud['payload'],
                 'settings_updated_at' => $cloud['updated_at'],
+                'device_prefs' => $this->devicePrefsForShell($user, $loginComputer),
                 'fiscal_receipt' => $primaryReceipt ? [
                     'transaction_id' => $primaryReceipt['transaction_id'],
                     'amount' => $primaryReceipt['amount'],
@@ -2943,6 +2944,7 @@ class ShellApiController extends Controller
                 // Cloud Saves: optional full pack collected by Shell before session end.
                 'settings_pack' => 'nullable|array',
                 'settings_merge' => 'nullable|boolean',
+                'device_prefs' => 'nullable|array',
             ]);
 
             $termId = (string)$request->terminal_id;
@@ -3003,6 +3005,23 @@ class ShellApiController extends Controller
                     } catch (\Throwable $e) {
                         $settingsError = 'Не удалось сохранить настройки';
                         Log::warning('Cloud settings save on logout failed: '.$e->getMessage());
+                    }
+                }
+
+                if ($booking->user_id && $request->filled('device_prefs')) {
+                    try {
+                        $user = User::find($booking->user_id);
+                        $pc = Computer::query()->find((int) $booking->computer_id);
+                        if ($user && app(\App\Services\ClubFeatureService::class)->enabledForComputer($pc, 'cloud_saves')) {
+                            app(UserCloudSettingsService::class)->saveDevicePrefs($user, $request->input('device_prefs'));
+                        }
+                    } catch (InvalidArgumentException $e) {
+                        Log::warning('Device prefs reject on logout', [
+                            'user_id' => $booking->user_id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    } catch (\Throwable $e) {
+                        Log::warning('Device prefs save on logout failed: '.$e->getMessage());
                     }
                 }
 
@@ -3472,6 +3491,74 @@ class ShellApiController extends Controller
     }
 
     /**
+     * POST /api/shell/device-prefs — pointer speed, acceleration, keyboard color.
+     */
+    public function saveDevicePrefs(Request $request)
+    {
+        try {
+            $request->validate([
+                'terminal_id' => 'required|integer',
+                'user_id' => 'nullable|integer',
+                'device_prefs' => 'required|array',
+            ]);
+
+            $user = $this->resolveShellSessionUser(
+                (int) $request->terminal_id,
+                $request->filled('user_id') ? (int) $request->user_id : null
+            );
+            if (! $user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Активная сессия не найдена',
+                ], 200);
+            }
+
+            $computer = Computer::query()->find((int) $request->terminal_id);
+            if (! app(\App\Services\ClubFeatureService::class)->enabledForComputer($computer, 'cloud_saves')) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Cloud Saves выключены',
+                ], 200);
+            }
+
+            $row = app(UserCloudSettingsService::class)->saveDevicePrefs($user, $request->input('device_prefs'));
+
+            return response()->json([
+                'status' => 'success',
+                'device_prefs' => $row->device_prefs,
+            ]);
+        } catch (InvalidArgumentException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $msg = collect($e->errors())->flatten()->first() ?: 'Некорректный запрос';
+
+            return response()->json(['status' => 'error', 'message' => $msg], 200);
+        } catch (\Throwable $e) {
+            Log::error('Shell API saveDevicePrefs: '.$e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ошибка сервера при сохранении девайсов',
+            ], 500);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function devicePrefsForShell(?User $user, ?Computer $computer): ?array
+    {
+        if (! $user || ! app(\App\Services\ClubFeatureService::class)->enabledForComputer($computer, 'cloud_saves')) {
+            return null;
+        }
+
+        return app(UserCloudSettingsService::class)->devicePrefsFor($user);
+    }
+
+    /**
      * GET cloud settings pack for the player on the active terminal session.
      * Shell can also re-fetch mid-session (e.g. after reconnect).
      */
@@ -3506,6 +3593,7 @@ class ShellApiController extends Controller
                 'user_id' => $user->id,
                 'settings_pack' => $cloud['payload'],
                 'settings_updated_at' => $cloud['updated_at'],
+                'device_prefs' => $this->devicePrefsForShell($user, $computer),
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             $msg = collect($e->errors())->flatten()->first() ?: 'Некорректный запрос';

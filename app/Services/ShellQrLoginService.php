@@ -476,6 +476,9 @@ class ShellQrLoginService
             ],
             'settings_pack' => $cloud['payload'],
             'settings_updated_at' => $cloud['updated_at'],
+            'device_prefs' => app(ClubFeatureService::class)->enabledForComputer($loginComputer, 'cloud_saves')
+                ? app(UserCloudSettingsService::class)->devicePrefsFor($user)
+                : null,
             'fiscal_receipt' => $primaryReceipt ? [
                 'transaction_id' => $primaryReceipt['transaction_id'],
                 'amount' => $primaryReceipt['amount'],

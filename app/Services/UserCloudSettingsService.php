@@ -89,6 +89,68 @@ class UserCloudSettingsService
     }
 
     /**
+     * Pointer speed, acceleration and keyboard color. Empty when the player never set them.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function devicePrefsFor(User $user): ?array
+    {
+        $row = $user->settings()->first();
+        $prefs = $row?->device_prefs;
+
+        return is_array($prefs) && $prefs !== [] ? $prefs : null;
+    }
+
+    /**
+     * Merge a partial device profile into user_settings.device_prefs.
+     *
+     * @param  array<string, mixed>  $partial
+     */
+    public function saveDevicePrefs(User $user, array $partial): UserSetting
+    {
+        $clean = $this->normalizeDevicePrefs($partial);
+        $row = UserSetting::query()->firstOrNew(['user_id' => $user->id]);
+        $existing = is_array($row->device_prefs) ? $row->device_prefs : [];
+        $row->device_prefs = array_merge($existing, $clean);
+        $row->save();
+
+        return $row;
+    }
+
+    /**
+     * @param  array<string, mixed>  $partial
+     * @return array<string, mixed>
+     */
+    public function normalizeDevicePrefs(array $partial): array
+    {
+        $out = [];
+        if (array_key_exists('mouse_speed', $partial)) {
+            $out['mouse_speed'] = max(1, min(20, (int) $partial['mouse_speed']));
+        }
+        if (array_key_exists('mouse_accel', $partial)) {
+            $out['mouse_accel'] = filter_var($partial['mouse_accel'], FILTER_VALIDATE_BOOLEAN);
+        }
+        if (array_key_exists('keyboard_color', $partial)) {
+            $color = strtolower(trim((string) $partial['keyboard_color']));
+            if ($color === '' || $color === 'off') {
+                $out['keyboard_color'] = null;
+            } elseif (preg_match('/^#[0-9a-f]{6}$/', $color) === 1) {
+                $out['keyboard_color'] = $color;
+            } else {
+                throw new InvalidArgumentException('Цвет клавиатуры: #RRGGBB');
+            }
+        }
+        if (array_key_exists('keyboard_brightness', $partial)) {
+            $out['keyboard_brightness'] = max(0, min(100, (int) $partial['keyboard_brightness']));
+        }
+        if ($out === []) {
+            throw new InvalidArgumentException('Пустые настройки девайсов');
+        }
+
+        return $out;
+    }
+
+    /**
      * Deep-merge game entries into existing pack (partial update by game_key).
      *
      * @param  array<string, mixed>  $partial

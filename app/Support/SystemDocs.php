@@ -1267,7 +1267,7 @@ class SystemDocs
                     ],
                     [
                         'title' => 'Cloud Saves (настройки игрока)',
-                        'description' => 'Индивидуальный пак конфигов (sens CS2, cfg Valorant и т.д.) в user_settings. GET/POST /api/shell/settings; на logout можно передать settings_pack — при следующем входе на любой ПК пак приходит в login. Это текст ~2 МБ, не видео. Клипы Instant Replay лежат отдельно в guest_clips / кабинете.',
+                        'description' => "Индивидуальный пак конфигов (sens CS2, cfg Valorant и т.д.) в user_settings.payload. GET/POST /api/shell/settings; на logout можно передать settings_pack — при следующем входе на любой ПК пак приходит в login. Это текст ~2 МБ, не видео. Клипы Instant Replay лежат отдельно в guest_clips / кабинете.\n\nДевайсы — user_settings.device_prefs, та же фича cloud_saves. Шелл на login ставит скорость указателя Windows (1–20) и «повышенную точность» (ускорение). Цвет один на комнату, кулеры и клавиатуру: user_settings.light_color. Первый вход (нет прошлой сессии) — зелёный session_start, он же пишется в профиль. Следующие входы берут сохранённый цвет. Шелл кладёт этот кадр и в Art-Net комнаты, и в ADDR_LED, и в клавиатуру/кулер OpenRGB. Кружки цвета в плитке света меняют всё сразу. Отдельной покраски клавиатуры нет. POST /api/shell/device-prefs по ходу сессии; logout тоже принимает device_prefs и после снимка возвращает мышь к 10 / без ускорения, клавиатуру гасит. Фича off — блок null, запись не идёт.",
                         'path' => null,
                         'audience' => 'Shell',
                     ],

@@ -167,7 +167,7 @@ class ClubFeatureCatalog
             [
                 'key' => 'cloud_saves',
                 'title' => 'Cloud Saves',
-                'description' => 'Пак конфигов игрока (sens CS2, cfg Valorant) едет с логином на любой ПК. Не клипы.',
+                'description' => 'Пак конфигов игрока (sens CS2, cfg Valorant) и скорость мыши едут с логином на любой ПК. Цвет комнаты, кулеров и клавиатуры — один, из света профиля. Не клипы.',
                 'group' => self::GROUP_SHELL,
                 'icon' => '☁',
                 'admin_path' => null,

@@ -10,6 +10,7 @@ class UserSetting extends Model
     protected $fillable = [
         'user_id',
         'payload',
+        'device_prefs',
         'tts_voice',
         'light_color',
         'light_brightness',
@@ -20,6 +21,7 @@ class UserSetting extends Model
 
     protected $casts = [
         'payload' => 'array',
+        'device_prefs' => 'array',
         'light_brightness' => 'integer',
         'light_interactive' => 'boolean',
         'ghost_coach_enabled' => 'boolean',

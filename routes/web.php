@@ -1002,6 +1002,7 @@ Route::prefix('api/shell')->group(function () {
     // --- CLOUD SAVES: индивидуальные настройки игрока (CS2/Valorant/…) ---
     Route::get('/settings', [ShellApiController::class, 'getCloudSettings']);
     Route::post('/settings', [ShellApiController::class, 'saveCloudSettings']);
+    Route::post('/device-prefs', [ShellApiController::class, 'saveDevicePrefs']);
 
     // --- ЗАКРЫТИЕ СЕССИИ (Полное гашение брони ПК в базе клуба) ---
     Route::post('/logout', [ShellApiController::class, 'logout']);
