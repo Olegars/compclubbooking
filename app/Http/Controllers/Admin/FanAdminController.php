@@ -54,7 +54,7 @@ class FanAdminController extends Controller
             ->map(function (SharedFan $sf) use ($shared) {
                 $loadPct = $sf->isSupply()
                     ? $shared->loadPctFromSpaceFans(
-                        SpaceFan::query()->where('club_id', $sf->club_id)->get(['desired_power'])
+                        SpaceFan::query()->where('club_id', $sf->club_id)->where('unattended', false)->get(['desired_power'])
                     )
                     : $shared->loadPctFromSpaceFans($sf->spaceFans);
 
@@ -84,6 +84,13 @@ class FanAdminController extends Controller
                 ];
             });
 
+        $computerCounts = Computer::query()
+            ->when($clubId, fn ($q) => $q->where('club_id', $clubId))
+            ->whereNotNull('space_id')
+            ->selectRaw('space_id, COUNT(*) as computers_count')
+            ->groupBy('space_id')
+            ->pluck('computers_count', 'space_id');
+
         $spaces = Space::query()
             ->with('zone:id,name,color')
             ->when($clubId, fn ($q) => $q->where('club_id', $clubId))
@@ -100,6 +107,7 @@ class FanAdminController extends Controller
                 'zone_color' => $s->zone?->color,
                 'has_fan' => $fans->contains(fn (SpaceFan $f) => (int) $f->space_id === (int) $s->id),
                 'fans_count' => $fans->where('space_id', $s->id)->count(),
+                'computers_count' => (int) ($computerCounts[$s->id] ?? 0),
             ]);
 
         $computers = Computer::query()
@@ -227,10 +235,13 @@ class FanAdminController extends Controller
             'channel2' => 'required|integer|min:1|max:16|different:channel',
             'thermal_on_c' => 'nullable|integer|min:40|max:120',
             'thermal_off_c' => 'nullable|integer|min:30|max:110',
+            'unattended' => 'nullable|boolean',
+            'power' => 'nullable|string|in:50,75,100',
         ]);
 
+        $unattended = $request->boolean('unattended');
         $spaceId = (int) ($data['space_id'] ?? 0);
-        if (! empty($data['computer_id'])) {
+        if (! $unattended && ! empty($data['computer_id'])) {
             $computer = Computer::query()
                 ->where('club_id', $data['club_id'])
                 ->find((int) $data['computer_id']);
@@ -243,7 +254,25 @@ class FanAdminController extends Controller
             }
         }
         if ($spaceId <= 0) {
-            return back()->withErrors(['computer_id' => 'Выберите ПК — комната берётся из setup шелла']);
+            $errorKey = $unattended ? 'space_id' : 'computer_id';
+
+            return back()->withErrors([
+                $errorKey => $unattended
+                    ? 'Выберите комнату без компьютера'
+                    : 'Выберите ПК — комната берётся из setup шелла',
+            ]);
+        }
+        if ($unattended) {
+            $hasPc = Computer::query()
+                ->where('club_id', $data['club_id'])
+                ->where('space_id', $spaceId)
+                ->exists();
+            if ($hasPc) {
+                return back()->withErrors(['space_id' => 'В комнате есть ПК — вентилятор заводится от компьютера']);
+            }
+            if (empty($data['power'])) {
+                return back()->withErrors(['power' => 'Для комнаты без ПК выберите 50, 75 или 100%']);
+            }
         }
         $data['space_id'] = $spaceId;
 
@@ -266,23 +295,34 @@ class FanAdminController extends Controller
             (int) $data['channel2'],
         );
 
+        $speed = match ($data['power'] ?? null) {
+            '75' => SpaceFan::SPEED_MID,
+            '100' => SpaceFan::SPEED_HIGH,
+            default => SpaceFan::SPEED_NIGHT,
+        };
+
         $fan = SpaceFan::create([
             'club_id' => $data['club_id'],
             'space_id' => $data['space_id'],
+            'unattended' => $unattended,
             'relay_board_id' => $data['relay_board_id'],
             'channel' => $data['channel'],
             'channel2' => $data['channel2'],
-            'manual_mode' => SpaceFan::MODE_AUTO,
-            'desired_power' => SpaceFan::SPEED_NIGHT,
+            'manual_mode' => $unattended ? SpaceFan::MODE_SERVICE : SpaceFan::MODE_AUTO,
+            'desired_power' => $unattended ? $speed : SpaceFan::SPEED_NIGHT,
             'applied_power' => SpaceFan::SPEED_NIGHT,
-            'default_on_power' => SpaceFan::SPEED_HIGH,
+            'default_on_power' => $unattended ? $speed : SpaceFan::SPEED_HIGH,
             'thermal_on_c' => $data['thermal_on_c'] ?? (int) config('fan.thermal_on_c', 75),
             'thermal_off_c' => $data['thermal_off_c'] ?? (int) config('fan.thermal_off_c', 65),
         ]);
 
-        $shared->recomputeAfterPersonalChange((int) $fan->club_id, [(int) $fan->id]);
+        if (! $unattended) {
+            $shared->recomputeAfterPersonalChange((int) $fan->club_id, [(int) $fan->id]);
+        }
 
-        return back()->with('success', 'Вентилятор привязан к комнате ПК (K1+K2)');
+        return back()->with('success', $unattended
+            ? 'Вентилятор комнаты без ПК заведён, реле крутит агент'
+            : 'Вентилятор привязан к комнате ПК (K1+K2)');
     }
 
     public function updateFan(Request $request, SpaceFan $fan)
@@ -412,6 +452,10 @@ class FanAdminController extends Controller
         ]);
 
         $spaceFanId = (int) $data['space_fan_id'];
+        $spaceFan = SpaceFan::query()->where('club_id', $sharedFan->club_id)->find($spaceFanId);
+        if (! $spaceFan || $spaceFan->unattended) {
+            return back()->withErrors(['space_fan_id' => 'Комната без ПК в контур вытяжки не входит']);
+        }
         $existing = SharedFanLink::query()->where('space_fan_id', $spaceFanId)->first();
         if ($existing && (int) $existing->shared_fan_id !== (int) $sharedFan->id) {
             return back()->withErrors(['space_fan_id' => 'Уже привязан к другой вытяжке']);
@@ -471,7 +515,11 @@ class FanAdminController extends Controller
 
         $result = $fans->adminSetServicePower((int) $data['club_id'], $fanId, (string) $data['power']);
         if ($result['count'] === 0) {
-            return back()->withErrors(['fan_id' => 'В этом клубе нет вентиляторов']);
+            $message = ($result['skipped_unattended'] ?? 0) > 0
+                ? 'Комнате без ПК нужен режим 50, 75 или 100%. Авто там не считается.'
+                : 'В этом клубе нет вентиляторов';
+
+            return back()->withErrors(['fan_id' => $message]);
         }
 
         $who = $fanId ? 'вентилятор' : 'все вентиляторы';
@@ -480,6 +528,9 @@ class FanAdminController extends Controller
             : 'Сервис: '.$who.' на '.$data['power'].'%';
         if ($result['wol_computer_ids'] !== []) {
             $message .= '. Будим ПК '.implode(', ', $result['wol_computer_ids']);
+        }
+        if (($result['skipped_unattended'] ?? 0) > 0 && $data['power'] === 'auto') {
+            $message .= '. Комнаты без ПК оставлены на своём режиме';
         }
 
         return back()->with('success', $message);

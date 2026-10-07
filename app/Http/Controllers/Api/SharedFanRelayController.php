@@ -25,6 +25,7 @@ class SharedFanRelayController extends Controller
 
         try {
             $targets = $shared->targetsPayload($clubId);
+            $rooms = $shared->roomTargetsPayload($clubId);
         } catch (\Throwable $e) {
             Log::error('Shared fan targets failed: '.$e->getMessage());
 
@@ -35,12 +36,16 @@ class SharedFanRelayController extends Controller
         }
 
         $needs = array_values(array_filter($targets, fn (array $t) => ! empty($t['needs_apply'])));
+        $roomNeeds = array_values(array_filter($rooms, fn (array $t) => ! empty($t['needs_apply'])));
 
         return response()->json([
             'status' => 'success',
             'count' => count($targets),
             'needs_apply_count' => count($needs),
             'targets' => $targets,
+            'room_count' => count($rooms),
+            'room_needs_apply_count' => count($roomNeeds),
+            'room_targets' => $rooms,
         ]);
     }
 
@@ -59,9 +64,22 @@ class SharedFanRelayController extends Controller
             'items.*.id' => 'required|integer',
             'items.*.applied_power' => 'required|integer|min:0|max:3',
             'items.*.last_error' => 'nullable|string|max:500',
+            'items.*.source' => 'nullable|string|in:shared,room',
         ]);
 
-        $updated = $shared->acknowledgeApplied($request->input('items', []));
+        $items = $request->input('items', []);
+        $sharedItems = [];
+        $roomItems = [];
+        foreach ($items as $item) {
+            if (($item['source'] ?? 'shared') === 'room') {
+                $roomItems[] = $item;
+            } else {
+                $sharedItems[] = $item;
+            }
+        }
+
+        $updated = $sharedItems === [] ? 0 : $shared->acknowledgeApplied($sharedItems);
+        $updated += $roomItems === [] ? 0 : $shared->acknowledgeRoomApplied($roomItems);
 
         return response()->json([
             'status' => 'success',

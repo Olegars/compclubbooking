@@ -47,7 +47,7 @@ class SharedFanControlService
     public function recomputeSupplyPool(int $clubId): void
     {
         $loadPct = $this->loadPctFromSpaceFans(
-            SpaceFan::query()->where('club_id', $clubId)->get(['desired_power'])
+            SpaceFan::query()->where('club_id', $clubId)->where('unattended', false)->get(['desired_power'])
         );
 
         $supplies = SharedFan::query()
@@ -164,7 +164,7 @@ class SharedFanControlService
 
             $loadPct = $fan->isSupply()
                 ? $this->loadPctFromSpaceFans(
-                    SpaceFan::query()->where('club_id', $fan->club_id)->get(['desired_power'])
+                    SpaceFan::query()->where('club_id', $fan->club_id)->where('unattended', false)->get(['desired_power'])
                 )
                 : $this->loadPctFromSpaceFans(
                     $fan->spaceFans()->get(['space_fans.id', 'space_fans.desired_power'])
@@ -193,6 +193,88 @@ class SharedFanControlService
         }
 
         return $payload;
+    }
+
+    /**
+     * Rooms without a PC (server closet, fridges). The LAN agent applies these;
+     * no shell is listening there. They are not part of supply/exhaust load.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function roomTargetsPayload(?int $clubId = null): array
+    {
+        $fans = SpaceFan::query()
+            ->with(['relayBoard:id,host,port,driver,is_active,club_id', 'space:id,name'])
+            ->where('unattended', true)
+            ->when($clubId, fn ($q) => $q->where('club_id', $clubId))
+            ->whereHas('relayBoard', fn ($q) => $q->where('is_active', true))
+            ->orderBy('id')
+            ->get();
+
+        $payload = [];
+        foreach ($fans as $fan) {
+            $board = $fan->relayBoard;
+            if (! $board) {
+                continue;
+            }
+
+            $desired = SpaceFan::normalizeSpeed((int) $fan->desired_power);
+            [$k1, $k2] = SpaceFan::speedToRelays($desired);
+
+            $payload[] = [
+                'id' => (int) $fan->id,
+                'source' => 'room',
+                'club_id' => (int) $fan->club_id,
+                'kind' => 'room',
+                'name' => (string) ($fan->space?->name ?: ('Space #'.$fan->space_id)),
+                'space_id' => (int) $fan->space_id,
+                'host' => (string) $board->host,
+                'port' => RelayBoard::fallbackPort($board->port, $board->driver),
+                'driver' => (string) $board->driver,
+                'http_base' => RelayBoard::httpBase((string) $board->host, $board->port, $board->driver),
+                'channel' => (int) $fan->channel,
+                'channel2' => (int) $fan->channel2,
+                'desired_power' => $desired,
+                'applied_power' => SpaceFan::normalizeSpeed((int) $fan->applied_power),
+                'k1' => $k1,
+                'k2' => $k2,
+                'needs_apply' => $desired !== SpaceFan::normalizeSpeed((int) $fan->applied_power),
+            ];
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  list<array{id:int,applied_power:int,last_error?:string|null}>  $items
+     * @return int updated count
+     */
+    public function acknowledgeRoomApplied(array $items): int
+    {
+        $updated = 0;
+
+        DB::transaction(function () use ($items, &$updated) {
+            foreach ($items as $item) {
+                $id = (int) ($item['id'] ?? 0);
+                if ($id <= 0) {
+                    continue;
+                }
+                $fan = SpaceFan::query()
+                    ->where('unattended', true)
+                    ->lockForUpdate()
+                    ->find($id);
+                if (! $fan) {
+                    continue;
+                }
+                $fan->applied_power = SpaceFan::normalizeSpeed((int) ($item['applied_power'] ?? 1));
+                $fan->last_error = isset($item['last_error']) ? (string) $item['last_error'] : null;
+                $fan->last_applied_at = now();
+                $fan->save();
+                $updated++;
+            }
+        });
+
+        return $updated;
     }
 
     /**

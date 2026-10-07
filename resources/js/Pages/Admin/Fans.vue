@@ -103,6 +103,8 @@ const fanForm = useForm({
     channel2: 2,
     thermal_on_c: props.defaults.thermal_on_c,
     thermal_off_c: props.defaults.thermal_off_c,
+    unattended: false,
+    power: '50',
 })
 
 const sharedForm = useForm({
@@ -133,6 +135,7 @@ watch(sharedFans, (list) => {
 
 const freeForExhaust = (sharedId: number) =>
     props.fans.filter((f: any) => {
+        if (f.unattended) return false
         const linked = linkedPersonalIds.value.has(Number(f.id))
         const mine = (sharedFans.value.find((s: any) => s.id === sharedId)?.linked_fans || [])
             .some((l: any) => Number(l.id) === Number(f.id))
@@ -152,6 +155,7 @@ const pickComputer = (computerId: number) => {
     if (!pc) return
     selectedComputerId.value = pc.id
     fanForm.computer_id = pc.id
+    fanForm.unattended = false
     selectedSpaceId.value = pc.space_id
     fanForm.space_id = pc.space_id
 }
@@ -169,6 +173,8 @@ const pickSpace = (spaceId: number, allowTaken = false) => {
     fanForm.space_id = spaceId
     selectedComputerId.value = null
     fanForm.computer_id = null
+    fanForm.unattended = true
+    if (!fanForm.power) fanForm.power = '50'
 }
 
 const submitBoard = () => {
@@ -220,6 +226,7 @@ const submitFan = () => {
             selectedComputerId.value = null
             fanForm.space_id = null
             fanForm.computer_id = null
+            fanForm.unattended = false
         },
     })
 }
@@ -337,12 +344,14 @@ const spaceFill = (s: any) => {
     const n = spaceFanCount(s)
     if (n >= maxPerSpace.value) return 'rgba(34,197,94,0.22)'
     if (n > 0) return 'rgba(34,197,94,0.12)'
+    if (Number(s.computers_count ?? 0) === 0) return 'rgba(251,191,36,0.16)'
     return (s.zone_color || '#22c55e') + '33'
 }
 
 const spaceStroke = (s: any) => {
     if (selectedSpaceId.value === s.id) return '#22d3ee'
     if (spaceFanCount(s) > 0) return '#22c55e'
+    if (Number(s.computers_count ?? 0) === 0) return '#fbbf24'
     return s.zone_color || '#64748b'
 }
 </script>
@@ -385,6 +394,7 @@ const spaceStroke = (s: any) => {
                         50% = 120 В, 75% = 170 В, 100% = 220 В. Держится, пока не нажать «Авто»:
                         пустая комната и кнопки гостя сервис не сбрасывают. Реле переключает shell по LAN,
                         в том числе с экрана входа. Если все ПК комнаты выключены, один будится.
+                        Комната без ПК (серверная, холодильники) крутится агентом и с «Авто» не снимается.
                     </p>
                 </div>
                 <div class="flex flex-wrap items-center gap-3">
@@ -424,7 +434,7 @@ const spaceStroke = (s: any) => {
                                     class="px-4 py-3 rounded-xl bg-amber-400 text-black text-[10px] font-black uppercase tracking-widest">
                                 {{ servicePower }}%
                             </button>
-                            <button v-if="f.manual_mode === 'service'" type="button"
+                            <button v-if="f.manual_mode === 'service' && !f.unattended" type="button"
                                     @click="postService(f.id, 'auto')"
                                     class="px-4 py-3 rounded-xl border border-white/15 text-[10px] font-black uppercase tracking-widest text-white/70">
                                 Авто
@@ -487,7 +497,7 @@ const spaceStroke = (s: any) => {
                 <div class="bg-[#0a0a0a] border border-white/5 rounded-[1rem] p-8 space-y-4">
                     <h3 class="text-lg font-black uppercase italic">Привязать вентилятор</h3>
                     <p class="text-[10px] text-white/30 uppercase tracking-wider">
-                        Комната берётся из setup шелла · до {{ maxPerSpace }} на комнату · каналы K1/K2
+                        Комната берётся из setup шелла или с карты, если в ней нет ПК · до {{ maxPerSpace }} на комнату · каналы K1/K2
                     </p>
                     <form @submit.prevent="submitFan" class="space-y-3">
                         <select v-model.number="fanForm.relay_board_id"
@@ -503,7 +513,7 @@ const spaceStroke = (s: any) => {
                                 K{{ k1 }}+K{{ k1 + 1 }}
                             </option>
                         </select>
-                        <div class="grid grid-cols-2 gap-3">
+                        <div v-if="!fanForm.unattended" class="grid grid-cols-2 gap-3">
                             <input v-model.number="fanForm.thermal_on_c" type="number" placeholder="ON °C"
                                    class="bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500" />
                             <input v-model.number="fanForm.thermal_off_c" type="number" placeholder="OFF °C"
@@ -511,13 +521,26 @@ const spaceStroke = (s: any) => {
                         </div>
                         <select v-model.number="fanForm.computer_id"
                                 class="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none focus:border-cyan-500"
-                                required
+                                :required="!fanForm.unattended"
                                 @change="fanForm.computer_id && pickComputer(fanForm.computer_id)">
                             <option :value="null" disabled>ПК (зона из setup шелла)</option>
                             <option v-for="pc in computers" :key="'pc'+pc.id" :value="pc.id">
                                 {{ pc.name }} · {{ pc.space_name || (pc.space_id ? ('space #' + pc.space_id) : (pc.type || 'без комнаты')) }}
                             </option>
                         </select>
+                        <div v-if="fanForm.unattended" class="space-y-2">
+                            <div class="text-[10px] uppercase tracking-widest text-amber-300/80">
+                                Комната без ПК · режим постоянный · реле жмёт агент притока
+                            </div>
+                            <div class="flex gap-2">
+                                <button v-for="p in ['50', '75', '100']" :key="'up'+p" type="button"
+                                        @click="fanForm.power = p"
+                                        class="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                                        :class="fanForm.power === p ? 'bg-amber-400 text-black' : 'border border-white/10 text-white/60'">
+                                    {{ p }}%
+                                </button>
+                            </div>
+                        </div>
                         <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4 text-[10px] uppercase tracking-wider">
                             Комната:
                             <span class="text-cyan-400 font-black ml-2">
@@ -531,6 +554,7 @@ const spaceStroke = (s: any) => {
                                     space #{{ selectedSpace.id }}
                                     <span class="text-white/40 font-bold normal-case tracking-normal ml-2">
                                         {{ selectedSpace.name }} · {{ selectedSpace.zone_name || 'zone' }}
+                                        <template v-if="fanForm.unattended"> · без компьютера</template>
                                     </span>
                                 </template>
                                 <template v-else>выберите ПК</template>
@@ -547,6 +571,7 @@ const spaceStroke = (s: any) => {
                             <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-cyan-400/80"></span> Выбран ПК</span>
                             <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-[#22c55e]/50"></span> С вентилятором</span>
                             <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-white/20"></span> Свободна</span>
+                            <span class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-amber-400/80"></span> Без ПК</span>
                         </div>
                         <div
                             class="w-full overflow-hidden rounded-2xl border border-white/5 bg-black/60"
@@ -647,6 +672,9 @@ const spaceStroke = (s: any) => {
                                 {{ boardHttpBase(f.relay_board) }}
                                 · K1={{ f.channel }} K2={{ f.channel2 }}
                                 · speed {{ f.applied_power }}/3 · mode {{ f.manual_mode }}
+                                <span v-if="f.unattended" class="text-amber-400/80">
+                                    · без ПК · агент · режим {{ speedLabel(f.desired_power) }}
+                                </span>
                                 <span v-if="f.shared_fan_link?.shared_fan" class="text-amber-400/80">
                                     · вытяжка: {{ f.shared_fan_link.shared_fan.name }}
                                 </span>

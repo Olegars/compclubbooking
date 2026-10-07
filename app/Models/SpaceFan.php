@@ -27,6 +27,7 @@ class SpaceFan extends Model
     protected $fillable = [
         'club_id',
         'space_id',
+        'unattended',
         'relay_board_id',
         'channel',
         'channel2',
@@ -46,6 +47,7 @@ class SpaceFan extends Model
     protected $casts = [
         'club_id' => 'integer',
         'space_id' => 'integer',
+        'unattended' => 'boolean',
         'relay_board_id' => 'integer',
         'channel' => 'integer',
         'channel2' => 'integer',

@@ -411,7 +411,7 @@ class FanControlService
      * Service tab: hold one fan or every fan of the club at 50/75/100, or release to auto.
      * Does not HTTP the relay. Wakes one offline PC per room so the shell can apply it.
      *
-     * @return array{count:int,power:string,wol_computer_ids:list<int>}
+     * @return array{count:int,skipped_unattended:int,power:string,wol_computer_ids:list<int>}
      */
     public function adminSetServicePower(int $clubId, ?int $fanId, string $power): array
     {
@@ -431,8 +431,15 @@ class FanControlService
 
         $wol = [];
         $wakeBySpace = [];
+        $updated = 0;
+        $skippedUnattended = 0;
 
         foreach ($fans as $fan) {
+            if ($fan->unattended && $speed === null) {
+                $skippedUnattended++;
+
+                continue;
+            }
             if ($speed === null) {
                 $fan->manual_mode = SpaceFan::MODE_AUTO;
                 $fan->default_on_power = SpaceFan::SPEED_HIGH;
@@ -444,12 +451,15 @@ class FanControlService
             $fan->last_manual_at = now();
             $fan->last_manual_by_computer_id = null;
             $fan->save();
+            $updated++;
 
-            if ((int) $fan->applied_power !== (int) $fan->desired_power) {
+            if (! $fan->unattended && (int) $fan->applied_power !== (int) $fan->desired_power) {
                 $wakeBySpace[(int) $fan->space_id] = $fan;
             }
 
-            $this->touchSharedFans((int) $fan->club_id, (int) $fan->space_id);
+            if (! $fan->unattended) {
+                $this->touchSharedFans((int) $fan->club_id, (int) $fan->space_id);
+            }
         }
 
         foreach ($wakeBySpace as $fan) {
@@ -463,7 +473,8 @@ class FanControlService
         }
 
         return [
-            'count' => $fans->count(),
+            'count' => $updated,
+            'skipped_unattended' => $skippedUnattended,
             'power' => $power,
             'wol_computer_ids' => array_values($wol),
         ];
@@ -503,6 +514,7 @@ class FanControlService
         $fans = SpaceFan::query()
             ->where('space_id', $computer->space_id)
             ->where('club_id', $computer->club_id)
+            ->where('unattended', false)
             ->with('relayBoard')
             ->orderBy('id')
             ->get();
@@ -685,6 +697,10 @@ class FanControlService
 
     public function computeDesiredPower(SpaceFan $fan): int
     {
+        if ($fan->unattended) {
+            return SpaceFan::normalizeSpeed((int) ($fan->default_on_power ?: SpaceFan::SPEED_NIGHT));
+        }
+
         if ($fan->manual_mode === SpaceFan::MODE_FORCE_OFF) {
             return SpaceFan::SPEED_NIGHT;
         }

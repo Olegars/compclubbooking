@@ -208,4 +208,81 @@ class SharedFanControlTest extends TestCase
         $this->assertFalse(SpaceFan::isCascadePair(1, 3));
         $this->assertTrue(SpaceFan::isCascadePair(5, 6));
     }
+
+    public function test_unattended_room_is_outside_supply_and_uses_room_targets(): void
+    {
+        $space = Space::create([
+            'club_id' => $this->club->id,
+            'zone_id' => Zone::query()->first()->id,
+            'name' => 'Fridge',
+            'x' => 20, 'y' => 0, 'w' => 10, 'h' => 10,
+        ]);
+
+        $room = SpaceFan::create([
+            'club_id' => $this->club->id,
+            'space_id' => $space->id,
+            'unattended' => true,
+            'relay_board_id' => $this->board->id,
+            'channel' => 9,
+            'channel2' => 10,
+            'manual_mode' => SpaceFan::MODE_SERVICE,
+            'desired_power' => SpaceFan::SPEED_MID,
+            'applied_power' => SpaceFan::SPEED_NIGHT,
+            'default_on_power' => SpaceFan::SPEED_MID,
+        ]);
+
+        $supply = $this->makeShared(SharedFan::KIND_SUPPLY, 5, 6, 'Supply-1');
+        SharedFanMap::query()
+            ->where('shared_fan_id', $supply->id)
+            ->where('load_pct', 80)
+            ->update(['output_pct' => 100]);
+
+        $this->shared->recomputeSupplyPool($this->club->id);
+        $supply->refresh();
+        $this->assertSame(SpaceFan::SPEED_HIGH, (int) $supply->desired_power);
+
+        $res = $this->getJson('/api/fans/shared-targets?token=test-shared-token')
+            ->assertOk()
+            ->assertJsonPath('count', 1)
+            ->assertJsonPath('room_count', 1);
+
+        $this->assertSame($room->id, $res->json('room_targets.0.id'));
+        $this->assertSame('room', $res->json('room_targets.0.source'));
+        $this->assertSame(SpaceFan::SPEED_MID, $res->json('room_targets.0.desired_power'));
+        $this->assertTrue($res->json('room_targets.0.k1'));
+        $this->assertFalse($res->json('room_targets.0.k2'));
+        $this->assertTrue($res->json('room_targets.0.needs_apply'));
+
+        $this->postJson('/api/fans/shared-applied', [
+            'token' => 'test-shared-token',
+            'items' => [
+                [
+                    'id' => $room->id,
+                    'source' => 'room',
+                    'applied_power' => SpaceFan::SPEED_MID,
+                ],
+            ],
+        ])->assertOk()->assertJsonPath('updated', 1);
+
+        $room->refresh();
+        $this->assertSame(SpaceFan::SPEED_MID, (int) $room->applied_power);
+
+        $this->postJson('/api/fans/shared-applied', [
+            'token' => 'test-shared-token',
+            'items' => [
+                ['id' => $room->id, 'applied_power' => SpaceFan::SPEED_HIGH],
+            ],
+        ])->assertOk();
+
+        $room->refresh();
+        $this->assertSame(SpaceFan::SPEED_MID, (int) $room->applied_power);
+
+        $fans = app(\App\Services\Fan\FanControlService::class);
+        $skipped = $fans->adminSetServicePower($this->club->id, $room->id, 'auto');
+        $this->assertSame(0, $skipped['count']);
+        $this->assertSame(1, $skipped['skipped_unattended']);
+        $room->refresh();
+        $this->assertSame(SpaceFan::MODE_SERVICE, $room->manual_mode);
+        $this->assertSame(SpaceFan::SPEED_MID, (int) $room->desired_power);
+    }
 }
