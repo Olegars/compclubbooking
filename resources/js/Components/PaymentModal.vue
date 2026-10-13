@@ -101,6 +101,14 @@ watch(() => props.isOpen, (val) => {
                   </span>
                 </div>
 
+                <div v-if="mode === 'booking' && Array.isArray(data?.pins) && data.pins.length" class="border-b border-white/5 pb-3">
+                  <span class="text-[9px] text-slate-600 uppercase tracking-widest font-black">PIN на ПК</span>
+                  <div v-for="row in data.pins" :key="row.label + row.pin" class="mt-2 flex items-baseline justify-between gap-3">
+                    <span class="text-white/50 text-xs uppercase">{{ row.label }}</span>
+                    <span class="text-[#22c55e] text-3xl font-black tracking-[0.25em]">{{ row.pin }}</span>
+                  </div>
+                </div>
+
                 <div class="flex justify-between items-center">
                   <span class="text-[9px] text-slate-600 uppercase tracking-widest font-black italic">
                     {{ mode === 'view' ? 'ТЕКУЩИЙ ОСТАТОК' : 'СУММА ОПЕРАЦИИ' }}

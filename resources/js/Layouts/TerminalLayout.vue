@@ -25,12 +25,12 @@ onMounted(() => {
 
         <div class="fixed inset-0 pointer-events-none z-[100] opacity-[0.03] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,0,0.06))] bg-[length:100%_4px,3px_100%]"></div>
 
-        <header class="border-b border-white/5 bg-black/80 backdrop-blur-2xl sticky top-0 z-[50] py-10 flex-shrink-0">
+        <header class="border-b border-white/5 bg-black/80 backdrop-blur-2xl sticky top-0 z-[50] py-3 flex-shrink-0">
             <div class="max-w-[1600px] mx-auto px-6 flex flex-col items-center relative">
 
-                <div class="flex flex-col items-center gap-4 cursor-pointer group" @click="triggerRoll">
-                    <h1 class="flex items-center justify-center scale-75 lg:scale-90 transition-transform group-hover:scale-[0.92]">
-                        <span class="sector-neon text-[80px] lg:text-[110px] uppercase leading-none tracking-tighter italic font-bomber">
+                <div class="flex flex-col items-center gap-1 cursor-pointer group" @click="triggerRoll">
+                    <h1 class="flex items-center justify-center transition-transform group-hover:scale-[1.02]">
+                        <span class="sector-neon text-[36px] lg:text-[44px] uppercase leading-none tracking-tighter italic font-bomber">
                             Sector
                         </span>
 
@@ -50,7 +50,7 @@ onMounted(() => {
                             </div>
                         </div>
                     </h1>
-                    <span class="text-[10px] text-[#22c55e] opacity-40 uppercase tracking-[0.8em] mt-2 italic font-black font-sans">
+                    <span class="text-[10px] text-[#22c55e] opacity-40 uppercase tracking-[0.5em] italic font-black font-sans">
                         System Terminal // Node 0451 v.2.6
                     </span>
                 </div>
@@ -76,55 +76,38 @@ onMounted(() => {
     filter: brightness(1.1);
 }
 
-.slot-container { width: 200px; height: 70px; }
-@media (min-width: 1024px) { .slot-container { width: 264px; height: 92px; } }
+.slot-container { width: 132px; height: 48px; }
 
 .digit-box { width: 25%; height: 100%; position: relative; overflow: hidden; }
 .digit-strip { display: flex; flex-direction: column; width: 100%; will-change: transform; }
 
-/* Высота ячейки должна совпадать с контейнером для идеального центрирования */
 .d-cell {
-    height: 70px;
+    height: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #000;
-    -webkit-text-stroke: 1.5px #22c55e;
-    font-size: 3rem;
+    -webkit-text-stroke: 1.2px #22c55e;
+    font-size: 1.7rem;
 }
 
-@media (min-width: 1024px) {
-    .d-cell {
-        height: 92px;
-        -webkit-text-stroke: 2.5px #22c55e;
-        font-size: 4.5rem;
-    }
-}
-
-/* Стартовые позиции для каждой цифры 0-4-5-1 */
 .strip-0 { transform: translateY(0); }
-.strip-4 { transform: translateY(calc(-92px * 4)); }
-.strip-5 { transform: translateY(calc(-92px * 5)); }
-.strip-1 { transform: translateY(calc(-92px * 1)); }
-
-@media (max-width: 1024px) {
-    .strip-4 { transform: translateY(calc(-70px * 4)); }
-    .strip-5 { transform: translateY(calc(-70px * 5)); }
-    .strip-1 { transform: translateY(calc(-70px * 1)); }
-}
+.strip-4 { transform: translateY(calc(-48px * 4)); }
+.strip-5 { transform: translateY(calc(-48px * 5)); }
+.strip-1 { transform: translateY(calc(-48px * 1)); }
 
 .roll-active {
-    animation: roll 2s cubic-bezier(0.45, 0.05, 0.55, 0.95) both;
+    animation-duration: 2s;
+    animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 0.95);
+    animation-fill-mode: both;
 }
+.roll-active.strip-0 { animation-name: roll-0; }
+.roll-active.strip-4 { animation-name: roll-4; }
+.roll-active.strip-5 { animation-name: roll-5; }
+.roll-active.strip-1 { animation-name: roll-1; }
 
-@keyframes roll {
-    /* Прокручиваем на 10 цифр вперед (полный круг) */
-    to { transform: translateY(calc(-92px * 10)); }
-}
-
-@media (max-width: 1024px) {
-    @keyframes roll {
-        to { transform: translateY(calc(-70px * 10)); }
-    }
-}
+@keyframes roll-0 { to { transform: translateY(calc(-48px * 10)); } }
+@keyframes roll-4 { to { transform: translateY(calc(-48px * 14)); } }
+@keyframes roll-5 { to { transform: translateY(calc(-48px * 15)); } }
+@keyframes roll-1 { to { transform: translateY(calc(-48px * 11)); } }
 </style>

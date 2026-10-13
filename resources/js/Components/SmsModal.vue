@@ -5,6 +5,8 @@ const props = defineProps<{
     isOpen: boolean;
     phone: string;
     isTerminal?: boolean;
+    error?: string;
+    resetKey?: number;
 }>()
 
 const emit = defineEmits(['close', 'verify'])
@@ -26,7 +28,13 @@ const isActuallyTerminal = computed(() => {
 })
 
 const code = ref('')
+const locked = ref(false)
 const inputRef = ref<HTMLInputElement | null>(null)
+
+const resetCode = () => {
+    code.value = ''
+    locked.value = false
+}
 
 // Логика ввода
 const handleInput = (digit: string) => { if (code.value.length < 4) code.value += digit }
@@ -40,10 +48,14 @@ onMounted(() => {
 
 watch(code, (newVal) => {
     if (newVal.length > 4) code.value = newVal.slice(0, 4)
-    if (code.value.length === 4) {
+    if (code.value.length === 4 && !locked.value) {
+        locked.value = true
         setTimeout(() => { emit('verify', code.value) }, 300)
     }
 })
+
+watch(() => props.resetKey, () => resetCode())
+watch(() => props.isOpen, (open) => { if (open) resetCode() })
 
 // Базовый класс для кнопок
 const btnClass = "h-16 bg-[#0a0a0a] border border-[#22c55e]/20 rounded-2xl flex items-center justify-center text-3xl font-mono font-black text-[#22c55e] transition-all active:scale-95 active:bg-[#22c55e] active:text-black cursor-pointer select-none";
@@ -67,7 +79,9 @@ const btnClass = "h-16 bg-[#0a0a0a] border border-[#22c55e]/20 rounded-2xl flex 
             />
 
             <h2 class="text-[#22c55e] text-xl font-black mb-1 tracking-widest uppercase italic">Подтверждение</h2>
-            <p class="text-white/30 text-[9px] mb-8 uppercase tracking-widest">Код для {{ phone }}</p>
+            <p class="text-white/30 text-[9px] mb-3 uppercase tracking-widest">PIN из SMS для {{ phone }}</p>
+            <p v-if="error" class="text-red-400 text-[10px] mb-6 uppercase tracking-widest text-center">{{ error }}</p>
+            <div v-else class="mb-5"></div>
 
             <div class="flex gap-3 mb-10 cursor-pointer" @click="!isActuallyTerminal && inputRef?.focus()">
                 <div v-for="i in 4" :key="i" class="w-14 h-18 border-2 rounded-xl flex items-center justify-center text-3xl font-black transition-colors"

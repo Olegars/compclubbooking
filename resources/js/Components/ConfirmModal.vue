@@ -7,6 +7,7 @@ const props = defineProps<{
     mode: 'auth' | 'booking'
     isTerminal?: boolean // true = с кнопками (клуб), false = только клавиатура (сайт)
     data?: any
+    notice?: string
 }>()
 
 const emit = defineEmits(['close', 'confirm'])
@@ -17,12 +18,7 @@ const page = usePage()
 const isLoggedIn = computed(() => !!(page.props.auth?.user || page.props.user))
 
 // ЛОГИКА: Нужен ли телефон?
-const requiresPhone = computed(() => {
-    if (props.isTerminal) return true
-    if (props.mode === 'auth') return true
-    if (props.mode === 'booking' && isLoggedIn.value) return false
-    return true
-})
+const requiresPhone = computed(() => !(props.mode === 'booking' && isLoggedIn.value))
 
 const formattedPhone = computed(() => {
     let val = rawPhone.value
@@ -101,6 +97,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
                 </h2>
                 <p v-if="requiresPhone" class="text-white/20 text-[9px] uppercase tracking-widest font-bold">Введите номер телефона</p>
                 <p v-else class="text-white/20 text-[9px] uppercase tracking-widest font-bold">Подтвердите оплату бронирования</p>
+                <p v-if="notice" class="mt-3 text-red-400 text-[10px] uppercase tracking-widest font-bold">{{ notice }}</p>
             </div>
 
             <template v-if="requiresPhone">

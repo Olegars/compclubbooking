@@ -14,6 +14,9 @@ import ZoneInfoModal from '@/Components/ZoneInfoModal.vue'
 import TariffsModal from '@/Components/TariffsModal.vue'
 import AgeWarningModal from '@/Components/AgeWarningModal.vue'
 import GamesBookingModal from '@/Components/GamesBookingModal.vue'
+import YooKassaWidgetModal from '@/Components/YooKassaWidgetModal.vue'
+import PaymentReceiptConsent from '@/Components/PaymentReceiptConsent.vue'
+import FiscalReceiptModal from '@/Components/FiscalReceiptModal.vue'
 import Shop from '@/Pages/User/Shop.vue'
 import { pointInZone } from '@/utils/zoneGeom'
 
@@ -45,6 +48,9 @@ const props = withDefaults(defineProps<{
 
 const page = usePage()
 const isAuthenticated = computed(() => !!(page.props.auth?.user || page.props.user))
+const sessionUser = computed(() => (page.props as any).auth?.user || null)
+const sessionBalance = computed(() => Math.round(Number(sessionUser.value?.balance ?? 0)))
+const sessionLabel = computed(() => sessionUser.value?.name || sessionUser.value?.phone || '')
 
 type BookingGame = {
     id: number;
@@ -171,6 +177,28 @@ const showShopOverlay = ref(false)
 const showInfoModal = ref(false)
 const showTariffsModal = ref(false)
 const showGamesModal = ref(false)
+const confirmMode = ref<'auth' | 'booking'>('booking')
+const terminalPane = ref<'book' | 'topup'>('book')
+const terminalIntent = ref<'book' | 'topup' | 'login'>('book')
+const sessionHint = ref('')
+const smsError = ref('')
+const smsReset = ref(0)
+const smsBusy = ref(false)
+const topUpDigits = ref('500')
+const topUpMethod = ref<'card' | 'sbp'>('sbp')
+const topUpHint = ref('')
+const sendReceipt = ref(false)
+const isPaymentWidgetOpen = ref(false)
+const isPaymentProcessing = ref(false)
+const paymentToken = ref('')
+const paymentId = ref('')
+const isReceiptModalOpen = ref(false)
+const receiptModalUrl = ref<string | null>(null)
+const receiptModalAmount = ref<number | null>(null)
+const receiptPaymentId = ref<string | null>(null)
+const receiptFiscalStatus = ref<string | null>(null)
+const receiptIsStub = ref(false)
+const topUpAmount = computed(() => Number(topUpDigits.value || '0'))
 
 const selectedRoomInfo = ref<{
     title?: string
@@ -632,6 +660,17 @@ watch([availableGames, selectedIds, isGamesLoading, gamesError], async () => {
 let startNudgeTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
+    if (props.isTerminal) {
+        const after = sessionStorage.getItem('terminal-after')
+        sessionStorage.removeItem('terminal-after')
+        if (after && isAuthenticated.value) {
+            if (after === 'topup') terminalPane.value = 'topup'
+            if (after === 'book') sessionHint.value = 'Вход выполнен. Проверьте места и нажмите «Оплатить с баланса».'
+            if (after === 'login') sessionHint.value = 'Вход выполнен.'
+        }
+        window.addEventListener('pointerdown', bumpIdle)
+        bumpIdle()
+    }
     updatePanelScrollState()
     window.addEventListener('resize', updatePanelScrollState)
     window.addEventListener('resize', syncMapPanHints)
@@ -922,6 +961,15 @@ const showGuestPhoneModal = ref(false)
 const isGuestAuthFlow = ref(false)
 const authError = ref('')
 
+const IDLE_MS = 180_000
+let idleTimer: ReturnType<typeof setTimeout> | null = null
+
+const normalizePhone = (raw: string) => {
+    const digits = String(raw || '').replace(/\D/g, '')
+    if (digits.length < 10) return ''
+    return '+7' + digits.slice(-10)
+}
+
 const buildReturnUrl = () => {
     const params = new URLSearchParams()
     if (selectedIds.value.length) params.set('seat', selectedIds.value.join(','))
@@ -930,76 +978,239 @@ const buildReturnUrl = () => {
     return `${window.location.pathname}?${params.toString()}`
 }
 
-const startBooking = () => {
-    if (!selectedIds.value.length || isBookingLoading.value || isProcessing.value) return
-
-    if (!props.isTerminal && !isAuthenticated.value) {
-        authError.value = ''
-        isGuestAuthFlow.value = true
-        showGuestPhoneModal.value = true
-        showOverlay.value = true
-        return
-    }
-
-    checkAgeRestriction()
+const rememberTerminalIntent = () => {
+    if (!props.isTerminal) return
+    sessionStorage.setItem('terminal-after', terminalIntent.value)
 }
 
-const handleGuestPhone = async (payload: any) => {
-    const phone = payload?.phone || payload || ''
+const bumpIdle = () => {
+    if (!props.isTerminal || !isAuthenticated.value) return
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => {
+        if (isPaymentWidgetOpen.value || showSmsModal.value || isProcessing.value || isPaymentProcessing.value) {
+            bumpIdle()
+            return
+        }
+        logoutTerminal()
+    }, IDLE_MS)
+}
+
+const logoutTerminal = () => {
+    const path = window.location.pathname
+    router.post('/logout', {
+        redirect_to: path.startsWith('/terminal') ? path : '/terminal',
+    })
+}
+
+const pushTopUpDigit = (digit: string) => {
+    if (topUpDigits.value.length >= 6) return
+    topUpDigits.value = topUpDigits.value === '0' ? digit : topUpDigits.value + digit
+}
+
+const openTopUpForShortage = (message?: string) => {
+    const need = Math.max(100, Math.ceil(totalAmount.value - sessionBalance.value))
+    topUpDigits.value = String(need)
+    topUpHint.value = message || `Для брони не хватает ${need} ₽`
+    terminalPane.value = 'topup'
+    showConfirmModal.value = false
+    showOverlay.value = false
+}
+
+const openTerminalLogin = (intent: 'login' | 'topup' = 'login') => {
+    terminalIntent.value = intent
+    confirmMode.value = 'auth'
+    authError.value = ''
+    showGuestPhoneModal.value = false
+    showConfirmModal.value = true
+    showOverlay.value = true
+}
+
+const openTerminalTopUp = () => {
+    topUpHint.value = ''
+    if (!isAuthenticated.value) {
+        openTerminalLogin('topup')
+        return
+    }
+    terminalPane.value = 'topup'
+}
+
+const sendLoginCode = async (phone: string) => {
     userPhone.value = phone
     authError.value = ''
-
+    smsError.value = ''
     try {
         await axios.post('/auth/send-code', { phone })
+        rememberTerminalIntent()
         showGuestPhoneModal.value = false
+        showConfirmModal.value = false
         showSmsModal.value = true
     } catch (e: any) {
         authError.value = e?.response?.data?.message || 'Не удалось отправить код'
     }
 }
 
-const handleSmsVerify = (code: string) => {
-    if (!isGuestAuthFlow.value) {
-        // Терминал: подтверждение по SMS без входа в аккаунт.
-        if (!successReceipt.value) snapshotReceipt()
-        showSmsModal.value = false
-        showSuccessModal.value = true
+const startBooking = () => {
+    if (!selectedIds.value.length || isBookingLoading.value || isProcessing.value) return
+
+    if (props.isTerminal && isAuthenticated.value && sessionBalance.value + 0.009 < totalAmount.value) {
+        openTopUpForShortage()
         return
     }
 
+    if (!isAuthenticated.value) {
+        authError.value = ''
+        terminalIntent.value = 'book'
+        confirmMode.value = 'booking'
+        if (!props.isTerminal) {
+            isGuestAuthFlow.value = true
+            showGuestPhoneModal.value = true
+            showOverlay.value = true
+            return
+        }
+    } else {
+        confirmMode.value = 'booking'
+    }
+
+    checkAgeRestriction()
+}
+
+const handleGuestPhone = async (payload: any) => {
+    const phone = normalizePhone(payload?.phone || '')
+    if (!phone) {
+        authError.value = 'Введите номер телефона'
+        return
+    }
+    await sendLoginCode(phone)
+}
+
+const cancelSms = () => {
+    showSmsModal.value = false
+    smsError.value = ''
+    smsBusy.value = false
+    sessionStorage.removeItem('terminal-after')
+}
+
+const handleSmsVerify = (code: string) => {
+    if (smsBusy.value) return
+    smsBusy.value = true
+    smsError.value = ''
     router.post('/auth/verify-code', {
         phone: userPhone.value,
         code,
         redirect_to: buildReturnUrl(),
+    }, {
+        onError: (errors) => {
+            smsError.value = (errors as any).code || 'Неверный код'
+            smsReset.value += 1
+            smsBusy.value = false
+        },
+        onFinish: () => { smsBusy.value = false },
     })
+}
+
+const reserveErrorMessage = (error: any) => {
+    const errors = error.response?.data?.errors
+    return errors?.booking?.[0]
+        || errors?.pc_ids?.[0]
+        || errors?.game_ids?.[0]
+        || errors?.balance?.[0]
+        || errors?.starts_at?.[0]
+        || error.response?.data?.message
+        || 'Ошибка транзакции.'
+}
+
+const reserveBooking = async () => {
+    isProcessing.value = true
+    try {
+        snapshotReceipt()
+        const { data } = await axios.post('/api/booking/reserve', bookingPayload.value)
+        const pins = data?.pins && typeof data.pins === 'object' ? data.pins : {}
+        if (successReceipt.value) {
+            successReceipt.value = {
+                ...successReceipt.value,
+                pins: Object.entries(pins).map(([id, pin]) => ({
+                    label: String(getComputerData(id).pcName),
+                    pin: String(pin),
+                })),
+            }
+        }
+        showSuccessModal.value = true
+        router.reload({ only: ['auth'], preserveScroll: true, preserveState: true })
+    } catch (error: any) {
+        const message = reserveErrorMessage(error)
+        if (props.isTerminal && /недостаточно/i.test(message)) {
+            openTopUpForShortage(message)
+            return
+        }
+        if (props.isTerminal) sessionHint.value = message
+        else alert(message)
+        closeAllModals()
+    } finally { isProcessing.value = false }
+}
+
+const proceedTerminalTopUp = async () => {
+    if (topUpAmount.value < 100 || isPaymentProcessing.value) return
+    isPaymentProcessing.value = true
+    topUpHint.value = ''
+    try {
+        const { data } = await axios.post('/api/billing/topup', {
+            amount: topUpAmount.value,
+            method: topUpMethod.value,
+            return_to: window.location.pathname + window.location.search,
+            send_receipt: sendReceipt.value,
+        })
+        if (data.confirmation_token && data.payment_id) {
+            paymentToken.value = data.confirmation_token
+            paymentId.value = data.payment_id
+            isPaymentWidgetOpen.value = true
+            return
+        }
+        topUpHint.value = 'Не удалось открыть форму оплаты'
+    } catch (e: any) {
+        topUpHint.value = e?.response?.data?.message || 'Сбой транзакции пополнения'
+    } finally {
+        isPaymentProcessing.value = false
+    }
+}
+
+const closePaymentWidget = () => {
+    isPaymentWidgetOpen.value = false
+    paymentToken.value = ''
+    paymentId.value = ''
+}
+
+const handleTerminalPaid = (payload: {
+    paymentId: string
+    amount: number
+    fiscal_receipt_url?: string | null
+    fiscal_status?: string | null
+}) => {
+    closePaymentWidget()
+    receiptModalUrl.value = payload.fiscal_receipt_url || null
+    receiptModalAmount.value = payload.amount
+    receiptPaymentId.value = payload.paymentId || null
+    receiptFiscalStatus.value = payload.fiscal_status || null
+    receiptIsStub.value = payload.fiscal_status === 'skipped'
+        || !!(payload.fiscal_receipt_url && String(payload.fiscal_receipt_url).includes('/receipt/stub/'))
+    isReceiptModalOpen.value = true
+    topUpHint.value = 'Баланс пополнен. Можно вернуться к брони.'
+    router.reload({ only: ['auth'], preserveScroll: true, preserveState: true })
 }
 
 // --- УПРАВЛЕНИЕ БРОНИРОВАНИЕМ ---
 const handleConfirmBooking = async (payload: any) => {
-    showConfirmModal.value = false
-    if (props.isTerminal) {
-        userPhone.value = payload.phone || payload || ''
-        snapshotReceipt()
-        setTimeout(() => { showSmsModal.value = true }, 200)
-    } else {
-        isProcessing.value = true
-        try {
-            snapshotReceipt()
-            await axios.post('/api/booking/reserve', bookingPayload.value)
-            showSuccessModal.value = true
-        } catch (error: any) {
-            const errors = error.response?.data?.errors
-            const message = errors?.booking?.[0]
-                || errors?.pc_ids?.[0]
-                || errors?.game_ids?.[0]
-                || errors?.balance?.[0]
-                || errors?.starts_at?.[0]
-                || error.response?.data?.message
-                || 'Ошибка транзакции.'
-            alert(message)
-            closeAllModals()
-        } finally { isProcessing.value = false }
+    if (!isAuthenticated.value) {
+        const phone = normalizePhone(payload?.phone || '')
+        if (!phone) {
+            authError.value = 'Введите номер телефона'
+            return
+        }
+        await sendLoginCode(phone)
+        return
     }
+
+    showConfirmModal.value = false
+    await reserveBooking()
 }
 
 const closeAllModals = () => {
@@ -1179,6 +1390,8 @@ onUnmounted(() => {
     closeAllModals()
     if (highlightTimer) clearTimeout(highlightTimer)
     if (startNudgeTimer) clearInterval(startNudgeTimer)
+    if (idleTimer) clearTimeout(idleTimer)
+    window.removeEventListener('pointerdown', bumpIdle)
     window.removeEventListener('resize', updatePanelScrollState)
     window.removeEventListener('resize', syncMapPanHints)
 })
@@ -1186,9 +1399,75 @@ onUnmounted(() => {
 
 <template>
     <component :is="layout">
-        <div class="booking-frame flex flex-col lg:flex-row bg-white/5 lg:bg-black rounded-[10px] sm:rounded-[12px] lg:rounded-[16px] border border-white/10 lg:border-[#22c55e]/30 p-0 sm:p-2 mx-auto w-full lg:w-fit h-auto lg:h-[880px] relative shadow-[0_0_50px_rgba(34,197,94,0.1)] overflow-visible lg:overflow-hidden select-none">
+        <div v-if="isTerminal" class="w-full mb-3 flex flex-col gap-3">
+            <div class="flex flex-wrap items-center gap-2">
+                <button type="button" @click="terminalPane = 'book'"
+                        :class="['px-5 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest', terminalPane === 'book' ? 'bg-[#22c55e] text-black' : 'bg-white/5 text-white/60 border border-white/10']">
+                    Бронь
+                </button>
+                <button type="button" @click="openTerminalTopUp"
+                        :class="['px-5 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest', terminalPane === 'topup' ? 'bg-[#22c55e] text-black' : 'bg-white/5 text-white/60 border border-white/10']">
+                    Пополнить баланс
+                </button>
+                <div class="ml-auto flex flex-wrap items-center gap-2">
+                    <template v-if="isAuthenticated">
+                        <span class="px-3 py-2 rounded-xl border border-white/10 text-[11px] uppercase tracking-widest text-white/70">{{ sessionLabel }}</span>
+                        <span class="px-3 py-2 rounded-xl border border-[#22c55e]/30 text-[#22c55e] font-black">{{ sessionBalance }} ₽</span>
+                        <button type="button" @click="logoutTerminal" class="px-4 py-3 rounded-xl border border-white/10 text-[11px] font-black uppercase tracking-widest text-white/50">Выйти</button>
+                    </template>
+                    <button v-else type="button" @click="openTerminalLogin('login')"
+                            class="px-5 py-3 rounded-xl bg-[#22c55e] text-black text-[11px] font-black uppercase tracking-widest">
+                        Войти по SMS
+                    </button>
+                </div>
+            </div>
+            <p v-if="sessionHint" class="text-[11px] uppercase tracking-widest text-[#22c55e]">{{ sessionHint }}</p>
+        </div>
 
-            <section class="px-2 py-3 sm:p-5 lg:p-6 border-b lg:border-b-0 lg:border-r border-white/10 lg:border-[#22c55e]/30 flex flex-col gap-4 sm:gap-3 bg-transparent lg:bg-[#080808] rounded-t-[10px] sm:rounded-t-[12px] lg:rounded-t-none lg:rounded-l-[16px] w-full lg:w-auto lg:min-w-[960px] lg:h-full lg:min-h-0 relative">
+        <div v-if="isTerminal && terminalPane === 'topup'" class="w-full rounded-[16px] border border-[#22c55e]/30 bg-[#050505] p-4 sm:p-6">
+            <div v-if="!isAuthenticated" class="py-16 text-center">
+                <h3 class="text-[#22c55e] text-2xl font-black uppercase italic mb-3">Пополнение баланса</h3>
+                <p class="text-white/40 text-sm mb-8">Сначала войдите: номер телефона и PIN из SMS.</p>
+                <button type="button" @click="openTerminalLogin('topup')" class="px-8 py-5 rounded-2xl bg-[#22c55e] text-black font-black uppercase tracking-widest">Войти по SMS</button>
+            </div>
+            <div v-else class="grid lg:grid-cols-[1fr_320px] gap-6 items-start">
+                <div>
+                    <p class="text-[10px] uppercase tracking-widest text-white/40">На счёте</p>
+                    <p class="text-5xl font-black text-[#22c55e] italic mb-2">{{ sessionBalance }} ₽</p>
+                    <p v-if="topUpHint" class="mb-4 text-sm text-amber-300">{{ topUpHint }}</p>
+                    <div class="grid grid-cols-4 gap-2 mb-4">
+                        <button v-for="amount in [300, 500, 1000, 2000]" :key="amount" type="button"
+                                @click="topUpDigits = String(amount)"
+                                :class="['py-4 rounded-xl font-black', topUpAmount === amount ? 'bg-[#22c55e] text-black' : 'bg-white/5 text-white border border-white/10']">
+                            {{ amount }}
+                        </button>
+                    </div>
+                    <div class="mb-4 rounded-2xl border border-white/10 bg-black py-6 text-center text-5xl font-black">
+                        {{ topUpAmount || 0 }} <span class="text-lg text-white/30">₽</span>
+                    </div>
+                    <div class="flex gap-2 mb-4">
+                        <button type="button" @click="topUpMethod = 'sbp'" :class="['flex-1 py-4 rounded-xl font-black uppercase text-[11px] tracking-widest', topUpMethod === 'sbp' ? 'bg-[#22c55e] text-black' : 'bg-white/5 text-white/60 border border-white/10']">СБП</button>
+                        <button type="button" @click="topUpMethod = 'card'" :class="['flex-1 py-4 rounded-xl font-black uppercase text-[11px] tracking-widest', topUpMethod === 'card' ? 'bg-[#22c55e] text-black' : 'bg-white/5 text-white/60 border border-white/10']">Карта</button>
+                    </div>
+                    <PaymentReceiptConsent v-model="sendReceipt" pay-label="Пополнить" />
+                    <button type="button" @click="proceedTerminalTopUp" :disabled="topUpAmount < 100 || isPaymentProcessing"
+                            class="mt-4 w-full py-5 rounded-2xl bg-[#22c55e] text-black font-black uppercase tracking-widest disabled:opacity-40">
+                        {{ isPaymentProcessing ? 'Подготовка...' : 'Пополнить' }}
+                    </button>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <button v-for="n in [1,2,3,4,5,6,7,8,9]" :key="n" type="button" @click="pushTopUpDigit(String(n))"
+                            class="h-16 rounded-2xl border border-[#22c55e]/30 bg-black text-2xl font-black text-[#22c55e]">{{ n }}</button>
+                    <button type="button" @click="topUpDigits = '0'" class="h-16 rounded-2xl border border-red-500/30 text-red-400 text-xs font-black uppercase">Сброс</button>
+                    <button type="button" @click="pushTopUpDigit('0')" class="h-16 rounded-2xl border border-[#22c55e]/30 bg-black text-2xl font-black text-[#22c55e]">0</button>
+                    <button type="button" @click="topUpDigits = topUpDigits.slice(0, -1) || '0'" class="h-16 rounded-2xl border border-white/10 text-white/60 text-xl">⌫</button>
+                </div>
+            </div>
+        </div>
+
+        <div v-show="!isTerminal || terminalPane === 'book'" :class="['booking-frame flex flex-col lg:flex-row bg-white/5 lg:bg-black rounded-[10px] sm:rounded-[12px] lg:rounded-[16px] border border-white/10 lg:border-[#22c55e]/30 p-0 sm:p-2 mx-auto w-full relative shadow-[0_0_50px_rgba(34,197,94,0.1)] overflow-visible lg:overflow-hidden select-none', isTerminal ? 'lg:h-[calc(100dvh-132px)]' : 'lg:w-fit lg:h-[880px]']">
+
+            <section :class="['px-2 py-3 sm:p-5 lg:p-6 border-b lg:border-b-0 lg:border-r border-white/10 lg:border-[#22c55e]/30 flex flex-col gap-4 sm:gap-3 bg-transparent lg:bg-[#080808] rounded-t-[10px] sm:rounded-t-[12px] lg:rounded-t-none lg:rounded-l-[16px] w-full lg:h-full lg:min-h-0 relative', isTerminal ? 'lg:min-w-0 lg:flex-1' : 'lg:w-auto lg:min-w-[960px]']">
                 <div ref="gamesBanner"
                      :class="['shrink-0 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 rounded-2xl border px-3 sm:px-4 py-3 transition-all duration-500',
                               highlightGames ? 'border-[#22c55e] shadow-[0_0_0_3px_rgba(34,197,94,0.22)] bg-[#22c55e]/[0.08]'
@@ -1262,7 +1541,7 @@ onUnmounted(() => {
                 </div>
             </section>
 
-            <aside class="w-full lg:w-[460px] px-2 py-4 sm:p-6 lg:p-8 flex flex-col bg-transparent lg:bg-[#050505] rounded-b-[10px] sm:rounded-b-[12px] lg:rounded-b-none lg:rounded-r-[16px] lg:h-full lg:min-h-0">
+            <aside :class="['w-full px-2 py-4 sm:p-6 lg:p-8 flex flex-col bg-transparent lg:bg-[#050505] rounded-b-[10px] sm:rounded-b-[12px] lg:rounded-b-none lg:rounded-r-[16px] lg:h-full lg:min-h-0', isTerminal ? 'lg:w-[400px]' : 'lg:w-[460px]']">
 
                 <div class="mb-5 flex justify-between items-end shrink-0">
                     <h3 class="text-[#22c55e] text-xl font-black uppercase italic tracking-widest leading-none">{{ props.clubData.name }}</h3>
@@ -1418,14 +1697,18 @@ onUnmounted(() => {
                         {{ priceError }}
                     </p>
 
-                    <button @click="selectedIds.length && !isBookingLoading && checkAgeRestriction()"
+                    <p v-if="isTerminal && isAuthenticated" class="mb-2 text-[10px] uppercase tracking-widest text-white/40">
+                        Баланс {{ sessionBalance }} ₽
+                    </p>
+                    <button @click="selectedIds.length && !isBookingLoading && startBooking()"
                             :disabled="isProcessing || isBookingLoading || !selectedIds.length"
                             :class="['group w-full p-1 bg-[#22c55e] rounded-[1rem] transition-all active:scale-95', !selectedIds.length || isProcessing || isBookingLoading ? 'opacity-30 grayscale cursor-not-allowed' : 'cursor-pointer shadow-[0_10px_30px_rgba(34,197,94,0.2)]']">
                         <div class="bg-[#0a0a0a] rounded-[0.9375rem] p-4 lg:p-5 flex justify-between items-center border border-white/10 group-hover:bg-transparent transition-all">
                             <span class="font-black uppercase text-sm text-white group-hover:text-black italic tracking-widest">
                                 <template v-if="isBookingLoading">Расчет...</template>
                                 <template v-else-if="isProcessing">Связь...</template>
-                                <template v-else>{{ isTerminal ? 'ОПЛАТИТЬ И ИГРАТЬ' : 'Подтвердить' }}</template>
+                                <template v-else-if="isTerminal">{{ isAuthenticated ? 'Оплатить с баланса' : 'Войти и оплатить' }}</template>
+                                <template v-else>Подтвердить</template>
                             </span>
                             <div class="flex flex-col items-end text-[#22c55e] group-hover:text-black leading-none font-black italic">
                                 <div class="text-4xl lg:text-5xl tracking-tighter leading-none">
@@ -1447,8 +1730,26 @@ onUnmounted(() => {
                     @confirm="handleAgeConfirm"
                 />
 
-                <ConfirmModal v-if="showConfirmModal" :isOpen="showConfirmModal" :mode="isTerminal ? 'auth' : 'booking'" :data="bookingDataForModal" @close="closeAllModals" @confirm="handleConfirmBooking" />
-                <SmsModal v-if="showSmsModal" :is-open="showSmsModal" :phone="userPhone" :is-terminal="isTerminal" @close="showSmsModal = false" @verify="handleSmsVerify" />
+                <ConfirmModal v-if="showGuestPhoneModal" :isOpen="showGuestPhoneModal" mode="auth" :notice="authError" @close="closeAllModals" @confirm="handleGuestPhone" />
+                <ConfirmModal v-if="showConfirmModal" :isOpen="showConfirmModal" :mode="confirmMode" :is-terminal="isTerminal" :notice="authError" :data="bookingDataForModal" @close="closeAllModals" @confirm="handleConfirmBooking" />
+                <SmsModal v-if="showSmsModal" :is-open="showSmsModal" :phone="userPhone" :is-terminal="isTerminal" :error="smsError" :reset-key="smsReset" @close="cancelSms" @verify="handleSmsVerify" />
+                <YooKassaWidgetModal
+                    :is-open="isPaymentWidgetOpen"
+                    :confirmation-token="paymentToken"
+                    :payment-id="paymentId"
+                    :amount="topUpAmount"
+                    @close="closePaymentWidget"
+                    @paid="handleTerminalPaid"
+                />
+                <FiscalReceiptModal
+                    :is-open="isReceiptModalOpen"
+                    :receipt-url="receiptModalUrl"
+                    :amount="receiptModalAmount"
+                    :payment-id="receiptPaymentId"
+                    :fiscal-status="receiptFiscalStatus"
+                    :is-stub="receiptIsStub"
+                    @close="isReceiptModalOpen = false"
+                />
                 <PaymentModal v-if="showSuccessModal" :isOpen="showSuccessModal" mode="booking" :data="successReceipt || bookingDataForModal" @close="handleFinalClose" />
 
                 <div v-if="showSnackOffer" class="fixed inset-0 z-[9999999] flex items-center justify-center p-4">
