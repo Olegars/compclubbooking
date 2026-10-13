@@ -1,22 +1,25 @@
-"""Шлюз АТОЛ 22 v2 Ф на стойке. Облако в LAN кассы не ходит.
+"""Шлюз АТОЛ 22 v2 Ф на Ubuntu в серверной. Облако в LAN кассы не ходит.
 
 Опрос:  GET  {FISCAL_API_BASE}/api/fiscal/targets?token=…&limit=1
 Сдача:  POST {FISCAL_API_BASE}/api/fiscal/applied
 
-Касса: Ethernet, TCP 5555, JSON-задания ДТО 10 через fptr10.dll.
+Касса стоит рядом, Ethernet, TCP 5555. Задания — JSON ДТО 10 через libfptr10.so.
 Гостевой чек смену не открывает и бумагу не печатает.
 Повтор того же external_id не пробивает второй документ: память в sqlite.
 
-На ПК стойки (не на игровом месте):
-  set FISCAL_API_BASE=https://example.club
-  set FISCAL_RELAY_TOKEN=тот же, что FISCAL_RELAY_TOKEN в облаке
-  set ATOL_HOST=192.168.x.x
-  py -3 scripts\\fiscal-atol-agent.py status
-  py -3 scripts\\fiscal-atol-agent.py open-shift
-  py -3 scripts\\fiscal-atol-agent.py
+На сервере:
+  sudo apt install ./libfptr10_*_amd64.deb
+  sudo install -d -o club-fiscal -g club-fiscal /var/lib/club-fiscal
+  # /etc/club-fiscal.env — FISCAL_API_BASE, FISCAL_RELAY_TOKEN, ATOL_HOST
+  sudo systemctl enable --now fiscal-atol-agent
 
-ДТО 10 ставится с сайта АТОЛ. Нужна 64-битная fptr10.dll рядом с 64-битным Python.
-Путь: ATOL_DLL или Program Files\\ATOL\\Drivers10\\KKT\\bin\\fptr10.dll.
+Проверка вручную:
+  set -a && . /etc/club-fiscal.env && set +a
+  python3 scripts/fiscal-atol-agent.py status
+  python3 scripts/fiscal-atol-agent.py open-shift
+
+ДТО 10 для Linux — в полном архиве драйвера, пакет libfptr10.
+Путь: ATOL_DLL или /usr/lib/x86_64-linux-gnu/libfptr10.so.
 
 Ссылка чека: FISCAL_RECEIPT_URL_TEMPLATE с полями {t} {s} {fn} {fd} {fp} {n}.
 Пусто — QR с реквизитами на https://www.nalog.gov.ru/ (приложение «Проверка чека» их читает).
@@ -34,7 +37,8 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from ctypes import CDLL, POINTER, byref, c_int, c_void_p, c_wchar_p, create_unicode_buffer
+from ctypes import CDLL, RTLD_GLOBAL, POINTER, byref, c_int, c_void_p, c_wchar_p, create_unicode_buffer
+from ctypes.util import find_library
 from pathlib import Path
 
 JSON_DATA = 65645
@@ -342,7 +346,7 @@ def handle_job(device, ledger: Ledger, job: dict, taxation: str | None, url_temp
                 return {
                     "id": job_id,
                     "outcome": "error",
-                    "error": "Смена на кассе не открыта. На стойке: fiscal-atol-agent.py open-shift",
+                    "error": "Смена на кассе не открыта. На сервере: fiscal-atol-agent.py open-shift",
                 }
         else:
             return {"id": job_id, "outcome": "error", "error": f"Неизвестный kind {kind}"}
@@ -463,7 +467,7 @@ class AtolDevice:
         if sys.platform == "win32":
             self.dll = CDLL(dll_path, winmode=0)
         else:
-            self.dll = CDLL(dll_path)
+            self.dll = CDLL(dll_path, mode=RTLD_GLOBAL)
         self.host = host
         self.port = port
         self.password = password
@@ -576,18 +580,50 @@ def _error_message(parsed: dict) -> str:
     return ""
 
 
-def find_dll() -> str:
+def driver_candidates() -> list[str]:
+    if sys.platform == "win32":
+        return [
+            r"C:\Program Files\ATOL\Drivers10\KKT\bin\fptr10.dll",
+            r"C:\Program Files (x86)\ATOL\Drivers10\KKT\bin\fptr10.dll",
+        ]
+    return [
+        "/usr/lib/x86_64-linux-gnu/libfptr10.so",
+        "/usr/lib64/libfptr10.so",
+        "/usr/lib/libfptr10.so",
+        "/usr/local/lib/libfptr10.so",
+    ]
+
+
+def find_driver() -> str:
     env = os.environ.get("ATOL_DLL", "").strip()
     if env:
         return env
-    candidates = [
-        r"C:\Program Files\ATOL\Drivers10\KKT\bin\fptr10.dll",
-        r"C:\Program Files (x86)\ATOL\Drivers10\KKT\bin\fptr10.dll",
-    ]
-    for path in candidates:
+    if sys.platform != "win32":
+        found = find_library("fptr10")
+        if found:
+            return found
+    for path in driver_candidates():
         if Path(path).exists():
             return path
-    raise SystemExit("Не найден fptr10.dll. Поставьте ДТО 10 или задайте ATOL_DLL")
+    if sys.platform == "win32":
+        raise SystemExit("Не найден fptr10.dll. Поставьте ДТО 10 или задайте ATOL_DLL")
+    raise SystemExit(
+        "Не найден libfptr10.so. Поставьте пакет libfptr10 из ДТО 10 или задайте ATOL_DLL"
+    )
+
+
+def default_ledger() -> Path:
+    override = os.environ.get("FISCAL_LEDGER", "").strip()
+    if override:
+        return Path(override)
+    if sys.platform != "win32":
+        system = Path("/var/lib/club-fiscal")
+        if os.access(system, os.W_OK) or (system.exists() is False and os.access("/var/lib", os.W_OK)):
+            return system / "ledger.sqlite"
+        base = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
+        return base / "club-fiscal" / "ledger.sqlite"
+    base = Path(os.environ.get("LOCALAPPDATA", "."))
+    return base / "club-fiscal" / "ledger.sqlite"
 
 
 def cloud_get(base: str, token: str) -> dict:
@@ -614,7 +650,7 @@ def open_device() -> AtolDevice:
     if not host:
         raise SystemExit("Задайте ATOL_HOST — IP кассы в LAN")
     port = int(os.environ.get("ATOL_PORT", "5555"))
-    device = AtolDevice(find_dll(), host, port, os.environ.get("ATOL_PASSWORD", "").strip())
+    device = AtolDevice(find_driver(), host, port, os.environ.get("ATOL_PASSWORD", "").strip())
     device.connect()
     return device
 
@@ -647,7 +683,7 @@ def loop() -> None:
         raise SystemExit("Задайте FISCAL_API_BASE и FISCAL_RELAY_TOKEN")
     taxation = os.environ.get("ATOL_TAXATION", "").strip() or None
     template = os.environ.get("FISCAL_RECEIPT_URL_TEMPLATE", "")
-    ledger_path = Path(os.environ.get("FISCAL_LEDGER", str(Path(os.environ.get("LOCALAPPDATA", ".")) / "club-fiscal" / "ledger.sqlite")))
+    ledger_path = default_ledger()
     ledger = Ledger(ledger_path)
     device_info = {"model": "ATOL 22 v2 F", "host": os.environ.get("ATOL_HOST", ""), "port": int(os.environ.get("ATOL_PORT", "5555"))}
     print(f"fiscal agent: {base} -> {device_info['host']}:{device_info['port']}", flush=True)
@@ -863,6 +899,25 @@ def self_test() -> None:
         "payload": {"fd": "11"},
     }, None, "")
     assert paper["outcome"] == "success"
+    assert any(item.endswith("libfptr10.so") for item in (
+        "/usr/lib/x86_64-linux-gnu/libfptr10.so",
+        "/usr/lib64/libfptr10.so",
+        "/usr/lib/libfptr10.so",
+        "/usr/local/lib/libfptr10.so",
+    ))
+    saved_platform = sys.platform
+    try:
+        sys.platform = "linux"
+        found = driver_candidates()
+        assert found[0].endswith("libfptr10.so")
+        assert all(not item.endswith(".dll") for item in found)
+        os.environ.pop("FISCAL_LEDGER", None)
+        ledger_path = default_ledger()
+        assert ledger_path.name == "ledger.sqlite"
+        assert "club-fiscal" in str(ledger_path)
+    finally:
+        sys.platform = saved_platform
+
     print("fiscal-atol-agent self-test ok")
 
 

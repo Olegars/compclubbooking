@@ -1,0 +1,30 @@
+# /etc/club-fiscal.env
+# FISCAL_API_BASE=https://club.example
+# FISCAL_RELAY_TOKEN=
+# ATOL_HOST=192.168.20.x
+# ATOL_PORT=5555
+# ATOL_DLL=/usr/lib/x86_64-linux-gnu/libfptr10.so
+#
+# useradd --system --home /var/lib/club-fiscal --shell /usr/sbin/nologin club-fiscal
+# install -d -o club-fiscal -g club-fiscal /var/lib/club-fiscal
+# Путь ExecStart поправьте на каталог репозитория, если он не /var/www/compclubbooking.
+
+[Unit]
+Description=Club fiscal gateway (ATOL 22 v2 F, libfptr10)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=club-fiscal
+Group=club-fiscal
+EnvironmentFile=/etc/club-fiscal.env
+Environment=FISCAL_LEDGER=/var/lib/club-fiscal/ledger.sqlite
+WorkingDirectory=/var/lib/club-fiscal
+ExecStart=/usr/bin/python3 /var/www/compclubbooking/scripts/fiscal-atol-agent.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
