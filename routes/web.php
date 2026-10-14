@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\IncidentClipRelayController;
 use App\Http\Controllers\Api\StaffPresenceRelayController;
 use App\Http\Controllers\WifiAccessController;
 use App\Http\Controllers\StorePcPassportController;
+use App\Support\ApkManifest;
 
 // Контроллеры Авторизации
 use App\Http\Controllers\Auth\SmsAuthController;
@@ -129,9 +130,11 @@ Route::get('/app.json', function () {
     $path = storage_path('app/apk/sector0451.apk');
     abort_unless(is_file($path), 404);
 
+    $manifest = ApkManifest::read($path);
+
     return response()->json([
-        'version_code' => (int) config('client_app.version_code'),
-        'version_name' => (string) config('client_app.version_name'),
+        'version_code' => $manifest['version_code'] ?? (int) config('client_app.version_code'),
+        'version_name' => $manifest['version_name'] ?? (string) config('client_app.version_name'),
         'apk_url' => url('/app.apk'),
         'size' => filesize($path),
     ]);

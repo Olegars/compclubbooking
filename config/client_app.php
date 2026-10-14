@@ -2,10 +2,11 @@
 
 return [
     /*
-    | Клиентское Android-приложение. version_code должен быть больше,
-    | чем у установленного APK, иначе приложение не начнёт самообновление.
-    | После выкладки нового sector0451.apk увеличьте CLIENT_APP_VERSION_CODE.
+    | Запасные числа, если из sector0451.apk не прочитался манифест.
+    | Живой /app.json берёт version_code и version_name из самого файла.
+    | Объявлять версию выше файла нельзя: телефон скачает тот же APK
+    | и будет ставить его по кругу, потому что номер сборки не вырастет.
     */
-    'version_code' => (int) env('CLIENT_APP_VERSION_CODE', 5),
-    'version_name' => (string) env('CLIENT_APP_VERSION_NAME', '1.2.0'),
+    'version_code' => (int) env('CLIENT_APP_VERSION_CODE', 4),
+    'version_name' => (string) env('CLIENT_APP_VERSION_NAME', '1.1.2'),
 ];

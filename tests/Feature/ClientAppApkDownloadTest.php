@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Support\ApkManifest;
 use Tests\TestCase;
 
 class ClientAppApkDownloadTest extends TestCase
@@ -27,8 +28,18 @@ class ClientAppApkDownloadTest extends TestCase
             $this->markTestSkipped('APK file is missing from storage/app/apk');
         }
 
+        $manifest = ApkManifest::read($path);
+        $this->assertNotNull($manifest);
+
+        config([
+            'client_app.version_code' => 99,
+            'client_app.version_name' => '9.9.9',
+        ]);
+
         $this->get('/app.json')
             ->assertOk()
+            ->assertJsonPath('version_code', $manifest['version_code'])
+            ->assertJsonPath('version_name', $manifest['version_name'])
             ->assertJsonStructure(['version_code', 'version_name', 'apk_url', 'size']);
     }
 }

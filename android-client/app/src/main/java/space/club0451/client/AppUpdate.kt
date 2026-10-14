@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -34,6 +35,7 @@ class AppUpdate(
     private var polling = false
     private var pendingInstall = false
     private var remoteCode = 0
+    private var remoteSize = 0L
 
     private val completeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -88,12 +90,21 @@ class AppUpdate(
                 conn.disconnect()
                 val json = JSONObject(body)
                 val code = json.optInt("version_code", 0)
+                val size = json.optLong("size", 0L)
                 val apkUrl = json.optString("apk_url").ifBlank { "${BuildConfig.CLUB_URL.trimEnd('/')}/app.apk" }
                 activity.runOnUiThread {
                     remoteCode = code
-                    prefs.edit().putInt(KEY_REMOTE_CODE, code).apply()
-                    if (code <= BuildConfig.VERSION_CODE) {
-                        markUpToDate()
+                    remoteSize = size
+                    prefs.edit()
+                        .putInt(KEY_REMOTE_CODE, code)
+                        .putLong(KEY_REMOTE_SIZE, size)
+                        .apply()
+                    val sameStaleFile = code > BuildConfig.VERSION_CODE
+                        && size > 0L
+                        && code == prefs.getInt(KEY_IGNORED_CODE, 0)
+                        && size == prefs.getLong(KEY_IGNORED_SIZE, -1L)
+                    if (code <= BuildConfig.VERSION_CODE || sameStaleFile) {
+                        if (sameStaleFile) hideBar() else markUpToDate()
                     } else {
                         download(apkUrl, code)
                     }
@@ -112,7 +123,9 @@ class AppUpdate(
         return remote > BuildConfig.VERSION_CODE
     }
 
-    private fun markUpToDate() {
+    private fun markUpToDate(keepIgnored: Boolean = false) {
+        val ignoredCode = if (keepIgnored) maxOf(remoteCode, prefs.getInt(KEY_REMOTE_CODE, 0)) else 0
+        val ignoredSize = if (keepIgnored) maxOf(remoteSize, prefs.getLong(KEY_REMOTE_SIZE, 0L)) else 0L
         pendingInstall = false
         stopPolling()
         hideBar()
@@ -123,7 +136,12 @@ class AppUpdate(
             } catch (_: Exception) {
             }
         }
-        prefs.edit().clear().apply()
+        val edit = prefs.edit().clear()
+        if (keepIgnored && ignoredCode > BuildConfig.VERSION_CODE && ignoredSize > 0L) {
+            edit.putInt(KEY_IGNORED_CODE, ignoredCode)
+            edit.putLong(KEY_IGNORED_SIZE, ignoredSize)
+        }
+        edit.apply()
         val file = updateFile()
         if (file.exists()) file.delete()
     }
@@ -239,6 +257,12 @@ class AppUpdate(
             showBar("Файл обновления не найден")
             return
         }
+        // Сервер может объявить version_code выше, чем в самом APK.
+        // Ставить такой файл нельзя: номер сборки не вырастет, и загрузка пойдёт по кругу.
+        if (archiveVersionCode(file) <= BuildConfig.VERSION_CODE.toLong()) {
+            rememberStaleOffer()
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !activity.packageManager.canRequestPackageInstalls()
         ) {
@@ -274,6 +298,28 @@ class AppUpdate(
         activity.startActivity(install)
     }
 
+    private fun rememberStaleOffer() {
+        markUpToDate(keepIgnored = true)
+    }
+
+    private fun archiveVersionCode(file: File): Long {
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            activity.packageManager.getPackageArchiveInfo(
+                file.absolutePath,
+                PackageManager.PackageInfoFlags.of(0),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            activity.packageManager.getPackageArchiveInfo(file.absolutePath, 0)
+        } ?: return 0L
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            info.versionCode.toLong()
+        }
+    }
+
     private fun updateFile(): File {
         val dir = activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             ?: File(activity.filesDir, "Download")
@@ -296,5 +342,8 @@ class AppUpdate(
         private const val APK_NAME = "update.apk"
         private const val KEY_DOWNLOAD_ID = "download_id"
         private const val KEY_REMOTE_CODE = "remote_code"
+        private const val KEY_REMOTE_SIZE = "remote_size"
+        private const val KEY_IGNORED_CODE = "ignored_code"
+        private const val KEY_IGNORED_SIZE = "ignored_size"
     }
 }
