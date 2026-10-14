@@ -35,6 +35,14 @@ class AdminAlerts
                     ->count();
             }
 
+            $fire = 0;
+            if ($clubId && Schema::hasTable('fire_alarms')) {
+                $fire = (int) DB::table('fire_alarms')
+                    ->where('club_id', $clubId)
+                    ->where('status', 'active')
+                    ->count();
+            }
+
             return [
                 'pending_orders' => $pendingOrders,
                 'sos' => $sos,
@@ -45,6 +53,7 @@ class AdminAlerts
                     : 0,
                 'tournament_inbox' => $tournamentInbox,
                 'edo_open' => $edoOpen,
+                'fire' => $fire,
             ];
         } catch (\Throwable $e) {
             Log::warning('AdminAlerts::counts failed: '.$e->getMessage());
@@ -63,6 +72,7 @@ class AdminAlerts
             'avito_unread' => 0,
             'tournament_inbox' => 0,
             'edo_open' => 0,
+            'fire' => 0,
         ];
     }
 }

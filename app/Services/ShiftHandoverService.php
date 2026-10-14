@@ -8,7 +8,9 @@ use App\Models\ProductUnit;
 use App\Models\Shift;
 use App\Models\ShiftIntern;
 use App\Models\ShiftInventory;
+use App\Services\Fire\FireAlarmService;
 use App\Support\AdminAlerts;
+use App\Support\AdminLocation;
 use App\Support\AdminShift;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -362,6 +364,7 @@ class ShiftHandoverService
             'admin_shift' => $shift,
             'handover' => $this->pagePayload($viewer),
             'admin_alerts' => AdminAlerts::counts(),
+            'fire' => app(FireAlarmService::class)->liveForClub(AdminLocation::id($viewer)),
         ];
     }
 

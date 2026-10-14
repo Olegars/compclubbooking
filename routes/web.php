@@ -472,6 +472,9 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::post('/orders/{id}/fulfill-scan', [AdminController::class, 'fulfillOrderScan']);
 
         Route::get('/incidents', [AdminController::class, 'incidents'])->name('admin.incidents');
+        Route::get('/fire', [\App\Http\Controllers\Admin\FireAlarmController::class, 'index'])->name('admin.fire');
+        Route::post('/fire/panel', [\App\Http\Controllers\Admin\FireAlarmController::class, 'savePanel']);
+        Route::post('/fire/detectors', [\App\Http\Controllers\Admin\FireAlarmController::class, 'saveDetectors']);
         Route::get('/incidents/clips/{job}', [IncidentClipController::class, 'stream'])->name('admin.incidents.clip');
 
         Route::prefix('api')->group(function () {
@@ -489,6 +492,8 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
             Route::get('/sos-alerts', [AdminController::class, 'sosAlerts']);
             Route::post('/sos-alerts/{id}/ack', [AdminController::class, 'ackSosAlert']);
             Route::post('/input-alerts/{id}/ack', [AdminController::class, 'ackInputAlert']);
+            Route::get('/fire/live', [\App\Http\Controllers\Admin\FireAlarmController::class, 'live']);
+            Route::post('/fire/reset', [\App\Http\Controllers\Admin\FireAlarmController::class, 'reset']);
             Route::get('/active-calls', [ChatController::class, 'getActiveCalls']);
             Route::post('/calls/{id}/resolve', [ChatController::class, 'resolveCall']);
         });
@@ -906,6 +911,7 @@ Route::prefix('api/shell')->group(function () {
     Route::post('/qr/challenge', [ShellApiController::class, 'qrChallenge']);
     Route::get('/qr/status', [ShellApiController::class, 'qrStatus']);
     Route::get('/balance', [ShellApiController::class, 'getBalance']);
+    Route::get('/fire', [\App\Http\Controllers\Api\ShellFireController::class, 'show']);
     Route::get('/transfer/targets', [ShellApiController::class, 'transferTargets']);
     Route::post('/transfer/preview', [ShellApiController::class, 'transferPreview']);
     Route::post('/transfer/confirm', [ShellApiController::class, 'transferConfirm']);

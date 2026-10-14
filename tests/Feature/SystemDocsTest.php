@@ -287,6 +287,19 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('сборщик только по своей сборке (assembled_by) или своему заказу (assignee)', $blob);
     }
 
+    public function test_docs_describe_fire_lock(): void
+    {
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $this->assertStringContainsString('Пожарная сигнализация (Болид)', $blob);
+        $this->assertStringContainsString('/admin/fire', $blob);
+        $this->assertStringContainsString('/api/shell/fire', $blob);
+        $this->assertStringContainsString('fire:listen', $blob);
+        $this->assertStringContainsString('Срочно покиньте комнату', $blob);
+        $this->assertStringContainsString('Отмена тревоги', $blob);
+        $this->assertStringContainsString('FireAlarmTest.php', $blob);
+    }
+
     public function test_docs_describe_mcp_boundaries(): void
     {
         $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

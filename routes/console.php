@@ -18,6 +18,7 @@ Schedule::command('staff:bonus-close')
     ->timezone('Europe/Moscow')
     ->withoutOverlapping();
 Schedule::command('reactor:update-statuses')->everyMinute()->withoutOverlapping();
+Schedule::command('fire:listen')->everyMinute()->withoutOverlapping(2);
 Schedule::command('reactor:check-reviews')->dailyAt('10:00')->withoutOverlapping();
 Schedule::command('reactor:sync-payments')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('reactor:sync-faceit')->everyFifteenMinutes()->withoutOverlapping();

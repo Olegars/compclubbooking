@@ -13,6 +13,7 @@ Route::prefix('shell')->group(function () {
     Route::post('/qr/challenge', [ShellApiController::class, 'qrChallenge']);
     Route::get('/qr/status', [ShellApiController::class, 'qrStatus']);
     Route::get('/balance', [ShellApiController::class, 'getBalance']);
+    Route::get('/fire', [\App\Http\Controllers\Api\ShellFireController::class, 'show']);
     Route::get('/games', [ShellApiController::class, 'getGames']);
     Route::get('/quick-apps', [ShellApiController::class, 'getQuickApps']);
     Route::get('/games/tops', [ShellApiController::class, 'getGameTops']);

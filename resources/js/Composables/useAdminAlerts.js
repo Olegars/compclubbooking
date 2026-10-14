@@ -10,6 +10,7 @@ const counts = reactive({
     avito_unread: 0,
     tournament_inbox: 0,
     edo_open: 0,
+    fire: 0,
 })
 
 let lastAvitoUnread = null

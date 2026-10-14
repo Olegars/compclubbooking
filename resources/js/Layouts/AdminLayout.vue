@@ -54,7 +54,11 @@ const shift = computed(() => page.props.admin_shift as any)
 const shiftIsActive = computed(() => Boolean(shift.value?.is_mine || shift.value?.is_intern_on_shift || shift.value?.duty === 'active'))
 const overlay = ref<string | null>(shift.value?.overlay || null)
 const kicking = ref(false)
+const fireLive = ref({ count: 0, alarms: [] })
+const fireResetting = ref(false)
 let statusTimer: number | null = null
+let lastFireCount = 0
+let lastFireBeep = 0
 
 const shiftLabel = computed(() => {
     if (isStoreRole.value) {
@@ -110,6 +114,17 @@ const pollShiftStatus = async () => {
     try {
         const { data } = await axios.get('/admin/api/shifts/status')
         applyAlerts(data?.admin_alerts)
+        const nextFire = data?.fire
+        if (nextFire && Array.isArray(nextFire.alarms)) {
+            const count = Number(nextFire.count) || 0
+            fireLive.value = { count, alarms: nextFire.alarms }
+            const now = Date.now()
+            if (count > lastFireCount || (count > 0 && now - lastFireBeep > 8000)) {
+                playAvitoPing(page.props.avito_ringtone_url)
+                lastFireBeep = now
+            }
+            lastFireCount = count
+        }
         const next = data?.admin_shift?.overlay || null
         if (next) overlay.value = next
         if (next === 'handed_over') {
@@ -117,6 +132,19 @@ const pollShiftStatus = async () => {
         }
     } catch {
         /* сеть / 401 после кика */
+    }
+}
+
+const resetFireAlarm = async () => {
+    if (fireResetting.value) return
+    fireResetting.value = true
+    try {
+        const { data } = await axios.post('/admin/api/fire/reset')
+        if (data?.live) fireLive.value = data.live
+    } catch {
+        /* пульт недоступен — баннер остаётся */
+    } finally {
+        fireResetting.value = false
     }
 }
 
@@ -177,6 +205,22 @@ onUnmounted(() => {
 
 <template>
     <div class="admin-ui min-h-screen bg-[#050505] flex font-sans text-white selection:bg-cyan-500 selection:text-black relative">
+        <div v-if="fireLive.count > 0"
+             class="fixed top-0 inset-x-0 z-[80] flex items-center gap-4 px-5 py-3 bg-red-600 text-white shadow-[0_0_40px_rgba(220,38,38,0.55)]">
+            <span class="text-lg font-black uppercase tracking-[0.2em] animate-pulse">Пожар</span>
+            <span class="text-sm font-semibold">
+                {{ fireLive.alarms.map(row => row.space).join(' · ') }}
+            </span>
+            <span class="ml-auto text-[11px] uppercase tracking-wider text-white/80 hidden md:block">
+                Сессию снимет датчик, когда дым выветрится
+            </span>
+            <button type="button"
+                    class="shrink-0 px-4 py-2 rounded-xl bg-black text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
+                    :disabled="fireResetting"
+                    @click="resetFireAlarm">
+                {{ fireResetting ? 'Сброс…' : 'Отмена тревоги' }}
+            </button>
+        </div>
         <AvatarWatermarkBg />
 
         <aside class="relative z-10 w-[320px] bg-[#020202]/92 backdrop-blur-md border-r border-white/5 flex flex-col shrink-0 min-h-screen select-none">
@@ -585,6 +629,15 @@ onUnmounted(() => {
                               class="ml-auto min-w-[22px] px-2 py-0.5 rounded-full bg-red-500 text-black text-[10px] font-black tabular-nums text-center shadow-[0_0_12px_rgba(239,68,68,0.45)]"
                               :class="counts.sos > 0 ? 'animate-pulse' : ''">
                             {{ counts.incidents }}
+                        </span>
+                    </Link>
+                    <Link href="/admin/fire"
+                          class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
+                          :class="isActive('/admin/fire') ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
+                        <span>🔥</span> Пожар
+                        <span v-if="counts.fire > 0"
+                              class="ml-auto min-w-[22px] px-2 py-0.5 rounded-full bg-red-500 text-black text-[10px] font-black tabular-nums text-center animate-pulse">
+                            {{ counts.fire }}
                         </span>
                     </Link>
                         </div>
