@@ -1149,6 +1149,12 @@ class SystemDocs
                         'path' => '/app.apk',
                         'audience' => 'Игрок / Техник',
                     ],
+                    [
+                        'title' => 'Полезное (stopRKN)',
+                        'description' => "Кнопка «Полезное» в шапке сайта, справа от «Скачать приложение». Только для вошедшего игрока: у гостя кнопки нет, прямой адрес уводит на /login.\n\nВиндовс — установщик GET /tools/stoprkn.exe (storage/app/tools/stopRKN-setup.exe). Андроид — GET /tools/stoprkn.apk (storage/app/tools/stopRKN.apk, пакет ru.stoprkn.app). Линукс — раздел есть, сборки нет.\n\nИсходники: C:\\Qt\\myIPproxy (dist\\stopRKN-setup.exe) и C:\\Qt\\stopRKN_apk.",
+                        'path' => '/tools/stoprkn.apk',
+                        'audience' => 'Игрок',
+                    ],
                 ],
             ],
             [

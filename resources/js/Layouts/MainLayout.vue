@@ -70,6 +70,8 @@ const isAuthenticated = computed(() => !!(page.props.auth?.user || page.props.us
 const isClientApp = /CompClubClient/i.test(navigator.userAgent || '')
 const apkNoticeOpen = ref(false)
 let apkNoticeTimer: ReturnType<typeof setTimeout> | null = null
+const usefulOpen = ref(false)
+const usefulRoot = ref<HTMLElement | null>(null)
 
 const onApkDownloadClick = () => {
     if (apkNoticeTimer) clearTimeout(apkNoticeTimer)
@@ -256,6 +258,13 @@ const stopFlipClock = () => {
     }
 }
 
+const onUsefulPointerDown = (event: PointerEvent) => {
+    if (!usefulOpen.value) return
+    const root = usefulRoot.value
+    if (root && event.target instanceof Node && root.contains(event.target)) return
+    usefulOpen.value = false
+}
+
 onMounted(() => {
     clearReceiptSession()
     try {
@@ -265,6 +274,7 @@ onMounted(() => {
         }
     } catch { /* ignore */ }
     startFlipClock()
+    document.addEventListener('pointerdown', onUsefulPointerDown)
 })
 
 // Layout живёт между страницами Inertia — гасим попап пополнения/чека при уходе.
@@ -273,11 +283,13 @@ watch(() => page.url, () => {
     closePaymentWidget()
     isTopUpInputOpen.value = false
     isPaymentProcessing.value = false
+    usefulOpen.value = false
 })
 
 onUnmounted(() => {
     stopFlipClock()
     if (apkNoticeTimer) clearTimeout(apkNoticeTimer)
+    document.removeEventListener('pointerdown', onUsefulPointerDown)
 })
 </script>
 
@@ -310,7 +322,7 @@ onUnmounted(() => {
             </div>
         </header>
 
-        <div class="relative z-10 w-full px-4 sm:px-4 lg:px-6 pb-3 sm:pb-4">
+        <div class="relative z-30 w-full px-4 sm:px-4 lg:px-6 pb-3 sm:pb-4">
             <nav class="site-nav max-w-7xl mx-auto">
                 <div class="site-nav-links">
                     <Link href="/" class="nav-btn" :class="{ 'active': $page.url === '/' }">Главная</Link>
@@ -328,6 +340,46 @@ onUnmounted(() => {
                         download="sector0451.apk"
                         @click="onApkDownloadClick"
                     >Скачать приложение</a>
+                    <div v-if="isAuthenticated" ref="usefulRoot" class="useful-wrap">
+                        <button
+                            type="button"
+                            class="nav-btn"
+                            :class="{ active: usefulOpen }"
+                            aria-haspopup="true"
+                            :aria-expanded="usefulOpen"
+                            @click="usefulOpen = !usefulOpen"
+                        >Полезное</button>
+                        <div v-if="usefulOpen" class="useful-panel">
+                            <section class="useful-section">
+                                <p class="useful-label">Виндовс</p>
+                                <a
+                                    href="/tools/stoprkn.exe"
+                                    class="useful-item"
+                                    download="stopRKN-setup.exe"
+                                    @click="usefulOpen = false"
+                                >
+                                    <span>stopRKN</span>
+                                    <span>Скачать</span>
+                                </a>
+                            </section>
+                            <section class="useful-section">
+                                <p class="useful-label">Андроид</p>
+                                <a
+                                    href="/tools/stoprkn.apk"
+                                    class="useful-item"
+                                    download="stopRKN.apk"
+                                    @click="onApkDownloadClick(); usefulOpen = false"
+                                >
+                                    <span>stopRKN</span>
+                                    <span>Скачать</span>
+                                </a>
+                            </section>
+                            <section class="useful-section">
+                                <p class="useful-label">Линукс</p>
+                                <p class="useful-empty">Сборки пока нет</p>
+                            </section>
+                        </div>
+                    </div>
                 </div>
                 <div class="masthead-tools">
                     <button
@@ -637,6 +689,62 @@ onUnmounted(() => {
 .nav-btn-download {
     @apply !text-[#22c55e] !border-[#22c55e]/30 hover:!bg-[#22c55e]/15;
     text-decoration: none;
+}
+
+.useful-wrap {
+    position: relative;
+    flex: 0 0 auto;
+}
+.useful-panel {
+    position: absolute;
+    top: calc(100% + 0.45rem);
+    left: 0;
+    z-index: 40;
+    width: min(16.5rem, calc(100vw - 2rem));
+    padding: 0.85rem;
+    background: #0a0a0a;
+    border: 1px solid rgba(34, 197, 94, 0.35);
+    border-radius: 1rem;
+    box-shadow: 0 0 40px rgba(34, 197, 94, 0.18);
+}
+.useful-label {
+    margin: 0.7rem 0 0.35rem;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.4);
+}
+.useful-section:first-child .useful-label {
+    margin-top: 0;
+}
+.useful-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    border-radius: 0.75rem;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    color: #22c55e;
+    text-decoration: none;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-style: italic;
+}
+.useful-item:hover {
+    background: rgba(34, 197, 94, 0.12);
+}
+.useful-empty {
+    margin: 0;
+    padding: 0.55rem 0.75rem;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .nav-btn-icon {

@@ -307,6 +307,31 @@ Route::post('/api/terminal/shop/checkout', [ShopController::class, 'terminalChec
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth'])->group(function () {
+    Route::get('/tools/stoprkn.apk', function () {
+        $path = storage_path('app/tools/stopRKN.apk');
+        abort_unless(is_file($path), 404);
+
+        $response = response()->file($path);
+        $response->headers->set('Content-Type', 'application/vnd.android.package-archive');
+        $response->headers->set('Content-Disposition', 'attachment; filename="stopRKN.apk"');
+        $response->headers->set('X-Content-Type-Options', 'nosniff');
+        $response->headers->set('Cache-Control', 'private, no-transform');
+
+        return $response;
+    })->name('tools.stoprkn.apk');
+    Route::get('/tools/stoprkn.exe', function () {
+        $path = storage_path('app/tools/stopRKN-setup.exe');
+        abort_unless(is_file($path), 404);
+
+        $response = response()->file($path);
+        $response->headers->set('Content-Type', 'application/octet-stream');
+        $response->headers->set('Content-Disposition', 'attachment; filename="stopRKN-setup.exe"');
+        $response->headers->set('X-Content-Type-Options', 'nosniff');
+        $response->headers->set('Cache-Control', 'private, no-transform');
+
+        return $response;
+    })->name('tools.stoprkn.exe');
+
     Route::get('/auth/nickname', [SmsAuthController::class, 'showNickname'])->name('auth.nickname');
     Route::post('/auth/nickname', [SmsAuthController::class, 'saveNickname'])->name('auth.nickname.store');
 
