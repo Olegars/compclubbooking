@@ -14,6 +14,7 @@ class StopRknDownloadTest extends TestCase
     {
         $this->get('/tools/stoprkn.exe')->assertRedirect(route('login'));
         $this->get('/tools/stoprkn.apk')->assertRedirect(route('login'));
+        $this->get('/tools/rockid.apk')->assertRedirect(route('login'));
     }
 
     public function test_player_can_download_windows_installer_and_android_apk(): void
@@ -43,5 +44,15 @@ class StopRknDownloadTest extends TestCase
             ->assertOk()
             ->assertHeader('content-type', 'application/vnd.android.package-archive')
             ->assertDownload('stopRKN.apk');
+
+        $rock = storage_path('app/tools/rockID.apk');
+        if (is_file($rock)) {
+            $this->actingAs($user)
+                ->get('/tools/rockid.apk')
+                ->assertOk()
+                ->assertHeader('content-type', 'application/vnd.android.package-archive')
+                ->assertHeader('x-content-type-options', 'nosniff')
+                ->assertDownload('rockID.apk');
+        }
     }
 }

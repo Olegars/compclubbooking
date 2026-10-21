@@ -365,6 +365,15 @@ onUnmounted(() => {
                             <section class="useful-section">
                                 <p class="useful-label">Андроид</p>
                                 <a
+                                    href="/tools/rockid.apk"
+                                    class="useful-item"
+                                    download="rockID.apk"
+                                    @click="onApkDownloadClick(); usefulOpen = false"
+                                >
+                                    <span>rockID</span>
+                                    <span>Скачать</span>
+                                </a>
+                                <a
                                     href="/tools/stoprkn.apk"
                                     class="useful-item"
                                     download="stopRKN.apk"
@@ -733,6 +742,9 @@ onUnmounted(() => {
     letter-spacing: 0.08em;
     text-transform: uppercase;
     font-style: italic;
+}
+.useful-item + .useful-item {
+    margin-top: 0.4rem;
 }
 .useful-item:hover {
     background: rgba(34, 197, 94, 0.12);

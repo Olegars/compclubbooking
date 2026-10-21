@@ -307,6 +307,18 @@ Route::post('/api/terminal/shop/checkout', [ShopController::class, 'terminalChec
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth'])->group(function () {
+    Route::get('/tools/rockid.apk', function () {
+        $path = storage_path('app/tools/rockID.apk');
+        abort_unless(is_file($path), 404);
+
+        $response = response()->file($path);
+        $response->headers->set('Content-Type', 'application/vnd.android.package-archive');
+        $response->headers->set('Content-Disposition', 'attachment; filename="rockID.apk"');
+        $response->headers->set('X-Content-Type-Options', 'nosniff');
+        $response->headers->set('Cache-Control', 'private, no-transform');
+
+        return $response;
+    })->name('tools.rockid.apk');
     Route::get('/tools/stoprkn.apk', function () {
         $path = storage_path('app/tools/stopRKN.apk');
         abort_unless(is_file($path), 404);
