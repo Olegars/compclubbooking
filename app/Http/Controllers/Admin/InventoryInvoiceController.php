@@ -13,7 +13,7 @@ class InventoryInvoiceController extends Controller
     public function parse(Request $request, InventoryInvoiceOcrService $ocr)
     {
         $request->validate([
-            'photo' => ['required', 'file', 'max:8192'],
+            'photo' => ['required', 'file', 'mimes:jpeg,jpg,png,webp', 'max:8192'],
         ]);
 
         try {

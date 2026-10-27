@@ -40,6 +40,10 @@ return [
         'secret_key' => env('YOOKASSA_SECRET_KEY'),
     ],
 
+    'avito' => [
+        'webhook_secret' => env('AVITO_WEBHOOK_SECRET'),
+    ],
+
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
         'bot_username' => env('TELEGRAM_BOT_USERNAME'),

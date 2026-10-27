@@ -15,11 +15,16 @@ class ShellQrChallenge extends Model
 
     protected $fillable = [
         'token',
+        'poll_secret',
         'computer_id',
         'status',
         'user_id',
         'booking_id',
         'expires_at',
+    ];
+
+    protected $hidden = [
+        'poll_secret',
     ];
 
     protected $casts = [

@@ -79,8 +79,10 @@ class GsiAceAwardTest extends TestCase
             'booking_id' => $booking->id,
             'event' => 'achievement',
             'game' => 'cs2',
+            'match_id' => 'match',
+            'round' => 3,
             'achievement_code' => 'ace',
-            'match_round_key' => 'cs2:match:3',
+            'match_round_key' => 'client-can-change-this',
         ];
         foreach ([1, 2, 3] as $i) {
             $this->postJson('/api/shell/gsi', $payload)->assertOk();

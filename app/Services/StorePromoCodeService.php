@@ -6,6 +6,7 @@ use App\Models\StoreClient;
 use App\Models\StoreOrder;
 use App\Models\StorePromoCode;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class StorePromoCodeService
@@ -32,39 +33,48 @@ class StorePromoCodeService
      */
     public function applyToOrder(StoreOrder $order, string $code, ?StoreClient $client = null): StorePromoCode
     {
-        $promo = $this->findActive($code);
-        if (! $promo) {
-            throw new RuntimeException('Промокод не найден или уже использован');
-        }
+        return DB::transaction(function () use ($order, $code, $client) {
+            $code = strtoupper(trim($code));
+            $promo = StorePromoCode::query()->where('code', $code)->lockForUpdate()->first();
+            if (! $promo || ! $promo->isRedeemable()) {
+                throw new RuntimeException('Промокод не найден или уже использован');
+            }
 
-        $owner = User::query()->find($promo->user_id);
-        if ($client && $owner && ! $this->phonesMatch((string) $client->phone, (string) $owner->phone)) {
-            throw new RuntimeException('Промокод привязан к другому гостю');
-        }
+            $owner = User::query()->find($promo->user_id);
+            if (! $client || ! $owner || ! $this->phonesMatch((string) $client->phone, (string) $owner->phone)) {
+                throw new RuntimeException('Промокод привязан к другому гостю');
+            }
 
-        $gross = (float) $order->total;
-        $percent = max(1, min(30, (int) $promo->percent));
-        $discount = round($gross * ($percent / 100), 2);
-        if ($discount <= 0) {
-            throw new RuntimeException('Нечего списывать по промокоду');
-        }
+            $gross = (float) $order->total;
+            $percent = max(1, min(30, (int) $promo->percent));
+            $discount = round($gross * ($percent / 100), 2);
+            if ($discount <= 0) {
+                throw new RuntimeException('Нечего списывать по промокоду');
+            }
 
-        $note = trim((string) $order->notes);
-        $line = 'Lucky Seat '.$promo->code.': −'.$percent.'% на периферию (−'.((int) $discount).' ₽)';
-        $order->update([
-            'total' => max(0, round($gross - $discount, 2)),
-            'promo_code_id' => $promo->id,
-            'discount_amount' => $discount,
-            'notes' => $note === '' ? $line : $note."\n".$line,
-        ]);
+            $claimed = StorePromoCode::query()
+                ->whereKey($promo->id)
+                ->where('status', StorePromoCode::STATUS_ACTIVE)
+                ->update([
+                    'status' => StorePromoCode::STATUS_USED,
+                    'store_order_id' => $order->id,
+                    'used_at' => now(),
+                ]);
+            if ($claimed !== 1) {
+                throw new RuntimeException('Промокод не найден или уже использован');
+            }
 
-        $promo->update([
-            'status' => StorePromoCode::STATUS_USED,
-            'store_order_id' => $order->id,
-            'used_at' => now(),
-        ]);
+            $note = trim((string) $order->notes);
+            $line = 'Lucky Seat '.$promo->code.': −'.$percent.'% на периферию (−'.((int) $discount).' ₽)';
+            $order->update([
+                'total' => max(0, round($gross - $discount, 2)),
+                'promo_code_id' => $promo->id,
+                'discount_amount' => $discount,
+                'notes' => $note === '' ? $line : $note."\n".$line,
+            ]);
 
-        return $promo->fresh() ?? $promo;
+            return $promo->fresh() ?? $promo;
+        });
     }
 
     private function phonesMatch(string $a, string $b): bool
@@ -72,7 +82,7 @@ class StorePromoCodeService
         $da = preg_replace('/\D+/', '', $a) ?? '';
         $db = preg_replace('/\D+/', '', $b) ?? '';
         if ($da === '' || $db === '') {
-            return true;
+            return false;
         }
 
         return substr($da, -10) === substr($db, -10);

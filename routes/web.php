@@ -523,7 +523,8 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
                 ->middleware('role:owner');
             Route::post('/computers/throne-reset', [AdminController::class, 'resetThrone'])
                 ->middleware('role:owner');
-            Route::post('/computers/diskless', [AdminController::class, 'enqueueDisklessCommand']);
+            Route::post('/computers/diskless', [AdminController::class, 'enqueueDisklessCommand'])
+                ->middleware('role:owner');
             Route::post('/computers/resync', [AdminController::class, 'enqueueImageResync']);
             Route::post('/computers/rollback', [AdminController::class, 'enqueueImageRollback']);
             Route::post('/golden-image/verify', [AdminController::class, 'verifyGoldenRevision']);

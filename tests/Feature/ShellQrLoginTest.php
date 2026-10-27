@@ -102,6 +102,10 @@ class ShellQrLoginTest extends TestCase
 
         $status = $this->qr->status($issued['token']);
         $this->assertSame('consumed', $status['status']);
+        $this->assertArrayNotHasKey('user', $status);
+
+        $full = $this->qr->status($issued['token'], $issued['poll_secret']);
+        $this->assertSame($this->user->phone, $full['user']['phone'] ?? null);
     }
 
     public function test_redeem_without_booking_returns_needs_booking(): void

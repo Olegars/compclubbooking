@@ -163,10 +163,8 @@ class ShellApiController extends Controller
     {
         try {
             Log::info('Shell login request', [
-                'payload' => $request->all(),
-                'content_type' => $request->header('Content-Type'),
+                'terminal_id' => $request->input('terminal_id'),
                 'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
             ]);
 
             $request->validate([
@@ -179,40 +177,28 @@ class ShellApiController extends Controller
             $phone = (string) $request->phone;
             $pin = (string) $request->pin;
             $terminalId = (int) $request->terminal_id;
+            $phoneDigits = preg_replace('/\D+/', '', $phone) ?: 'unknown';
+            $pinKey = 'shell-pin:'.$phoneDigits;
+            $ipKey = 'shell-pin-ip:'.$request->ip();
+            // HTTP 200: QML на 4xx показывает errorString и не читает JSON.
+            if (RateLimiter::tooManyAttempts($pinKey, 8) || RateLimiter::tooManyAttempts($ipKey, 30)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Слишком много попыток. Подождите несколько минут.',
+                ]);
+            }
+            RateLimiter::hit($pinKey, 600);
+            RateLimiter::hit($ipKey, 60);
 
             $user = User::where('phone', $phone)->first();
             if (!$user) {
-                Log::warning('Shell login: user not found', ['phone' => $phone]);
-                // HTTP 200: QML показывает reply->errorString() на 4xx и глотает JSON.
-                return response()->json(['status' => 'error', 'message' => 'Пользователь не найден']);
+                Log::warning('Shell login: rejected', ['terminal_id' => $terminalId]);
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Неверный телефон или PIN.',
+                ]);
             }
-
-            $candidates = Booking::query()
-                ->where('user_id', $user->id)
-                ->whereIn('status', ['paid', 'confirmed', 'active', 'pending', 'pending_payment', 'waiting', 'new'])
-                ->orderByDesc('id')
-                ->limit(10)
-                ->get(['id', 'status', 'pin_code', 'computer_id', 'pc_ids', 'starts_at', 'ends_at'])
-                ->map(fn ($b) => [
-                    'id' => $b->id,
-                    'status' => $b->status,
-                    'computer_id' => $b->computer_id,
-                    'pc_ids' => $b->pc_ids,
-                    'pin_code' => $b->pin_code,
-                    'pin_match' => (string) ($b->pin_code ?? '') === $pin,
-                    'pc_match' => (int) $b->computer_id === $terminalId,
-                    'starts_at' => optional($b->starts_at)?->toDateTimeString(),
-                    'ends_at' => optional($b->ends_at)?->toDateTimeString(),
-                ])
-                ->all();
-
-            Log::info('Shell login: booking candidates', [
-                'user_id' => $user->id,
-                'phone' => $phone,
-                'pin' => $pin,
-                'terminal_id' => $terminalId,
-                'candidates' => $candidates,
-            ]);
 
             $booking = Booking::where('user_id', $user->id)
                 ->where('pin_code', $pin)
@@ -243,15 +229,12 @@ class ShellApiController extends Controller
                 } else {
                     Log::warning('Shell login: no matching booking', [
                         'user_id' => $user->id,
-                        'phone' => $phone,
-                        'pin' => $pin,
                         'terminal_id' => $terminalId,
-                        'candidates' => $candidates,
                     ]);
 
                     return response()->json([
                         'status' => 'error',
-                        'message' => 'Неверный PIN-код, либо сессия уже была активирована.',
+                        'message' => 'Неверный телефон или PIN.',
                     ]);
                 }
             }
@@ -332,11 +315,14 @@ class ShellApiController extends Controller
                 Log::warning('Power touch after login failed: '.$e->getMessage());
             }
 
-            $this->applyTvNetworkPolicy($terminalId, 'session_active');
+            if ($loginComputer) {
+                $this->applyTvNetworkPolicy($loginComputer, 'session_active');
+            }
 
             $primaryReceipt = collect($fiscalReceipts)
                 ->first(fn ($r) => filled($r['fiscal_receipt_url'] ?? null));
 
+            RateLimiter::clear($pinKey);
             return response()->json([
                 'status' => 'success',
                 'message' => 'Авторизация успешна.',
@@ -393,6 +379,16 @@ class ShellApiController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Терминал не найден']);
         }
 
+        $storedHwid = strtolower(trim((string) $computer->hwid));
+        $givenHwid = strtolower(trim((string) $request->input('hwid', '')));
+        if ($storedHwid !== '' && ! hash_equals($storedHwid, $givenHwid)) {
+            return response()->json(['status' => 'error', 'message' => 'Терминал не подтверждён'], 403);
+        }
+        if (RateLimiter::tooManyAttempts('shell-qr:'.$computer->id, 30)) {
+            return response()->json(['status' => 'error', 'message' => 'Слишком много QR. Подождите.'], 429);
+        }
+        RateLimiter::hit('shell-qr:'.$computer->id, 60);
+
         $features = app(\App\Services\ClubFeatureService::class);
         $payload = ['features' => $features->shellPayloadForComputer($computer)];
         if (! $features->enabled($computer->club_id ? (int) $computer->club_id : null, 'qr_login')) {
@@ -418,9 +414,10 @@ class ShellApiController extends Controller
     {
         $data = $request->validate([
             'token' => 'required|uuid',
+            'poll_secret' => 'nullable|string|max:80',
         ]);
 
-        return response()->json($qr->status($data['token']));
+        return response()->json($qr->status($data['token'], $data['poll_secret'] ?? null));
     }
 
     /**
@@ -2223,6 +2220,9 @@ class ShellApiController extends Controller
                 'scheduled' => $scheduled,
             ]);
         } catch (\Exception $e) {
+            if ($e->getMessage() === 'Недостаточно средств') {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
             Log::error('Shell shop checkout error: ' . $e->getMessage(), [
                 'terminal_id' => $request->terminal_id,
                 'items' => $qtyByProduct ?? null,
@@ -3067,7 +3067,10 @@ class ShellApiController extends Controller
                     Log::warning('Fan reconcile after logout failed: '.$e->getMessage());
                 }
 
-                $this->applyTvNetworkPolicy((int) $termId, 'session_idle');
+                $tv = Computer::query()->find((int) $termId);
+                if ($tv) {
+                    $this->applyTvNetworkPolicy($tv, 'session_idle');
+                }
 
                 $fanState = ['available' => false];
                 try {
@@ -3360,31 +3363,23 @@ class ShellApiController extends Controller
                 'pull_attempts' => 'nullable|integer|min:0|max:50',
                 'mac_address' => 'nullable|string|max:32',
                 'lan_ip' => 'nullable|ip',
+                'hwid' => 'nullable|string|max:128',
             ]);
 
             $terminalId = (int) $request->terminal_id;
             $state = (string) $request->state;
             $attempts = (int) $request->input('pull_attempts', 0);
-            $extra = array_filter([
-                'mac' => $request->input('mac_address'),
-                'ip' => $request->input('lan_ip'),
-            ], fn ($v) => is_string($v) && $v !== '');
-
-            if (! empty($extra['mac'])) {
-                $computer = Computer::query()->find($terminalId);
-                if ($computer) {
-                    $norm = app(\App\Services\WakeOnLan::class)->normalizeMac((string) $extra['mac']);
-                    if ($norm && $computer->mac_address !== $norm) {
-                        $computer->update(['mac_address' => $norm]);
-                    }
-                }
+            $computer = Computer::query()->find($terminalId);
+            if ($computer) {
+                $this->rememberTvAddress($computer, $request);
+                $computer->refresh();
             }
 
             Cache::put('shell_ui:'.$terminalId, [
                 'state' => $state,
                 'pull_attempts' => $attempts,
                 'at' => now()->toIso8601String(),
-            ] + $extra, now()->addHours(6));
+            ], now()->addHours(6));
 
             Log::info('Shell UI state', [
                 'terminal_id' => $terminalId,
@@ -3392,7 +3387,9 @@ class ShellApiController extends Controller
                 'pull_attempts' => $attempts,
             ]);
 
-            $action = $this->applyTvNetworkPolicy($terminalId, $state, $extra);
+            $action = $computer
+                ? $this->applyTvNetworkPolicy($computer, $state)
+                : 'none';
 
             return response()->json([
                 'status' => 'success',
@@ -3409,26 +3406,66 @@ class ShellApiController extends Controller
     }
 
     /**
-     * Queue MikroTik isolate/restore for TV terminals only.
-     *
-     * @param  array<string, string>  $extra
+     * Записать MAC/IP телевизора один раз, только если HWID уже совпал.
+     * Чужой адрес в очередь MikroTik не кладём.
      */
-    private function applyTvNetworkPolicy(int $terminalId, string $state, array $extra = []): string
+    private function rememberTvAddress(Computer $computer, Request $request): void
     {
-        $computer = Computer::query()->find($terminalId);
-        if (! $computer || $computer->kind !== Computer::KIND_TV) {
+        if ($computer->kind !== Computer::KIND_TV) {
+            return;
+        }
+        $storedHwid = strtolower(trim((string) $computer->hwid));
+        $givenHwid = strtolower(trim((string) $request->input('hwid', '')));
+        if ($storedHwid === '' || ! hash_equals($storedHwid, $givenHwid)) {
+            return;
+        }
+        $patch = [];
+        if (trim((string) $computer->mac_address) === '') {
+            $mac = app(\App\Services\WakeOnLan::class)->normalizeMac((string) $request->input('mac_address', ''));
+            if ($mac) {
+                $patch['mac_address'] = $mac;
+            }
+        }
+        $ip = trim((string) $request->input('lan_ip', ''));
+        if (trim((string) $computer->lan_ip) === '' && filter_var($ip, FILTER_VALIDATE_IP)) {
+            $patch['lan_ip'] = $ip;
+        }
+        if ($patch !== []) {
+            $computer->update($patch);
+        }
+    }
+
+    /**
+     * Isolate/restore только по серверной сессии и адресу, уже записанному за терминалом.
+     */
+    private function applyTvNetworkPolicy(Computer $computer, string $state): string
+    {
+        if ($computer->kind !== Computer::KIND_TV) {
             return 'none';
         }
 
-        return match ($state) {
-            'session_idle' => tap('isolate_network', function () use ($terminalId, $extra) {
-                ShellIsolateRelayController::queueIsolate($terminalId, $extra + ['reason' => 'session_idle']);
-            }),
-            'session_active' => tap('restore_network', function () use ($terminalId, $extra) {
-                ShellIsolateRelayController::queueRestore($terminalId, $extra + ['reason' => 'session_active']);
-            }),
-            default => 'none',
-        };
+        $active = Booking::query()
+            ->where('status', 'active')
+            ->where('computer_id', $computer->id)
+            ->exists();
+        $extra = array_filter([
+            'mac' => $computer->mac_address,
+            'ip' => $computer->lan_ip,
+            'reason' => $active ? 'session_active' : 'session_idle',
+        ], fn ($v) => is_string($v) && $v !== '');
+
+        if ($state === 'session_active' && $active) {
+            ShellIsolateRelayController::queueRestore((int) $computer->id, $extra);
+
+            return 'restore_network';
+        }
+        if ($state === 'session_idle' && ! $active) {
+            ShellIsolateRelayController::queueIsolate((int) $computer->id, $extra);
+
+            return 'isolate_network';
+        }
+
+        return 'none';
     }
 
     /**

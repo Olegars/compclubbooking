@@ -390,6 +390,9 @@ class ShopController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            if ($e->getMessage() === 'Недостаточно средств') {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
             Log::error("Reactor Shop Error: " . $e->getMessage());
             return response()->json(['message' => 'Ошибка сервера при проведении платежа: ' . $e->getMessage()], 500);
         }

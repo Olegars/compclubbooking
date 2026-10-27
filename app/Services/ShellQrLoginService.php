@@ -16,6 +16,7 @@ use App\Services\GameBookingService;
 use App\Services\UserCloudSettingsService;
 use App\Services\WrongSeatLoginService;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -49,6 +50,7 @@ class ShellQrLoginService
             ->update(['status' => ShellQrChallenge::STATUS_EXPIRED]);
 
         $token = (string) Str::uuid();
+        $pollSecret = bin2hex(random_bytes(16));
         $expiresAt = $now->addSeconds(max(60, app(\App\Services\ClubFeatureService::class)->int(
             $computer->club_id ? (int) $computer->club_id : null,
             'qr_login',
@@ -58,6 +60,7 @@ class ShellQrLoginService
 
         ShellQrChallenge::create([
             'token' => $token,
+            'poll_secret' => $pollSecret,
             'computer_id' => $computer->id,
             'status' => ShellQrChallenge::STATUS_PENDING,
             'expires_at' => $expiresAt,
@@ -67,6 +70,7 @@ class ShellQrLoginService
 
         return [
             'token' => $token,
+            'poll_secret' => $pollSecret,
             'expires_at' => $expiresAt->toIso8601String(),
             'qr_payload' => $payload,
             'computer' => [
@@ -79,7 +83,7 @@ class ShellQrLoginService
     /**
      * @return array<string, mixed>
      */
-    public function status(string $token): array
+    public function status(string $token, ?string $pollSecret = null): array
     {
         $challenge = $this->findChallenge($token);
         if (! $challenge) {
@@ -88,8 +92,12 @@ class ShellQrLoginService
 
         $this->expireIfNeeded($challenge);
         $challenge->refresh();
+        $shell = $this->pollSecretMatches($challenge, $pollSecret);
 
         if ($challenge->status === ShellQrChallenge::STATUS_CONSUMED) {
+            if (! $shell) {
+                return ['status' => 'consumed', 'message' => 'Сессия открыта'];
+            }
             $user = $challenge->user_id ? User::query()->find($challenge->user_id) : null;
             $booking = $challenge->booking_id ? Booking::query()->find($challenge->booking_id) : null;
             if (! $user || ! $booking) {
@@ -207,7 +215,19 @@ class ShellQrLoginService
     public function bookFromQr(User $user, string $token, int $durationMinutes): array
     {
         $this->assertValidDuration($durationMinutes);
-        $challenge = $this->pendingChallengeOrFail($token);
+
+        return DB::transaction(function () use ($user, $token, $durationMinutes) {
+            $challenge = $this->lockPendingOrFail($token);
+
+            return $this->bookLocked($user, $challenge, $durationMinutes);
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function bookLocked(User $user, ShellQrChallenge $challenge, int $durationMinutes): array
+    {
         $computer = Computer::query()->findOrFail($challenge->computer_id);
         $terminalId = (int) $computer->id;
         $clubId = (int) $computer->club_id;
@@ -298,6 +318,33 @@ class ShellQrLoginService
             ->first();
     }
 
+    private function pollSecretMatches(ShellQrChallenge $challenge, ?string $pollSecret): bool
+    {
+        $stored = (string) $challenge->poll_secret;
+        $given = (string) $pollSecret;
+
+        return $stored !== '' && $given !== '' && hash_equals($stored, $given);
+    }
+
+    private function lockPendingOrFail(string $token): ShellQrChallenge
+    {
+        $challenge = ShellQrChallenge::query()->where('token', $token)->lockForUpdate()->first();
+        if (! $challenge) {
+            throw ValidationException::withMessages([
+                'token' => 'Код не найден.',
+            ]);
+        }
+        $this->expireIfNeeded($challenge);
+        $challenge->refresh();
+        if (! $challenge->isPending()) {
+            throw ValidationException::withMessages([
+                'token' => 'Код истёк — обновите QR на терминале и отсканируйте снова.',
+            ]);
+        }
+
+        return $challenge;
+    }
+
     private function pendingChallengeOrFail(string $token): ShellQrChallenge
     {
         $challenge = $this->findChallenge($token);
@@ -341,6 +388,22 @@ class ShellQrLoginService
      * @return array<string, mixed>
      */
     private function activateAndConsume(
+        User $user,
+        ShellQrChallenge $challenge,
+        Booking $booking,
+        ?int $forcePaidMinutes = null
+    ): array {
+        return DB::transaction(function () use ($user, $challenge, $booking, $forcePaidMinutes) {
+            $challenge = $this->lockPendingOrFail($challenge->token);
+
+            return $this->consumeLocked($user, $challenge, $booking, $forcePaidMinutes);
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function consumeLocked(
         User $user,
         ShellQrChallenge $challenge,
         Booking $booking,

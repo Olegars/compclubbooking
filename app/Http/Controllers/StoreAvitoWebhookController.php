@@ -10,7 +10,13 @@ class StoreAvitoWebhookController extends Controller
 {
     public function __invoke(Request $request, StoreAvitoMessengerService $messenger)
     {
-        $payload = $request->all();
+        $secret = trim((string) config('services.avito.webhook_secret'));
+        $got = (string) ($request->query('token') ?: $request->header('X-Avito-Webhook-Token', ''));
+        if ($secret === '' || ! hash_equals($secret, $got)) {
+            abort(403);
+        }
+
+        $payload = $request->except(['token']);
         Log::info('Avito webhook hit', [
             'type' => data_get($payload, 'payload.type'),
             'chat_id' => $messenger->webhookMessage($payload)['chat_id'] ?? null,

@@ -134,6 +134,7 @@ class GuestClipTest extends TestCase
         config([
             'services.telegram.bot_token' => 'test-token',
             'services.telegram.bot_username' => 'clubclipsbot',
+            'services.telegram.webhook_secret' => 'tg-test-secret',
             'services.telegram.clips_auto' => false,
             'services.telegram.clips_chat_id' => null,
         ]);
@@ -146,7 +147,8 @@ class GuestClipTest extends TestCase
         ]);
         $user->forceFill(['telegram_link_token' => 'abcdeffedcbaabcdeffedcba'])->save();
 
-        $this->postJson('/api/telegram/webhook', [
+        $this->withHeaders(['X-Telegram-Bot-Api-Secret-Token' => 'tg-test-secret'])
+            ->postJson('/api/telegram/webhook', [
             'message' => [
                 'chat' => ['id' => 424242, 'username' => 'stalker'],
                 'text' => '/start abcdeffedcbaabcdeffedcba',

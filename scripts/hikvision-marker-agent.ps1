@@ -114,6 +114,12 @@ function Invoke-Isapi([string]$Method, [string]$Url, [string]$Body, [string]$Log
     }
 }
 
+function Test-RtspUrl([string]$Url) {
+    if ($Url -notmatch '^rtsp://[A-Za-z0-9._~:/?#\[\]@!$&()*+,;=%\-]+$') {
+        throw "rtsp url rejected"
+    }
+}
+
 function Test-ClipJob([object]$Resp) {
     if ($null -eq $Resp -or -not $Resp.enabled) { return $false }
     $jobs = @($Resp.jobs)
@@ -138,6 +144,7 @@ function Invoke-AssemblyClipPass {
         $rtsp = [string]$job.rtsp
         if (-not $rtsp) { throw "no rtsp in job $id" }
         $rtsp = $rtsp.Replace("{login}", [uri]::EscapeDataString($login)).Replace("{password}", [uri]::EscapeDataString($password))
+        Test-RtspUrl $rtsp
         $seconds = 60
         if ($null -ne $job.max_seconds) { $seconds = [Math]::Max(30, [int]$job.max_seconds) }
         $ffBin = $ffmpeg.Source
@@ -213,6 +220,7 @@ function Invoke-IncidentClipPass {
         $rtsp = [string]$job.rtsp
         if (-not $rtsp) { throw "no rtsp in job $id" }
         $rtsp = $rtsp.Replace("{login}", [uri]::EscapeDataString($login)).Replace("{password}", [uri]::EscapeDataString($password))
+        Test-RtspUrl $rtsp
         $seconds = 45
         if ($null -ne $job.max_seconds) { $seconds = [Math]::Max(5, [int]$job.max_seconds) }
         Invoke-IncidentFfmpeg -Rtsp $rtsp -OutFile $tmpMp4 -Seconds $seconds

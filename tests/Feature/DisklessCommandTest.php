@@ -42,10 +42,10 @@ class DisklessCommandTest extends TestCase
             'hwid' => 'diskless-hwid-0001',
         ]);
         $this->admin = Admin::query()->create([
-            'name' => 'Supervisor',
-            'email' => 'diskless.supervisor@test.local',
+            'name' => 'Owner',
+            'email' => 'diskless.owner@test.local',
             'password' => 'password',
-            'role' => 'supervisor',
+            'role' => 'owner',
             'pay_type' => 'shift',
             'club_id' => $this->club->id,
         ]);
@@ -204,5 +204,29 @@ class DisklessCommandTest extends TestCase
                 'disk_mode' => 'image',
             ])
             ->assertStatus(422);
+    }
+
+    public function test_supervisor_cannot_queue_super_client(): void
+    {
+        $supervisor = Admin::query()->create([
+            'name' => 'Lead',
+            'email' => 'diskless.lead@test.local',
+            'password' => 'password',
+            'role' => 'supervisor',
+            'pay_type' => 'shift',
+            'club_id' => $this->club->id,
+        ]);
+        $this->postJson('/api/shell/power/heartbeat', [
+            'hwid' => $this->computer->hwid,
+        ])->assertOk();
+
+        $this->actingAs($supervisor, 'admin')
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->postJson('/admin/api/computers/diskless', [
+                'computer_id' => $this->computer->id,
+                'action' => 'enable_sc',
+                'disk_mode' => 'image',
+            ])
+            ->assertForbidden();
     }
 }

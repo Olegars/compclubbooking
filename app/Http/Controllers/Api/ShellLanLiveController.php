@@ -446,15 +446,23 @@ class ShellLanLiveController extends Controller
 
         $achievement = null;
         if ($event === 'achievement') {
-            try {
-                $achievement = app(\App\Services\GsiAchievementService::class)->award(
-                    $user,
-                    $booking,
-                    (string) ($request->input('achievement_code', '')),
-                    (string) ($request->input('match_round_key', '')),
-                );
-            } catch (\Throwable $e) {
-                report($e);
+            $storedHwid = strtolower(trim((string) $computer->hwid));
+            $givenHwid = strtolower(trim((string) $request->input('hwid', '')));
+            $matchId = trim((string) ($snap['match_id'] ?? ''));
+            $hwidOk = $storedHwid === '' || hash_equals($storedHwid, $givenHwid);
+            if ($hwidOk && $matchId !== '') {
+                $round = max(0, (int) ($data['round'] ?? 0));
+                $key = $snap['game'].':'.$matchId.':'.$round;
+                try {
+                    $achievement = app(\App\Services\GsiAchievementService::class)->award(
+                        $user,
+                        $booking,
+                        (string) ($request->input('achievement_code', '')),
+                        $key,
+                    );
+                } catch (\Throwable $e) {
+                    report($e);
+                }
             }
         }
 
@@ -675,23 +683,28 @@ class ShellLanLiveController extends Controller
         if (! $computer) {
             return null;
         }
+        $onTerminal = function ($q) use ($terminalId) {
+            $q->where('computer_id', $terminalId);
+            $term = (string) $terminalId;
+            if (DB::connection()->getDriverName() === 'pgsql') {
+                $q->orWhereJsonContains('pc_ids', $term);
+            } else {
+                $q->orWhere('pc_ids', 'like', '%"'.$term.'"%');
+            }
+        };
         $bookingId = (int) $request->input('booking_id', $request->query('booking_id', 0));
         $booking = null;
         if ($bookingId > 0) {
-            $booking = Booking::query()->where('id', $bookingId)->where('status', 'active')->first();
+            $booking = Booking::query()
+                ->where('id', $bookingId)
+                ->where('status', 'active')
+                ->where($onTerminal)
+                ->first();
         }
         if (! $booking) {
             $booking = Booking::query()
                 ->where('status', 'active')
-                ->where(function ($q) use ($terminalId) {
-                    $q->where('computer_id', $terminalId);
-                    $term = (string) $terminalId;
-                    if (DB::connection()->getDriverName() === 'pgsql') {
-                        $q->orWhereJsonContains('pc_ids', $term);
-                    } else {
-                        $q->orWhere('pc_ids', 'like', '%"'.$term.'"%');
-                    }
-                })
+                ->where($onTerminal)
                 ->latest('id')
                 ->first();
         }

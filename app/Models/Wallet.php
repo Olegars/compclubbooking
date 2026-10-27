@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use RuntimeException;
 
 class Wallet extends Model {
     protected $fillable = ['user_id', 'deposit_balance', 'bonus_balance', 'bonus_minutes', 'total_spent'];
@@ -83,8 +84,9 @@ class Wallet extends Model {
 
         $leftover = (float) (DB::table('wallets')->where('id', $this->id)->value('balance') ?? 0);
         if ($leftover > 0) {
+            $leftoverSql = number_format($leftover, 2, '.', '');
             DB::table('wallets')->where('id', $this->id)->update([
-                'deposit_balance' => DB::raw('COALESCE(deposit_balance, 0) + ' . $leftover),
+                'deposit_balance' => DB::raw('COALESCE(deposit_balance, 0) + '.$leftoverSql),
                 'balance' => 0,
             ]);
         }
@@ -119,17 +121,20 @@ class Wallet extends Model {
      */
     public function debitSpendable(float $amount): float
     {
-        $amount = abs((float) $amount);
+        $amount = round(abs((float) $amount), 2);
         if ($amount <= 0) {
             return $this->depositAmount();
         }
 
         $this->coalesceLegacyBalanceColumn();
 
-        if (static::hasDepositColumn()) {
-            DB::table('wallets')->where('id', $this->id)->decrement('deposit_balance', $amount);
-        } else {
-            DB::table('wallets')->where('id', $this->id)->decrement('balance', $amount);
+        $column = static::hasDepositColumn() ? 'deposit_balance' : 'balance';
+        $updated = DB::table('wallets')
+            ->where('id', $this->id)
+            ->where($column, '>=', $amount)
+            ->decrement($column, $amount);
+        if ((int) $updated < 1) {
+            throw new RuntimeException('Недостаточно средств');
         }
 
         $this->refresh();

@@ -27,7 +27,13 @@ class StoreAvitoMessengerService
             $root = 'https://'.substr($root, 7);
         }
 
-        return $root.'/api/store/avito/webhook';
+        $url = $root.'/api/store/avito/webhook';
+        $secret = trim((string) config('services.avito.webhook_secret'));
+        if ($secret !== '') {
+            $url .= '?token='.rawurlencode($secret);
+        }
+
+        return $url;
     }
 
     /**

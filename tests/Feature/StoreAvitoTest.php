@@ -33,6 +33,8 @@ class StoreAvitoTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['services.avito.webhook_secret' => 'avito-test-secret']);
+        $this->withHeaders(['X-Avito-Webhook-Token' => 'avito-test-secret']);
         $this->club = Club::create([
             'name' => 'Store Club',
             'slug' => 'store-club',

@@ -224,8 +224,9 @@ class User extends Authenticatable
         if ($hasDepositCol && $hasLegacyWalletCol) {
             $leftover = (float) (DB::table('wallets')->where('id', $wallet->id)->value('balance') ?? 0);
             if ($leftover > 0) {
+                $leftoverSql = number_format($leftover, 2, '.', '');
                 DB::table('wallets')->where('id', $wallet->id)->update([
-                    'deposit_balance' => DB::raw('COALESCE(deposit_balance, 0) + ' . $leftover),
+                    'deposit_balance' => DB::raw('COALESCE(deposit_balance, 0) + '.$leftoverSql),
                     'balance' => 0,
                 ]);
             }
