@@ -300,6 +300,18 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('FireAlarmTest.php', $blob);
     }
 
+    public function test_docs_describe_golden_image_gaming_profile(): void
+    {
+        $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $this->assertStringContainsString('Игровой профиль золотого образа', $blob);
+        $this->assertStringContainsString('golden-image-gaming.ps1', $blob);
+        $this->assertStringContainsString('https://github.com/Olegars/golden-image-gaming', $blob);
+        $this->assertStringContainsString('MMCSS, SystemResponsiveness, NetworkThrottlingIndex', $blob);
+        $this->assertStringContainsString('PnPCapabilities=24 не пишет', $blob);
+        $this->assertStringContainsString('Wake on Magic Packet', $blob);
+    }
+
     public function test_docs_describe_mcp_boundaries(): void
     {
         $blob = json_encode(\App\Support\SystemDocs::sections(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
