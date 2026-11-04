@@ -26,6 +26,7 @@ Route::prefix('shell')->group(function () {
     Route::post('/golden-image/revision', [ShellApiController::class, 'postGoldenRevision']);
     Route::get('/golden-image/revisions/{id}', [ShellApiController::class, 'goldenRevision']);
     Route::post('/thermal', [ShellApiController::class, 'reportThermal']);
+    Route::post('/memory', [ShellApiController::class, 'reportMemory']);
     Route::post('/fan', [ShellApiController::class, 'controlFan']);
     Route::post('/fan/applied', [ShellApiController::class, 'acknowledgeFanApplied']);
     Route::get('/fan', [ShellApiController::class, 'getFanState']);

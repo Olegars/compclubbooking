@@ -60,6 +60,7 @@ use App\Http\Controllers\Admin\StaffPayrollController;
 use App\Http\Controllers\Admin\StaffEdoController;
 use App\Http\Controllers\Admin\OwnerCabinetController;
 use App\Http\Controllers\Admin\OwnerSystemTestsController;
+use App\Http\Controllers\Admin\OwnerMemoryController;
 use App\Http\Controllers\Store\StoreHireController;
 use App\Http\Controllers\Admin\TariffController;
 use App\Http\Controllers\Admin\ZoneController;
@@ -842,6 +843,8 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
 
     // УРОВЕНЬ: OWNER
     Route::middleware(['role:owner'])->group(function () {
+        Route::get('/memory', [OwnerMemoryController::class, 'index'])->name('admin.memory');
+
         Route::get('/system-tests', [OwnerSystemTestsController::class, 'index'])->name('admin.system-tests');
         Route::post('/system-tests/run', [OwnerSystemTestsController::class, 'run'])->name('admin.system-tests.run');
         Route::match(['get', 'post'], '/system-tests/pdf', [OwnerSystemTestsController::class, 'printPdf'])
@@ -989,6 +992,7 @@ Route::prefix('api/shell')->group(function () {
 
     // --- Вентиляция комнаты (Space): Shell только события ---
     Route::post('/thermal', [ShellApiController::class, 'reportThermal']);
+    Route::post('/memory', [ShellApiController::class, 'reportMemory']);
     Route::post('/fan', [ShellApiController::class, 'controlFan']);
     Route::post('/fan/applied', [ShellApiController::class, 'acknowledgeFanApplied']);
     Route::get('/fan', [ShellApiController::class, 'getFanState']);

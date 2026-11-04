@@ -1162,6 +1162,39 @@ class ShellApiController extends Controller
     }
 
     /**
+     * Shell reports physical RAM load. Owner views it on /admin/memory.
+     */
+    public function reportMemory(Request $request)
+    {
+        $request->validate([
+            'terminal_id' => 'required|integer|exists:computers,id',
+            'load_pct' => 'required|integer|min:0|max:100',
+            'total_mb' => 'required|integer|min:1|max:1048576',
+            'used_mb' => 'required|integer|min:0|max:1048576',
+            'available_mb' => 'required|integer|min:0|max:1048576',
+        ]);
+
+        try {
+            $sample = app(\App\Services\MemoryLoadService::class)->record(
+                (int) $request->terminal_id,
+                (int) $request->load_pct,
+                (int) $request->total_mb,
+                (int) $request->used_mb,
+                (int) $request->available_mb,
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'reported_at' => $sample->reported_at?->toIso8601String(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Shell API reportMemory: '.$e->getMessage());
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Manual fan mode for the room. Shared across all PCs in the Space.
      * action: on | off | auto — shell applies to the LAN relay after this.
      */
