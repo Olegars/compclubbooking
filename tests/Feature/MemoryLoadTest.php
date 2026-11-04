@@ -6,6 +6,7 @@ use App\Models\Admin;
 use App\Models\Club;
 use App\Models\Computer;
 use App\Models\ComputerMemorySample;
+use App\Models\HostMemorySample;
 use App\Models\Shift;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -54,6 +55,67 @@ class MemoryLoadTest extends TestCase
             'used_mb' => 1000,
             'available_mb' => 15384,
         ])->assertStatus(422);
+    }
+
+    public function test_owner_sees_server_memory(): void
+    {
+        $club = $this->club('0451');
+        $owner = $this->makeAdmin('owner', $club->id);
+
+        HostMemorySample::query()->create([
+            'hostname' => 'BOOKING',
+            'load_pct' => 55,
+            'total_mb' => 65536,
+            'used_mb' => 36000,
+            'available_mb' => 29536,
+            'reported_at' => now(),
+        ]);
+
+        $this->actingAs($owner, 'admin')
+            ->get('/admin/memory')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('host.name', 'Сервер')
+                ->where('host.hostname', 'BOOKING')
+                ->where('host.load_pct', 55)
+                ->where('host.total_mb', 65536)
+                ->where('host.stale', false)
+                ->has('host.series', 1)
+            );
+    }
+
+    public function test_server_card_is_empty_until_the_service_writes(): void
+    {
+        $club = $this->club('0451');
+        $owner = $this->makeAdmin('owner', $club->id);
+
+        $this->actingAs($owner, 'admin')
+            ->get('/admin/memory')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('host', null));
+    }
+
+    public function test_old_server_sample_is_stale(): void
+    {
+        $club = $this->club('0451');
+        $owner = $this->makeAdmin('owner', $club->id);
+
+        HostMemorySample::query()->create([
+            'hostname' => 'BOOKING',
+            'load_pct' => 91,
+            'total_mb' => 32768,
+            'used_mb' => 30000,
+            'available_mb' => 2768,
+            'reported_at' => now()->subMinutes(10),
+        ]);
+
+        $this->actingAs($owner, 'admin')
+            ->get('/admin/memory')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('host.stale', true)
+                ->where('host.load_pct', 91)
+            );
     }
 
     public function test_guest_is_sent_to_login(): void

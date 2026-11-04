@@ -547,7 +547,7 @@ onUnmounted(() => {
                     <Link v-if="isOwner" href="/admin/memory"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"
                           :class="isActive('/admin/memory') ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' : 'bg-transparent border-transparent text-white/55 hover:text-white hover:bg-white/[0.02]'">
-                        <span>🧠</span> Память ПК
+                        <span>🧠</span> Память
                     </Link>
                     <Link href="/admin/config/features"
                           class="flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all text-[13px] font-semibold uppercase tracking-wide"

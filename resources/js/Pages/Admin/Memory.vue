@@ -6,11 +6,9 @@ import { useClubName } from '@/Composables/useClubName'
 
 type Point = { at: string, load_pct: number }
 
-type Station = {
-    id: number
+type MemoryRow = {
     name: string
-    space: string | null
-    power_state: string | null
+    hostname?: string | null
     load_pct: number | null
     used_mb: number | null
     total_mb: number | null
@@ -18,6 +16,12 @@ type Station = {
     reported_at: string | null
     stale: boolean
     series: Point[]
+}
+
+type Station = MemoryRow & {
+    id: number
+    space: string | null
+    power_state: string | null
 }
 
 type Summary = {
@@ -32,6 +36,7 @@ type Summary = {
 const props = defineProps<{
     location: { id: number, name: string, type: string | null } | null
     stations: Station[]
+    host: MemoryRow | null
     summary: Summary
     updated_at: string
     chart_hours: number
@@ -52,7 +57,7 @@ watch(() => props.stations, (rows) => {
 onMounted(() => {
     timer = setInterval(() => {
         router.reload({
-            only: ['stations', 'summary', 'updated_at'],
+            only: ['stations', 'host', 'summary', 'updated_at'],
             preserveState: true,
             preserveScroll: true,
         })
@@ -78,14 +83,14 @@ const ago = (iso: string | null) => {
     return `${Math.round(min / 60)} ч назад`
 }
 
-const tone = (row: Station) => {
+const tone = (row: MemoryRow) => {
     if (row.load_pct == null || row.stale) return 'text-white/35'
     if (row.load_pct >= 90) return 'text-red-400'
     if (row.load_pct >= 75) return 'text-amber-300'
     return 'text-emerald-300'
 }
 
-const bar = (row: Station) => {
+const bar = (row: MemoryRow) => {
     if (row.load_pct == null || row.stale) return 'bg-white/15'
     if (row.load_pct >= 90) return 'bg-red-500'
     if (row.load_pct >= 75) return 'bg-amber-400'
@@ -114,21 +119,22 @@ const clock = (iso: string) => {
 </script>
 
 <template>
-    <Head :title="`${clubName} | Память ПК`" />
+    <Head :title="`${clubName} | Память`" />
     <AdminLayout>
         <div class="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 font-mono pb-20 px-4">
             <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6 border-b border-white/10 pb-6">
                 <div>
                     <h1 class="text-3xl font-black uppercase italic text-white tracking-tighter">
-                        Память <span class="text-yellow-400">ПК</span>
+                        Память <span class="text-yellow-400">ПК и сервера</span>
                     </h1>
                     <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">
                         Только владелец · текущая локация
                         <span v-if="location"> · {{ location.name }}</span>
                     </p>
                     <p class="text-white/40 text-xs font-bold mt-3 max-w-2xl">
-                        Шелл снимает загрузку RAM примерно каждые 30 секунд. График — последние {{ chart_hours }} часа,
-                        старше {{ stale_seconds }} секунд считаем устаревшим. История хранится сутки.
+                        Шелл снимает RAM игровых ПК, служба на Windows Server — RAM самого сервера. Интервал около 30 секунд.
+                        График — последние {{ chart_hours }} часа, старше {{ stale_seconds }} секунд считаем устаревшим.
+                        История хранится сутки.
                     </p>
                 </div>
                 <div class="text-[10px] uppercase tracking-widest text-white/30 font-black">
@@ -157,6 +163,35 @@ const clock = (iso: string) => {
                     </div>
                 </div>
             </div>
+
+            <section class="bg-[#0a0a0a] border rounded-2xl px-5 py-4"
+                     :class="host && !host.stale ? 'border-yellow-500/40' : 'border-white/10'">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <div class="text-[10px] text-yellow-400/80 uppercase font-black tracking-widest">Windows Server</div>
+                        <div class="text-white font-black uppercase tracking-wide mt-1">Сервер</div>
+                        <div class="text-[10px] text-white/35 uppercase tracking-widest mt-1 truncate">
+                            {{ host?.hostname || 'служба ещё не писала в базу' }}
+                            <span v-if="host?.stale"> · нет свежих данных</span>
+                        </div>
+                    </div>
+                    <div class="text-3xl font-black tabular-nums" :class="host ? tone(host) : 'text-white/35'">
+                        {{ host?.load_pct == null ? '—' : host.load_pct + '%' }}
+                    </div>
+                </div>
+                <div class="mt-3 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                    <div class="h-full rounded-full" :class="host ? bar(host) : 'bg-white/15'" :style="{ width: (host?.load_pct ?? 0) + '%' }"></div>
+                </div>
+                <div class="mt-3 flex items-end justify-between gap-3">
+                    <div class="text-[11px] text-white/45">
+                        {{ gb(host?.used_mb) }} / {{ gb(host?.total_mb) }}
+                        <div class="text-[10px] text-white/25 mt-1">свободно {{ gb(host?.available_mb) }} · {{ ago(host?.reported_at ?? null) }}</div>
+                    </div>
+                    <svg v-if="host && host.series.length" viewBox="0 0 220 36" class="w-56 h-9 text-yellow-300/80">
+                        <path :d="spark(host.series, 220, 36)" fill="none" stroke="currentColor" stroke-width="1.6" />
+                    </svg>
+                </div>
+            </section>
 
             <div v-if="stations.length === 0" class="bg-[#0a0a0a] border border-white/10 rounded-2xl px-6 py-10 text-white/40 text-sm">
                 В этой локации нет игровых ПК.

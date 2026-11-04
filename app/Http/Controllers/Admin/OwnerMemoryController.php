@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Services\HostMemoryService;
 use App\Services\MemoryLoadService;
 use App\Support\AdminLocation;
 use Inertia\Inertia;
@@ -12,6 +13,7 @@ class OwnerMemoryController extends Controller
 {
     public function __construct(
         private readonly MemoryLoadService $memory,
+        private readonly HostMemoryService $hostMemory,
     ) {
     }
 
@@ -31,6 +33,7 @@ class OwnerMemoryController extends Controller
             ] : null,
             'stations' => $board['stations'],
             'summary' => $board['summary'],
+            'host' => $this->hostMemory->snapshot(),
             'updated_at' => now()->toIso8601String(),
             'chart_hours' => MemoryLoadService::CHART_HOURS,
             'stale_seconds' => MemoryLoadService::STALE_SECONDS,

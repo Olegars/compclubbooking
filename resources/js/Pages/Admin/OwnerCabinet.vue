@@ -77,7 +77,7 @@ const links = [
     { href: '/admin/store/orders', label: 'Заказы магазина', hint: 'Сборки и выдача' },
     { href: '/admin/incidents', label: 'Инциденты', hint: 'SOS и качество' },
     { href: '/admin/system-tests', label: 'Тесты системы', hint: 'Кнопки проверок и PHPUnit' },
-    { href: '/admin/memory', label: 'Память ПК', hint: 'Загрузка RAM с шелла' },
+    { href: '/admin/memory', label: 'Память', hint: 'RAM игровых ПК и сервера' },
     { href: '/admin/docs', label: 'О системе', hint: 'Справка владельца' },
 ]
 </script>
