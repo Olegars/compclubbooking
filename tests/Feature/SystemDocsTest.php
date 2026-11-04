@@ -307,6 +307,8 @@ class SystemDocsTest extends TestCase
         $this->assertStringContainsString('Игровой профиль золотого образа', $blob);
         $this->assertStringContainsString('golden-image-gaming.ps1', $blob);
         $this->assertStringContainsString('https://github.com/Olegars/golden-image-gaming', $blob);
+        $this->assertStringContainsString('git clone https://github.com/Olegars/golden-image-gaming.git', $blob);
+        $this->assertStringContainsString('git pull', $blob);
         $this->assertStringContainsString('MMCSS, SystemResponsiveness, NetworkThrottlingIndex', $blob);
         $this->assertStringContainsString('PnPCapabilities=24 не пишет', $blob);
         $this->assertStringContainsString('Wake on Magic Packet', $blob);
