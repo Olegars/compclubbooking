@@ -708,6 +708,7 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
         Route::post('/booking-settings', [BookingSettingsController::class, 'update']);
 
         Route::get('/ai-assistant', [AiAssistantSettingsController::class, 'index'])->name('admin.ai-assistant');
+        Route::get('/ai-assistant/balance', [AiAssistantSettingsController::class, 'balance']);
         Route::post('/ai-assistant', [AiAssistantSettingsController::class, 'update']);
         Route::post('/ai-assistant/reset-prompts', [AiAssistantSettingsController::class, 'resetPrompts']);
         Route::post('/ai-assistant/test-llm', [AiAssistantSettingsController::class, 'testLlm']);

@@ -25,6 +25,10 @@ class AiAssistantSetting extends Model
         'max_reply_chars',
         'companion_prompt',
         'greeting_prompt',
+        'alibaba_access_key_id',
+        'alibaba_access_key_secret',
+        'yandex_billing_iam_token',
+        'yandex_billing_account_id',
     ];
 
     protected $casts = [
@@ -32,6 +36,9 @@ class AiAssistantSetting extends Model
         'llm_api_key' => 'encrypted',
         'yandex_api_key' => 'encrypted',
         'openai_api_key' => 'encrypted',
+        'alibaba_access_key_id' => 'encrypted',
+        'alibaba_access_key_secret' => 'encrypted',
+        'yandex_billing_iam_token' => 'encrypted',
         'max_reply_chars' => 'integer',
     ];
 
@@ -39,6 +46,9 @@ class AiAssistantSetting extends Model
         'llm_api_key',
         'yandex_api_key',
         'openai_api_key',
+        'alibaba_access_key_id',
+        'alibaba_access_key_secret',
+        'yandex_billing_iam_token',
     ];
 
     public const OPENAI_VOICES = [
@@ -386,6 +396,42 @@ class AiAssistantSetting extends Model
             && $this->hasSpeechCredentials();
     }
 
+    public function resolvedAlibabaAccessKeyId(): string
+    {
+        $fromDb = trim((string) ($this->alibaba_access_key_id ?? ''));
+
+        return $fromDb !== ''
+            ? $fromDb
+            : trim((string) config('ai_assistant.alibaba_billing.access_key_id', ''));
+    }
+
+    public function resolvedAlibabaAccessKeySecret(): string
+    {
+        $fromDb = trim((string) ($this->alibaba_access_key_secret ?? ''));
+
+        return $fromDb !== ''
+            ? $fromDb
+            : trim((string) config('ai_assistant.alibaba_billing.access_key_secret', ''));
+    }
+
+    public function resolvedYandexBillingIamToken(): string
+    {
+        $fromDb = trim((string) ($this->yandex_billing_iam_token ?? ''));
+
+        return $fromDb !== ''
+            ? $fromDb
+            : trim((string) config('ai_assistant.yandex.billing_iam_token', ''));
+    }
+
+    public function resolvedYandexBillingAccountId(): string
+    {
+        $fromDb = trim((string) ($this->yandex_billing_account_id ?? ''));
+
+        return $fromDb !== ''
+            ? $fromDb
+            : trim((string) config('ai_assistant.yandex.billing_account_id', ''));
+    }
+
     public function llmKeySource(): string
     {
         return trim((string) ($this->llm_api_key ?? '')) !== '' ? 'db' : 'env';
@@ -535,6 +581,11 @@ PROMPT;
             'yandex_folder_id' => $this->yandex_folder_id ?: '',
             'has_yandex_api_key' => trim((string) ($this->yandex_api_key ?? '')) !== '',
             'yandex_key_source' => $this->yandexKeySource(),
+            'has_alibaba_billing_key' => trim((string) ($this->alibaba_access_key_secret ?? '')) !== '',
+            'alibaba_billing_key_source' => trim((string) ($this->alibaba_access_key_secret ?? '')) !== '' ? 'db' : 'env',
+            'has_yandex_billing_iam_token' => trim((string) ($this->yandex_billing_iam_token ?? '')) !== '',
+            'yandex_billing_key_source' => trim((string) ($this->yandex_billing_iam_token ?? '')) !== '' ? 'db' : 'env',
+            'yandex_billing_account_id' => $this->resolvedYandexBillingAccountId(),
             'has_llm_credentials' => $this->resolvedLlmApiKey() !== '',
             'has_openai_credentials' => $this->resolvedOpenAiApiKey() !== '',
             'has_speech_credentials' => $this->hasSpeechCredentials(),

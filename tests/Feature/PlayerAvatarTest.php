@@ -39,7 +39,9 @@ class PlayerAvatarTest extends TestCase
             'ai_assistant.deepseek.vision_model' => 'deepseek-flash',
             'ai_assistant.openai.api_key' => '',
             'ai_assistant.avatar_dir' => $this->avatarDir,
-            'ai_assistant.avatar.huggingface.token' => '',
+            'ai_assistant.avatar.qwen.api_key' => '',
+            'ai_assistant.avatar.qwen.base_url' => 'https://dashscope-intl.aliyuncs.com/api/v1',
+            'ai_assistant.avatar.qwen.model' => 'qwen-image-2.0-pro',
             'ai_assistant.avatar.comfyui.url' => '',
         ]);
 
@@ -101,68 +103,50 @@ class PlayerAvatarTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_stylize_puts_photo_face_on_club_template(): void
-    {
-        Http::fake();
-        file_put_contents($this->avatarDir.DIRECTORY_SEPARATOR.'avatar_1.png', $this->clubTemplatePng());
-
-        $this->actingAs($this->user)
-            ->withoutMiddleware(ValidateCsrfToken::class)
-            ->post('/account/profile/avatar', [
-                'photo' => UploadedFile::fake()->createWithContent('face.png', $this->redFacePng()),
-                'stylize' => 1,
-            ])
-            ->assertRedirect()
-            ->assertSessionHas('success');
-
-        $this->user->refresh();
-        $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
-        $stored = Storage::disk('public')->get('avatars/'.basename($this->user->avatar));
-        $this->assertNotFalse($stored);
-        $img = imagecreatefromstring($stored);
-        $this->assertNotFalse($img);
-
-        $face = imagecolorat($img, 256, 174);
-        $this->assertGreaterThan(140, ($face >> 16) & 0xFF, 'лицо с фото должно быть в овале шаблона');
-        $this->assertLessThan(120, $face & 0xFF);
-
-        $armor = imagecolorat($img, 256, 450);
-        $this->assertLessThan(90, ($armor >> 16) & 0xFF, 'низ шаблона (броня) не должен стать фото');
-
-        $neon = imagecolorat($img, 204, 178);
-        $this->assertGreaterThan(140, ($neon >> 8) & 0xFF);
-        $this->assertGreaterThan((($neon >> 16) & 0xFF) + 20, ($neon >> 8) & 0xFF);
-
-        imagedestroy($img);
-        Http::assertNothingSent();
-    }
-
-    public function test_stylize_does_not_call_deepseek(): void
+    public function test_stylize_without_qwen_key_keeps_current_avatar(): void
     {
         Http::fake();
 
         $this->actingAs($this->user)
             ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/account/profile')
             ->post('/account/profile/avatar', [
                 'photo' => $this->fakeImageUpload('face.png'),
                 'stylize' => 1,
+                'sample' => 'avatar_1.png',
             ])
-            ->assertRedirect()
-            ->assertSessionHas('success');
+            ->assertRedirect('/account/profile')
+            ->assertSessionHasErrors('photo');
 
         $this->user->refresh();
-        $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
-        Storage::disk('public')->assertExists('avatars/'.basename($this->user->avatar));
+        $this->assertSame('avatar_1.png', $this->user->avatar);
+        $this->assertDatabaseCount('avatar_stylize_jobs', 0);
         Http::assertNothingSent();
     }
 
-    public function test_stylize_uses_huggingface_when_token_set(): void
+    public function test_stylize_sends_photo_and_sample_to_qwen(): void
     {
-        config(['ai_assistant.avatar.huggingface.token' => 'hf_test_token']);
-        $styled = $this->tinyPngBytes();
+        config(['ai_assistant.avatar.qwen.api_key' => 'sk-qwen-test']);
+        $styled = $this->redFacePng();
+        $sent = null;
 
-        $this->fakeHttp(function ($request) use ($styled) {
-            if (str_contains($request->url(), 'huggingface')) {
+        $this->fakeHttp(function ($request) use (&$sent, $styled) {
+            if (str_contains($request->url(), 'multimodal-generation')) {
+                $sent = $request->data();
+
+                return Http::response([
+                    'output' => [
+                        'choices' => [[
+                            'message' => [
+                                'content' => [
+                                    ['image' => 'https://qwen-result.example.test/out.png'],
+                                ],
+                            ],
+                        ]],
+                    ],
+                ]);
+            }
+            if (str_contains($request->url(), 'qwen-result.example.test')) {
                 return Http::response($styled, 200, ['Content-Type' => 'image/png']);
             }
 
@@ -174,39 +158,78 @@ class PlayerAvatarTest extends TestCase
             ->post('/account/profile/avatar', [
                 'photo' => $this->fakeImageUpload('face.png'),
                 'stylize' => 1,
+                'sample' => 'avatar_1.png',
             ])
             ->assertRedirect()
             ->assertSessionHas('success');
 
         $this->user->refresh();
         $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
-        Http::assertSent(fn ($request) => str_contains($request->url(), 'huggingface')
-            && $request->hasHeader('Authorization', 'Bearer hf_test_token'));
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'deepseek'));
+        $stored = Storage::disk('public')->get('avatars/'.basename($this->user->avatar));
+        $this->assertIsString($stored);
+        $img = imagecreatefromstring($stored);
+        $this->assertNotFalse($img);
+        $pixel = imagecolorat($img, 256, 256);
+        $this->assertGreaterThan(180, ($pixel >> 16) & 0xFF);
+        $this->assertLessThan(80, $pixel & 0xFF);
+        imagedestroy($img);
+
+        $this->assertIsArray($sent);
+        $this->assertSame('qwen-image-2.0-pro', $sent['model'] ?? null);
+        $content = $sent['input']['messages'][0]['content'] ?? [];
+        $this->assertCount(3, $content);
+        $this->assertStringStartsWith('data:image/', (string) ($content[0]['image'] ?? ''));
+        $this->assertStringStartsWith('data:image/', (string) ($content[1]['image'] ?? ''));
+        $this->assertStringContainsString('Image 1', (string) ($content[2]['text'] ?? ''));
+        $this->assertStringContainsString('Image 2', (string) ($content[2]['text'] ?? ''));
+        $this->assertSame('1024*1024', $sent['parameters']['size'] ?? null);
+        $this->assertFalse($sent['parameters']['watermark'] ?? true);
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'multimodal-generation')
+            && $request->hasHeader('Authorization', 'Bearer sk-qwen-test'));
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'deepseek')
+            || str_contains($request->url(), '8188'));
+        $this->assertDatabaseCount('avatar_stylize_jobs', 0);
     }
 
-    public function test_stylize_queues_gpu_job_and_does_not_call_comfyui(): void
+    public function test_stylize_failure_does_not_replace_avatar(): void
     {
-        config(['ai_assistant.avatar.comfyui.url' => 'http://127.0.0.1:8188']);
+        config(['ai_assistant.avatar.qwen.api_key' => 'sk-qwen-test']);
+        $this->fakeHttp(fn () => Http::response(['code' => 'Throttling', 'message' => 'busy'], 429));
+
+        $this->actingAs($this->user)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/account/profile')
+            ->post('/account/profile/avatar', [
+                'photo' => $this->fakeImageUpload('face.png'),
+                'stylize' => 1,
+                'sample' => 'avatar_1.png',
+            ])
+            ->assertRedirect('/account/profile')
+            ->assertSessionHasErrors('photo');
+
+        $this->user->refresh();
+        $this->assertSame('avatar_1.png', $this->user->avatar);
+        $this->assertDatabaseCount('avatar_stylize_jobs', 0);
+    }
+
+    public function test_stylize_rejects_unknown_sample(): void
+    {
+        config(['ai_assistant.avatar.qwen.api_key' => 'sk-qwen-test']);
         Http::fake();
 
         $this->actingAs($this->user)
             ->withoutMiddleware(ValidateCsrfToken::class)
+            ->from('/account/profile')
             ->post('/account/profile/avatar', [
                 'photo' => $this->fakeImageUpload('face.png'),
                 'stylize' => 1,
+                'sample' => 'avatar_99.png',
             ])
-            ->assertRedirect()
-            ->assertSessionHas('success');
+            ->assertRedirect('/account/profile')
+            ->assertSessionHasErrors('sample');
 
         $this->user->refresh();
-        $this->assertTrue(UserAvatar::isCustom($this->user->avatar));
-        $this->assertDatabaseHas('avatar_stylize_jobs', [
-            'user_id' => $this->user->id,
-            'status' => 'pending',
-            'baseline_avatar' => $this->user->avatar,
-            'sample_name' => 'avatar_1.png',
-        ]);
+        $this->assertSame('avatar_1.png', $this->user->avatar);
         Http::assertNothingSent();
     }
 
@@ -223,37 +246,6 @@ class PlayerAvatarTest extends TestCase
 
         $this->user->refresh();
         $this->assertSame('avatar_1.png', $this->user->avatar);
-    }
-
-    private function clubTemplatePng(): string
-    {
-        $size = 512;
-        $im = imagecreatetruecolor($size, $size);
-        imagefilledrectangle($im, 0, 0, $size, $size, imagecolorallocate($im, 4, 6, 8));
-        imagefilledrectangle($im, 0, (int) ($size * 0.68), $size, $size, imagecolorallocate($im, 36, 48, 42));
-        imagefilledellipse(
-            $im,
-            (int) ($size * 0.50),
-            (int) ($size * 0.34),
-            (int) ($size * 0.42),
-            (int) ($size * 0.50),
-            imagecolorallocate($im, 198, 158, 128)
-        );
-        imagesetthickness($im, 10);
-        imageline(
-            $im,
-            (int) ($size * 0.36),
-            (int) ($size * 0.22),
-            (int) ($size * 0.44),
-            (int) ($size * 0.48),
-            imagecolorallocate($im, 30, 230, 80)
-        );
-        ob_start();
-        imagepng($im);
-        $bytes = (string) ob_get_clean();
-        imagedestroy($im);
-
-        return $bytes;
     }
 
     private function redFacePng(): string

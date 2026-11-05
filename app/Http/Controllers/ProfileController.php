@@ -400,9 +400,14 @@ class ProfileController extends Controller
 
     public function updateAvatar(Request $request, \App\Services\PlayerAvatarService $avatars)
     {
+        $stylize = $request->boolean('stylize');
         $request->validate([
             'photo' => ['required', 'file', 'max:8192'],
             'stylize' => ['sometimes', 'boolean'],
+            'sample' => [$stylize ? 'required' : 'nullable', 'string', \Illuminate\Validation\Rule::in(\App\Support\UserAvatar::DEFAULTS)],
+        ], [
+            'sample.required' => 'Выберите клубный аватар.',
+            'sample.in' => 'Выберите клубный аватар.',
         ]);
 
         try {
@@ -410,7 +415,7 @@ class ProfileController extends Controller
             if (! $photo instanceof \Illuminate\Http\UploadedFile) {
                 return back()->withErrors(['photo' => 'Нужно фото.']);
             }
-            $avatars->save(Auth::user(), $photo, $request->boolean('stylize'));
+            $avatars->save(Auth::user(), $photo, $stylize, $stylize ? (string) $request->input('sample') : null);
         } catch (\Throwable $e) {
             report($e);
 
@@ -418,7 +423,7 @@ class ProfileController extends Controller
         }
 
         return back()->with('success', $request->boolean('stylize')
-            ? 'Клубный аватар собран'
+            ? 'Аватар стилизован'
             : 'Фото сохранено');
     }
 

@@ -29,6 +29,13 @@ return [
         'tts_v3_url' => rtrim((string) env('YANDEX_TTS_V3_URL', 'https://tts.api.cloud.yandex.net/tts/v3/utteranceSynthesis'), '/'),
         'tts_voice' => env('YANDEX_TTS_VOICE', 'alena'),
         'lang' => env('YANDEX_SPEECH_LANG', 'ru-RU'),
+        'billing_iam_token' => env('YANDEX_BILLING_IAM_TOKEN'),
+        'billing_account_id' => env('YANDEX_BILLING_ACCOUNT_ID'),
+    ],
+    'alibaba_billing' => [
+        'access_key_id' => env('ALIBABA_ACCESS_KEY_ID'),
+        'access_key_secret' => env('ALIBABA_ACCESS_KEY_SECRET'),
+        'endpoint' => rtrim((string) env('ALIBABA_BILLING_ENDPOINT', ''), '/'),
     ],
 
     // Опциональный fallback, если SpeechKit недоступен
@@ -41,10 +48,8 @@ return [
     ],
 
     /*
-     * Стилизация аватара. DeepSeek (chat) картинки не рисует.
-     * Запрос гостя сразу кладёт овал и job. ComfyUI крутится на FACE-01 (127.0.0.1:8188),
-     * агент scripts/club-comfy-worker.py pull’ит очередь. Облако на :8188 не ходит.
-     * huggingface / OpenAI — необязательная дорисовка композита в том же запросе.
+     * Стилизация аватара. Qwen Image Edit рисует один кадр по фото и образцу.
+     * DeepSeek картинки не рисует. Очередь ComfyUI в этой галке не используется.
      */
     'avatar' => [
         'relay_token' => (string) (
@@ -53,11 +58,11 @@ return [
             ?: env('CLUB_WOL_RELAY_TOKEN', '')
         ),
         'stale_seconds' => (int) env('AVATAR_STYLIZE_STALE_SECONDS', 120),
-        'huggingface' => [
-            'token' => env('HF_TOKEN', env('HUGGINGFACE_API_TOKEN')),
-            'provider' => env('HF_AVATAR_PROVIDER', 'hf-inference'),
-            'model' => env('HF_AVATAR_MODEL', 'Qwen/Qwen-Image-Edit'),
-            'base_url' => rtrim((string) env('HF_AVATAR_BASE_URL', 'https://router.huggingface.co'), '/'),
+        'qwen' => [
+            'api_key' => env('QWEN_API_KEY', env('DASHSCOPE_API_KEY')),
+            'base_url' => rtrim((string) env('QWEN_IMAGE_BASE_URL', 'https://dashscope-intl.aliyuncs.com/api/v1'), '/'),
+            'model' => env('QWEN_IMAGE_MODEL', 'qwen-image-2.0-pro'),
+            'prompt_extend' => filter_var(env('QWEN_IMAGE_PROMPT_EXTEND', false), FILTER_VALIDATE_BOOLEAN),
         ],
         'comfyui' => [
             'url' => rtrim((string) env('COMFYUI_URL', ''), '/'),

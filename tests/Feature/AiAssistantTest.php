@@ -46,6 +46,11 @@ class AiAssistantTest extends TestCase
             'ai_assistant.openai.tts_model' => 'tts-1',
             'ai_assistant.openai.tts_voice' => 'nova',
             'ai_assistant.rate_limit_per_minute' => 100,
+            'ai_assistant.alibaba_billing.access_key_id' => '',
+            'ai_assistant.alibaba_billing.access_key_secret' => '',
+            'ai_assistant.alibaba_billing.endpoint' => 'https://business.aliyuncs.com',
+            'ai_assistant.yandex.billing_iam_token' => '',
+            'ai_assistant.yandex.billing_account_id' => '',
         ]);
 
         $this->club = Club::create([
@@ -475,6 +480,184 @@ class AiAssistantTest extends TestCase
                 && ($request['max_tokens'] ?? null) === 64
                 && data_get($request, 'thinking.type') === 'disabled';
         });
+    }
+
+    public function test_admin_sees_deepseek_balance(): void
+    {
+        $admin = Admin::create([
+            'name' => 'AI Balance',
+            'email' => 'ai-balance@example.test',
+            'password' => 'password',
+            'role' => 'owner',
+        ]);
+
+        $this->fakeHttp(function ($request) {
+            if (str_contains($request->url(), '/user/balance')) {
+                return Http::response([
+                    'is_available' => true,
+                    'balance_infos' => [[
+                        'currency' => 'CNY',
+                        'total_balance' => '110.00',
+                        'granted_balance' => '10.00',
+                        'topped_up_balance' => '100.00',
+                    ]],
+                ]);
+            }
+
+            return Http::response('unexpected '.$request->url(), 599);
+        });
+
+        $this->actingAs($admin, 'admin')
+            ->getJson('/admin/ai-assistant/balance?club_id='.$this->club->id)
+            ->assertOk()
+            ->assertJsonPath('deepseek.ok', true)
+            ->assertJsonPath('deepseek.provider', 'deepseek')
+            ->assertJsonPath('deepseek.is_available', true)
+            ->assertJsonPath('deepseek.balances.0.currency', 'CNY')
+            ->assertJsonPath('deepseek.balances.0.total', '110.00')
+            ->assertJsonPath('deepseek.balances.0.granted', '10.00')
+            ->assertJsonPath('deepseek.balances.0.topped_up', '100.00')
+            ->assertJsonPath('qwen.ok', false)
+            ->assertJsonPath('yandex.ok', false);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'https://api.deepseek.com/user/balance')
+            && $request->hasHeader('Authorization', 'Bearer sk-deepseek-test'));
+    }
+
+    public function test_admin_balance_is_unsupported_for_openai(): void
+    {
+        AiAssistantSetting::forClub($this->club->id)->forceFill([
+            'llm_provider' => 'openai',
+        ])->save();
+
+        $admin = Admin::create([
+            'name' => 'AI Balance OpenAI',
+            'email' => 'ai-balance-openai@example.test',
+            'password' => 'password',
+            'role' => 'owner',
+        ]);
+
+        $this->fakeHttp(fn () => Http::response('balance should not be called', 599));
+
+        $this->actingAs($admin, 'admin')
+            ->getJson('/admin/ai-assistant/balance?club_id='.$this->club->id)
+            ->assertOk()
+            ->assertJsonPath('deepseek.ok', false)
+            ->assertJsonPath('deepseek.supported', false)
+            ->assertJsonPath('deepseek.provider', 'openai')
+            ->assertJsonPath('qwen.ok', false)
+            ->assertJsonPath('yandex.ok', false);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_admin_sees_qwen_account_balance(): void
+    {
+        config([
+            'ai_assistant.alibaba_billing.access_key_id' => 'LTAI_TEST',
+            'ai_assistant.alibaba_billing.access_key_secret' => 'secret-test',
+            'ai_assistant.alibaba_billing.endpoint' => 'https://business.aliyuncs.com',
+        ]);
+
+        $admin = Admin::create([
+            'name' => 'AI Qwen Balance',
+            'email' => 'ai-qwen-balance@example.test',
+            'password' => 'password',
+            'role' => 'owner',
+        ]);
+
+        $this->fakeHttp(function ($request) {
+            if (str_contains($request->url(), 'business.aliyuncs.com') && str_contains($request->url(), 'QueryAccountBalance')) {
+                return Http::response([
+                    'Code' => '200',
+                    'Success' => true,
+                    'Data' => [
+                        'AvailableAmount' => '26.50',
+                        'AvailableCashAmount' => '20.00',
+                        'CreditAmount' => '6.50',
+                        'Currency' => 'CNY',
+                    ],
+                ]);
+            }
+            if (str_contains($request->url(), '/user/balance')) {
+                return Http::response([
+                    'is_available' => true,
+                    'balance_infos' => [[
+                        'currency' => 'USD',
+                        'total_balance' => '1.00',
+                        'granted_balance' => '0',
+                        'topped_up_balance' => '1.00',
+                    ]],
+                ]);
+            }
+
+            return Http::response('unexpected '.$request->url(), 599);
+        });
+
+        $this->actingAs($admin, 'admin')
+            ->getJson('/admin/ai-assistant/balance?club_id='.$this->club->id)
+            ->assertOk()
+            ->assertJsonPath('qwen.ok', true)
+            ->assertJsonPath('qwen.balances.0.total', '26.50')
+            ->assertJsonPath('qwen.balances.0.currency', 'CNY')
+            ->assertJsonPath('qwen.balances.0.cash', '20.00')
+            ->assertJsonPath('qwen.balances.0.credit', '6.50');
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'https://business.aliyuncs.com/')
+            && str_contains($request->url(), 'Action=QueryAccountBalance')
+            && str_contains($request->url(), 'AccessKeyId=LTAI_TEST')
+            && str_contains($request->url(), 'Signature='));
+    }
+
+    public function test_admin_sees_yandex_billing_balance(): void
+    {
+        config([
+            'ai_assistant.yandex.billing_iam_token' => 'iam-test-token',
+            'ai_assistant.yandex.billing_account_id' => 'dn2billing',
+        ]);
+
+        $admin = Admin::create([
+            'name' => 'AI Yandex Balance',
+            'email' => 'ai-yandex-balance@example.test',
+            'password' => 'password',
+            'role' => 'owner',
+        ]);
+
+        $this->fakeHttp(function ($request) {
+            if (str_contains($request->url(), 'billing.api.cloud.yandex.net/billing/v1/billingAccounts/dn2billing')) {
+                return Http::response([
+                    'id' => 'dn2billing',
+                    'name' => 'Клуб',
+                    'currency' => 'RUB',
+                    'active' => true,
+                    'balance' => '840.15',
+                ]);
+            }
+            if (str_contains($request->url(), '/user/balance')) {
+                return Http::response([
+                    'is_available' => true,
+                    'balance_infos' => [[
+                        'currency' => 'USD',
+                        'total_balance' => '1.00',
+                        'granted_balance' => '0',
+                        'topped_up_balance' => '1.00',
+                    ]],
+                ]);
+            }
+
+            return Http::response('unexpected '.$request->url(), 599);
+        });
+
+        $this->actingAs($admin, 'admin')
+            ->getJson('/admin/ai-assistant/balance?club_id='.$this->club->id)
+            ->assertOk()
+            ->assertJsonPath('yandex.ok', true)
+            ->assertJsonPath('yandex.balances.0.total', '840.15')
+            ->assertJsonPath('yandex.balances.0.currency', 'RUB')
+            ->assertJsonPath('yandex.balances.0.name', 'Клуб');
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'billingAccounts/dn2billing')
+            && $request->hasHeader('Authorization', 'Bearer iam-test-token'));
     }
 
     public function test_admin_llm_case_probe_returns_classification(): void

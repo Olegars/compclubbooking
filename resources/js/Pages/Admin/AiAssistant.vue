@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, router, useForm, usePage } from '@inertiajs/vue3'
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { useClubName } from '@/Composables/useClubName'
@@ -21,6 +21,11 @@ const props = defineProps<{
         yandex_folder_id: string
         has_yandex_api_key: boolean
         yandex_key_source: 'db' | 'env'
+        has_alibaba_billing_key: boolean
+        alibaba_billing_key_source: 'db' | 'env'
+        has_yandex_billing_iam_token: boolean
+        yandex_billing_key_source: 'db' | 'env'
+        yandex_billing_account_id: string
         openai_base_url: string
         stt_model: string
         tts_model: string
@@ -67,6 +72,12 @@ const form = useForm({
     yandex_api_key: '',
     clear_yandex_api_key: false,
     yandex_folder_id: props.settings.yandex_folder_id,
+    alibaba_access_key_id: '',
+    alibaba_access_key_secret: '',
+    clear_alibaba_billing: false,
+    yandex_billing_iam_token: '',
+    clear_yandex_billing_iam_token: false,
+    yandex_billing_account_id: props.settings.yandex_billing_account_id,
     openai_api_key: '',
     clear_openai_api_key: false,
     openai_base_url: props.settings.openai_base_url,
@@ -92,6 +103,12 @@ watch(
         form.yandex_api_key = ''
         form.clear_yandex_api_key = false
         form.yandex_folder_id = s.yandex_folder_id
+        form.alibaba_access_key_id = ''
+        form.alibaba_access_key_secret = ''
+        form.clear_alibaba_billing = false
+        form.yandex_billing_iam_token = ''
+        form.clear_yandex_billing_iam_token = false
+        form.yandex_billing_account_id = s.yandex_billing_account_id
         form.openai_api_key = ''
         form.clear_openai_api_key = false
         form.openai_base_url = s.openai_base_url
@@ -153,9 +170,15 @@ const save = () => {
             form.llm_api_key = ''
             form.yandex_api_key = ''
             form.openai_api_key = ''
+            form.alibaba_access_key_id = ''
+            form.alibaba_access_key_secret = ''
+            form.yandex_billing_iam_token = ''
             form.clear_llm_api_key = false
             form.clear_yandex_api_key = false
             form.clear_openai_api_key = false
+            form.clear_alibaba_billing = false
+            form.clear_yandex_billing_iam_token = false
+            loadBalance()
         },
     })
 }
@@ -164,6 +187,61 @@ const resetPrompts = () => {
     if (!confirm('Сбросить оба промпта к значениям по умолчанию?')) return
     router.post('/admin/ai-assistant/reset-prompts', { club_id: form.club_id }, { preserveScroll: true })
 }
+
+type AiBalanceRow = {
+    currency: string
+    total: string
+    granted?: string
+    topped_up?: string
+    cash?: string
+    credit?: string
+    name?: string
+    active?: boolean
+}
+type AiBalance = {
+    ok: boolean
+    supported: boolean
+    provider?: string
+    is_available?: boolean
+    balances?: AiBalanceRow[]
+    message?: string
+}
+type AiBalances = {
+    deepseek?: AiBalance
+    qwen?: AiBalance
+    yandex?: AiBalance
+}
+
+const balance = ref<AiBalances | null>(null)
+const balanceCards = [
+    { key: 'deepseek' as const, title: 'DeepSeek' },
+    { key: 'qwen' as const, title: 'Qwen' },
+    { key: 'yandex' as const, title: 'Яндекс' },
+]
+const balanceLoading = ref(false)
+
+const loadBalance = async () => {
+    balanceLoading.value = true
+    try {
+        const { data } = await axios.get('/admin/ai-assistant/balance', {
+            params: { club_id: form.club_id },
+        })
+        balance.value = data
+    } catch (e: any) {
+        balance.value = {
+            ok: false,
+            supported: true,
+            message: e?.response?.data?.message || 'Не удалось получить баланс',
+        }
+    } finally {
+        balanceLoading.value = false
+    }
+}
+
+onMounted(loadBalance)
+watch(() => props.settings.club_id, () => {
+    loadBalance()
+})
 
 const testBusy = ref(false)
 const testCaseName = ref('')
@@ -285,9 +363,48 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                         {{ form.speech_provider === 'openai' ? 'OpenAI (Whisper + TTS)' : 'Yandex SpeechKit (речь)' }}
                     </li>
                 </ul>
+                <div class="mt-5 border-t border-white/5 pt-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <p class="text-[10px] uppercase tracking-[0.3em] text-white/40 font-black">Баланс</p>
+                        <button
+                            type="button"
+                            class="px-4 py-2 rounded-xl border border-white/10 text-[10px] uppercase tracking-widest text-white/50 hover:text-cyan-400 hover:border-cyan-500/40 disabled:opacity-40"
+                            :disabled="balanceLoading"
+                            @click="loadBalance"
+                        >
+                            Обновить
+                        </button>
+                    </div>
+                    <div class="mt-3 grid md:grid-cols-3 gap-4">
+                        <div v-for="card in balanceCards" :key="card.key" class="rounded-xl border border-white/5 bg-black/30 p-4">
+                            <p class="text-[10px] uppercase tracking-[0.25em] text-white/35 font-black">{{ card.title }}</p>
+                            <p v-if="balanceLoading" class="mt-2 text-sm text-white/40">Запрашиваем…</p>
+                            <template v-else-if="balance?.[card.key]?.ok && balance[card.key]?.balances?.length">
+                                <p v-for="(row, index) in balance[card.key].balances" :key="row.currency + index" class="mt-2">
+                                    <span class="text-lg font-black text-white">{{ row.total }} {{ row.currency }}</span>
+                                    <span v-if="row.name" class="block text-[10px] text-white/45">{{ row.name }}</span>
+                                    <span v-if="row.granted || row.topped_up" class="block text-[10px] text-white/35">
+                                        пополнение {{ row.topped_up }}, грант {{ row.granted }}
+                                    </span>
+                                    <span v-else-if="row.cash || row.credit" class="block text-[10px] text-white/35">
+                                        наличные {{ row.cash || '0' }}<template v-if="row.credit">, кредит {{ row.credit }}</template>
+                                    </span>
+                                    <span v-if="row.active === false" class="block text-[10px] text-amber-400/80">счёт неактивен</span>
+                                </p>
+                                <p v-if="balance[card.key].is_available === false" class="mt-1 text-[10px] text-amber-400/80">
+                                    Недостаточно для запросов
+                                </p>
+                            </template>
+                            <p v-else class="mt-2 text-[11px] text-white/40 italic leading-snug">
+                                {{ balance?.[card.key]?.message || 'Баланс недоступен' }}
+                            </p>
+                        </div>
+                    </div>
+                </div>
                 <p class="mt-3 text-[10px] text-white/25 italic leading-relaxed">
                     Вопрос в Shell: микрофон → SpeechKit/Whisper → DeepSeek → озвучка в наушники. Нужна активная бронь.
                     Хоткей в config.ini сейчас Grave (Ё / ~), не F1.
+                    Баланс Qwen — AccessKey Alibaba, не ключ картинок. Баланс Яндекса — IAM-токен биллинга, не ключ SpeechKit.
                 </p>
             </div>
 
@@ -359,6 +476,52 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                                 Очистить ключ в БД (останется .env)
                             </label>
                             <p v-if="form.errors.llm_api_key" class="mt-2 text-red-400 text-xs">{{ form.errors.llm_api_key }}</p>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-white/5 pt-8 space-y-6">
+                        <h2 class="text-sm font-black uppercase italic tracking-wider text-white/70">
+                            Ключи баланса
+                        </h2>
+                        <p class="text-[10px] text-white/30 italic">
+                            Пустое поле не затирает сохранённый ключ. Можно задать и в .env.
+                        </p>
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div>
+                                <label :class="labelClass">
+                                    Alibaba AccessKey ID
+                                    <span v-if="settings.has_alibaba_billing_key" class="text-cyan-500/70 normal-case tracking-normal">(сохранён в БД)</span>
+                                    <span v-else-if="settings.alibaba_billing_key_source === 'env'" class="text-white/25 normal-case tracking-normal">(из .env)</span>
+                                </label>
+                                <input v-model="form.alibaba_access_key_id" type="password" autocomplete="new-password" placeholder="LTAI…" :class="inputClass" />
+                            </div>
+                            <div>
+                                <label :class="labelClass">Alibaba AccessKey Secret</label>
+                                <input v-model="form.alibaba_access_key_secret" type="password" autocomplete="new-password" placeholder="••••••" :class="inputClass" />
+                                <label v-if="settings.has_alibaba_billing_key" class="flex items-center gap-2 mt-2 text-[10px] text-white/40 cursor-pointer">
+                                    <input v-model="form.clear_alibaba_billing" type="checkbox" class="accent-red-500" />
+                                    Очистить ключ в БД (останется .env)
+                                </label>
+                                <p class="mt-2 text-[10px] text-white/25 italic">Пара AccessKey с правом bss:DescribeAcccount. Не QWEN_API_KEY.</p>
+                            </div>
+                            <div>
+                                <label :class="labelClass">
+                                    IAM-токен биллинга Яндекса
+                                    <span v-if="settings.has_yandex_billing_iam_token" class="text-cyan-500/70 normal-case tracking-normal">(сохранён в БД)</span>
+                                    <span v-else-if="settings.yandex_billing_key_source === 'env'" class="text-white/25 normal-case tracking-normal">(из .env)</span>
+                                </label>
+                                <input v-model="form.yandex_billing_iam_token" type="password" autocomplete="new-password" placeholder="••••••" :class="inputClass" />
+                                <label v-if="settings.has_yandex_billing_iam_token" class="flex items-center gap-2 mt-2 text-[10px] text-white/40 cursor-pointer">
+                                    <input v-model="form.clear_yandex_billing_iam_token" type="checkbox" class="accent-red-500" />
+                                    Очистить токен в БД (останется .env)
+                                </label>
+                                <p class="mt-2 text-[10px] text-white/25 italic">Живёт около 12 часов. Ключ SpeechKit сюда не подходит.</p>
+                            </div>
+                            <div>
+                                <label :class="labelClass">ID платёжного аккаунта Яндекса</label>
+                                <input v-model="form.yandex_billing_account_id" type="text" placeholder="dn2…" :class="inputClass" />
+                                <p class="mt-2 text-[10px] text-white/25 italic">Пусто — показать все счета, которые видит токен.</p>
+                            </div>
                         </div>
                     </div>
 

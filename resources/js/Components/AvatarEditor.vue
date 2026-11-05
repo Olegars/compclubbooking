@@ -25,9 +25,17 @@ const initial = computed(() => {
     return (name[0] || 'S').toUpperCase()
 })
 
+const samples = Array.from({ length: 10 }, (_, index) => {
+    const name = `avatar_${index + 1}.png`
+    return { name, url: `/images/avatars/${name}` }
+})
+
+const selectedSample = ref('')
+
 const form = useForm({
     photo: null as File | null,
     stylize: false,
+    sample: '',
 })
 
 const onFile = (event: Event) => {
@@ -40,10 +48,25 @@ const onFile = (event: Event) => {
     preview.value = file ? URL.createObjectURL(file) : null
 }
 
-const save = () => {
+const savePlain = () => {
     if (!form.photo || form.processing) {
         return
     }
+    form.stylize = false
+    form.sample = ''
+    submit()
+}
+
+const submitStylize = () => {
+    if (!form.photo || !selectedSample.value || form.processing) {
+        return
+    }
+    form.stylize = true
+    form.sample = selectedSample.value
+    submit()
+}
+
+const submit = () => {
     form.post('/account/profile/avatar', {
         forceFormData: true,
         preserveScroll: true,
@@ -54,6 +77,8 @@ const save = () => {
             preview.value = null
             form.photo = null
             form.stylize = false
+            form.sample = ''
+            selectedSample.value = ''
             if (fileInput.value) {
                 fileInput.value.value = ''
             }
@@ -110,21 +135,43 @@ onUnmounted(() => {
                         </span>
                     </label>
                 </div>
-                <p v-if="form.stylize" class="text-[10px] text-white/30 mt-2 leading-snug">
-                    Лицо встанет на стандартный клубный аватар. Если подключены Hugging Face или ComfyUI — нейросеть дорисует стиль. DeepSeek картинки не рисует.
-                </p>
                 <button
-                    v-if="form.photo"
+                    v-if="form.photo && !form.stylize"
                     type="button"
                     :disabled="form.processing"
-                    class="mt-3 w-full sm:w-auto px-5 py-3 rounded-xl bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-[0.2em] text-white hover:bg-[#22c55e] hover:text-black hover:border-[#22c55e] transition-all disabled:opacity-30"
-                    @click="save"
+                    class="mt-3 w-full sm:w-auto px-5 py-3 rounded-xl bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-[0.2em] text-white hover:bg-white hover:text-black transition-all disabled:opacity-30"
+                    @click="savePlain"
                 >
-                    {{ form.processing
-                        ? (form.stylize ? 'Собираем аватар…' : 'Сохранение…')
-                        : (form.stylize ? 'Собрать клубный аватар' : 'Сохранить фото') }}
+                    {{ form.processing ? 'Сохранение…' : 'Сохранить фото' }}
                 </button>
-                <div v-if="form.errors.photo" class="text-red-500 text-[10px] uppercase mt-2">{{ form.errors.photo }}</div>
+                <div v-if="form.stylize" class="mt-4 space-y-3">
+                    <p class="text-[10px] text-white/40 leading-snug">
+                        Выберите клубный стиль. Qwen нарисует один аватар: примерно ваше лицо и примерно этот образец.
+                    </p>
+                    <div class="grid grid-cols-5 gap-2">
+                        <button
+                            v-for="sample in samples"
+                            :key="sample.name"
+                            type="button"
+                            class="aspect-square rounded-lg overflow-hidden border-2 bg-black transition-colors"
+                            :class="selectedSample === sample.name ? 'border-[#22c55e]' : 'border-white/10 hover:border-white/40'"
+                            @click="selectedSample = sample.name"
+                        >
+                            <img :src="sample.url" alt="" class="w-full h-full object-cover" />
+                        </button>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            class="px-5 py-2 rounded-xl bg-[#22c55e] text-black text-[9px] font-black uppercase tracking-widest disabled:opacity-30"
+                            :disabled="!selectedSample || form.processing || !form.photo"
+                            @click="submitStylize"
+                        >
+                            {{ form.processing && form.stylize ? 'Стилизуем…' : 'Вперед' }}
+                        </button>
+                    </div>
+                </div>
+                <div v-if="form.errors.photo || form.errors.sample" class="text-red-500 text-[10px] uppercase mt-2">{{ form.errors.photo || form.errors.sample }}</div>
                 <div v-else-if="flashSuccess" class="text-[#22c55e] text-[10px] uppercase mt-2 tracking-widest">{{ flashSuccess }}</div>
             </div>
         </div>

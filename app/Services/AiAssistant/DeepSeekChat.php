@@ -110,6 +110,108 @@ class DeepSeekChat
     }
 
     /**
+     * Остаток DeepSeek по тому же ключу, что и чат. OpenAI и SpeechKit такого метода не отдают.
+     *
+     * @return array{
+     *   ok: bool,
+     *   supported: bool,
+     *   provider: string,
+     *   is_available?: bool,
+     *   balances?: list<array{currency: string, total: string, granted: string, topped_up: string}>,
+     *   message?: string
+     * }
+     */
+    public function balance(?int $clubId = null): array
+    {
+        $settings = AiAssistantSetting::forClub($clubId);
+        $provider = $settings->resolvedLlmProvider();
+        if ($provider !== 'deepseek') {
+            return [
+                'ok' => false,
+                'supported' => false,
+                'provider' => $provider,
+                'message' => 'У выбранного провайдера нет баланса по API.',
+            ];
+        }
+
+        $key = $settings->resolvedLlmApiKey();
+        if ($key === '') {
+            return [
+                'ok' => false,
+                'supported' => true,
+                'provider' => 'deepseek',
+                'message' => 'Ключ DeepSeek не задан.',
+            ];
+        }
+
+        $base = $settings->resolvedLlmBaseUrl();
+        try {
+            $response = Http::timeout(8)
+                ->withToken($key)
+                ->acceptJson()
+                ->get($base.'/user/balance');
+        } catch (\Throwable $e) {
+            report($e);
+
+            return [
+                'ok' => false,
+                'supported' => true,
+                'provider' => 'deepseek',
+                'message' => 'Не удалось получить баланс DeepSeek.',
+            ];
+        }
+
+        if (! $response->successful()) {
+            return [
+                'ok' => false,
+                'supported' => true,
+                'provider' => 'deepseek',
+                'message' => $response->status() === 401
+                    ? 'Ключ DeepSeek не принят.'
+                    : 'DeepSeek не отдал баланс.',
+            ];
+        }
+
+        $infos = $response->json('balance_infos');
+        $balances = [];
+        if (is_array($infos)) {
+            foreach ($infos as $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $currency = trim((string) ($row['currency'] ?? ''));
+                $total = trim((string) ($row['total_balance'] ?? ''));
+                if ($currency === '' || $total === '') {
+                    continue;
+                }
+                $balances[] = [
+                    'currency' => $currency,
+                    'total' => $total,
+                    'granted' => trim((string) ($row['granted_balance'] ?? '0')),
+                    'topped_up' => trim((string) ($row['topped_up_balance'] ?? '0')),
+                ];
+            }
+        }
+
+        if ($balances === []) {
+            return [
+                'ok' => false,
+                'supported' => true,
+                'provider' => 'deepseek',
+                'message' => 'DeepSeek вернул пустой баланс.',
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'supported' => true,
+            'provider' => 'deepseek',
+            'is_available' => (bool) $response->json('is_available'),
+            'balances' => $balances,
+        ];
+    }
+
+    /**
      * Personalized spoken greeting after Shell login (no STT).
      *
      * @param  array{

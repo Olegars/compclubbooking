@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\AiAssistantSetting;
 use App\Models\Club;
+use App\Services\AiAssistant\AlibabaBalanceClient;
 use App\Services\AiAssistant\DeepSeekChat;
 use App\Services\AiAssistant\SpeechService;
+use App\Services\AiAssistant\YandexBillingBalanceClient;
 use App\Services\StoreCaseCatalogEnrichmentService;
 use App\Support\AdminLocation;
 use Illuminate\Http\Request;
@@ -63,6 +65,12 @@ class AiAssistantSettingsController extends Controller
             'max_reply_chars' => 'required|integer|min:80|max:2000',
             'companion_prompt' => 'required|string|max:20000',
             'greeting_prompt' => 'required|string|max:20000',
+            'alibaba_access_key_id' => 'nullable|string|max:2000',
+            'alibaba_access_key_secret' => 'nullable|string|max:2000',
+            'clear_alibaba_billing' => 'nullable|boolean',
+            'yandex_billing_iam_token' => 'nullable|string|max:4000',
+            'clear_yandex_billing_iam_token' => 'nullable|boolean',
+            'yandex_billing_account_id' => 'nullable|string|max:64',
         ], [
             'tts_voice.in' => 'Выберите голос из списка',
             'llm_provider.in' => 'Выберите провайдера LLM',
@@ -96,6 +104,9 @@ class AiAssistantSettingsController extends Controller
             'greeting_prompt' => $greeting === AiAssistantSetting::defaultGreetingPromptTemplate()
                 ? null
                 : $greeting,
+            'yandex_billing_account_id' => filled($data['yandex_billing_account_id'] ?? null)
+                ? trim((string) $data['yandex_billing_account_id'])
+                : null,
         ];
 
         if (! empty($data['clear_llm_api_key'])) {
@@ -114,6 +125,24 @@ class AiAssistantSettingsController extends Controller
             $payload['openai_api_key'] = null;
         } elseif (array_key_exists('openai_api_key', $data) && filled($data['openai_api_key'])) {
             $payload['openai_api_key'] = trim($data['openai_api_key']);
+        }
+
+        if (! empty($data['clear_alibaba_billing'])) {
+            $payload['alibaba_access_key_id'] = null;
+            $payload['alibaba_access_key_secret'] = null;
+        } else {
+            if (array_key_exists('alibaba_access_key_id', $data) && filled($data['alibaba_access_key_id'])) {
+                $payload['alibaba_access_key_id'] = trim($data['alibaba_access_key_id']);
+            }
+            if (array_key_exists('alibaba_access_key_secret', $data) && filled($data['alibaba_access_key_secret'])) {
+                $payload['alibaba_access_key_secret'] = trim($data['alibaba_access_key_secret']);
+            }
+        }
+
+        if (! empty($data['clear_yandex_billing_iam_token'])) {
+            $payload['yandex_billing_iam_token'] = null;
+        } elseif (array_key_exists('yandex_billing_iam_token', $data) && filled($data['yandex_billing_iam_token'])) {
+            $payload['yandex_billing_iam_token'] = trim($data['yandex_billing_iam_token']);
         }
 
         $row->update($payload);
@@ -135,6 +164,24 @@ class AiAssistantSettingsController extends Controller
         ]);
 
         return back()->with('success', 'Промпты сброшены к значениям по умолчанию');
+    }
+
+    public function balance(
+        Request $request,
+        DeepSeekChat $llm,
+        AlibabaBalanceClient $alibaba,
+        YandexBillingBalanceClient $yandex,
+    ) {
+        $data = $request->validate([
+            'club_id' => 'nullable|integer|exists:clubs,id',
+        ]);
+        $clubId = (int) ($data['club_id'] ?? Club::query()->value('id'));
+
+        return response()->json([
+            'deepseek' => $llm->balance($clubId),
+            'qwen' => $alibaba->balance($clubId),
+            'yandex' => $yandex->balance($clubId),
+        ]);
     }
 
     public function testLlm(Request $request, DeepSeekChat $llm, StoreCaseCatalogEnrichmentService $cases)
