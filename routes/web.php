@@ -56,6 +56,7 @@ use App\Http\Controllers\Admin\BonusController;
 use App\Http\Controllers\Admin\TaxController;
 use App\Http\Controllers\Admin\StaffCadreController;
 use App\Http\Controllers\Admin\StaffController;
+use App\Http\Controllers\Admin\AdminRatingController;
 use App\Http\Controllers\Admin\StaffPayrollController;
 use App\Http\Controllers\Admin\StaffEdoController;
 use App\Http\Controllers\Admin\OwnerCabinetController;
@@ -813,6 +814,12 @@ Route::middleware(['auth:admin', 'staff.active'])->prefix('admin')->group(functi
 
     // УРОВЕНЬ: SUPERVISOR / OWNER — штат и проверка анкет
     Route::middleware(['role:supervisor,owner'])->group(function () {
+        Route::get('/rating', [AdminRatingController::class, 'index'])->name('admin.rating.index');
+        Route::post('/rating', [AdminRatingController::class, 'store'])->name('admin.rating.store');
+        Route::put('/rating/{event}', [AdminRatingController::class, 'update'])->name('admin.rating.update');
+        Route::delete('/rating/{event}', [AdminRatingController::class, 'destroy'])->name('admin.rating.destroy');
+        Route::post('/rating/apply', [AdminRatingController::class, 'apply'])->name('admin.rating.apply');
+
         Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
         Route::post('/staff/pay-settings', [StaffController::class, 'updatePaySettings'])->name('admin.staff.pay.settings');
         Route::post('/staff/bonus/settings', [StaffController::class, 'updateBonusSettings'])->name('admin.staff.bonus.settings');

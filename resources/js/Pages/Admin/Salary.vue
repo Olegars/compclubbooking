@@ -146,6 +146,10 @@ const props = withDefaults(defineProps<{
         burned: boolean
         history: Array<{ id: number; amount_xp: number; description: string; created_at: string | null }>
     }
+    rating?: null | {
+        total: number
+        history: Array<{ id: number; event_name: string; points: number; created_at: string | null; author: string | null }>
+    }
 }>(), {
     calendar: () => ({
         month: '',
@@ -189,6 +193,7 @@ const props = withDefaults(defineProps<{
         documents: [],
     }),
     bonus: null,
+    rating: null,
 })
 
 const clubName = useClubName()
@@ -470,7 +475,7 @@ const kindLabel = (kind: string | null | undefined) => {
                         Личный <span class="text-[#22c55e]">кабинет</span>
                     </h1>
                     <p class="text-white/20 text-[10px] uppercase tracking-[0.4em] font-black mt-2 italic">
-                        Смены, начисления, штрафы и вывод
+                        Смены, начисления, рейтинг и вывод
                     </p>
                 </div>
                 <div class="text-right">
@@ -515,6 +520,28 @@ const kindLabel = (kind: string | null | undefined) => {
                         </span>
                     </div>
                 </div>
+            </div>
+
+            <div v-if="rating" class="bg-[#050505] border border-cyan-500/20 rounded-[1.125rem] p-8 shadow-xl space-y-6">
+                <div>
+                    <div class="text-[10px] text-cyan-400 uppercase font-black tracking-widest">Рейтинг</div>
+                    <div class="text-4xl font-black tracking-tighter mt-2" :class="rating.total < 0 ? 'text-amber-300' : 'text-white'">
+                        {{ rating.total > 0 ? '+' : '' }}{{ rating.total }}
+                    </div>
+                    <div class="text-white/40 text-xs mt-1">Сумма баллов по проведённым событиям</div>
+                </div>
+                <div v-if="rating.history.length" class="border-t border-white/10 pt-4 space-y-2">
+                    <div v-for="row in rating.history" :key="row.id" class="flex justify-between gap-4 text-xs">
+                        <span class="text-white/60">
+                            {{ row.created_at }} · {{ row.event_name }}
+                            <span v-if="row.author" class="text-white/30">· {{ row.author }}</span>
+                        </span>
+                        <span class="font-black shrink-0" :class="row.points < 0 ? 'text-amber-300' : 'text-cyan-400'">
+                            {{ row.points > 0 ? '+' : '' }}{{ row.points }}
+                        </span>
+                    </div>
+                </div>
+                <div v-else class="text-white/30 text-xs">Событий пока нет.</div>
             </div>
 
             <div v-if="shiftState?.duty === 'intern' && !shiftState?.id"
