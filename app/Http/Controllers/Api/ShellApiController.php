@@ -1662,7 +1662,7 @@ class ShellApiController extends Controller
         }
 
         $voice = AiAssistantSetting::sanitizeTtsVoice(
-            $settings->resolvedSpeechProvider(),
+            $settings->resolvedVoiceSpeechProvider(),
             (string) $request->input('tts_voice')
         );
         if ($voice === null) {
@@ -1744,9 +1744,9 @@ class ShellApiController extends Controller
      */
     private function aiVoicePayload(AiAssistantSetting $settings, ?string $currentVoice = null): array
     {
-        $provider = $settings->resolvedSpeechProvider();
+        $provider = $settings->resolvedVoiceSpeechProvider();
         $voice = AiAssistantSetting::sanitizeTtsVoice($provider, $currentVoice)
-            ?? $settings->resolvedTtsVoice();
+            ?? ($provider === 'qwen' ? $settings->resolvedQwenTtsVoice() : $settings->resolvedTtsVoice());
 
         return [
             'provider' => $provider,

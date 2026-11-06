@@ -29,6 +29,9 @@ class AiAssistantSetting extends Model
         'alibaba_access_key_secret',
         'yandex_billing_iam_token',
         'yandex_billing_account_id',
+        'voice_stack',
+        'qwen_api_key',
+        'qwen_tts_voice',
     ];
 
     protected $casts = [
@@ -39,6 +42,7 @@ class AiAssistantSetting extends Model
         'alibaba_access_key_id' => 'encrypted',
         'alibaba_access_key_secret' => 'encrypted',
         'yandex_billing_iam_token' => 'encrypted',
+        'qwen_api_key' => 'encrypted',
         'max_reply_chars' => 'integer',
     ];
 
@@ -49,6 +53,7 @@ class AiAssistantSetting extends Model
         'alibaba_access_key_id',
         'alibaba_access_key_secret',
         'yandex_billing_iam_token',
+        'qwen_api_key',
     ];
 
     public const OPENAI_VOICES = [
@@ -81,6 +86,19 @@ class AiAssistantSetting extends Model
     public const SPEECH_PROVIDERS = [
         'yandex' => 'Yandex SpeechKit',
         'openai' => 'OpenAI (Whisper + TTS)',
+    ];
+
+    /** Голоса qwen3-tts-flash. Регистр важен для API, в БД игрока хранится нижний. */
+    public const QWEN_VOICES = [
+        'Cherry' => 'Cherry',
+        'Serena' => 'Serena',
+        'Ethan' => 'Ethan',
+        'Chelsie' => 'Chelsie',
+    ];
+
+    public const VOICE_STACKS = [
+        'deepseek_yandex' => 'DeepSeek + Яндекс Speech',
+        'qwen' => 'Qwen',
     ];
 
     public const LLM_PROVIDERS = [
@@ -131,6 +149,14 @@ class AiAssistantSetting extends Model
 
         if (! $settings->is_enabled) {
             return 'Выключен тумблером в админке';
+        }
+
+        if ($settings->resolvedVoiceStack() === 'qwen') {
+            if ($settings->resolvedQwenApiKey() === '') {
+                return 'Нет ключа Qwen';
+            }
+
+            return null;
         }
 
         if ($settings->resolvedLlmApiKey() === '') {
@@ -284,22 +310,130 @@ class AiAssistantSetting extends Model
         return array_key_exists($provider, self::SPEECH_PROVIDERS) ? $provider : 'yandex';
     }
 
+    public function resolvedVoiceStack(): string
+    {
+        $stack = strtolower(trim((string) ($this->voice_stack ?: 'deepseek_yandex')));
+
+        return array_key_exists($stack, self::VOICE_STACKS) ? $stack : 'deepseek_yandex';
+    }
+
+    /** Речь вопроса и приветствия: у стека Qwen свой ASR/TTS, иначе провайдер речи. */
+    public function resolvedVoiceSpeechProvider(): string
+    {
+        return $this->resolvedVoiceStack() === 'qwen' ? 'qwen' : $this->resolvedSpeechProvider();
+    }
+
+    public function resolvedQwenApiKey(): string
+    {
+        $fromDb = trim((string) ($this->qwen_api_key ?? ''));
+        if ($fromDb !== '') {
+            return $fromDb;
+        }
+
+        return trim((string) config('ai_assistant.qwen.api_key', ''));
+    }
+
+    public function qwenKeySource(): string
+    {
+        return trim((string) ($this->qwen_api_key ?? '')) !== '' ? 'db' : 'env';
+    }
+
+    public function resolvedQwenBaseUrl(): string
+    {
+        $base = rtrim(trim((string) config('ai_assistant.qwen.base_url', '')), '/');
+
+        return $base !== '' ? $base : 'https://dashscope-intl.aliyuncs.com/api/v1';
+    }
+
+    public function resolvedQwenCompatibleBaseUrl(): string
+    {
+        $base = $this->resolvedQwenBaseUrl();
+        if (str_contains($base, '/compatible-mode/')) {
+            return $base;
+        }
+        if (str_ends_with($base, '/api/v1')) {
+            return substr($base, 0, -strlen('/api/v1')).'/compatible-mode/v1';
+        }
+
+        return $base.'/compatible-mode/v1';
+    }
+
+    public function resolvedQwenGenerationUrl(): string
+    {
+        $base = $this->resolvedQwenBaseUrl();
+        if (str_contains($base, '/services/')) {
+            return $base;
+        }
+
+        return $base.'/services/aigc/multimodal-generation/generation';
+    }
+
+    public function resolvedQwenChatModel(): string
+    {
+        $model = trim((string) config('ai_assistant.qwen.chat_model', ''));
+
+        return $model !== '' ? $model : 'qwen-plus';
+    }
+
+    public function resolvedQwenAsrModel(): string
+    {
+        $model = trim((string) config('ai_assistant.qwen.asr_model', ''));
+
+        return $model !== '' ? $model : 'qwen3-asr-flash';
+    }
+
+    public function resolvedQwenTtsModel(): string
+    {
+        $model = trim((string) config('ai_assistant.qwen.tts_model', ''));
+
+        return $model !== '' ? $model : 'qwen3-tts-flash';
+    }
+
+    public function resolvedQwenTtsVoice(): string
+    {
+        $fromDb = self::sanitizeTtsVoice('qwen', $this->qwen_tts_voice);
+        if ($fromDb !== null) {
+            return $fromDb;
+        }
+
+        $fallback = self::sanitizeTtsVoice('qwen', (string) config('ai_assistant.qwen.tts_voice', 'Cherry'));
+
+        return $fallback ?? 'Cherry';
+    }
+
     /**
      * @return array<string, string>
      */
     public static function voicesFor(string $provider): array
     {
-        return $provider === 'openai' ? self::OPENAI_VOICES : self::YANDEX_VOICES;
+        return match ($provider) {
+            'openai' => self::OPENAI_VOICES,
+            'qwen' => self::QWEN_VOICES,
+            default => self::YANDEX_VOICES,
+        };
     }
 
     public static function sanitizeTtsVoice(string $provider, ?string $voice): ?string
     {
-        $voice = strtolower(trim((string) $voice));
+        $voice = trim((string) $voice);
         if ($voice === '') {
             return null;
         }
 
-        return array_key_exists($voice, self::voicesFor($provider)) ? $voice : null;
+        $voices = self::voicesFor($provider);
+        if ($provider === 'qwen') {
+            foreach (array_keys($voices) as $id) {
+                if (strcasecmp($id, $voice) === 0) {
+                    return $id;
+                }
+            }
+
+            return null;
+        }
+
+        $voice = strtolower($voice);
+
+        return array_key_exists($voice, $voices) ? $voice : null;
     }
 
     /**
@@ -361,7 +495,7 @@ class AiAssistantSetting extends Model
 
     public function resolveVoiceForPlayer(?User $user, ?string $override = null): string
     {
-        $provider = $this->resolvedSpeechProvider();
+        $provider = $this->resolvedVoiceSpeechProvider();
         foreach ([$override, $user?->ttsVoice()] as $candidate) {
             $ok = self::sanitizeTtsVoice($provider, $candidate);
             if ($ok !== null) {
@@ -369,7 +503,7 @@ class AiAssistantSetting extends Model
             }
         }
 
-        return $this->resolvedTtsVoice();
+        return $provider === 'qwen' ? $this->resolvedQwenTtsVoice() : $this->resolvedTtsVoice();
     }
 
     public function resolvedMaxReplyChars(): int
@@ -578,6 +712,14 @@ PROMPT;
             'has_openai_api_key' => trim((string) ($this->openai_api_key ?? '')) !== '',
             'openai_key_source' => $this->openAiKeySource(),
             'speech_provider' => $this->resolvedSpeechProvider(),
+            'voice_stack' => $this->resolvedVoiceStack(),
+            'has_qwen_api_key' => trim((string) ($this->qwen_api_key ?? '')) !== '',
+            'qwen_key_source' => $this->qwenKeySource(),
+            'has_qwen_credentials' => $this->resolvedQwenApiKey() !== '',
+            'qwen_tts_voice' => $this->resolvedQwenTtsVoice(),
+            'qwen_chat_model' => $this->resolvedQwenChatModel(),
+            'qwen_asr_model' => $this->resolvedQwenAsrModel(),
+            'qwen_tts_model' => $this->resolvedQwenTtsModel(),
             'yandex_folder_id' => $this->yandex_folder_id ?: '',
             'has_yandex_api_key' => trim((string) ($this->yandex_api_key ?? '')) !== '',
             'yandex_key_source' => $this->yandexKeySource(),
@@ -595,7 +737,9 @@ PROMPT;
             'greeting_prompt' => $this->greeting_prompt ?: self::defaultGreetingPromptTemplate(),
             'using_default_companion' => trim((string) ($this->companion_prompt ?? '')) === '',
             'using_default_greeting' => trim((string) ($this->greeting_prompt ?? '')) === '',
-            'credentials_ok' => $this->hasCredentials(),
+            'credentials_ok' => $this->resolvedVoiceStack() === 'qwen'
+                ? $this->resolvedQwenApiKey() !== ''
+                : $this->hasCredentials(),
             'llm_preset_base_url' => self::LLM_PRESETS[$provider]['base_url'] ?? '',
             'llm_preset_model' => self::LLM_PRESETS[$provider]['model'] ?? '',
         ];

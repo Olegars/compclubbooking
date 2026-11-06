@@ -12,11 +12,17 @@ class SpeechService
         private readonly YandexTextToSpeech $yandexTts,
         private readonly WhisperSpeechToText $openaiStt,
         private readonly OpenAiTextToSpeech $openaiTts,
+        private readonly QwenSpeechToText $qwenStt,
+        private readonly QwenTextToSpeech $qwenTts,
     ) {
     }
 
     public function transcribe(UploadedFile $audio, AiAssistantSetting $settings): string
     {
+        if ($settings->resolvedVoiceSpeechProvider() === 'qwen') {
+            return $this->qwenStt->transcribe($audio, $settings);
+        }
+
         if ($settings->resolvedSpeechProvider() === 'openai') {
             return $this->openaiStt->transcribe($audio, [
                 'api_key' => $settings->resolvedOpenAiApiKey(),
@@ -36,8 +42,13 @@ class SpeechService
      */
     public function synthesize(string $text, AiAssistantSetting $settings, ?string $voice = null): array
     {
-        $voice = AiAssistantSetting::sanitizeTtsVoice($settings->resolvedSpeechProvider(), $voice)
-            ?? $settings->resolvedTtsVoice();
+        $provider = $settings->resolvedVoiceSpeechProvider();
+        $voice = AiAssistantSetting::sanitizeTtsVoice($provider, $voice)
+            ?? ($provider === 'qwen' ? $settings->resolvedQwenTtsVoice() : $settings->resolvedTtsVoice());
+
+        if ($provider === 'qwen') {
+            return $this->qwenTts->synthesize($text, $settings, $voice);
+        }
 
         if ($settings->resolvedSpeechProvider() === 'openai') {
             return $this->openaiTts->synthesize($text, $voice, [

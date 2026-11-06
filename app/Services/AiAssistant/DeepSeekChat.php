@@ -15,13 +15,7 @@ class DeepSeekChat
     public function reply(string $userText, array $context = []): string
     {
         $settings = AiAssistantSetting::forClub(isset($context['club_id']) ? (int) $context['club_id'] : null);
-        $key = $settings->resolvedLlmApiKey();
-        if ($key === '') {
-            throw new RuntimeException('LLM API-ключ не задан (админка или .env).');
-        }
-
-        $base = $settings->resolvedLlmBaseUrl();
-        $model = $settings->resolvedLlmModel();
+        [$key, $base, $model] = $this->voiceChatCredentials($settings);
         $timeout = (float) config('ai_assistant.http_timeout', 60);
         $maxChars = $settings->resolvedMaxReplyChars();
 
@@ -228,13 +222,7 @@ class DeepSeekChat
     public function greet(array $context): string
     {
         $settings = AiAssistantSetting::forClub(isset($context['club_id']) ? (int) $context['club_id'] : null);
-        $key = $settings->resolvedLlmApiKey();
-        if ($key === '') {
-            throw new RuntimeException('LLM API-ключ не задан (админка или .env).');
-        }
-
-        $base = $settings->resolvedLlmBaseUrl();
-        $model = $settings->resolvedLlmModel();
+        [$key, $base, $model] = $this->voiceChatCredentials($settings);
         $timeout = (float) config('ai_assistant.http_timeout', 60);
         $maxChars = min(280, $settings->resolvedMaxReplyChars());
 
@@ -500,12 +488,39 @@ class DeepSeekChat
         if ($this->isDeepSeekModel($model)) {
             $payload['thinking'] = ['type' => 'disabled'];
         }
+        if (str_contains(strtolower($model), 'qwen3')) {
+            $payload['enable_thinking'] = false;
+        }
 
         if ($jsonObject) {
             $payload['response_format'] = ['type' => 'json_object'];
         }
 
         return $payload;
+    }
+
+    /**
+     * Вопрос и приветствие. Ники, накладные и шёпот тренера остаются на DeepSeek/OpenAI.
+     *
+     * @return array{0:string,1:string,2:string}
+     */
+    private function voiceChatCredentials(AiAssistantSetting $settings): array
+    {
+        if ($settings->resolvedVoiceStack() === 'qwen') {
+            $key = $settings->resolvedQwenApiKey();
+            if ($key === '') {
+                throw new RuntimeException('Qwen API-ключ не задан (админка или .env).');
+            }
+
+            return [$key, $settings->resolvedQwenCompatibleBaseUrl(), $settings->resolvedQwenChatModel()];
+        }
+
+        $key = $settings->resolvedLlmApiKey();
+        if ($key === '') {
+            throw new RuntimeException('LLM API-ключ не задан (админка или .env).');
+        }
+
+        return [$key, $settings->resolvedLlmBaseUrl(), $settings->resolvedLlmModel()];
     }
 
     private function isDeepSeekModel(string $model): bool

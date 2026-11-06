@@ -48,6 +48,21 @@ return [
     ],
 
     /*
+     * Стек «Qwen» для вопроса в Shell: ASR + чат + TTS одним ключом Model Studio.
+     * Регион базы должен совпадать с ключом. Пустой QWEN_BASE_URL берёт базу картинок.
+     */
+    'qwen' => [
+        'api_key' => env('QWEN_API_KEY', env('DASHSCOPE_API_KEY')),
+        'base_url' => rtrim((string) (env('QWEN_BASE_URL') ?: env('QWEN_IMAGE_BASE_URL', 'https://dashscope-intl.aliyuncs.com/api/v1')), '/'),
+        'chat_model' => env('QWEN_CHAT_MODEL', 'qwen-plus'),
+        'asr_model' => env('QWEN_ASR_MODEL', 'qwen3-asr-flash'),
+        'tts_model' => env('QWEN_TTS_MODEL', 'qwen3-tts-flash'),
+        'tts_voice' => env('QWEN_TTS_VOICE', 'Cherry'),
+        'asr_language' => env('QWEN_ASR_LANGUAGE', 'ru'),
+        'tts_language' => env('QWEN_TTS_LANGUAGE', 'Russian'),
+    ],
+
+    /*
      * Стилизация аватара. Qwen Image Edit рисует один кадр по фото и образцу.
      * DeepSeek картинки не рисует. Очередь ComfyUI в этой галке не используется.
      */

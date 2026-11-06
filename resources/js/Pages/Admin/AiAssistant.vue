@@ -18,6 +18,14 @@ const props = defineProps<{
         has_llm_api_key: boolean
         llm_key_source: 'db' | 'env'
         speech_provider: string
+        voice_stack: string
+        has_qwen_api_key: boolean
+        qwen_key_source: 'db' | 'env'
+        has_qwen_credentials: boolean
+        qwen_tts_voice: string
+        qwen_chat_model: string
+        qwen_asr_model: string
+        qwen_tts_model: string
         yandex_folder_id: string
         has_yandex_api_key: boolean
         yandex_key_source: 'db' | 'env'
@@ -49,6 +57,8 @@ const props = defineProps<{
     yandexVoices: Record<string, string>
     llmProviders: Record<string, string>
     speechProviders: Record<string, string>
+    voiceStacks: Record<string, string>
+    qwenVoices: Record<string, string>
     llmPresets: Record<string, { base_url: string; model: string }>
     clubs: Array<{ id: number; name: string }>
     placeholders: {
@@ -69,6 +79,10 @@ const form = useForm({
     llm_base_url: props.settings.llm_base_url,
     llm_model: props.settings.llm_model,
     speech_provider: props.settings.speech_provider,
+    voice_stack: props.settings.voice_stack || 'deepseek_yandex',
+    qwen_api_key: '',
+    clear_qwen_api_key: false,
+    qwen_tts_voice: props.settings.qwen_tts_voice || 'Cherry',
     yandex_api_key: '',
     clear_yandex_api_key: false,
     yandex_folder_id: props.settings.yandex_folder_id,
@@ -100,6 +114,10 @@ watch(
         form.llm_base_url = s.llm_base_url
         form.llm_model = s.llm_model
         form.speech_provider = s.speech_provider
+        form.voice_stack = s.voice_stack || 'deepseek_yandex'
+        form.qwen_api_key = ''
+        form.clear_qwen_api_key = false
+        form.qwen_tts_voice = s.qwen_tts_voice || 'Cherry'
         form.yandex_api_key = ''
         form.clear_yandex_api_key = false
         form.yandex_folder_id = s.yandex_folder_id
@@ -124,6 +142,11 @@ watch(
 )
 
 const liveHint = computed(() => {
+    if (form.voice_stack === 'qwen') {
+        if (!props.settings.has_qwen_credentials) return 'Нет ключа Qwen (админка или .env)'
+        if (!form.is_enabled) return 'Выключено тумблером в админке'
+        return 'Вопрос идёт через Qwen: распознавание, ответ и озвучка'
+    }
     if (!props.settings.has_llm_credentials) return 'Нет LLM-ключа DeepSeek (админка или .env)'
     if (!props.settings.has_speech_credentials) {
         return form.speech_provider === 'openai'
@@ -145,7 +168,24 @@ watch(() => form.speech_provider, (provider) => {
     }
 })
 
-const liveOk = computed(() => props.settings.credentials_ok && form.is_enabled)
+watch(() => form.voice_stack, (stack) => {
+    if (stack === 'deepseek_yandex') {
+        form.llm_provider = 'deepseek'
+        form.speech_provider = 'yandex'
+        if (!Object.keys(props.yandexVoices).includes(form.tts_voice)) {
+            form.tts_voice = 'alena'
+        }
+    }
+    if (stack === 'qwen' && !Object.keys(props.qwenVoices || {}).includes(form.qwen_tts_voice)) {
+        form.qwen_tts_voice = 'Cherry'
+    }
+})
+
+const liveOk = computed(() => {
+    if (!form.is_enabled) return false
+    if (form.voice_stack === 'qwen') return props.settings.has_qwen_credentials
+    return props.settings.has_llm_credentials && props.settings.has_speech_credentials
+})
 
 const switchClub = (clubId: number) => {
     router.get('/admin/ai-assistant', { club_id: clubId }, { preserveState: false })
@@ -170,12 +210,14 @@ const save = () => {
             form.llm_api_key = ''
             form.yandex_api_key = ''
             form.openai_api_key = ''
+            form.qwen_api_key = ''
             form.alibaba_access_key_id = ''
             form.alibaba_access_key_secret = ''
             form.yandex_billing_iam_token = ''
             form.clear_llm_api_key = false
             form.clear_yandex_api_key = false
             form.clear_openai_api_key = false
+            form.clear_qwen_api_key = false
             form.clear_alibaba_billing = false
             form.clear_yandex_billing_iam_token = false
             loadBalance()
@@ -355,13 +397,18 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                     <li :class="form.is_enabled ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
                         {{ form.is_enabled ? '✓' : '✗' }} Тумблер в админке
                     </li>
-                    <li :class="settings.has_llm_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
-                        {{ settings.has_llm_credentials ? '✓' : '✗' }} DeepSeek (текст ответа)
+                    <li v-if="form.voice_stack === 'qwen'" :class="settings.has_qwen_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
+                        {{ settings.has_qwen_credentials ? '✓' : '✗' }} Qwen (распознавание, ответ, озвучка)
                     </li>
-                    <li :class="settings.has_speech_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
-                        {{ settings.has_speech_credentials ? '✓' : '✗' }}
-                        {{ form.speech_provider === 'openai' ? 'OpenAI (Whisper + TTS)' : 'Yandex SpeechKit (речь)' }}
-                    </li>
+                    <template v-else>
+                        <li :class="settings.has_llm_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
+                            {{ settings.has_llm_credentials ? '✓' : '✗' }} DeepSeek (текст ответа)
+                        </li>
+                        <li :class="settings.has_speech_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
+                            {{ settings.has_speech_credentials ? '✓' : '✗' }}
+                            {{ form.speech_provider === 'openai' ? 'OpenAI (Whisper + TTS)' : 'Yandex SpeechKit (речь)' }}
+                        </li>
+                    </template>
                 </ul>
                 <div class="mt-5 border-t border-white/5 pt-4">
                     <div class="flex items-center justify-between gap-3">
@@ -402,7 +449,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                     </div>
                 </div>
                 <p class="mt-3 text-[10px] text-white/25 italic leading-relaxed">
-                    Вопрос в Shell: микрофон → SpeechKit/Whisper → DeepSeek → озвучка в наушники. Нужна активная бронь.
+                    Вопрос в Shell: микрофон → речь → ответ → озвучка. Стек ниже: DeepSeek + Яндекс Speech или Qwen целиком. Нужна активная бронь.
                     Хоткей в config.ini сейчас Grave (Ё / ~), не F1.
                     Баланс Qwen — AccessKey Alibaba, не ключ картинок. Баланс Яндекса — IAM-токен биллинга, не ключ SpeechKit.
                 </p>
@@ -441,8 +488,65 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
 
                 <div class="border-t border-white/5 pt-8 space-y-6">
                     <h2 class="text-sm font-black uppercase italic tracking-wider text-white/70">
+                        Стек вопроса
+                    </h2>
+                    <p class="text-[10px] text-white/30 italic">
+                        DeepSeek + Яндекс Speech — как сейчас. Qwen сам распознаёт, отвечает и озвучивает. Ники, накладные и шёпот тренера остаются на DeepSeek.
+                    </p>
+                    <div>
+                        <label :class="labelClass">Кто отвечает на вопрос в Shell</label>
+                        <select v-model="form.voice_stack" :class="inputClass + ' max-w-md'">
+                            <option v-for="(label, key) in voiceStacks" :key="key" :value="key">
+                                {{ label }}
+                            </option>
+                        </select>
+                        <p v-if="form.errors.voice_stack" class="mt-2 text-red-400 text-xs">{{ form.errors.voice_stack }}</p>
+                    </div>
+
+                    <div v-if="form.voice_stack === 'qwen'" class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <label :class="labelClass">
+                                Qwen API-ключ
+                                <span v-if="settings.has_qwen_api_key" class="text-cyan-500/70 normal-case tracking-normal">(сохранён в БД)</span>
+                                <span v-else-if="settings.qwen_key_source === 'env'" class="text-white/25 normal-case tracking-normal">(из .env)</span>
+                            </label>
+                            <input
+                                v-model="form.qwen_api_key"
+                                type="password"
+                                autocomplete="new-password"
+                                placeholder="sk-…"
+                                :class="inputClass"
+                            />
+                            <label
+                                v-if="settings.has_qwen_api_key"
+                                class="flex items-center gap-2 mt-2 text-[10px] text-white/40 cursor-pointer"
+                            >
+                                <input v-model="form.clear_qwen_api_key" type="checkbox" class="accent-red-500" />
+                                Очистить ключ в БД (останется .env)
+                            </label>
+                            <p class="mt-2 text-[10px] text-white/25 italic">Тот же ключ, что у стилизации аватара. Регион ключа и базы должен совпадать.</p>
+                            <p v-if="form.errors.qwen_api_key" class="mt-2 text-red-400 text-xs">{{ form.errors.qwen_api_key }}</p>
+                        </div>
+                        <div>
+                            <label :class="labelClass">Голос Qwen</label>
+                            <select v-model="form.qwen_tts_voice" :class="inputClass">
+                                <option v-for="(label, key) in qwenVoices" :key="key" :value="key">
+                                    {{ label }}
+                                </option>
+                            </select>
+                            <p class="mt-2 text-[10px] text-white/25 italic">
+                                {{ settings.qwen_asr_model }} → {{ settings.qwen_chat_model }} → {{ settings.qwen_tts_model }}, язык русский.
+                            </p>
+                            <p v-if="form.errors.qwen_tts_voice" class="mt-2 text-red-400 text-xs">{{ form.errors.qwen_tts_voice }}</p>
+                        </div>
+                    </div>
+
+                    <h2 class="text-sm font-black uppercase italic tracking-wider text-white/70">
                         Провайдер и ключи
                     </h2>
+                    <p v-if="form.voice_stack === 'qwen'" class="text-[10px] text-white/30 italic">
+                        Для вопроса в Shell эти поля не используются. DeepSeek по-прежнему нужен никам, накладным и шёпоту.
+                    </p>
 
                     <div>
                         <label :class="labelClass">LLM для ответов</label>
@@ -525,7 +629,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                         </div>
                     </div>
 
-                    <div class="border-t border-white/5 pt-8 space-y-6">
+                    <div v-if="form.voice_stack !== 'qwen'" class="border-t border-white/5 pt-8 space-y-6">
                         <h2 class="text-sm font-black uppercase italic tracking-wider text-white/70">
                             Речь (распознавание и озвучка)
                         </h2>
@@ -692,7 +796,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                                 {{ testTtsBusy ? 'Озвучка…' : 'Проверить озвучку' }}
                             </button>
                             <p class="text-[10px] text-white/30 italic max-w-md">
-                                «Спросить» — тот же промпт, что F1, без микрофона. «Озвучка» проверяет SpeechKit / OpenAI TTS.
+                                «Спросить» — тот же промпт, что вопрос в Shell, без микрофона. «Озвучка» проверяет речь выбранного стека.
                             </p>
                         </div>
                         <div v-if="testResult?.ok" class="text-xs text-[#22c55e] leading-relaxed space-y-2">
@@ -713,7 +817,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                         </p>
                     </div>
 
-                    <div v-if="form.speech_provider === 'openai'" class="grid md:grid-cols-2 gap-6">
+                    <div v-if="form.voice_stack !== 'qwen' && form.speech_provider === 'openai'" class="grid md:grid-cols-2 gap-6">
                         <div>
                             <label :class="labelClass">STT модель</label>
                             <input v-model="form.stt_model" type="text" placeholder="whisper-1" :class="inputClass" />
@@ -725,7 +829,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                     </div>
 
                     <div class="grid md:grid-cols-2 gap-6">
-                        <div>
+                        <div v-if="form.voice_stack !== 'qwen'">
                             <label :class="labelClass">
                                 Голос озвучки
                                 {{ form.speech_provider === 'yandex' ? '(Yandex)' : '(OpenAI)' }}

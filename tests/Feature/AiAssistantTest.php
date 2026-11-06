@@ -770,6 +770,105 @@ class AiAssistantTest extends TestCase
             ->assertJsonPath('audio_base64', base64_encode('ID3tts-bytes'));
     }
 
+    public function test_qwen_voice_stack_uses_qwen_for_speech_and_reply(): void
+    {
+        $this->createActiveBooking();
+
+        config([
+            'ai_assistant.qwen.api_key' => 'sk-qwen-env',
+            'ai_assistant.qwen.base_url' => 'https://dashscope-intl.aliyuncs.com/api/v1',
+            'ai_assistant.qwen.chat_model' => 'qwen-plus',
+            'ai_assistant.qwen.asr_model' => 'qwen3-asr-flash',
+            'ai_assistant.qwen.tts_model' => 'qwen3-tts-flash',
+            'ai_assistant.qwen.tts_voice' => 'Cherry',
+            'ai_assistant.qwen.asr_language' => 'ru',
+            'ai_assistant.qwen.tts_language' => 'Russian',
+        ]);
+
+        AiAssistantSetting::forClub($this->club->id)->update([
+            'voice_stack' => 'qwen',
+            'qwen_api_key' => 'sk-qwen-db',
+            'qwen_tts_voice' => 'Cherry',
+        ]);
+
+        $this->fakeHttp(function ($request) {
+            $url = $request->url();
+            if (str_contains($url, 'multimodal-generation/generation') && ($request['model'] ?? null) === 'qwen3-asr-flash') {
+                return Http::response([
+                    'output' => [
+                        'choices' => [[
+                            'message' => ['content' => [['text' => 'как зайти в игру']]],
+                        ]],
+                    ],
+                ]);
+            }
+            if (str_contains($url, 'chat/completions')) {
+                return Http::response([
+                    'choices' => [['message' => ['content' => 'Открой библиотеку и нажми играть.']]],
+                ]);
+            }
+            if (str_contains($url, 'multimodal-generation/generation') && ($request['model'] ?? null) === 'qwen3-tts-flash') {
+                return Http::response([
+                    'output' => ['audio' => ['url' => 'https://qwen-tts.example.test/out.wav']],
+                ]);
+            }
+            if (str_contains($url, 'qwen-tts.example.test')) {
+                return Http::response('RIFFwav-bytes', 200, ['Content-Type' => 'audio/wav']);
+            }
+
+            return Http::response('unexpected '.$url, 599);
+        });
+
+        $this->post('/api/shell/ai-assistant', [
+            'terminal_id' => $this->computer->id,
+            'audio' => UploadedFile::fake()->create('ask.wav', 20, 'audio/wav'),
+        ])->assertOk()
+            ->assertJsonPath('transcript', 'как зайти в игру')
+            ->assertJsonPath('reply_text', 'Открой библиотеку и нажми играть.')
+            ->assertJsonPath('audio_mime', 'audio/wav');
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'multimodal-generation/generation')
+                && ($request['model'] ?? null) === 'qwen3-asr-flash'
+                && $request->hasHeader('Authorization', 'Bearer sk-qwen-db')
+                && data_get($request->data(), 'parameters.asr_options.language') === 'ru';
+        });
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'compatible-mode/v1/chat/completions')
+                && ($request['model'] ?? null) === 'qwen-plus'
+                && $request->hasHeader('Authorization', 'Bearer sk-qwen-db')
+                && ! str_contains($request->url(), 'deepseek');
+        });
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'multimodal-generation/generation')
+                && ($request['model'] ?? null) === 'qwen3-tts-flash'
+                && data_get($request->data(), 'input.voice') === 'Cherry'
+                && data_get($request->data(), 'input.language_type') === 'Russian';
+        });
+
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'yandex.net')
+            || str_contains($request->url(), 'api.deepseek.com'));
+    }
+
+    public function test_qwen_voice_stack_without_key_is_rejected(): void
+    {
+        $this->createActiveBooking();
+
+        config(['ai_assistant.qwen.api_key' => '']);
+        AiAssistantSetting::forClub($this->club->id)->update([
+            'voice_stack' => 'qwen',
+            'qwen_api_key' => null,
+        ]);
+
+        $this->post('/api/shell/ai-assistant', [
+            'terminal_id' => $this->computer->id,
+            'audio' => UploadedFile::fake()->create('ask.wav', 20, 'audio/wav'),
+        ])->assertStatus(422)
+            ->assertJsonPath('message', 'Нет ключа Qwen');
+    }
+
     public function test_greeting_prompt_includes_favorite_games(): void
     {
         $settings = AiAssistantSetting::forClub($this->club->id);

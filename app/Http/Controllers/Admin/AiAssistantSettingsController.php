@@ -29,6 +29,8 @@ class AiAssistantSettingsController extends Controller
             'yandexVoices' => AiAssistantSetting::YANDEX_VOICES,
             'llmProviders' => AiAssistantSetting::LLM_PROVIDERS,
             'speechProviders' => AiAssistantSetting::SPEECH_PROVIDERS,
+            'voiceStacks' => AiAssistantSetting::VOICE_STACKS,
+            'qwenVoices' => AiAssistantSetting::QWEN_VOICES,
             'llmPresets' => AiAssistantSetting::LLM_PRESETS,
             'clubs' => Club::visibleToAdmin(AdminLocation::id())->select('id', 'name')->orderBy('name')->get(),
             'placeholders' => [
@@ -49,6 +51,15 @@ class AiAssistantSettingsController extends Controller
             'llm_base_url' => 'nullable|string|max:512',
             'llm_model' => 'nullable|string|max:128',
             'speech_provider' => 'required|string|in:'.implode(',', array_keys(AiAssistantSetting::SPEECH_PROVIDERS)),
+            'voice_stack' => 'required|string|in:'.implode(',', array_keys(AiAssistantSetting::VOICE_STACKS)),
+            'qwen_api_key' => 'nullable|string|max:2000',
+            'clear_qwen_api_key' => 'nullable|boolean',
+            'qwen_tts_voice' => [
+                'nullable',
+                'string',
+                Rule::requiredIf(fn () => $request->input('voice_stack') === 'qwen'),
+                Rule::in(array_keys(AiAssistantSetting::QWEN_VOICES)),
+            ],
             'yandex_api_key' => 'nullable|string|max:2000',
             'clear_yandex_api_key' => 'nullable|boolean',
             'yandex_folder_id' => 'nullable|string|max:64',
@@ -74,6 +85,9 @@ class AiAssistantSettingsController extends Controller
         ], [
             'tts_voice.in' => 'Выберите голос из списка',
             'llm_provider.in' => 'Выберите провайдера LLM',
+            'voice_stack.in' => 'Выберите стек вопроса',
+            'qwen_tts_voice.required' => 'Выберите голос Qwen',
+            'qwen_tts_voice.in' => 'Выберите голос Qwen из списка',
             'companion_prompt.required' => 'Укажите промпт F1-компаньона',
             'greeting_prompt.required' => 'Укажите промпт приветствия',
         ]);
@@ -88,6 +102,7 @@ class AiAssistantSettingsController extends Controller
             'is_enabled' => (bool) $data['is_enabled'],
             'llm_provider' => $data['llm_provider'],
             'speech_provider' => $data['speech_provider'],
+            'voice_stack' => $data['voice_stack'],
             'yandex_folder_id' => filled($data['yandex_folder_id'] ?? null) ? trim($data['yandex_folder_id']) : null,
             'llm_base_url' => filled($data['llm_base_url'] ?? null)
                 ? AiAssistantSetting::normalizeLlmBaseUrl((string) $data['llm_base_url']) ?: null
@@ -109,6 +124,13 @@ class AiAssistantSettingsController extends Controller
                 : null,
         ];
 
+        if (filled($data['qwen_tts_voice'] ?? null)) {
+            $qwenVoice = AiAssistantSetting::sanitizeTtsVoice('qwen', (string) $data['qwen_tts_voice']);
+            if ($qwenVoice !== null) {
+                $payload['qwen_tts_voice'] = $qwenVoice;
+            }
+        }
+
         if (! empty($data['clear_llm_api_key'])) {
             $payload['llm_api_key'] = null;
         } elseif (array_key_exists('llm_api_key', $data) && filled($data['llm_api_key'])) {
@@ -119,6 +141,12 @@ class AiAssistantSettingsController extends Controller
             $payload['yandex_api_key'] = null;
         } elseif (array_key_exists('yandex_api_key', $data) && filled($data['yandex_api_key'])) {
             $payload['yandex_api_key'] = trim($data['yandex_api_key']);
+        }
+
+        if (! empty($data['clear_qwen_api_key'])) {
+            $payload['qwen_api_key'] = null;
+        } elseif (array_key_exists('qwen_api_key', $data) && filled($data['qwen_api_key'])) {
+            $payload['qwen_api_key'] = trim($data['qwen_api_key']);
         }
 
         if (! empty($data['clear_openai_api_key'])) {
@@ -231,12 +259,13 @@ class AiAssistantSettingsController extends Controller
             ]);
 
             $settings = AiAssistantSetting::forClub($clubId);
+            $qwen = $settings->resolvedVoiceStack() === 'qwen';
 
             return response()->json([
                 'ok' => true,
                 'reply' => $reply,
-                'provider' => $settings->resolvedLlmProvider(),
-                'model' => $settings->resolvedLlmModel(),
+                'provider' => $qwen ? 'qwen' : $settings->resolvedLlmProvider(),
+                'model' => $qwen ? $settings->resolvedQwenChatModel() : $settings->resolvedLlmModel(),
             ]);
         } catch (\Throwable $e) {
             return response()->json([
@@ -257,19 +286,24 @@ class AiAssistantSettingsController extends Controller
         $settings = AiAssistantSetting::forClub($clubId);
         $text = trim((string) ($data['text'] ?? ''));
         if ($text === '') {
-            $text = 'Проверка озвучки. Если слышите это, SpeechKit работает.';
+            $text = $settings->resolvedVoiceStack() === 'qwen'
+                ? 'Проверка озвучки. Если слышите это, Qwen работает.'
+                : 'Проверка озвучки. Если слышите это, SpeechKit работает.';
         }
 
         try {
             $result = $speech->synthesize($text, $settings);
+            $speechProvider = $settings->resolvedVoiceSpeechProvider();
 
             return response()->json([
                 'ok' => true,
-                'provider' => $settings->resolvedSpeechProvider(),
-                'voice' => $settings->resolvedTtsVoice(),
-                'model' => $settings->resolvedSpeechProvider() === 'openai'
-                    ? $settings->resolvedTtsModel()
-                    : 'speechkit',
+                'provider' => $speechProvider,
+                'voice' => $speechProvider === 'qwen' ? $settings->resolvedQwenTtsVoice() : $settings->resolvedTtsVoice(),
+                'model' => match ($speechProvider) {
+                    'openai' => $settings->resolvedTtsModel(),
+                    'qwen' => $settings->resolvedQwenTtsModel(),
+                    default => 'speechkit',
+                },
                 'audio_mime' => $result['mime'],
                 'audio_base64' => base64_encode($result['binary']),
             ]);
