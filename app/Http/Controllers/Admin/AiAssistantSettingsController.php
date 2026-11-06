@@ -101,7 +101,7 @@ class AiAssistantSettingsController extends Controller
         $payload = [
             'is_enabled' => (bool) $data['is_enabled'],
             'llm_provider' => $data['llm_provider'],
-            'speech_provider' => $data['speech_provider'],
+            'speech_provider' => $data['voice_stack'] === 'qwen' ? $data['speech_provider'] : 'yandex',
             'voice_stack' => $data['voice_stack'],
             'yandex_folder_id' => filled($data['yandex_folder_id'] ?? null) ? trim($data['yandex_folder_id']) : null,
             'llm_base_url' => filled($data['llm_base_url'] ?? null)
@@ -264,8 +264,8 @@ class AiAssistantSettingsController extends Controller
             return response()->json([
                 'ok' => true,
                 'reply' => $reply,
-                'provider' => $qwen ? 'qwen' : $settings->resolvedLlmProvider(),
-                'model' => $qwen ? $settings->resolvedQwenChatModel() : $settings->resolvedLlmModel(),
+                'provider' => $qwen ? 'qwen' : 'deepseek',
+                'model' => $qwen ? $settings->resolvedQwenChatModel() : $settings->resolvedDeepSeekModel(),
             ]);
         } catch (\Throwable $e) {
             return response()->json([
@@ -298,7 +298,7 @@ class AiAssistantSettingsController extends Controller
             return response()->json([
                 'ok' => true,
                 'provider' => $speechProvider,
-                'voice' => $speechProvider === 'qwen' ? $settings->resolvedQwenTtsVoice() : $settings->resolvedTtsVoice(),
+                'voice' => $speechProvider === 'qwen' ? $settings->resolvedQwenTtsVoice() : $settings->resolvedQuestionTtsVoice(),
                 'model' => match ($speechProvider) {
                     'openai' => $settings->resolvedTtsModel(),
                     'qwen' => $settings->resolvedQwenTtsModel(),

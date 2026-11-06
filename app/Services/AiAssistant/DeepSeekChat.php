@@ -515,12 +515,12 @@ class DeepSeekChat
             return [$key, $settings->resolvedQwenCompatibleBaseUrl(), $settings->resolvedQwenChatModel()];
         }
 
-        $key = $settings->resolvedLlmApiKey();
+        $key = $settings->resolvedDeepSeekApiKey();
         if ($key === '') {
-            throw new RuntimeException('LLM API-ключ не задан (админка или .env).');
+            throw new RuntimeException('DeepSeek API-ключ не задан (админка или .env).');
         }
 
-        return [$key, $settings->resolvedLlmBaseUrl(), $settings->resolvedLlmModel()];
+        return [$key, $settings->resolvedDeepSeekBaseUrl(), $settings->resolvedDeepSeekModel()];
     }
 
     private function isDeepSeekModel(string $model): bool

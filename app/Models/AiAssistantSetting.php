@@ -97,7 +97,7 @@ class AiAssistantSetting extends Model
     ];
 
     public const VOICE_STACKS = [
-        'deepseek_yandex' => 'DeepSeek + Яндекс Speech',
+        'deepseek_yandex' => 'DeepSeek + Яндекс',
         'qwen' => 'Qwen',
     ];
 
@@ -159,14 +159,12 @@ class AiAssistantSetting extends Model
             return null;
         }
 
-        if ($settings->resolvedLlmApiKey() === '') {
-            return 'Нет ключа LLM (DeepSeek/OpenAI)';
+        if ($settings->resolvedDeepSeekApiKey() === '') {
+            return 'Нет ключа DeepSeek';
         }
 
-        if (! $settings->hasSpeechCredentials()) {
-            return $settings->resolvedSpeechProvider() === 'openai'
-                ? 'Нет ключа OpenAI для речи'
-                : 'Нет ключа Yandex SpeechKit';
+        if ($settings->resolvedYandexApiKey() === '') {
+            return 'Нет ключа Yandex SpeechKit';
         }
 
         return null;
@@ -317,10 +315,59 @@ class AiAssistantSetting extends Model
         return array_key_exists($stack, self::VOICE_STACKS) ? $stack : 'deepseek_yandex';
     }
 
-    /** Речь вопроса и приветствия: у стека Qwen свой ASR/TTS, иначе провайдер речи. */
+    /**
+     * Речь «Вопроса к ИИ» и приветствия.
+     * Стек DeepSeek + Яндекс всегда SpeechKit, стек Qwen — свой ASR/TTS.
+     * Провайдер LLM для ников и накладных сюда не входит.
+     */
     public function resolvedVoiceSpeechProvider(): string
     {
-        return $this->resolvedVoiceStack() === 'qwen' ? 'qwen' : $this->resolvedSpeechProvider();
+        return $this->resolvedVoiceStack() === 'qwen' ? 'qwen' : 'yandex';
+    }
+
+    /** Ключ DeepSeek для вопроса. Ключ OpenAI из llm_api_key сюда не подставляется. */
+    public function resolvedDeepSeekApiKey(): string
+    {
+        if ($this->resolvedLlmProvider() === 'deepseek') {
+            return $this->resolvedLlmApiKey();
+        }
+
+        return trim((string) config('ai_assistant.deepseek.api_key', ''));
+    }
+
+    public function resolvedDeepSeekBaseUrl(): string
+    {
+        if ($this->resolvedLlmProvider() === 'deepseek') {
+            return $this->resolvedLlmBaseUrl();
+        }
+
+        $env = self::normalizeLlmBaseUrl((string) config('ai_assistant.deepseek.base_url', ''));
+
+        return $env !== '' ? $env : self::LLM_PRESETS['deepseek']['base_url'];
+    }
+
+    public function resolvedDeepSeekModel(): string
+    {
+        if ($this->resolvedLlmProvider() === 'deepseek') {
+            return $this->resolvedLlmModel();
+        }
+
+        $env = trim((string) config('ai_assistant.deepseek.model', ''));
+
+        return $env !== '' ? $env : self::LLM_PRESETS['deepseek']['model'];
+    }
+
+    /** Голос SpeechKit для вопроса, даже если в поле речи когда-то лежал голос OpenAI. */
+    public function resolvedQuestionTtsVoice(): string
+    {
+        $voice = strtolower(trim((string) $this->tts_voice));
+        if ($voice !== '' && array_key_exists($voice, self::YANDEX_VOICES)) {
+            return $voice;
+        }
+
+        $fallback = strtolower(trim((string) config('ai_assistant.yandex.tts_voice', 'alena')));
+
+        return array_key_exists($fallback, self::YANDEX_VOICES) ? $fallback : 'alena';
     }
 
     public function resolvedQwenApiKey(): string
@@ -503,7 +550,7 @@ class AiAssistantSetting extends Model
             }
         }
 
-        return $provider === 'qwen' ? $this->resolvedQwenTtsVoice() : $this->resolvedTtsVoice();
+        return $provider === 'qwen' ? $this->resolvedQwenTtsVoice() : $this->resolvedQuestionTtsVoice();
     }
 
     public function resolvedMaxReplyChars(): int
@@ -729,8 +776,10 @@ PROMPT;
             'yandex_billing_key_source' => trim((string) ($this->yandex_billing_iam_token ?? '')) !== '' ? 'db' : 'env',
             'yandex_billing_account_id' => $this->resolvedYandexBillingAccountId(),
             'has_llm_credentials' => $this->resolvedLlmApiKey() !== '',
+            'has_deepseek_credentials' => $this->resolvedDeepSeekApiKey() !== '',
             'has_openai_credentials' => $this->resolvedOpenAiApiKey() !== '',
-            'has_speech_credentials' => $this->hasSpeechCredentials(),
+            'has_yandex_speech_credentials' => $this->resolvedYandexApiKey() !== '',
+            'has_speech_credentials' => $this->resolvedYandexApiKey() !== '',
             'tts_voice' => $this->resolvedTtsVoice(),
             'max_reply_chars' => $this->max_reply_chars ?: (int) config('ai_assistant.max_reply_chars', 420),
             'companion_prompt' => $this->companion_prompt ?: self::defaultCompanionPromptTemplate(),
@@ -739,7 +788,7 @@ PROMPT;
             'using_default_greeting' => trim((string) ($this->greeting_prompt ?? '')) === '',
             'credentials_ok' => $this->resolvedVoiceStack() === 'qwen'
                 ? $this->resolvedQwenApiKey() !== ''
-                : $this->hasCredentials(),
+                : ($this->resolvedDeepSeekApiKey() !== '' && $this->resolvedYandexApiKey() !== ''),
             'llm_preset_base_url' => self::LLM_PRESETS[$provider]['base_url'] ?? '',
             'llm_preset_model' => self::LLM_PRESETS[$provider]['model'] ?? '',
         ];

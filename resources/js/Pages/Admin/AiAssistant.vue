@@ -47,7 +47,9 @@ const props = defineProps<{
         using_default_greeting: boolean
         credentials_ok: boolean
         has_llm_credentials: boolean
+        has_deepseek_credentials: boolean
         has_openai_credentials: boolean
+        has_yandex_speech_credentials: boolean
         has_speech_credentials: boolean
         llm_preset_base_url: string
         llm_preset_model: string
@@ -145,21 +147,15 @@ const liveHint = computed(() => {
     if (form.voice_stack === 'qwen') {
         if (!props.settings.has_qwen_credentials) return 'Нет ключа Qwen (админка или .env)'
         if (!form.is_enabled) return 'Выключено тумблером в админке'
-        return 'Вопрос идёт через Qwen: распознавание, ответ и озвучка'
+        return 'Вопрос к ИИ идёт через Qwen: распознавание, ответ и озвучка'
     }
-    if (!props.settings.has_llm_credentials) return 'Нет LLM-ключа DeepSeek (админка или .env)'
-    if (!props.settings.has_speech_credentials) {
-        return form.speech_provider === 'openai'
-            ? 'DeepSeek есть, но нет OpenAI ключа — без него нет распознавания и озвучки'
-            : 'DeepSeek есть, но нет ключа Yandex SpeechKit — без него нет распознавания и озвучки'
-    }
+    if (!props.settings.has_deepseek_credentials) return 'Нет ключа DeepSeek (админка или .env)'
+    if (!props.settings.has_yandex_speech_credentials) return 'DeepSeek есть, но нет ключа Yandex SpeechKit'
     if (!form.is_enabled) return 'Выключено тумблером в админке'
-    return 'Голосовой вопрос готов (нужна активная сессия на ПК)'
+    return 'Вопрос к ИИ идёт через DeepSeek и Яндекс'
 })
 
-const voiceOptions = computed(() =>
-    form.speech_provider === 'openai' ? props.openaiVoices : props.yandexVoices
-)
+const voiceOptions = computed(() => props.yandexVoices)
 
 watch(() => form.speech_provider, (provider) => {
     const options = provider === 'openai' ? props.openaiVoices : props.yandexVoices
@@ -170,7 +166,6 @@ watch(() => form.speech_provider, (provider) => {
 
 watch(() => form.voice_stack, (stack) => {
     if (stack === 'deepseek_yandex') {
-        form.llm_provider = 'deepseek'
         form.speech_provider = 'yandex'
         if (!Object.keys(props.yandexVoices).includes(form.tts_voice)) {
             form.tts_voice = 'alena'
@@ -184,7 +179,7 @@ watch(() => form.voice_stack, (stack) => {
 const liveOk = computed(() => {
     if (!form.is_enabled) return false
     if (form.voice_stack === 'qwen') return props.settings.has_qwen_credentials
-    return props.settings.has_llm_credentials && props.settings.has_speech_credentials
+    return props.settings.has_deepseek_credentials && props.settings.has_yandex_speech_credentials
 })
 
 const switchClub = (clubId: number) => {
@@ -204,6 +199,12 @@ watch(() => form.llm_provider, () => {
 })
 
 const save = () => {
+    if (form.voice_stack === 'deepseek_yandex') {
+        form.speech_provider = 'yandex'
+        if (!Object.keys(props.yandexVoices).includes(form.tts_voice)) {
+            form.tts_voice = 'alena'
+        }
+    }
     form.post('/admin/ai-assistant', {
         preserveScroll: true,
         onSuccess: () => {
@@ -401,12 +402,11 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                         {{ settings.has_qwen_credentials ? '✓' : '✗' }} Qwen (распознавание, ответ, озвучка)
                     </li>
                     <template v-else>
-                        <li :class="settings.has_llm_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
-                            {{ settings.has_llm_credentials ? '✓' : '✗' }} DeepSeek (текст ответа)
+                        <li :class="settings.has_deepseek_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
+                            {{ settings.has_deepseek_credentials ? '✓' : '✗' }} DeepSeek (текст вопроса)
                         </li>
-                        <li :class="settings.has_speech_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
-                            {{ settings.has_speech_credentials ? '✓' : '✗' }}
-                            {{ form.speech_provider === 'openai' ? 'OpenAI (Whisper + TTS)' : 'Yandex SpeechKit (речь)' }}
+                        <li :class="settings.has_yandex_speech_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
+                            {{ settings.has_yandex_speech_credentials ? '✓' : '✗' }} Яндекс SpeechKit (речь)
                         </li>
                     </template>
                 </ul>
@@ -449,7 +449,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                     </div>
                 </div>
                 <p class="mt-3 text-[10px] text-white/25 italic leading-relaxed">
-                    Вопрос в Shell: микрофон → речь → ответ → озвучка. Стек ниже: DeepSeek + Яндекс Speech или Qwen целиком. Нужна активная бронь.
+                    Вопрос в Shell: микрофон → речь → ответ → озвучка. Сервис вопроса — DeepSeek + Яндекс или Qwen целиком. Нужна активная бронь.
                     Хоткей в config.ini сейчас Grave (Ё / ~), не F1.
                     Баланс Qwen — AccessKey Alibaba, не ключ картинок. Баланс Яндекса — IAM-токен биллинга, не ключ SpeechKit.
                 </p>
@@ -488,13 +488,13 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
 
                 <div class="border-t border-white/5 pt-8 space-y-6">
                     <h2 class="text-sm font-black uppercase italic tracking-wider text-white/70">
-                        Стек вопроса
+                        Вопрос к ИИ
                     </h2>
                     <p class="text-[10px] text-white/30 italic">
-                        DeepSeek + Яндекс Speech — как сейчас. Qwen сам распознаёт, отвечает и озвучивает. Ники, накладные и шёпот тренера остаются на DeepSeek.
+                        Один сервис на вопрос и приветствие: DeepSeek отвечает, Яндекс распознаёт и озвучивает, либо всё это делает Qwen. Ники, накладные и шёпот тренера этим выбором не переключаются.
                     </p>
                     <div>
-                        <label :class="labelClass">Кто отвечает на вопрос в Shell</label>
+                        <label :class="labelClass">Сервис «Вопрос к ИИ»</label>
                         <select v-model="form.voice_stack" :class="inputClass + ' max-w-md'">
                             <option v-for="(label, key) in voiceStacks" :key="key" :value="key">
                                 {{ label }}
@@ -542,14 +542,14 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                     </div>
 
                     <h2 class="text-sm font-black uppercase italic tracking-wider text-white/70">
-                        Провайдер и ключи
+                        Ники, накладные, шёпот
                     </h2>
-                    <p v-if="form.voice_stack === 'qwen'" class="text-[10px] text-white/30 italic">
-                        Для вопроса в Shell эти поля не используются. DeepSeek по-прежнему нужен никам, накладным и шёпоту.
+                    <p class="text-[10px] text-white/30 italic">
+                        Это не сервис вопроса. DeepSeek или OpenAI здесь только для ника, накладной и шёпота тренера.
                     </p>
 
                     <div>
-                        <label :class="labelClass">LLM для ответов</label>
+                        <label :class="labelClass">LLM для этих задач</label>
                         <select v-model="form.llm_provider" :class="inputClass + ' max-w-xs'">
                             <option v-for="(label, key) in llmProviders" :key="key" :value="key">
                                 {{ label }}
@@ -561,7 +561,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                     <div class="grid md:grid-cols-2 gap-6">
                         <div>
                             <label :class="labelClass">
-                                LLM API-ключ
+                                {{ form.llm_provider === 'openai' ? 'OpenAI API-ключ' : 'DeepSeek API-ключ' }}
                                 <span v-if="settings.has_llm_api_key" class="text-cyan-500/70 normal-case tracking-normal">(сохранён в БД)</span>
                                 <span v-else-if="settings.llm_key_source === 'env'" class="text-white/25 normal-case tracking-normal">(из .env)</span>
                             </label>
@@ -579,6 +579,12 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                                 <input v-model="form.clear_llm_api_key" type="checkbox" class="accent-red-500" />
                                 Очистить ключ в БД (останется .env)
                             </label>
+                            <p v-if="form.voice_stack !== 'qwen' && form.llm_provider === 'deepseek'" class="mt-2 text-[10px] text-white/25 italic">
+                                Этот же ключ отвечает на вопрос к ИИ.
+                            </p>
+                            <p v-else-if="form.voice_stack !== 'qwen'" class="mt-2 text-[10px] text-white/25 italic">
+                                Вопрос к ИИ берёт DeepSeek из .env, не этот ключ.
+                            </p>
                             <p v-if="form.errors.llm_api_key" class="mt-2 text-red-400 text-xs">{{ form.errors.llm_api_key }}</p>
                         </div>
                     </div>
@@ -631,22 +637,13 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
 
                     <div v-if="form.voice_stack !== 'qwen'" class="border-t border-white/5 pt-8 space-y-6">
                         <h2 class="text-sm font-black uppercase italic tracking-wider text-white/70">
-                            Речь (распознавание и озвучка)
+                            Яндекс для вопроса
                         </h2>
                         <p class="text-[10px] text-white/30 italic">
-                            Из РФ OpenAI часто недоступен. По умолчанию — Yandex SpeechKit.
+                            Распознавание и озвучка вопроса. К нику и накладной не относится.
                         </p>
 
-                        <div>
-                            <label :class="labelClass">Провайдер речи</label>
-                            <select v-model="form.speech_provider" :class="inputClass + ' max-w-xs'">
-                                <option v-for="(label, key) in speechProviders" :key="key" :value="key">
-                                    {{ label }}
-                                </option>
-                            </select>
-                        </div>
-
-                        <div v-if="form.speech_provider === 'yandex'" class="grid md:grid-cols-2 gap-6">
+                        <div class="grid md:grid-cols-2 gap-6">
                             <div>
                                 <label :class="labelClass">
                                     SpeechKit API-ключ
@@ -679,38 +676,18 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                                 />
                                 <p class="mt-2 text-[10px] text-white/25 italic">Для API-ключа не отправляется. Если 401 PermissionDenied — выдайте сервисному аккаунту роли ai.speechkit-tts.user и ai.speechkit-stt.user на каталог ключа.</p>
                             </div>
-                        </div>
-
-                        <div v-else class="grid md:grid-cols-2 gap-6">
                             <div>
-                                <label :class="labelClass">
-                                    OpenAI ключ (STT + TTS)
-                                    <span v-if="settings.has_openai_api_key" class="text-cyan-500/70 normal-case tracking-normal">(сохранён в БД)</span>
-                                    <span v-else-if="settings.openai_key_source === 'env'" class="text-white/25 normal-case tracking-normal">(из .env)</span>
-                                </label>
-                                <input
-                                    v-model="form.openai_api_key"
-                                    type="password"
-                                    autocomplete="new-password"
-                                    placeholder="••••••"
-                                    :class="inputClass"
-                                />
-                                <label
-                                    v-if="settings.has_openai_api_key"
-                                    class="flex items-center gap-2 mt-2 text-[10px] text-white/40 cursor-pointer"
-                                >
-                                    <input v-model="form.clear_openai_api_key" type="checkbox" class="accent-red-500" />
-                                    Очистить ключ в БД (останется .env)
-                                </label>
-                            </div>
-                            <div>
-                                <label :class="labelClass">OpenAI Base URL</label>
-                                <input
-                                    v-model="form.openai_base_url"
-                                    type="text"
-                                    placeholder="https://api.openai.com/v1"
-                                    :class="inputClass"
-                                />
+                                <label :class="labelClass">Голос Яндекса</label>
+                                <select v-model="form.tts_voice" :class="inputClass">
+                                    <option v-for="(label, key) in voiceOptions" :key="key" :value="key">
+                                        {{ label }} ({{ key }})
+                                    </option>
+                                </select>
+                                <p class="mt-2 text-[10px] text-white/25 italic leading-relaxed">
+                                    Алёна / Филипп / Джейн / Захар — классика SpeechKit.
+                                    Марина, Даша, Александр и остальные идут через API v3.
+                                </p>
+                                <p v-if="form.errors.tts_voice" class="mt-2 text-red-400 text-xs">{{ form.errors.tts_voice }}</p>
                             </div>
                         </div>
                     </div>
@@ -796,7 +773,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                                 {{ testTtsBusy ? 'Озвучка…' : 'Проверить озвучку' }}
                             </button>
                             <p class="text-[10px] text-white/30 italic max-w-md">
-                                «Спросить» — тот же промпт, что вопрос в Shell, без микрофона. «Озвучка» проверяет речь выбранного стека.
+                                «Спросить» — тот же промпт, что вопрос в Shell, без микрофона. «Озвучка» проверяет речь выбранного сервиса.
                             </p>
                         </div>
                         <div v-if="testResult?.ok" class="text-xs text-[#22c55e] leading-relaxed space-y-2">
@@ -817,34 +794,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                         </p>
                     </div>
 
-                    <div v-if="form.voice_stack !== 'qwen' && form.speech_provider === 'openai'" class="grid md:grid-cols-2 gap-6">
-                        <div>
-                            <label :class="labelClass">STT модель</label>
-                            <input v-model="form.stt_model" type="text" placeholder="whisper-1" :class="inputClass" />
-                        </div>
-                        <div>
-                            <label :class="labelClass">TTS модель</label>
-                            <input v-model="form.tts_model" type="text" placeholder="tts-1" :class="inputClass" />
-                        </div>
-                    </div>
-
                     <div class="grid md:grid-cols-2 gap-6">
-                        <div v-if="form.voice_stack !== 'qwen'">
-                            <label :class="labelClass">
-                                Голос озвучки
-                                {{ form.speech_provider === 'yandex' ? '(Yandex)' : '(OpenAI)' }}
-                            </label>
-                            <select v-model="form.tts_voice" :class="inputClass">
-                                <option v-for="(label, key) in voiceOptions" :key="key" :value="key">
-                                    {{ label }} ({{ key }})
-                                </option>
-                            </select>
-                            <p class="mt-2 text-[10px] text-white/25 italic leading-relaxed">
-                                Алёна / Филипп / Джейн / Захар — классика SpeechKit.
-                                Марина, Даша, Александр и остальные идут через API v3; раньше на них был Bad Request.
-                            </p>
-                            <p v-if="form.errors.tts_voice" class="mt-2 text-red-400 text-xs">{{ form.errors.tts_voice }}</p>
-                        </div>
                         <div>
                             <label :class="labelClass">Макс. длина ответа (символы)</label>
                             <input

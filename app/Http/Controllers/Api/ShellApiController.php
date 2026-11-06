@@ -1691,7 +1691,7 @@ class ShellApiController extends Controller
                     RateLimiter::hit($rateKey, 60);
                 }
                 try {
-                    $label = AiAssistantSetting::voicesFor($settings->resolvedSpeechProvider())[$voice] ?? $voice;
+                    $label = AiAssistantSetting::voicesFor($settings->resolvedVoiceSpeechProvider())[$voice] ?? $voice;
                     $speech = app(SpeechService::class)
                         ->synthesize('Привет, это голос '.$label.'.', $settings, $voice);
                     $payload['audio_mime'] = $speech['mime'];
@@ -1746,7 +1746,7 @@ class ShellApiController extends Controller
     {
         $provider = $settings->resolvedVoiceSpeechProvider();
         $voice = AiAssistantSetting::sanitizeTtsVoice($provider, $currentVoice)
-            ?? ($provider === 'qwen' ? $settings->resolvedQwenTtsVoice() : $settings->resolvedTtsVoice());
+            ?? ($provider === 'qwen' ? $settings->resolvedQwenTtsVoice() : $settings->resolvedQuestionTtsVoice());
 
         return [
             'provider' => $provider,

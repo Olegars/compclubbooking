@@ -348,7 +348,7 @@ class AiAssistantTest extends TestCase
             'audio' => $audio,
         ])->assertStatus(422)
             ->assertJsonPath('status', 'error')
-            ->assertJsonPath('message', 'Нет ключа LLM (DeepSeek/OpenAI)');
+            ->assertJsonPath('message', 'Нет ключа DeepSeek');
     }
 
     public function test_uses_api_keys_from_database(): void
@@ -420,7 +420,7 @@ class AiAssistantTest extends TestCase
         });
     }
 
-    public function test_openai_llm_provider_uses_openai_chat_endpoint(): void
+    public function test_question_stays_on_deepseek_when_other_llm_is_openai(): void
     {
         $this->createActiveBooking();
 
@@ -441,10 +441,11 @@ class AiAssistantTest extends TestCase
             ->assertJsonPath('reply_text', 'ответ openai');
 
         Http::assertSent(function ($request) {
-            return str_contains($request->url(), 'api.openai.com/v1/chat/completions')
-                && ($request['model'] ?? null) === 'gpt-4o-mini'
-                && $request->hasHeader('Authorization', 'Bearer sk-openai-llm');
+            return str_contains($request->url(), 'api.deepseek.com/chat/completions')
+                && ($request['model'] ?? null) === 'deepseek-chat'
+                && $request->hasHeader('Authorization', 'Bearer sk-deepseek-test');
         });
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'api.openai.com'));
     }
 
     public function test_admin_llm_probe_returns_reply(): void
@@ -885,11 +886,12 @@ class AiAssistantTest extends TestCase
         $this->assertStringContainsString('CS2 (9)', $prompt);
     }
 
-    public function test_openai_speech_provider_uses_whisper_and_tts(): void
+    public function test_question_service_ignores_openai_speech_provider(): void
     {
         $this->createActiveBooking();
 
         AiAssistantSetting::forClub($this->club->id)->forceFill([
+            'voice_stack' => 'deepseek_yandex',
             'speech_provider' => 'openai',
             'tts_voice' => 'nova',
             'openai_api_key' => 'sk-openai-test',
@@ -903,13 +905,12 @@ class AiAssistantTest extends TestCase
         ])->assertOk()
             ->assertJsonPath('transcript', 'привет');
 
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'stt.api.cloud.yandex.net'));
         Http::assertSent(function ($request) {
-            return str_contains($request->url(), 'audio/transcriptions');
+            return str_contains($request->url(), 'tts.api.cloud.yandex.net')
+                && ($request['voice'] ?? null) === 'alena';
         });
-        Http::assertSent(function ($request) {
-            return str_contains($request->url(), 'audio/speech')
-                && ($request['voice'] ?? null) === 'nova';
-        });
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'api.openai.com'));
     }
 
     /**

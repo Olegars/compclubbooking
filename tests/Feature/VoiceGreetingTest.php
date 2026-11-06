@@ -304,6 +304,6 @@ class VoiceGreetingTest extends TestCase
             'terminal_id' => $this->computer->id,
         ])->assertStatus(422)
             ->assertJsonPath('status', 'error')
-            ->assertJsonPath('message', 'Нет ключа LLM (DeepSeek/OpenAI)');
+            ->assertJsonPath('message', 'Нет ключа DeepSeek');
     }
 }

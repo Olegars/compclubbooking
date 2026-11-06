@@ -951,6 +951,7 @@ class OwnerSystemTestService
             : AiAssistantSetting::query()->orderBy('id')->first();
         $details = [
             'enabled: '.($settings ? (($settings->is_enabled ? 'on' : 'off')) : 'нет записи'),
+            'question: '.($settings?->resolvedVoiceStack() ?: 'deepseek_yandex'),
             'llm: '.($settings?->resolvedLlmProvider() ?: 'env'),
         ];
         if (! $settings) {
@@ -968,11 +969,18 @@ class OwnerSystemTestService
         if (! $settings->is_enabled) {
             return $this->warn('Выключен тумблером в админке.', $details);
         }
-        if ($settings->resolvedLlmApiKey() === '') {
-            return $this->warn('Нет ключа LLM (DeepSeek/OpenAI).', $details);
+        if ($settings->resolvedVoiceStack() === 'qwen') {
+            if ($settings->resolvedQwenApiKey() === '') {
+                return $this->warn('Нет ключа Qwen.', $details);
+            }
+
+            return $this->pass('Ключ Qwen есть, тумблер включён.', $details);
         }
-        if (! $settings->hasSpeechCredentials()) {
-            return $this->warn('Нет ключа речи (SpeechKit/OpenAI).', $details);
+        if ($settings->resolvedDeepSeekApiKey() === '') {
+            return $this->warn('Нет ключа DeepSeek.', $details);
+        }
+        if ($settings->resolvedYandexApiKey() === '') {
+            return $this->warn('Нет ключа Yandex SpeechKit.', $details);
         }
 
         return $this->pass('Ключи LLM и речи есть, тумблер включён.', $details);
