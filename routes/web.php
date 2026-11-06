@@ -345,6 +345,18 @@ Route::middleware(['auth'])->group(function () {
 
         return $response;
     })->name('tools.stoprkn.exe');
+    Route::get('/tools/reactorshell.exe', function () {
+        $path = storage_path('app/tools/ReactorShell-setup.exe');
+        abort_unless(is_file($path), 404);
+
+        $response = response()->file($path);
+        $response->headers->set('Content-Type', 'application/octet-stream');
+        $response->headers->set('Content-Disposition', 'attachment; filename="ReactorShell-setup.exe"');
+        $response->headers->set('X-Content-Type-Options', 'nosniff');
+        $response->headers->set('Cache-Control', 'private, no-transform');
+
+        return $response;
+    })->name('tools.reactorshell.exe');
 
     Route::get('/auth/nickname', [SmsAuthController::class, 'showNickname'])->name('auth.nickname');
     Route::post('/auth/nickname', [SmsAuthController::class, 'saveNickname'])->name('auth.nickname.store');

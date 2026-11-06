@@ -361,6 +361,15 @@ onUnmounted(() => {
                                     <span>stopRKN</span>
                                     <span>Скачать</span>
                                 </a>
+                                <a
+                                    href="/tools/reactorshell.exe"
+                                    class="useful-item"
+                                    download="ReactorShell-setup.exe"
+                                    @click="usefulOpen = false"
+                                >
+                                    <span>REACTOR Shell</span>
+                                    <span>Скачать</span>
+                                </a>
                             </section>
                             <section class="useful-section">
                                 <p class="useful-label">Андроид</p>
