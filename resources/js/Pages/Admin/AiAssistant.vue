@@ -19,6 +19,7 @@ const props = defineProps<{
         llm_key_source: 'db' | 'env'
         speech_provider: string
         voice_stack: string
+        avatar_provider: string
         has_qwen_api_key: boolean
         qwen_key_source: 'db' | 'env'
         has_qwen_credentials: boolean
@@ -26,6 +27,13 @@ const props = defineProps<{
         qwen_chat_model: string
         qwen_asr_model: string
         qwen_tts_model: string
+        has_glm_api_key: boolean
+        glm_key_source: 'db' | 'env'
+        has_glm_credentials: boolean
+        glm_tts_voice: string
+        glm_chat_model: string
+        glm_asr_model: string
+        glm_tts_model: string
         yandex_folder_id: string
         has_yandex_api_key: boolean
         yandex_key_source: 'db' | 'env'
@@ -61,6 +69,8 @@ const props = defineProps<{
     speechProviders: Record<string, string>
     voiceStacks: Record<string, string>
     qwenVoices: Record<string, string>
+    glmVoices: Record<string, string>
+    avatarProviders: Record<string, string>
     llmPresets: Record<string, { base_url: string; model: string }>
     clubs: Array<{ id: number; name: string }>
     placeholders: {
@@ -82,9 +92,13 @@ const form = useForm({
     llm_model: props.settings.llm_model,
     speech_provider: props.settings.speech_provider,
     voice_stack: props.settings.voice_stack || 'deepseek_yandex',
+    avatar_provider: props.settings.avatar_provider || 'qwen',
     qwen_api_key: '',
     clear_qwen_api_key: false,
     qwen_tts_voice: props.settings.qwen_tts_voice || 'Cherry',
+    glm_api_key: '',
+    clear_glm_api_key: false,
+    glm_tts_voice: props.settings.glm_tts_voice || 'tongtong',
     yandex_api_key: '',
     clear_yandex_api_key: false,
     yandex_folder_id: props.settings.yandex_folder_id,
@@ -117,9 +131,13 @@ watch(
         form.llm_model = s.llm_model
         form.speech_provider = s.speech_provider
         form.voice_stack = s.voice_stack || 'deepseek_yandex'
+        form.avatar_provider = s.avatar_provider || 'qwen'
         form.qwen_api_key = ''
         form.clear_qwen_api_key = false
         form.qwen_tts_voice = s.qwen_tts_voice || 'Cherry'
+        form.glm_api_key = ''
+        form.clear_glm_api_key = false
+        form.glm_tts_voice = s.glm_tts_voice || 'tongtong'
         form.yandex_api_key = ''
         form.clear_yandex_api_key = false
         form.yandex_folder_id = s.yandex_folder_id
@@ -149,6 +167,11 @@ const liveHint = computed(() => {
         if (!form.is_enabled) return 'Выключено тумблером в админке'
         return 'Вопрос к ИИ идёт через Qwen: распознавание, ответ и озвучка'
     }
+    if (form.voice_stack === 'glm') {
+        if (!props.settings.has_glm_credentials) return 'Нет ключа GLM (админка или .env)'
+        if (!form.is_enabled) return 'Выключено тумблером в админке'
+        return 'Вопрос к ИИ идёт через GLM: распознавание, ответ и озвучка'
+    }
     if (!props.settings.has_deepseek_credentials) return 'Нет ключа DeepSeek (админка или .env)'
     if (!props.settings.has_yandex_speech_credentials) return 'DeepSeek есть, но нет ключа Yandex SpeechKit'
     if (!form.is_enabled) return 'Выключено тумблером в админке'
@@ -174,11 +197,15 @@ watch(() => form.voice_stack, (stack) => {
     if (stack === 'qwen' && !Object.keys(props.qwenVoices || {}).includes(form.qwen_tts_voice)) {
         form.qwen_tts_voice = 'Cherry'
     }
+    if (stack === 'glm' && !Object.keys(props.glmVoices || {}).includes(form.glm_tts_voice)) {
+        form.glm_tts_voice = 'tongtong'
+    }
 })
 
 const liveOk = computed(() => {
     if (!form.is_enabled) return false
     if (form.voice_stack === 'qwen') return props.settings.has_qwen_credentials
+    if (form.voice_stack === 'glm') return props.settings.has_glm_credentials
     return props.settings.has_deepseek_credentials && props.settings.has_yandex_speech_credentials
 })
 
@@ -212,6 +239,7 @@ const save = () => {
             form.yandex_api_key = ''
             form.openai_api_key = ''
             form.qwen_api_key = ''
+            form.glm_api_key = ''
             form.alibaba_access_key_id = ''
             form.alibaba_access_key_secret = ''
             form.yandex_billing_iam_token = ''
@@ -219,6 +247,7 @@ const save = () => {
             form.clear_yandex_api_key = false
             form.clear_openai_api_key = false
             form.clear_qwen_api_key = false
+            form.clear_glm_api_key = false
             form.clear_alibaba_billing = false
             form.clear_yandex_billing_iam_token = false
             loadBalance()
@@ -401,6 +430,9 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                     <li v-if="form.voice_stack === 'qwen'" :class="settings.has_qwen_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
                         {{ settings.has_qwen_credentials ? '✓' : '✗' }} Qwen (распознавание, ответ, озвучка)
                     </li>
+                    <li v-else-if="form.voice_stack === 'glm'" :class="settings.has_glm_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
+                        {{ settings.has_glm_credentials ? '✓' : '✗' }} GLM (распознавание, ответ, озвучка)
+                    </li>
                     <template v-else>
                         <li :class="settings.has_deepseek_credentials ? 'text-[#22c55e]/80' : 'text-amber-400/80'">
                             {{ settings.has_deepseek_credentials ? '✓' : '✗' }} DeepSeek (текст вопроса)
@@ -449,7 +481,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                     </div>
                 </div>
                 <p class="mt-3 text-[10px] text-white/25 italic leading-relaxed">
-                    Вопрос в Shell: микрофон → речь → ответ → озвучка. Сервис вопроса — DeepSeek + Яндекс или Qwen целиком. Нужна активная бронь.
+                    Вопрос в Shell: микрофон → речь → ответ → озвучка. Сервис вопроса — DeepSeek + Яндекс, Qwen или GLM целиком. Нужна активная бронь.
                     Хоткей в config.ini сейчас Grave (Ё / ~), не F1.
                     Баланс Qwen — AccessKey Alibaba, не ключ картинок. Баланс Яндекса — IAM-токен биллинга, не ключ SpeechKit.
                 </p>
@@ -491,7 +523,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                         Вопрос к ИИ
                     </h2>
                     <p class="text-[10px] text-white/30 italic">
-                        Один сервис на вопрос и приветствие: DeepSeek отвечает, Яндекс распознаёт и озвучивает, либо всё это делает Qwen. Ники, накладные и шёпот тренера этим выбором не переключаются.
+                        Один сервис на вопрос и приветствие: DeepSeek + Яндекс, Qwen или GLM. Ники, накладные и шёпот тренера этим выбором не переключаются.
                     </p>
                     <div>
                         <label :class="labelClass">Сервис «Вопрос к ИИ»</label>
@@ -541,6 +573,86 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                         </div>
                     </div>
 
+                    <div v-if="form.voice_stack === 'glm'" class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <label :class="labelClass">
+                                GLM API-ключ
+                                <span v-if="settings.has_glm_api_key" class="text-cyan-500/70 normal-case tracking-normal">(сохранён в БД)</span>
+                                <span v-else-if="settings.glm_key_source === 'env'" class="text-white/25 normal-case tracking-normal">(из .env)</span>
+                            </label>
+                            <input
+                                v-model="form.glm_api_key"
+                                type="password"
+                                autocomplete="new-password"
+                                placeholder="••••••"
+                                :class="inputClass"
+                            />
+                            <label
+                                v-if="settings.has_glm_api_key"
+                                class="flex items-center gap-2 mt-2 text-[10px] text-white/40 cursor-pointer"
+                            >
+                                <input v-model="form.clear_glm_api_key" type="checkbox" class="accent-red-500" />
+                                Очистить ключ в БД (останется .env)
+                            </label>
+                            <p class="mt-2 text-[10px] text-white/25 italic">Ключ Z.AI pay-as-you-go, база api.z.ai. Ключ bigmodel.cn сюда не подходит.</p>
+                            <p v-if="form.errors.glm_api_key" class="mt-2 text-red-400 text-xs">{{ form.errors.glm_api_key }}</p>
+                        </div>
+                        <div>
+                            <label :class="labelClass">Голос GLM</label>
+                            <select v-model="form.glm_tts_voice" :class="inputClass">
+                                <option v-for="(label, key) in glmVoices" :key="key" :value="key">
+                                    {{ label }}
+                                </option>
+                            </select>
+                            <p class="mt-2 text-[10px] text-white/25 italic">
+                                {{ settings.glm_asr_model }} → {{ settings.glm_chat_model }} → {{ settings.glm_tts_model }}. Голоса системные.
+                            </p>
+                            <p v-if="form.errors.glm_tts_voice" class="mt-2 text-red-400 text-xs">{{ form.errors.glm_tts_voice }}</p>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-white/5 pt-8 space-y-6">
+                        <h2 class="text-sm font-black uppercase italic tracking-wider text-white/70">
+                            Стилизация аватара
+                        </h2>
+                        <p class="text-[10px] text-white/30 italic">
+                            Кто рисует клубный аватар по фото гостя и выбранному образцу. На вопрос в Shell не влияет.
+                        </p>
+                        <div>
+                            <label :class="labelClass">Сервис стилизации</label>
+                            <select v-model="form.avatar_provider" :class="inputClass + ' max-w-md'">
+                                <option v-for="(label, key) in avatarProviders" :key="key" :value="key">
+                                    {{ label }}
+                                </option>
+                            </select>
+                            <p v-if="form.errors.avatar_provider" class="mt-2 text-red-400 text-xs">{{ form.errors.avatar_provider }}</p>
+                            <p class="mt-2 text-[10px] text-white/25 italic">
+                                Qwen — ключ картинок QWEN_API_KEY. GLM — тот же ключ, что у вопроса GLM, или GLM_API_KEY.
+                            </p>
+                        </div>
+                        <div v-if="form.avatar_provider === 'glm' && form.voice_stack !== 'glm'" class="max-w-md">
+                            <label :class="labelClass">
+                                GLM API-ключ
+                                <span v-if="settings.has_glm_api_key" class="text-cyan-500/70 normal-case tracking-normal">(сохранён в БД)</span>
+                                <span v-else-if="settings.glm_key_source === 'env'" class="text-white/25 normal-case tracking-normal">(из .env)</span>
+                            </label>
+                            <input
+                                v-model="form.glm_api_key"
+                                type="password"
+                                autocomplete="new-password"
+                                placeholder="••••••"
+                                :class="inputClass"
+                            />
+                            <label
+                                v-if="settings.has_glm_api_key"
+                                class="flex items-center gap-2 mt-2 text-[10px] text-white/40 cursor-pointer"
+                            >
+                                <input v-model="form.clear_glm_api_key" type="checkbox" class="accent-red-500" />
+                                Очистить ключ в БД (останется .env)
+                            </label>
+                        </div>
+                    </div>
+
                     <h2 class="text-sm font-black uppercase italic tracking-wider text-white/70">
                         Ники, накладные, шёпот
                     </h2>
@@ -579,10 +691,10 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                                 <input v-model="form.clear_llm_api_key" type="checkbox" class="accent-red-500" />
                                 Очистить ключ в БД (останется .env)
                             </label>
-                            <p v-if="form.voice_stack !== 'qwen' && form.llm_provider === 'deepseek'" class="mt-2 text-[10px] text-white/25 italic">
+                            <p v-if="form.voice_stack === 'deepseek_yandex' && form.llm_provider === 'deepseek'" class="mt-2 text-[10px] text-white/25 italic">
                                 Этот же ключ отвечает на вопрос к ИИ.
                             </p>
-                            <p v-else-if="form.voice_stack !== 'qwen'" class="mt-2 text-[10px] text-white/25 italic">
+                            <p v-else-if="form.voice_stack === 'deepseek_yandex'" class="mt-2 text-[10px] text-white/25 italic">
                                 Вопрос к ИИ берёт DeepSeek из .env, не этот ключ.
                             </p>
                             <p v-if="form.errors.llm_api_key" class="mt-2 text-red-400 text-xs">{{ form.errors.llm_api_key }}</p>
@@ -635,7 +747,7 @@ const labelClass = 'block text-[10px] uppercase tracking-[0.3em] text-white/40 f
                         </div>
                     </div>
 
-                    <div v-if="form.voice_stack !== 'qwen'" class="border-t border-white/5 pt-8 space-y-6">
+                    <div v-if="form.voice_stack === 'deepseek_yandex'" class="border-t border-white/5 pt-8 space-y-6">
                         <h2 class="text-sm font-black uppercase italic tracking-wider text-white/70">
                             Яндекс для вопроса
                         </h2>

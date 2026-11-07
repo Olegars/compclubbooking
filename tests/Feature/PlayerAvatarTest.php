@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AiAssistantSetting;
 use App\Models\Club;
 use App\Models\User;
 use App\Support\UserAvatar;
@@ -42,6 +43,9 @@ class PlayerAvatarTest extends TestCase
             'ai_assistant.avatar.qwen.api_key' => '',
             'ai_assistant.avatar.qwen.base_url' => 'https://dashscope-intl.aliyuncs.com/api/v1',
             'ai_assistant.avatar.qwen.model' => 'qwen-image-2.0-pro',
+            'ai_assistant.avatar.glm.model' => 'glm-image',
+            'ai_assistant.glm.api_key' => '',
+            'ai_assistant.glm.base_url' => 'https://api.z.ai/api/paas/v4',
             'ai_assistant.avatar.comfyui.url' => '',
         ]);
 
@@ -189,6 +193,53 @@ class PlayerAvatarTest extends TestCase
         Http::assertNotSent(fn ($request) => str_contains($request->url(), 'deepseek')
             || str_contains($request->url(), '8188'));
         $this->assertDatabaseCount('avatar_stylize_jobs', 0);
+    }
+
+    public function test_stylize_sends_photo_and_sample_to_glm_when_selected(): void
+    {
+        config(['ai_assistant.glm.api_key' => 'glm-image-test']);
+        AiAssistantSetting::forClub(Club::query()->value('id'))->update([
+            'avatar_provider' => 'glm',
+        ]);
+        $styled = $this->redFacePng();
+        $sent = null;
+
+        $this->fakeHttp(function ($request) use (&$sent, $styled) {
+            if (str_contains($request->url(), 'images/generations')) {
+                $sent = $request->data();
+
+                return Http::response([
+                    'data' => [['url' => 'https://glm-result.example.test/out.png']],
+                ]);
+            }
+            if (str_contains($request->url(), 'glm-result.example.test')) {
+                return Http::response($styled, 200, ['Content-Type' => 'image/png']);
+            }
+
+            return Http::response('unexpected '.$request->url(), 599);
+        });
+
+        $this->actingAs($this->user)
+            ->withoutMiddleware(ValidateCsrfToken::class)
+            ->post('/account/profile/avatar', [
+                'photo' => $this->fakeImageUpload('face.png'),
+                'stylize' => 1,
+                'sample' => 'avatar_1.png',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertIsArray($sent);
+        $this->assertSame('glm-image', $sent['model'] ?? null);
+        $this->assertSame('1280x1280', $sent['size'] ?? null);
+        $this->assertCount(2, $sent['images'] ?? []);
+        $this->assertStringStartsWith('data:image/', (string) ($sent['images'][0] ?? ''));
+        $this->assertStringStartsWith('data:image/', (string) ($sent['images'][1] ?? ''));
+        $this->assertStringContainsString('Image 1', (string) ($sent['prompt'] ?? ''));
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'api.z.ai/api/paas/v4/images/generations')
+            && $request->hasHeader('Authorization', 'Bearer glm-image-test'));
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'dashscope')
+            || str_contains($request->url(), 'multimodal-generation'));
     }
 
     public function test_stylize_failure_does_not_replace_avatar(): void

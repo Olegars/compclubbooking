@@ -870,6 +870,91 @@ class AiAssistantTest extends TestCase
             ->assertJsonPath('message', 'Нет ключа Qwen');
     }
 
+    public function test_glm_voice_stack_uses_glm_for_speech_and_reply(): void
+    {
+        $this->createActiveBooking();
+
+        config([
+            'ai_assistant.glm.api_key' => 'glm-env',
+            'ai_assistant.glm.base_url' => 'https://api.z.ai/api/paas/v4',
+            'ai_assistant.glm.chat_model' => 'glm-4.7-flash',
+            'ai_assistant.glm.asr_model' => 'glm-asr-2512',
+            'ai_assistant.glm.tts_model' => 'glm-tts',
+            'ai_assistant.glm.tts_voice' => 'tongtong',
+        ]);
+
+        AiAssistantSetting::forClub($this->club->id)->update([
+            'voice_stack' => 'glm',
+            'glm_api_key' => 'glm-db',
+            'glm_tts_voice' => 'tongtong',
+        ]);
+
+        $this->fakeHttp(function ($request) {
+            $url = $request->url();
+            if (str_contains($url, 'audio/transcriptions')) {
+                return Http::response(['text' => 'как зайти в игру'], 200);
+            }
+            if (str_contains($url, 'chat/completions')) {
+                return Http::response([
+                    'choices' => [['message' => ['content' => 'Открой библиотеку и нажми играть.']]],
+                ]);
+            }
+            if (str_contains($url, 'audio/speech')) {
+                return Http::response('RIFFwav-bytes', 200, ['Content-Type' => 'audio/wav']);
+            }
+
+            return Http::response('unexpected '.$url, 599);
+        });
+
+        $this->post('/api/shell/ai-assistant', [
+            'terminal_id' => $this->computer->id,
+            'audio' => UploadedFile::fake()->create('ask.wav', 20, 'audio/wav'),
+        ])->assertOk()
+            ->assertJsonPath('transcript', 'как зайти в игру')
+            ->assertJsonPath('reply_text', 'Открой библиотеку и нажми играть.')
+            ->assertJsonPath('audio_mime', 'audio/wav');
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'audio/transcriptions')
+                && ($request['model'] ?? null) === 'glm-asr-2512'
+                && $request->hasHeader('Authorization', 'Bearer glm-db');
+        });
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'api.z.ai/api/paas/v4/chat/completions')
+                && ($request['model'] ?? null) === 'glm-4.7-flash'
+                && $request->hasHeader('Authorization', 'Bearer glm-db')
+                && data_get($request, 'thinking.type') === 'disabled';
+        });
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'audio/speech')
+                && ($request['model'] ?? null) === 'glm-tts'
+                && ($request['voice'] ?? null) === 'tongtong';
+        });
+
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'yandex.net')
+            || str_contains($request->url(), 'api.deepseek.com')
+            || str_contains($request->url(), 'dashscope'));
+    }
+
+    public function test_glm_voice_stack_without_key_is_rejected(): void
+    {
+        $this->createActiveBooking();
+
+        config(['ai_assistant.glm.api_key' => '']);
+        AiAssistantSetting::forClub($this->club->id)->update([
+            'voice_stack' => 'glm',
+            'glm_api_key' => null,
+        ]);
+
+        $this->post('/api/shell/ai-assistant', [
+            'terminal_id' => $this->computer->id,
+            'audio' => UploadedFile::fake()->create('ask.wav', 20, 'audio/wav'),
+        ])->assertStatus(422)
+            ->assertJsonPath('message', 'Нет ключа GLM');
+    }
+
     public function test_greeting_prompt_includes_favorite_games(): void
     {
         $settings = AiAssistantSetting::forClub($this->club->id);

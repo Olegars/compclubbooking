@@ -12,6 +12,8 @@ class SpeechService
         private readonly YandexTextToSpeech $yandexTts,
         private readonly QwenSpeechToText $qwenStt,
         private readonly QwenTextToSpeech $qwenTts,
+        private readonly GlmSpeechToText $glmStt,
+        private readonly GlmTextToSpeech $glmTts,
     ) {
     }
 
@@ -19,6 +21,10 @@ class SpeechService
     {
         if ($settings->resolvedVoiceSpeechProvider() === 'qwen') {
             return $this->qwenStt->transcribe($audio, $settings);
+        }
+
+        if ($settings->resolvedVoiceSpeechProvider() === 'glm') {
+            return $this->glmStt->transcribe($audio, $settings);
         }
 
         return $this->yandexStt->transcribe($audio, [
@@ -34,10 +40,18 @@ class SpeechService
     {
         $provider = $settings->resolvedVoiceSpeechProvider();
         $voice = AiAssistantSetting::sanitizeTtsVoice($provider, $voice)
-            ?? ($provider === 'qwen' ? $settings->resolvedQwenTtsVoice() : $settings->resolvedQuestionTtsVoice());
+            ?? match ($provider) {
+                'qwen' => $settings->resolvedQwenTtsVoice(),
+                'glm' => $settings->resolvedGlmTtsVoice(),
+                default => $settings->resolvedQuestionTtsVoice(),
+            };
 
         if ($provider === 'qwen') {
             return $this->qwenTts->synthesize($text, $settings, $voice);
+        }
+
+        if ($provider === 'glm') {
+            return $this->glmTts->synthesize($text, $settings, $voice);
         }
 
         return $this->yandexTts->synthesize($text, $voice, [

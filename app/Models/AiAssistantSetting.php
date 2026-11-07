@@ -32,6 +32,9 @@ class AiAssistantSetting extends Model
         'voice_stack',
         'qwen_api_key',
         'qwen_tts_voice',
+        'glm_api_key',
+        'glm_tts_voice',
+        'avatar_provider',
     ];
 
     protected $casts = [
@@ -43,6 +46,7 @@ class AiAssistantSetting extends Model
         'alibaba_access_key_secret' => 'encrypted',
         'yandex_billing_iam_token' => 'encrypted',
         'qwen_api_key' => 'encrypted',
+        'glm_api_key' => 'encrypted',
         'max_reply_chars' => 'integer',
     ];
 
@@ -54,6 +58,7 @@ class AiAssistantSetting extends Model
         'alibaba_access_key_secret',
         'yandex_billing_iam_token',
         'qwen_api_key',
+        'glm_api_key',
     ];
 
     public const OPENAI_VOICES = [
@@ -96,9 +101,26 @@ class AiAssistantSetting extends Model
         'Chelsie' => 'Chelsie',
     ];
 
+    /** Системные голоса glm-tts. */
+    public const GLM_VOICES = [
+        'tongtong' => 'Tongtong',
+        'chuichui' => 'Chuichui',
+        'xiaochen' => 'Xiaochen',
+        'jam' => 'Jam',
+        'kazi' => 'Kazi',
+        'douji' => 'Douji',
+        'luodo' => 'Luodo',
+    ];
+
+    public const AVATAR_PROVIDERS = [
+        'qwen' => 'Qwen',
+        'glm' => 'GLM',
+    ];
+
     public const VOICE_STACKS = [
         'deepseek_yandex' => 'DeepSeek + Яндекс',
         'qwen' => 'Qwen',
+        'glm' => 'GLM',
     ];
 
     public const LLM_PROVIDERS = [
@@ -154,6 +176,14 @@ class AiAssistantSetting extends Model
         if ($settings->resolvedVoiceStack() === 'qwen') {
             if ($settings->resolvedQwenApiKey() === '') {
                 return 'Нет ключа Qwen';
+            }
+
+            return null;
+        }
+
+        if ($settings->resolvedVoiceStack() === 'glm') {
+            if ($settings->resolvedGlmApiKey() === '') {
+                return 'Нет ключа GLM';
             }
 
             return null;
@@ -315,6 +345,13 @@ class AiAssistantSetting extends Model
         return array_key_exists($stack, self::VOICE_STACKS) ? $stack : 'deepseek_yandex';
     }
 
+    public function resolvedAvatarProvider(): string
+    {
+        $provider = strtolower(trim((string) ($this->avatar_provider ?: 'qwen')));
+
+        return array_key_exists($provider, self::AVATAR_PROVIDERS) ? $provider : 'qwen';
+    }
+
     /**
      * Речь «Вопроса к ИИ» и приветствия.
      * Стек DeepSeek + Яндекс всегда SpeechKit, стек Qwen — свой ASR/TTS.
@@ -322,7 +359,11 @@ class AiAssistantSetting extends Model
      */
     public function resolvedVoiceSpeechProvider(): string
     {
-        return $this->resolvedVoiceStack() === 'qwen' ? 'qwen' : 'yandex';
+        return match ($this->resolvedVoiceStack()) {
+            'qwen' => 'qwen',
+            'glm' => 'glm',
+            default => 'yandex',
+        };
     }
 
     /** Ключ DeepSeek для вопроса. Ключ OpenAI из llm_api_key сюда не подставляется. */
@@ -448,6 +489,61 @@ class AiAssistantSetting extends Model
         return $fallback ?? 'Cherry';
     }
 
+    public function resolvedGlmApiKey(): string
+    {
+        $fromDb = trim((string) ($this->glm_api_key ?? ''));
+        if ($fromDb !== '') {
+            return $fromDb;
+        }
+
+        return trim((string) config('ai_assistant.glm.api_key', ''));
+    }
+
+    public function glmKeySource(): string
+    {
+        return trim((string) ($this->glm_api_key ?? '')) !== '' ? 'db' : 'env';
+    }
+
+    public function resolvedGlmBaseUrl(): string
+    {
+        $base = rtrim(trim((string) config('ai_assistant.glm.base_url', '')), '/');
+
+        return $base !== '' ? $base : 'https://api.z.ai/api/paas/v4';
+    }
+
+    public function resolvedGlmChatModel(): string
+    {
+        $model = trim((string) config('ai_assistant.glm.chat_model', ''));
+
+        return $model !== '' ? $model : 'glm-4.7-flash';
+    }
+
+    public function resolvedGlmAsrModel(): string
+    {
+        $model = trim((string) config('ai_assistant.glm.asr_model', ''));
+
+        return $model !== '' ? $model : 'glm-asr-2512';
+    }
+
+    public function resolvedGlmTtsModel(): string
+    {
+        $model = trim((string) config('ai_assistant.glm.tts_model', ''));
+
+        return $model !== '' ? $model : 'glm-tts';
+    }
+
+    public function resolvedGlmTtsVoice(): string
+    {
+        $fromDb = self::sanitizeTtsVoice('glm', $this->glm_tts_voice);
+        if ($fromDb !== null) {
+            return $fromDb;
+        }
+
+        $fallback = self::sanitizeTtsVoice('glm', (string) config('ai_assistant.glm.tts_voice', 'tongtong'));
+
+        return $fallback ?? 'tongtong';
+    }
+
     /**
      * @return array<string, string>
      */
@@ -456,6 +552,7 @@ class AiAssistantSetting extends Model
         return match ($provider) {
             'openai' => self::OPENAI_VOICES,
             'qwen' => self::QWEN_VOICES,
+            'glm' => self::GLM_VOICES,
             default => self::YANDEX_VOICES,
         };
     }
@@ -550,7 +647,11 @@ class AiAssistantSetting extends Model
             }
         }
 
-        return $provider === 'qwen' ? $this->resolvedQwenTtsVoice() : $this->resolvedQuestionTtsVoice();
+        return match ($provider) {
+            'qwen' => $this->resolvedQwenTtsVoice(),
+            'glm' => $this->resolvedGlmTtsVoice(),
+            default => $this->resolvedQuestionTtsVoice(),
+        };
     }
 
     public function resolvedMaxReplyChars(): int
@@ -760,6 +861,7 @@ PROMPT;
             'openai_key_source' => $this->openAiKeySource(),
             'speech_provider' => $this->resolvedSpeechProvider(),
             'voice_stack' => $this->resolvedVoiceStack(),
+            'avatar_provider' => $this->resolvedAvatarProvider(),
             'has_qwen_api_key' => trim((string) ($this->qwen_api_key ?? '')) !== '',
             'qwen_key_source' => $this->qwenKeySource(),
             'has_qwen_credentials' => $this->resolvedQwenApiKey() !== '',
@@ -767,6 +869,13 @@ PROMPT;
             'qwen_chat_model' => $this->resolvedQwenChatModel(),
             'qwen_asr_model' => $this->resolvedQwenAsrModel(),
             'qwen_tts_model' => $this->resolvedQwenTtsModel(),
+            'has_glm_api_key' => trim((string) ($this->glm_api_key ?? '')) !== '',
+            'glm_key_source' => $this->glmKeySource(),
+            'has_glm_credentials' => $this->resolvedGlmApiKey() !== '',
+            'glm_tts_voice' => $this->resolvedGlmTtsVoice(),
+            'glm_chat_model' => $this->resolvedGlmChatModel(),
+            'glm_asr_model' => $this->resolvedGlmAsrModel(),
+            'glm_tts_model' => $this->resolvedGlmTtsModel(),
             'yandex_folder_id' => $this->yandex_folder_id ?: '',
             'has_yandex_api_key' => trim((string) ($this->yandex_api_key ?? '')) !== '',
             'yandex_key_source' => $this->yandexKeySource(),
@@ -786,9 +895,11 @@ PROMPT;
             'greeting_prompt' => $this->greeting_prompt ?: self::defaultGreetingPromptTemplate(),
             'using_default_companion' => trim((string) ($this->companion_prompt ?? '')) === '',
             'using_default_greeting' => trim((string) ($this->greeting_prompt ?? '')) === '',
-            'credentials_ok' => $this->resolvedVoiceStack() === 'qwen'
-                ? $this->resolvedQwenApiKey() !== ''
-                : ($this->resolvedDeepSeekApiKey() !== '' && $this->resolvedYandexApiKey() !== ''),
+            'credentials_ok' => match ($this->resolvedVoiceStack()) {
+                'qwen' => $this->resolvedQwenApiKey() !== '',
+                'glm' => $this->resolvedGlmApiKey() !== '',
+                default => $this->resolvedDeepSeekApiKey() !== '' && $this->resolvedYandexApiKey() !== '',
+            },
             'llm_preset_base_url' => self::LLM_PRESETS[$provider]['base_url'] ?? '',
             'llm_preset_model' => self::LLM_PRESETS[$provider]['model'] ?? '',
         ];

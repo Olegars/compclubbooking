@@ -146,7 +146,7 @@ onUnmounted(() => {
                 </button>
                 <div v-if="form.stylize" class="mt-4 space-y-3">
                     <p class="text-[10px] text-white/40 leading-snug">
-                        Выберите клубный стиль. Qwen нарисует один аватар: примерно ваше лицо и примерно этот образец.
+                        Выберите клубный стиль. Модель нарисует один аватар: примерно ваше лицо и примерно этот образец.
                     </p>
                     <div class="grid grid-cols-5 gap-2">
                         <button

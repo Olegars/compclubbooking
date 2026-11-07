@@ -1746,7 +1746,11 @@ class ShellApiController extends Controller
     {
         $provider = $settings->resolvedVoiceSpeechProvider();
         $voice = AiAssistantSetting::sanitizeTtsVoice($provider, $currentVoice)
-            ?? ($provider === 'qwen' ? $settings->resolvedQwenTtsVoice() : $settings->resolvedQuestionTtsVoice());
+            ?? match ($provider) {
+                'qwen' => $settings->resolvedQwenTtsVoice(),
+                'glm' => $settings->resolvedGlmTtsVoice(),
+                default => $settings->resolvedQuestionTtsVoice(),
+            };
 
         return [
             'provider' => $provider,

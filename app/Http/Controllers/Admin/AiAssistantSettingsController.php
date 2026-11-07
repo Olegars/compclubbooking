@@ -31,6 +31,8 @@ class AiAssistantSettingsController extends Controller
             'speechProviders' => AiAssistantSetting::SPEECH_PROVIDERS,
             'voiceStacks' => AiAssistantSetting::VOICE_STACKS,
             'qwenVoices' => AiAssistantSetting::QWEN_VOICES,
+            'glmVoices' => AiAssistantSetting::GLM_VOICES,
+            'avatarProviders' => AiAssistantSetting::AVATAR_PROVIDERS,
             'llmPresets' => AiAssistantSetting::LLM_PRESETS,
             'clubs' => Club::visibleToAdmin(AdminLocation::id())->select('id', 'name')->orderBy('name')->get(),
             'placeholders' => [
@@ -52,6 +54,7 @@ class AiAssistantSettingsController extends Controller
             'llm_model' => 'nullable|string|max:128',
             'speech_provider' => 'required|string|in:'.implode(',', array_keys(AiAssistantSetting::SPEECH_PROVIDERS)),
             'voice_stack' => 'required|string|in:'.implode(',', array_keys(AiAssistantSetting::VOICE_STACKS)),
+            'avatar_provider' => 'required|string|in:'.implode(',', array_keys(AiAssistantSetting::AVATAR_PROVIDERS)),
             'qwen_api_key' => 'nullable|string|max:2000',
             'clear_qwen_api_key' => 'nullable|boolean',
             'qwen_tts_voice' => [
@@ -59,6 +62,14 @@ class AiAssistantSettingsController extends Controller
                 'string',
                 Rule::requiredIf(fn () => $request->input('voice_stack') === 'qwen'),
                 Rule::in(array_keys(AiAssistantSetting::QWEN_VOICES)),
+            ],
+            'glm_api_key' => 'nullable|string|max:2000',
+            'clear_glm_api_key' => 'nullable|boolean',
+            'glm_tts_voice' => [
+                'nullable',
+                'string',
+                Rule::requiredIf(fn () => $request->input('voice_stack') === 'glm'),
+                Rule::in(array_keys(AiAssistantSetting::GLM_VOICES)),
             ],
             'yandex_api_key' => 'nullable|string|max:2000',
             'clear_yandex_api_key' => 'nullable|boolean',
@@ -86,8 +97,11 @@ class AiAssistantSettingsController extends Controller
             'tts_voice.in' => 'Выберите голос из списка',
             'llm_provider.in' => 'Выберите провайдера LLM',
             'voice_stack.in' => 'Выберите стек вопроса',
+            'avatar_provider.in' => 'Выберите сервис стилизации аватара',
             'qwen_tts_voice.required' => 'Выберите голос Qwen',
             'qwen_tts_voice.in' => 'Выберите голос Qwen из списка',
+            'glm_tts_voice.required' => 'Выберите голос GLM',
+            'glm_tts_voice.in' => 'Выберите голос GLM из списка',
             'companion_prompt.required' => 'Укажите промпт F1-компаньона',
             'greeting_prompt.required' => 'Укажите промпт приветствия',
         ]);
@@ -101,8 +115,11 @@ class AiAssistantSettingsController extends Controller
         $payload = [
             'is_enabled' => (bool) $data['is_enabled'],
             'llm_provider' => $data['llm_provider'],
-            'speech_provider' => $data['voice_stack'] === 'qwen' ? $data['speech_provider'] : 'yandex',
+            'speech_provider' => in_array($data['voice_stack'], ['qwen', 'glm'], true)
+                ? $data['speech_provider']
+                : 'yandex',
             'voice_stack' => $data['voice_stack'],
+            'avatar_provider' => $data['avatar_provider'],
             'yandex_folder_id' => filled($data['yandex_folder_id'] ?? null) ? trim($data['yandex_folder_id']) : null,
             'llm_base_url' => filled($data['llm_base_url'] ?? null)
                 ? AiAssistantSetting::normalizeLlmBaseUrl((string) $data['llm_base_url']) ?: null
@@ -131,6 +148,13 @@ class AiAssistantSettingsController extends Controller
             }
         }
 
+        if (filled($data['glm_tts_voice'] ?? null)) {
+            $glmVoice = AiAssistantSetting::sanitizeTtsVoice('glm', (string) $data['glm_tts_voice']);
+            if ($glmVoice !== null) {
+                $payload['glm_tts_voice'] = $glmVoice;
+            }
+        }
+
         if (! empty($data['clear_llm_api_key'])) {
             $payload['llm_api_key'] = null;
         } elseif (array_key_exists('llm_api_key', $data) && filled($data['llm_api_key'])) {
@@ -147,6 +171,12 @@ class AiAssistantSettingsController extends Controller
             $payload['qwen_api_key'] = null;
         } elseif (array_key_exists('qwen_api_key', $data) && filled($data['qwen_api_key'])) {
             $payload['qwen_api_key'] = trim($data['qwen_api_key']);
+        }
+
+        if (! empty($data['clear_glm_api_key'])) {
+            $payload['glm_api_key'] = null;
+        } elseif (array_key_exists('glm_api_key', $data) && filled($data['glm_api_key'])) {
+            $payload['glm_api_key'] = trim($data['glm_api_key']);
         }
 
         if (! empty($data['clear_openai_api_key'])) {
@@ -259,13 +289,21 @@ class AiAssistantSettingsController extends Controller
             ]);
 
             $settings = AiAssistantSetting::forClub($clubId);
-            $qwen = $settings->resolvedVoiceStack() === 'qwen';
+            $stack = $settings->resolvedVoiceStack();
 
             return response()->json([
                 'ok' => true,
                 'reply' => $reply,
-                'provider' => $qwen ? 'qwen' : 'deepseek',
-                'model' => $qwen ? $settings->resolvedQwenChatModel() : $settings->resolvedDeepSeekModel(),
+                'provider' => match ($stack) {
+                    'qwen' => 'qwen',
+                    'glm' => 'glm',
+                    default => 'deepseek',
+                },
+                'model' => match ($stack) {
+                    'qwen' => $settings->resolvedQwenChatModel(),
+                    'glm' => $settings->resolvedGlmChatModel(),
+                    default => $settings->resolvedDeepSeekModel(),
+                },
             ]);
         } catch (\Throwable $e) {
             return response()->json([
@@ -286,9 +324,11 @@ class AiAssistantSettingsController extends Controller
         $settings = AiAssistantSetting::forClub($clubId);
         $text = trim((string) ($data['text'] ?? ''));
         if ($text === '') {
-            $text = $settings->resolvedVoiceStack() === 'qwen'
-                ? 'Проверка озвучки. Если слышите это, Qwen работает.'
-                : 'Проверка озвучки. Если слышите это, SpeechKit работает.';
+            $text = match ($settings->resolvedVoiceStack()) {
+                'qwen' => 'Проверка озвучки. Если слышите это, Qwen работает.',
+                'glm' => 'Проверка озвучки. Если слышите это, GLM работает.',
+                default => 'Проверка озвучки. Если слышите это, SpeechKit работает.',
+            };
         }
 
         try {
@@ -298,10 +338,15 @@ class AiAssistantSettingsController extends Controller
             return response()->json([
                 'ok' => true,
                 'provider' => $speechProvider,
-                'voice' => $speechProvider === 'qwen' ? $settings->resolvedQwenTtsVoice() : $settings->resolvedQuestionTtsVoice(),
+                'voice' => match ($speechProvider) {
+                    'qwen' => $settings->resolvedQwenTtsVoice(),
+                    'glm' => $settings->resolvedGlmTtsVoice(),
+                    default => $settings->resolvedQuestionTtsVoice(),
+                },
                 'model' => match ($speechProvider) {
                     'openai' => $settings->resolvedTtsModel(),
                     'qwen' => $settings->resolvedQwenTtsModel(),
+                    'glm' => $settings->resolvedGlmTtsModel(),
                     default => 'speechkit',
                 },
                 'audio_mime' => $result['mime'],

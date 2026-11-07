@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\AiAssistantSetting;
 use App\Models\User;
+use App\Services\Avatar\GlmImageEditClient;
 use App\Services\Avatar\QwenImageEditClient;
 use App\Support\UserAvatar;
 use Illuminate\Http\UploadedFile;
@@ -17,6 +19,7 @@ class PlayerAvatarService
 
     public function __construct(
         private readonly QwenImageEditClient $qwen,
+        private readonly GlmImageEditClient $glm,
     ) {}
 
     public function save(User $user, UploadedFile $photo, bool $stylize = false, ?string $sampleName = null): void
@@ -28,8 +31,12 @@ class PlayerAvatarService
         }
 
         if ($stylize) {
-            if (! $this->qwen->configured()) {
-                throw new RuntimeException('Стилизация недоступна: не задан ключ Qwen.');
+            $provider = AiAssistantSetting::forClub(null)->resolvedAvatarProvider();
+            $client = $provider === 'glm' ? $this->glm : $this->qwen;
+            if (! $client->configured()) {
+                throw new RuntimeException($provider === 'glm'
+                    ? 'Стилизация недоступна: не задан ключ GLM.'
+                    : 'Стилизация недоступна: не задан ключ Qwen.');
             }
             if (function_exists('set_time_limit')) {
                 @set_time_limit(160);
@@ -37,7 +44,7 @@ class PlayerAvatarService
             $this->assertStylizeAllowed($user);
             $photoPacked = $this->compress($bytes, $mime, 1024);
             $samplePacked = $this->samplePacked((string) $sampleName);
-            $styled = $this->qwen->stylize(
+            $styled = $client->stylize(
                 $photoPacked['bytes'],
                 $samplePacked['bytes'],
                 $this->clubAvatarPrompt(),

@@ -63,6 +63,19 @@ return [
     ],
 
     /*
+     * Стек «GLM» (Z.AI) для вопроса в Shell: ASR + чат + TTS одним ключом.
+     * База pay-as-you-go, не Coding Plan. Ключи bigmodel.cn с этой базой не совпадают.
+     */
+    'glm' => [
+        'api_key' => env('GLM_API_KEY', env('ZHIPU_API_KEY')),
+        'base_url' => rtrim((string) env('GLM_BASE_URL', 'https://api.z.ai/api/paas/v4'), '/'),
+        'chat_model' => env('GLM_CHAT_MODEL', 'glm-4.7-flash'),
+        'asr_model' => env('GLM_ASR_MODEL', 'glm-asr-2512'),
+        'tts_model' => env('GLM_TTS_MODEL', 'glm-tts'),
+        'tts_voice' => env('GLM_TTS_VOICE', 'tongtong'),
+    ],
+
+    /*
      * Стилизация аватара. Qwen Image Edit рисует один кадр по фото и образцу.
      * DeepSeek картинки не рисует. Очередь ComfyUI в этой галке не используется.
      */
@@ -78,6 +91,9 @@ return [
             'base_url' => rtrim((string) env('QWEN_IMAGE_BASE_URL', 'https://dashscope-intl.aliyuncs.com/api/v1'), '/'),
             'model' => env('QWEN_IMAGE_MODEL', 'qwen-image-2.0-pro'),
             'prompt_extend' => filter_var(env('QWEN_IMAGE_PROMPT_EXTEND', false), FILTER_VALIDATE_BOOLEAN),
+        ],
+        'glm' => [
+            'model' => env('GLM_IMAGE_MODEL', 'glm-image'),
         ],
         'comfyui' => [
             'url' => rtrim((string) env('COMFYUI_URL', ''), '/'),

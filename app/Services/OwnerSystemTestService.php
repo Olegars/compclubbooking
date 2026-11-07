@@ -976,6 +976,13 @@ class OwnerSystemTestService
 
             return $this->pass('Ключ Qwen есть, тумблер включён.', $details);
         }
+        if ($settings->resolvedVoiceStack() === 'glm') {
+            if ($settings->resolvedGlmApiKey() === '') {
+                return $this->warn('Нет ключа GLM.', $details);
+            }
+
+            return $this->pass('Ключ GLM есть, тумблер включён.', $details);
+        }
         if ($settings->resolvedDeepSeekApiKey() === '') {
             return $this->warn('Нет ключа DeepSeek.', $details);
         }

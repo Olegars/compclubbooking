@@ -491,6 +491,9 @@ class DeepSeekChat
         if (str_contains(strtolower($model), 'qwen3')) {
             $payload['enable_thinking'] = false;
         }
+        if (str_starts_with(strtolower($model), 'glm')) {
+            $payload['thinking'] = ['type' => 'disabled'];
+        }
 
         if ($jsonObject) {
             $payload['response_format'] = ['type' => 'json_object'];
@@ -513,6 +516,15 @@ class DeepSeekChat
             }
 
             return [$key, $settings->resolvedQwenCompatibleBaseUrl(), $settings->resolvedQwenChatModel()];
+        }
+
+        if ($settings->resolvedVoiceStack() === 'glm') {
+            $key = $settings->resolvedGlmApiKey();
+            if ($key === '') {
+                throw new RuntimeException('GLM API-ключ не задан (админка или .env).');
+            }
+
+            return [$key, $settings->resolvedGlmBaseUrl(), $settings->resolvedGlmChatModel()];
         }
 
         $key = $settings->resolvedDeepSeekApiKey();
